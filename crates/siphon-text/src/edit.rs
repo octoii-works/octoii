@@ -27,9 +27,9 @@ impl Tier {
     }
 }
 
-/// An edit asked for: what to find, what to put in its place, and whether at every match.
+/// An edit: what to find, what to put in its place, and whether at every match.
 #[derive(Debug, Clone, Copy)]
-pub struct Request<'a> {
+pub struct Edit<'a> {
     pub old: &'a str,
     pub new: &'a str,
     pub all: bool,
@@ -66,28 +66,30 @@ struct Span {
     end: usize,
 }
 
-/// `text` edited as `request` asks.
-///
-/// # Errors
-/// The `Refusal` of an edit that cannot be made as asked.
-pub fn edit(text: &str, request: &Request<'_>) -> Result<Edited, Refusal> {
-    if request.old.is_empty() {
-        return Err(Refusal::Empty);
+impl Edit<'_> {
+    /// `text` with this edit made.
+    ///
+    /// # Errors
+    /// The `Refusal` of an edit that cannot be made as asked.
+    pub fn apply(&self, text: &str) -> Result<Edited, Refusal> {
+        if self.old.is_empty() {
+            return Err(Refusal::Empty);
+        }
+        if self.old == self.new {
+            return Err(Refusal::Same);
+        }
+        if self.old.replace('\r', "") == self.new.replace('\r', "") {
+            let spans = occurrences(text, self.old);
+            check(spans.len(), self.all)?;
+            return made(text, replaced_as_written(text, &spans, self.new), spans.len(), Tier::Exact);
+        }
+        let old = lf_view(self.old).text;
+        let view = lf_view(text);
+        let (spans, tier) = matched(&view.text, &old);
+        check(spans.len(), self.all)?;
+        let after = replaced(text, &view, &spans, &old, &lf_view(self.new).text);
+        made(text, after, spans.len(), tier)
     }
-    if request.old == request.new {
-        return Err(Refusal::Same);
-    }
-    if request.old.replace('\r', "") == request.new.replace('\r', "") {
-        let spans = occurrences(text, request.old);
-        check(spans.len(), request.all)?;
-        return made(text, replaced_as_written(text, &spans, request.new), spans.len(), Tier::Exact);
-    }
-    let old = lf_view(request.old).text;
-    let view = lf_view(text);
-    let (spans, tier) = matched(&view.text, &old);
-    check(spans.len(), request.all)?;
-    let after = replaced(text, &view, &spans, &old, &lf_view(request.new).text);
-    made(text, after, spans.len(), tier)
 }
 
 fn check(matches: usize, all: bool) -> Result<(), Refusal> {
@@ -219,13 +221,6 @@ fn loose(line: &str) -> String {
     let mut plain = plain_view_of(line);
     plain.truncate(plain.trim_end_matches([' ', '\t']).len());
     plain
-}
-
-/// Whether two lines are the same as the line tier reads them: typographic characters as their plain ones, trailing
-/// spaces and tabs left aside.
-#[must_use]
-pub fn same_loosely(a: &str, b: &str) -> bool {
-    loose(a) == loose(b)
 }
 
 /// A text split at `\n` into its lines, and whether it ends with one — the empty line after it left out.

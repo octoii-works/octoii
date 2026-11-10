@@ -6,7 +6,7 @@ mod edit;
 mod file;
 mod lines;
 
-pub use diff::{CONTEXT_LINES, Diff, diff};
-pub use edit::{Edited, Refusal, Request, Tier, edit, same_loosely};
+pub use diff::{CONTEXT_LINES, Diff};
+pub use edit::{Edit, Edited, Refusal, Tier};
 pub use file::{BYTE_ORDER_MARK, Text};
-pub use lines::{Bounds, Line, Pager};
+pub use lines::{Bounds, Line, Page, Paged};

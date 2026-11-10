@@ -18,35 +18,37 @@ pub struct Diff {
     pub deletions: usize,
 }
 
-/// The diff from `before` to `after`, both named `name` — `before` from `/dev/null` where it is none, a file made —
-/// a line without its newline marked, a line's `\r` left out.
-#[must_use]
-pub fn diff(before: Option<&str>, after: &str, name: &str) -> Diff {
-    let old: Vec<&str> = before.unwrap_or("").split_inclusive('\n').collect();
-    let new: Vec<&str> = after.split_inclusive('\n').collect();
-    let ops = similar::capture_diff_slices(Algorithm::Myers, &old, &new);
-    let (mut additions, mut deletions) = (0, 0);
-    for op in &ops {
-        additions += op.new_range().len() * usize::from(!matches!(op, DiffOp::Equal { .. }));
-        deletions += op.old_range().len() * usize::from(!matches!(op, DiffOp::Equal { .. }));
-    }
-    let groups = similar::group_diff_ops(ops, CONTEXT_LINES);
-    if groups.is_empty() {
-        return Diff {
-            unified: String::new(),
+impl Diff {
+    /// The diff from `before` to `after`, both named `name` — `before` from `/dev/null` where it is none, a file made —
+    /// a line without its newline marked, a line's `\r` left out.
+    #[must_use]
+    pub fn between(before: Option<&str>, after: &str, name: &str) -> Self {
+        let old: Vec<&str> = before.unwrap_or("").split_inclusive('\n').collect();
+        let new: Vec<&str> = after.split_inclusive('\n').collect();
+        let ops = similar::capture_diff_slices(Algorithm::Myers, &old, &new);
+        let (mut additions, mut deletions) = (0, 0);
+        for op in &ops {
+            additions += op.new_range().len() * usize::from(!matches!(op, DiffOp::Equal { .. }));
+            deletions += op.old_range().len() * usize::from(!matches!(op, DiffOp::Equal { .. }));
+        }
+        let groups = similar::group_diff_ops(ops, CONTEXT_LINES);
+        if groups.is_empty() {
+            return Self {
+                unified: String::new(),
+                additions,
+                deletions,
+            };
+        }
+        let mut unified = format!("--- {}\n+++ {name}\n", if before.is_none() { "/dev/null" } else { name });
+        for group in &groups {
+            write_hunk(&mut unified, group, &old, &new);
+        }
+        unified.pop();
+        Self {
+            unified,
             additions,
             deletions,
-        };
-    }
-    let mut unified = format!("--- {}\n+++ {name}\n", if before.is_none() { "/dev/null" } else { name });
-    for group in &groups {
-        write_hunk(&mut unified, group, &old, &new);
-    }
-    unified.pop();
-    Diff {
-        unified,
-        additions,
-        deletions,
+        }
     }
 }
 

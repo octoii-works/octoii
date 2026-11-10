@@ -1,7 +1,9 @@
-//! A text's lines as a page shows them, gathered from its bytes a range at a time as they are read, till the page is
-//! whole and the line after it seen: each line its number, from 1, its text without its ending, each stretch of bytes
-//! that is no UTF-8 shown as one U+FFFD — as Unicode's practice for a decoder replaces a maximal subpart — cut past as
-//! many characters as a line shows; a NUL among the bytes telling that they are no text.
+//! A page of a text's lines, read from where its bytes come: each line its number, from 1, its text without its ending,
+//! each stretch of bytes that is no UTF-8 shown as one U+FFFD — as Unicode's practice for a decoder replaces a maximal
+//! subpart — cut past as many characters as a line shows; a NUL among the bytes telling that they are no text. A line
+//! past what it shows is read through, never kept whole.
+
+use std::io::{self, BufRead};
 
 /// A line as shown: its number, from 1; its text; and whether it was cut.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -32,117 +34,81 @@ impl Default for Bounds {
     }
 }
 
-/// A page of a text's lines, taken a range of its bytes at a time.
-#[derive(Debug)]
-pub struct Pager {
-    bounds: Bounds,
-    lines: Vec<Line>,
-    /// The bytes the page's lines take.
-    bytes: usize,
-    /// The lines seen.
-    seen: usize,
-    /// Whether a line past the page was seen.
-    more: bool,
-    /// Whether a NUL was among the bytes: no text.
-    binary: bool,
-    /// The line being gathered, kept to as many bytes as can show its characters, and more, to tell it was cut.
-    gathering: Vec<u8>,
-    /// Whether a line is begun past the last newline taken.
-    begun: bool,
+/// What a read of a page came to: the page of a text, or bytes that are no text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Paged {
+    Text(Page),
+    Binary,
 }
 
-impl Pager {
-    #[must_use]
-    pub fn new(bounds: Bounds) -> Self {
-        Self {
-            bounds,
+/// A page of a text's lines: the lines, how many lines were seen — those before the page among them — and whether
+/// the page reached the text's end, no line past it seen.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Page {
+    pub lines: Vec<Line>,
+    pub seen: usize,
+    pub whole: bool,
+}
+
+impl Page {
+    /// The page `bounds` take of the text `source` gives, read till the page is whole and the line after it seen.
+    ///
+    /// # Errors
+    /// What reading `source` failed with.
+    pub fn read(mut source: impl BufRead, bounds: &Bounds) -> io::Result<Paged> {
+        let mut page = Self {
             lines: Vec::new(),
-            bytes: 0,
             seen: 0,
-            more: false,
-            binary: false,
-            gathering: Vec::new(),
-            begun: false,
-        }
-    }
-
-    /// Takes the next range of the text; whether the page wants more.
-    pub fn take(&mut self, range: &[u8]) -> bool {
-        if range.contains(&0) {
-            self.binary = true;
-            return false;
-        }
-        let mut pieces = range.split(|byte| *byte == b'\n').peekable();
-        while let Some(piece) = pieces.next() {
-            self.gather(piece);
-            if pieces.peek().is_none() {
-                // What follows the last newline is a line begun, ended by the next range or the text's end; a range
-                // with no newline goes on with the line the ranges before began.
-                self.begun |= !piece.is_empty();
-                return true;
+            whole: true,
+        };
+        let mut bytes = 0;
+        // The line being read, kept to as many bytes as can show its characters, and more, to tell it was cut.
+        let kept_max = bounds.line_chars_max * 4 + 8;
+        let mut line = Vec::new();
+        let mut begun = false;
+        loop {
+            let (used, ended) = {
+                let chunk = source.fill_buf()?;
+                if chunk.is_empty() {
+                    break;
+                }
+                if chunk.contains(&0) {
+                    return Ok(Paged::Binary);
+                }
+                let (piece, ended) = match chunk.iter().position(|byte| *byte == b'\n') {
+                    Some(newline) => (&chunk[..newline], true),
+                    None => (chunk, false),
+                };
+                let room = kept_max.saturating_sub(line.len());
+                line.extend_from_slice(&piece[..piece.len().min(room)]);
+                begun |= !piece.is_empty();
+                (piece.len() + usize::from(ended), ended)
+            };
+            source.consume(used);
+            if ended {
+                begun = false;
+                if !page.end(&mut line, &mut bytes, bounds) {
+                    return Ok(Paged::Text(page));
+                }
             }
-            if !self.end() {
-                return false;
-            }
         }
-        true
-    }
-
-    /// Takes the end of the text: the line begun past its last newline, where one is.
-    pub fn finish(&mut self) {
-        if self.begun {
-            self.end();
+        if begun {
+            page.end(&mut line, &mut bytes, bounds);
         }
+        Ok(Paged::Text(page))
     }
 
-    /// Whether the page reached the text's end: no line past it seen.
-    #[must_use]
-    pub fn whole(&self) -> bool {
-        !self.more
-    }
-
-    /// Whether a NUL was among the bytes, so they are no text.
-    #[must_use]
-    pub fn binary(&self) -> bool {
-        self.binary
-    }
-
-    /// How many lines were seen, those before the page among them.
-    #[must_use]
-    pub fn seen(&self) -> usize {
-        self.seen
-    }
-
-    /// The page's lines.
-    #[must_use]
-    pub fn lines(&self) -> &[Line] {
-        &self.lines
-    }
-
-    /// The page's lines, the pager let go of.
-    #[must_use]
-    pub fn into_lines(self) -> Vec<Line> {
-        self.lines
-    }
-
-    fn gather(&mut self, piece: &[u8]) {
-        let kept_max = self.bounds.line_chars_max * 4 + 8;
-        let room = kept_max.saturating_sub(self.gathering.len());
-        self.gathering.extend_from_slice(&piece[..piece.len().min(room)]);
-    }
-
-    /// Ends the line gathered: kept where the page has room for it; false once it is past the page.
-    fn end(&mut self) -> bool {
-        let gathered = std::mem::take(&mut self.gathering);
-        self.begun = false;
+    /// Ends the line read: kept where the page has room for it; false once it is past the page.
+    fn end(&mut self, line: &mut Vec<u8>, bytes: &mut usize, bounds: &Bounds) -> bool {
+        let raw = std::mem::take(line);
         self.seen += 1;
-        if self.seen < self.bounds.offset {
+        if self.seen < bounds.offset {
             return true;
         }
-        let (text, cut) = shown(&gathered, self.bounds.line_chars_max);
-        let bytes = digits(self.seen) + 2 + text.len() + 1;
-        if self.lines.len() >= self.bounds.limit || self.bytes + bytes > self.bounds.bytes_max {
-            self.more = true;
+        let (text, cut) = shown(&raw, bounds.line_chars_max);
+        let taken = digits(self.seen) + 2 + text.len() + 1;
+        if self.lines.len() >= bounds.limit || *bytes + taken > bounds.bytes_max {
+            self.whole = false;
             return false;
         }
         self.lines.push(Line {
@@ -150,7 +116,7 @@ impl Pager {
             text,
             cut,
         });
-        self.bytes += bytes;
+        *bytes += taken;
         true
     }
 }
