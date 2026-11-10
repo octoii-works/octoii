@@ -3039,6 +3039,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "siphon-terminals"
+version = "0.1.0"
+dependencies = [
+ "beak",
+ "bytes",
+ "siphon-machine",
+ "tempfile",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "siphon-text"
 version = "0.1.0"
 dependencies = [

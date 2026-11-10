@@ -1,0 +1,22 @@
+[package]
+name = "siphon-terminals"
+description = "The terminals of the threads, as tmux's server keeps its panes: each the person's login shell on a terminal Beak keeps, numbered in its thread, sized as its views ask, gone as its shell ends — owned by one task that tells of them as they change"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+beak = { path = "../../vendor/beak/crates/beak" }
+bytes = "1.12.1"
+siphon-machine = { path = "../siphon-machine" }
+thiserror = "2.0.21"
+tokio = { version = "1.54.1", features = ["rt", "sync", "macros"] }
+
+[dev-dependencies]
+tempfile = "3.27.0"
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "time"] }
