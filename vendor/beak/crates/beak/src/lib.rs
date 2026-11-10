@@ -5,6 +5,7 @@
 mod command;
 mod ffi;
 mod kernel;
+pub mod layout;
 mod namespace;
 mod queue;
 mod snapshot;

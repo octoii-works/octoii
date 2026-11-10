@@ -9,6 +9,42 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+// The kind of a process's directory: a process keyed `k` under `p` is at `p/system.process:k`.
+#define BEAK_PROCESS_KIND "system.process"
+// The file of a process's directory that holds its input, written as it starts and gone as it ends.
+#define BEAK_INPUT_NAME "system.input"
+// The file of a process's directory that holds its record.
+#define BEAK_STAT_NAME "system.stat"
+// The kind of a message's directory in its process's mailbox: mail keyed `k` to `p` is at `p/system.mail:k`.
+#define BEAK_MAIL_KIND "system.mail"
+// The kind of a request's directory under the process that made it: `p/system.request:k`.
+#define BEAK_REQUEST_KIND "system.request"
+// The file of a message's or a request's directory that holds its payload.
+#define BEAK_PAYLOAD_NAME "system.payload"
+// The annotation on any directory that bounds how many processes under it run at once.
+#define BEAK_RUNNING_MAX_ANNOTATION "system.running-max"
+// The prefix of the annotations on a process's directory that limit its group's usage of the counter after it.
+#define BEAK_MAX_ANNOTATION_PREFIX "system.max."
+// The directory at the root where removals waiting for their processes are listed.
+#define BEAK_REMOVALS "system.removals"
+// The label on a process's directory that names its program's kind.
+#define BEAK_PROGRAM_LABEL "system.program"
+// The label on a frozen process's directory.
+#define BEAK_FROZEN_LABEL "system.frozen"
+// The label on a held process's directory: why it is held.
+#define BEAK_HELD_LABEL "system.held"
+// `true` on a process held for someone's attention.
+#define BEAK_ATTENTION_LABEL "system.attention"
+// The label on a message's directory that holds its name.
+#define BEAK_MAIL_LABEL "system.mail"
+// The label on a request's directory that holds its name.
+#define BEAK_REQUEST_LABEL "system.request"
+// `true` on a request whose process was asked to terminate: its host answers it now, with what it has.
+#define BEAK_INTERRUPTED_LABEL "system.interrupted"
+// `true` on a directory whose removal waits for the processes under it to end.
+#define BEAK_REMOVING_LABEL "system.removing"
+
+
 // How a call came out; the reason a call that failed gave is read with `beak_last_error`.
 typedef enum {
   BEAK_STATUS_OK = 0,
