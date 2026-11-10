@@ -55,6 +55,7 @@ impl Program for Caller {
         let setting = Setting {
             thread: &input.thread,
             tools: &self.tools,
+            catalog: &[],
             mode: input.mode,
             base: &base,
             project: Some(&folder),

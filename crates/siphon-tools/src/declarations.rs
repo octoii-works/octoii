@@ -1,8 +1,11 @@
 //! The tools a script calls, told in TypeScript, as a model reads TypeScript best and writes the script that calls them
-//! in it: each a function of `tools` taking its arguments as one object — the JSON Schema of its parameters written as
-//! the TypeScript type of that object, each description a doc comment beside what it describes — and resolving to what
-//! the tool gives, as text.
+//! in it: the members of an interface `Tools` — which TypeScript merges with every other declaration of it, so the
+//! tools told apart, the built-in ones and the servers' ones, are one interface — each a function taking its arguments
+//! as one object — the JSON Schema of its parameters written as the TypeScript type of that object, each description a
+//! doc comment beside what it describes — and resolving to what the tool gives, as text. A name with dots is nested
+//! as a script reaches it: `github.create_issue` is `create_issue` of `github`.
 
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 use serde_json::Value;
@@ -12,17 +15,64 @@ use crate::tool::Declared;
 /// How deep a schema is written out; below, `unknown`.
 const DEPTH_MAX: usize = 8;
 
-/// `tools` as a script is told of it.
+/// `tools` as a script is told of them: as members of the interface `Tools`.
 #[must_use]
 pub fn declarations(tools: &[Declared]) -> String {
-    let mut out = String::from("declare const tools: {\n");
+    let mut root = Group::default();
     for tool in tools {
-        let _ = writeln!(out, "{}", doc(&tool.description, "  "));
-        let parameters = type_of(&tool.parameters, &tool.parameters, 1, 0);
-        let _ = writeln!(out, "  {}(args: {parameters}): Promise<string>;", quoted_key(&tool.name));
+        root.insert(&tool.name, tool);
     }
-    out.push_str("};");
+    let mut out = String::from("interface Tools {\n");
+    root.write(&mut out, 1);
+    out.push('}');
     out
+}
+
+/// What a name with dots nests: functions, and groups of more.
+#[derive(Default)]
+struct Group<'a> {
+    members: BTreeMap<&'a str, Member<'a>>,
+}
+
+enum Member<'a> {
+    Function(&'a Declared),
+    Group(Group<'a>),
+}
+
+impl<'a> Group<'a> {
+    /// `tool` at `name`, its part before a dot a group; a name a function holds already left as it is.
+    fn insert(&mut self, name: &'a str, tool: &'a Declared) {
+        match name.split_once('.') {
+            None => {
+                self.members.entry(name).or_insert(Member::Function(tool));
+            }
+            Some((head, rest)) => {
+                if let Member::Group(group) = self.members.entry(head).or_insert_with(|| Member::Group(Group::default())) {
+                    group.insert(rest, tool);
+                }
+            }
+        }
+    }
+
+    fn write(&self, out: &mut String, indent: usize) {
+        let pad = "  ".repeat(indent);
+        for (name, member) in &self.members {
+            match member {
+                Member::Function(tool) => {
+                    if !tool.description.is_empty() {
+                        let _ = writeln!(out, "{}", doc(&tool.description, &pad));
+                    }
+                    let parameters = type_of(&tool.parameters, &tool.parameters, indent, 0);
+                    let _ = writeln!(out, "{pad}{}(args: {parameters}): Promise<string>;", quoted_key(name));
+                }
+                Member::Group(group) => {
+                    let _ = writeln!(out, "{pad}{}: {{", quoted_key(name));
+                    group.write(out, indent + 1);
+                    let _ = writeln!(out, "{pad}}};");
+                }
+            }
+        }
+    }
 }
 
 /// A doc comment of `text`, each line of it at `indent`.

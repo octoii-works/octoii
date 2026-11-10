@@ -1,5 +1,6 @@
 //! A project, as its threads are grouped, granted and trusted alike: a directory `siphon.project:<sha256 of its
-//! folder>` at the volume's root, labelled with its folder, holding what the person granted it for good.
+//! folder>` at the volume's root, labelled with its folder, its annotations holding what the person granted it for good
+//! and whether they trust what its configuration runs.
 
 use std::fmt::Write as _;
 
@@ -19,33 +20,34 @@ const GRANTS: &str = "siphon.grants";
 /// The directory of the project of `folder`.
 #[must_use]
 pub fn path(folder: &str) -> Bytes {
-    let mut hex = String::new();
-    for byte in Sha256::digest(folder.as_bytes()) {
+    beak::layout::child(b"", KIND.as_bytes(), sha256_hex(folder.as_bytes()).as_bytes())
+}
+
+/// The SHA-256 of `bytes`, in lowercase hexadecimal.
+pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
+    Sha256::digest(bytes).iter().fold(String::with_capacity(64), |mut hex, byte| {
         let _ = write!(hex, "{byte:02x}");
-    }
-    beak::layout::child(b"", KIND.as_bytes(), hex.as_bytes())
+        hex
+    })
 }
 
-/// What the person granted the project of `folder`; nothing where they granted nothing.
+/// The annotation `name` of the project of `folder`; none where it has none.
 ///
 /// # Errors
-/// The volume's failure; grants not as Siphon writes them.
-pub fn grants(snapshot: &Snapshot, folder: &str) -> anyhow::Result<Grants> {
+/// The volume's failure.
+pub fn annotation(snapshot: &Snapshot, folder: &str, name: &str) -> beak::Result<Option<Bytes>> {
     let directory = snapshot.stat(&path(folder))?.and_then(|entry| entry.directory);
-    let kept = directory.and_then(|directory| directory.annotation(GRANTS.as_bytes()).cloned());
-    Ok(kept.map(|kept| serde_json::from_slice(&kept)).transpose()?.unwrap_or_default())
+    Ok(directory.and_then(|directory| directory.annotation(name.as_bytes()).cloned()))
 }
 
-/// The changes that grant `more` to the project of `folder`, beside what it was granted, its directory made where it
-/// has none.
+/// The changes that set the project of `folder`'s annotation `name` to `value`, its directory made where it has none,
+/// labelled with its folder.
 ///
 /// # Errors
-/// The volume's failure; grants not as Siphon writes them.
-pub fn grant(snapshot: &Snapshot, folder: &str, more: Grants) -> anyhow::Result<Changes> {
+/// The volume's failure.
+pub fn annotate(snapshot: &Snapshot, folder: &str, name: &str, value: Bytes) -> beak::Result<Changes> {
     let mut changes = Changes::new();
     let project = path(folder);
-    let mut all = grants(snapshot, folder)?;
-    all.add(more);
     if snapshot.stat(&project)?.is_none() {
         changes.mkdir(project.clone());
     }
@@ -53,7 +55,25 @@ pub fn grant(snapshot: &Snapshot, folder: &str, more: Grants) -> anyhow::Result<
         Bytes::from_static(FOLDER_LABEL.as_bytes()),
         Some(Bytes::copy_from_slice(folder.as_bytes())),
     );
-    let annotation = (Bytes::from_static(GRANTS.as_bytes()), Some(Bytes::from(serde_json::to_vec(&all)?)));
-    changes.meta(project, vec![label], vec![annotation]);
+    changes.meta(project, vec![label], vec![(Bytes::copy_from_slice(name.as_bytes()), Some(value))]);
     Ok(changes)
+}
+
+/// What the person granted the project of `folder`; nothing where they granted nothing.
+///
+/// # Errors
+/// The volume's failure; grants not as Siphon writes them.
+pub fn grants(snapshot: &Snapshot, folder: &str) -> anyhow::Result<Grants> {
+    let kept = annotation(snapshot, folder, GRANTS)?;
+    Ok(kept.map(|kept| serde_json::from_slice(&kept)).transpose()?.unwrap_or_default())
+}
+
+/// The changes that grant `more` to the project of `folder`, beside what it was granted.
+///
+/// # Errors
+/// The volume's failure; grants not as Siphon writes them.
+pub fn grant(snapshot: &Snapshot, folder: &str, more: Grants) -> anyhow::Result<Changes> {
+    let mut all = grants(snapshot, folder)?;
+    all.add(more);
+    Ok(annotate(snapshot, folder, GRANTS, Bytes::from(serde_json::to_vec(&all)?))?)
 }

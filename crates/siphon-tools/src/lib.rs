@@ -9,6 +9,7 @@ mod coding;
 mod declarations;
 mod effect;
 mod execute;
+pub mod mcp;
 mod outlet;
 mod permissions;
 pub mod projects;

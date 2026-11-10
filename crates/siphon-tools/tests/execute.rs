@@ -54,6 +54,7 @@ impl Program for Caller {
         let setting = Setting {
             thread: "t1",
             tools: &tools,
+            catalog: &[],
             mode: Mode::Default,
             base: &base,
             project: None,
@@ -151,7 +152,10 @@ fn the_tools_a_script_calls_are_told_in_typescript() {
         .find(|declared| declared.name == "execute")
         .expect("execute")
         .description;
-    assert!(described.contains("declare const tools: {"), "{described}");
+    assert!(
+        described.contains("interface Tools {\n") && described.ends_with("declare const tools: Tools;"),
+        "{described}"
+    );
     assert!(described.contains("  write(args: {\n"), "{described}");
     assert!(described.contains("    path: string;\n"), "{described}");
     assert!(!described.contains("  execute(args"), "a script calls no script");

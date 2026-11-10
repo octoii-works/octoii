@@ -61,12 +61,14 @@ pub struct Call {
     pub state: State,
 }
 
-/// What the calls are weighed and exec'd by: the thread, its tools, its mode, where its paths start, its project's
-/// folder where it has one, and whether the machine confines a command to a sandbox.
+/// What the calls are weighed and exec'd by: the thread, its tools, the names of the MCP servers' tools its model is
+/// told of, its mode, where its paths start, its project's folder where it has one, and whether the machine confines a
+/// command to a sandbox.
 #[derive(Debug, Clone, Copy)]
 pub struct Setting<'a> {
     pub thread: &'a str,
     pub tools: &'a Tools,
+    pub catalog: &'a [String],
     pub mode: Mode,
     pub base: &'a Base,
     pub project: Option<&'a str>,

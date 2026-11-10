@@ -35,11 +35,13 @@ pub struct ExecuteTool {
     pub tools: Tools,
 }
 
-/// What a script's process is started with: its thread, its code, and how its calls are weighed.
+/// What a script's process is started with: its thread, its code, the MCP servers' tools it may call beside the
+/// built-in ones, and how its calls are weighed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScriptInput {
     pub thread: String,
     pub code: String,
+    pub catalog: Vec<String>,
     pub workspace: String,
     pub home: Option<String>,
     pub project: Option<String>,
@@ -76,7 +78,7 @@ pub struct ScriptOutput {
 
 impl Tool for ExecuteTool {
     const NAME: &'static str = "execute";
-    const DESCRIPTION: &'static str = "Runs JavaScript that calls the tools below — in loops, at once with Promise.all, working on what they give in code — as the body of an async function — await within it, return what it gives — and gives what it returned, as JSON, and what it wrote with console.log. Each tool takes its arguments as one object and resolves to what it gives, as text; a call the tool refuses rejects. Use it for work of many steps at once: many files read or changed, a page's many actions, a batch extracted.";
+    const DESCRIPTION: &'static str = "Runs JavaScript that calls the tools of `tools` — those below, and those of the MCP servers you are told of — in loops, at once with Promise.all, working on what they give in code — as the body of an async function — await within it, return what it gives — and gives what it returned, as JSON, and what it wrote with console.log. Each tool takes its arguments as one object and resolves to what it gives, as text; a call the tool refuses rejects. Use it for work of many steps at once: many files read or changed, a page's many actions, a batch extracted.";
     type Args = ExecuteArgs;
 
     fn effect(&self, _: &ExecuteArgs, _: &Base) -> Effect {
@@ -88,7 +90,11 @@ impl Tool for ExecuteTool {
     }
 
     fn described(&self) -> String {
-        format!("{}\n\n{}", Self::DESCRIPTION, declarations(&self.tools.declared()))
+        format!(
+            "{}\n\n{}\ndeclare const tools: Tools;",
+            Self::DESCRIPTION,
+            declarations(&self.tools.declared())
+        )
     }
 
     fn start(
@@ -102,6 +108,7 @@ impl Tool for ExecuteTool {
         let input = ScriptInput {
             thread: setting.thread.to_owned(),
             code: args.code.clone(),
+            catalog: setting.catalog.to_vec(),
             workspace: setting.base.workspace.to_string_lossy().into_owned(),
             home: setting.base.home.as_ref().map(|home| home.to_string_lossy().into_owned()),
             project: setting.project.map(str::to_owned),
@@ -158,17 +165,18 @@ enum Replayed {
 }
 
 impl ScriptProgram {
-    /// Runs `code` from its start, settling each call as `settled` holds it, to its end or to calls not yet settled.
-    fn replay(&self, code: &str, state: &ScriptState) -> Replayed {
+    /// Runs the script `input` gives from its start, settling each call as `state` holds it, to its end or to calls
+    /// not yet settled.
+    fn replay(&self, input: &ScriptInput, state: &ScriptState) -> Replayed {
         let names: Vec<String> = self.tools.declared().into_iter().map(|declared| declared.name).collect();
-        let functions: Vec<&str> = names.iter().map(String::as_str).collect();
+        let functions: Vec<&str> = names.iter().chain(&input.catalog).map(String::as_str).collect();
         let host = Host {
             namespace: "tools",
             functions: &functions,
             limits: Limits::default(),
             seed: u64::try_from(state.began_ms).unwrap_or_default(),
         };
-        let (mut script, mut progress) = Script::start(code, &host, state.began_ms);
+        let (mut script, mut progress) = Script::start(&input.code, &host, state.began_ms);
         loop {
             match progress {
                 Progress::Waiting(calls) => {
@@ -232,7 +240,7 @@ impl Program for ScriptProgram {
             ..ScriptState::default()
         });
         if state.calls.is_none() {
-            match self.replay(&input.code, &state) {
+            match self.replay(&input, &state) {
                 Replayed::Ended(output) => return Ok(Ending::Done(output)),
                 Replayed::Calls(made) => {
                     let made = made
@@ -250,6 +258,7 @@ impl Program for ScriptProgram {
         let setting = Setting {
             thread: &input.thread,
             tools: &self.tools,
+            catalog: &input.catalog,
             mode: input.mode,
             base: &base,
             project: input.project.as_deref(),

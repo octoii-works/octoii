@@ -2,10 +2,9 @@
 //! current page unless it names one. What reads a page goes ahead at once; what changes one goes after what came
 //! before it, as every call that acts does.
 
-use octoii_ai::vocabulary::{FileRef, ImageDetail, InputContent};
+use octoii_ai::vocabulary::InputContent;
 use siphon_browser::{Action, Browser};
 use siphon_machine::paths::Base;
-use siphon_runtime::Changes;
 
 use crate::effect::Effect;
 use crate::tool::{Context, Refusal, Tool};
@@ -43,22 +42,7 @@ impl Tool for BrowserTool {
         }
         let mut out = vec![InputContent::text(text)];
         if let Some(image) = outcome.image {
-            let snapshot = context.runtime.snapshot().map_err(|error| Refusal(error.to_string()))?;
-            let mut changes = Changes::new();
-            let reference =
-                siphon_threads::files::keep(&snapshot, &mut changes, &context.thread, image).map_err(|error| Refusal(error.to_string()))?;
-            if !changes.is_empty() {
-                context.runtime.commit(changes).await.map_err(|error| Refusal(error.to_string()))?;
-            }
-            let file = FileRef {
-                reference,
-                media_type: "image/jpeg".into(),
-                filename: None,
-            };
-            out.push(InputContent::InputImage {
-                file,
-                detail: ImageDetail::Auto,
-            });
+            out.extend(context.show_image(&image, None).await?);
         }
         Ok(out)
     }

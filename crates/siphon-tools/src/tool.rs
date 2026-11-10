@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use beak::Kernel;
 use bytes::Bytes;
-use octoii_ai::vocabulary::InputContent;
+use octoii_ai::vocabulary::{FileRef, ImageDetail, InputContent};
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 use siphon_machine::paths::Base;
@@ -19,6 +19,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::calls::Setting;
 use crate::effect::Effect;
+use crate::mcp::Servers;
 use crate::permissions::Writes;
 
 /// Why a tool did not do what it was asked, in words the model reads.
@@ -65,6 +66,41 @@ impl Context {
             }
         };
         Machine::open(&self.kernel, &self.host, self.base.clone(), &writes, None).map_err(|error| Refusal(format!("the machine: {error}")))
+    }
+
+    /// The image `bytes`, named `name` where it has one, as the model is shown it: fitted to what every model reads,
+    /// kept in the thread's files by its content, after a line saying what it is.
+    ///
+    /// # Errors
+    /// A `Refusal` where it is no image that can be read, or it could not be kept.
+    pub async fn show_image(&self, bytes: &[u8], name: Option<&str>) -> Result<Vec<InputContent>, Refusal> {
+        let fitted = siphon_image::fit(bytes, &siphon_image::Bounds::MODELS)
+            .map_err(|error| Refusal(format!("{}: {error}", name.unwrap_or("the image"))))?;
+        let snapshot = self.runtime.snapshot().map_err(|error| Refusal(error.to_string()))?;
+        let mut changes = Changes::new();
+        let kept = Bytes::copy_from_slice(&fitted.bytes);
+        let reference =
+            siphon_threads::files::keep(&snapshot, &mut changes, &self.thread, kept).map_err(|error| Refusal(error.to_string()))?;
+        if !changes.is_empty() {
+            self.runtime.commit(changes).await.map_err(|error| Refusal(error.to_string()))?;
+        }
+        let size = format!("{}×{}", fitted.size.width, fitted.size.height);
+        let said = match name {
+            Some(name) => format!("{name}, an image of {size}"),
+            None => format!("an image of {size}"),
+        };
+        let file = FileRef {
+            reference,
+            media_type: fitted.format.media_type().to_owned(),
+            filename: name.map(str::to_owned),
+        };
+        Ok(vec![
+            InputContent::text(said),
+            InputContent::InputImage {
+                file,
+                detail: ImageDetail::Auto,
+            },
+        ])
     }
 }
 
@@ -181,15 +217,17 @@ pub struct Declared {
     pub parameters: serde_json::Value,
 }
 
+#[derive(Clone)]
 struct Entry {
     declared: Declared,
     tool: Arc<dyn Erased>,
 }
 
-/// The tools a thread's model may call, by name.
+/// The tools a thread's model may call, by name: its own, and the MCP servers' it reaches, each `<server>.<tool>`.
 #[derive(Clone, Default)]
 pub struct Tools {
     entries: Arc<BTreeMap<String, Entry>>,
+    servers: Option<Servers>,
 }
 
 impl std::fmt::Debug for Tools {
@@ -204,10 +242,7 @@ impl Tools {
         Self::default()
     }
 
-    /// These tools, `tool` among them.
-    ///
-    /// # Panics
-    /// Where these tools are shared already, as they are built before they are.
+    /// These tools, `tool` among them; others that share them left as they are.
     #[must_use]
     pub fn with<T: Tool>(mut self, tool: T) -> Self {
         let declared = Declared {
@@ -215,8 +250,7 @@ impl Tools {
             description: tool.described(),
             parameters: schemars::schema_for!(T::Args).to_value(),
         };
-        let entries = Arc::get_mut(&mut self.entries).expect("tools are built before they are shared");
-        entries.insert(
+        Arc::make_mut(&mut self.entries).insert(
             T::NAME.to_owned(),
             Entry {
                 declared,
@@ -226,10 +260,24 @@ impl Tools {
         self
     }
 
-    /// Whether there is a tool of `name`.
+    /// These tools, and the tools of the MCP servers `servers` holds.
+    #[must_use]
+    pub fn with_servers(mut self, servers: Servers) -> Self {
+        self.servers = Some(servers);
+        self
+    }
+
+    /// Whether `name` is one of a server's tools: none of these tools', but a server's name and the tool's after a dot.
+    fn served(&self, name: &str) -> Option<&Servers> {
+        self.servers
+            .as_ref()
+            .filter(|_| !self.entries.contains_key(name) && name.contains('.'))
+    }
+
+    /// Whether there is a tool of `name`: one of these, or one a server may have.
     #[must_use]
     pub fn has(&self, name: &str) -> bool {
-        self.entries.contains_key(name)
+        self.entries.contains_key(name) || self.served(name).is_some()
     }
 
     /// The tools, as the model is told of them, in order by name.
@@ -238,11 +286,16 @@ impl Tools {
         self.entries.values().map(|entry| entry.declared.clone()).collect()
     }
 
-    /// What a call of `name` with `arguments` does to the machine, its arguments checked against the tool's schema.
+    /// What a call of `name` with `arguments` does to the machine, its arguments checked against the tool's schema;
+    /// a server's tool acts, as it may do anything.
     ///
     /// # Errors
     /// A `Refusal` naming no tool there is, or saying how the arguments do not fit.
     pub fn effect(&self, name: &str, arguments: &serde_json::Value, base: &Base) -> Result<Effect, Refusal> {
+        // A server's tool may do anything; its server checks what it is given.
+        if self.served(name).is_some() {
+            return Ok(Effect::Acts { tool: name.to_owned() });
+        }
         let entry = self.entries.get(name).ok_or_else(|| Refusal(format!("no tool {name}")))?;
         let validator =
             jsonschema::validator_for(&entry.declared.parameters).map_err(|error| Refusal(format!("the tool's schema: {error}")))?;
@@ -299,6 +352,9 @@ impl Tools {
     /// # Errors
     /// A `Refusal` naming no tool there is, or the tool's own.
     pub async fn exec(&self, name: &str, context: Context, arguments: serde_json::Value) -> Result<Vec<InputContent>, Refusal> {
+        if let Some(servers) = self.served(name) {
+            return servers.call(&context, name, arguments).await;
+        }
         let tool = Arc::clone(&self.entries.get(name).ok_or_else(|| Refusal(format!("no tool {name}")))?.tool);
         tool.exec(context, arguments).await
     }

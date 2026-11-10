@@ -4,12 +4,11 @@
 
 use std::fmt::Write as _;
 
-use octoii_ai::vocabulary::{FileRef, ImageDetail, InputContent};
+use octoii_ai::vocabulary::InputContent;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use siphon_machine::paths::Base;
 use siphon_machine::{EditOutcome, GrepOptions, Machine, Read, ReadOptions};
-use siphon_runtime::Changes;
 use siphon_text::{Bounds, Edit};
 
 use crate::effect::Effect;
@@ -138,28 +137,7 @@ async fn media(context: &Context, name: &str, media_type: &str, bytes: &[u8]) ->
     if media_type == "application/pdf" {
         return Ok(text(format!("{name} is a PDF of {} bytes, not shown", bytes.len())));
     }
-    let fitted = siphon_image::fit(bytes, &siphon_image::Bounds::MODELS).map_err(|error| Refusal(format!("{name}: {error}")))?;
-    let snapshot = context.runtime.snapshot().map_err(|error| Refusal(error.to_string()))?;
-    let mut changes = Changes::new();
-    let kept = bytes::Bytes::copy_from_slice(&fitted.bytes);
-    let reference =
-        siphon_threads::files::keep(&snapshot, &mut changes, &context.thread, kept).map_err(|error| Refusal(error.to_string()))?;
-    if !changes.is_empty() {
-        context.runtime.commit(changes).await.map_err(|error| Refusal(error.to_string()))?;
-    }
-    let file = FileRef {
-        reference,
-        media_type: fitted.format.media_type().to_owned(),
-        filename: Some(name.to_owned()),
-    };
-    let size = format!("{}×{}", fitted.size.width, fitted.size.height);
-    Ok(vec![
-        InputContent::text(format!("{name}, an image of {size}")),
-        InputContent::InputImage {
-            file,
-            detail: ImageDetail::Auto,
-        },
-    ])
+    context.show_image(bytes, Some(name)).await
 }
 
 /// The arguments of `write`.
