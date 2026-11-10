@@ -4,6 +4,7 @@
 
 use crate::driver::Connection;
 use crate::protocols::anthropic::AnthropicDriver;
+use crate::protocols::chat_completions::{self, ChatDriver, Thinking};
 use crate::protocols::responses::{DeveloperRole, Dialect, ResponsesDriver};
 use crate::vocabulary::FailureKind;
 
@@ -173,4 +174,40 @@ pub const CLAUDE: AnthropicDriver = AnthropicDriver {
     name: "Claude",
     base_url: "gateway://claude/v1",
     connection: Connection::Agent { through: "Claude Code" },
+};
+
+/// Ollama, a server of the person's on this machine.
+pub const OLLAMA: ChatDriver = ChatDriver {
+    id: "ollama",
+    name: "Ollama",
+    base_url: "http://127.0.0.1:11434/v1",
+    connection: Connection::Server,
+    dialect: chat_completions::Dialect {
+        thinking: Thinking::ReasoningEffort,
+        tool_choices: true,
+    },
+};
+
+/// LM Studio, a server of the person's on this machine.
+pub const LMSTUDIO: ChatDriver = ChatDriver {
+    id: "lmstudio",
+    name: "LM Studio",
+    base_url: "http://127.0.0.1:1234/v1",
+    connection: Connection::Server,
+    dialect: chat_completions::Dialect {
+        thinking: Thinking::ReasoningEffort,
+        tool_choices: true,
+    },
+};
+
+/// Z.ai's Chat Completions: reasoning switched by `thinking`, and a tool choice of `auto` alone.
+pub const ZAI: ChatDriver = ChatDriver {
+    id: "zai",
+    name: "Z.ai",
+    base_url: "https://api.z.ai/api/paas/v4",
+    connection: Connection::ApiKey { variable: "ZAI_API_KEY" },
+    dialect: chat_completions::Dialect {
+        thinking: Thinking::Switched,
+        tool_choices: false,
+    },
 };

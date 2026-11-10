@@ -1,0 +1,40 @@
+---
+source: crates/octoii-ai/tests/chat_completions.rs
+expression: response.output
+---
+[
+  {
+    "type": "reasoning",
+    "content": [
+      "think"
+    ],
+    "status": "completed",
+    "origin": {
+      "model": "ollama/qwen3"
+    }
+  },
+  {
+    "type": "message",
+    "role": "assistant",
+    "content": [
+      {
+        "type": "output_text",
+        "text": "Reading."
+      }
+    ],
+    "status": "completed",
+    "origin": {
+      "model": "ollama/qwen3"
+    }
+  },
+  {
+    "type": "function_call",
+    "call_id": "call_2",
+    "name": "read",
+    "arguments": "{\"path\":\"b\"}",
+    "status": "completed",
+    "origin": {
+      "model": "ollama/qwen3"
+    }
+  }
+]

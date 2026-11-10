@@ -1,6 +1,7 @@
 //! The protocols providers speak, each shared by the drivers whose providers speak it, which differ in its dialect.
 
 pub mod anthropic;
+pub mod chat_completions;
 pub mod responses;
 
 use base64::Engine;

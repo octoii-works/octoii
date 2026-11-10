@@ -1,0 +1,85 @@
+---
+source: crates/octoii-ai/tests/chat_completions.rs
+expression: body
+---
+{
+  "max_tokens": 1000,
+  "messages": [
+    {
+      "content": "Be brief.\n\nYou work in /repo.",
+      "role": "system"
+    },
+    {
+      "content": [
+        {
+          "text": "look at a",
+          "type": "text"
+        }
+      ],
+      "role": "user"
+    },
+    {
+      "content": "Reading.",
+      "reasoning_content": "reading it",
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "function": {
+            "arguments": "{\"path\":\"a\"}",
+            "name": "read"
+          },
+          "id": "call_1",
+          "type": "function"
+        }
+      ]
+    },
+    {
+      "content": "an image",
+      "role": "tool",
+      "tool_call_id": "call_1"
+    },
+    {
+      "content": [
+        {
+          "image_url": {
+            "url": "data:image/png;base64,cG5n"
+          },
+          "type": "image_url"
+        }
+      ],
+      "role": "user"
+    },
+    {
+      "content": [
+        {
+          "text": "what is it?",
+          "type": "text"
+        },
+        {
+          "text": "<system-update>\nthe date changed\n</system-update>",
+          "type": "text"
+        }
+      ],
+      "role": "user"
+    }
+  ],
+  "model": "qwen3",
+  "reasoning_effort": "low",
+  "stream": true,
+  "stream_options": {
+    "include_usage": true
+  },
+  "tool_choice": "required",
+  "tools": [
+    {
+      "function": {
+        "description": "Reads a file.",
+        "name": "read",
+        "parameters": {
+          "type": "object"
+        }
+      },
+      "type": "function"
+    }
+  ]
+}
