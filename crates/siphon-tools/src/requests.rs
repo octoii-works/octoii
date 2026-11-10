@@ -84,3 +84,24 @@ impl Request for Review {
     const NAME: &'static str = "siphon.review";
     type Answer = Judgment;
 }
+
+/// A call the person answers rather than a tool execs — a question the model asks them — with the JSON Schema their
+/// answer fits, as the tool made it of the call's arguments.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Asks {
+    pub thread: String,
+    pub tool: String,
+    pub arguments: serde_json::Value,
+    pub answer_schema: serde_json::Value,
+}
+
+impl Request for Asks {
+    const NAME: &'static str = "siphon.asks";
+    type Answer = serde_json::Value;
+}
+
+impl AskedOfPerson for Asks {
+    fn answer_schema(&self) -> serde_json::Value {
+        self.answer_schema.clone()
+    }
+}

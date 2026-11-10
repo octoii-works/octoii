@@ -81,6 +81,16 @@ pub trait Tool: Send + Sync + 'static {
     /// # Errors
     /// A `Refusal`, saying why, where it could not.
     fn exec(&self, context: &Context, args: Self::Args) -> impl Future<Output = Result<Vec<InputContent>, Refusal>> + Send;
+
+    /// For a tool the person answers rather than execs: the JSON Schema their answer to a call with `args` fits.
+    fn asks(&self, _: &Self::Args) -> Option<serde_json::Value> {
+        None
+    }
+
+    /// For a tool the person answers: their `answer` to a call with `args`, as the model reads it.
+    fn answered(&self, _: &Self::Args, answer: serde_json::Value) -> Vec<InputContent> {
+        vec![InputContent::text(answer.to_string())]
+    }
 }
 
 type Execing = Pin<Box<dyn Future<Output = Result<Vec<InputContent>, Refusal>> + Send>>;
@@ -89,12 +99,26 @@ type Execing = Pin<Box<dyn Future<Output = Result<Vec<InputContent>, Refusal>> +
 trait Erased: Send + Sync {
     fn effect(&self, arguments: &serde_json::Value, base: &Base) -> Result<Effect, Refusal>;
     fn exec(self: Arc<Self>, context: Context, arguments: serde_json::Value) -> Execing;
+    fn asks(&self, arguments: &serde_json::Value) -> Option<serde_json::Value>;
+    fn answered(&self, arguments: &serde_json::Value, answer: serde_json::Value) -> Vec<InputContent>;
 }
 
 impl<T: Tool> Erased for T {
     fn effect(&self, arguments: &serde_json::Value, base: &Base) -> Result<Effect, Refusal> {
         let args: T::Args = serde_json::from_value(arguments.clone()).map_err(|error| Refusal(format!("invalid arguments: {error}")))?;
         Ok(Tool::effect(self, &args, base))
+    }
+
+    fn asks(&self, arguments: &serde_json::Value) -> Option<serde_json::Value> {
+        let args: T::Args = serde_json::from_value(arguments.clone()).ok()?;
+        Tool::asks(self, &args)
+    }
+
+    fn answered(&self, arguments: &serde_json::Value, answer: serde_json::Value) -> Vec<InputContent> {
+        match serde_json::from_value::<T::Args>(arguments.clone()) {
+            Ok(args) => Tool::answered(self, &args, answer),
+            Err(_) => vec![InputContent::text(answer.to_string())],
+        }
     }
 
     fn exec(self: Arc<Self>, context: Context, arguments: serde_json::Value) -> Execing {
@@ -186,6 +210,21 @@ impl Tools {
             return Err(Refusal(format!("invalid arguments: {}", problems.join("; "))));
         }
         entry.tool.effect(arguments, base)
+    }
+
+    /// The JSON Schema the person's answer to a call of `name` with `arguments` fits, where the person answers it.
+    #[must_use]
+    pub fn asks(&self, name: &str, arguments: &serde_json::Value) -> Option<serde_json::Value> {
+        self.entries.get(name)?.tool.asks(arguments)
+    }
+
+    /// The person's `answer` to a call of `name` with `arguments`, as the model reads it.
+    #[must_use]
+    pub fn answered(&self, name: &str, arguments: &serde_json::Value, answer: serde_json::Value) -> Vec<InputContent> {
+        match self.entries.get(name) {
+            Some(entry) => entry.tool.answered(arguments, answer),
+            None => vec![InputContent::text(answer.to_string())],
+        }
     }
 
     /// Execs a call of `name` with `arguments`.

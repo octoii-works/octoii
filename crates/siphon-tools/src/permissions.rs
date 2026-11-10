@@ -9,7 +9,8 @@
 //!   else a second model judges.
 //! - In `full-access`, everything goes ahead.
 //!
-//! In every mode, what the person granted the project goes ahead, writing anywhere.
+//! In every mode, what the person granted the project goes ahead, writing anywhere; and working the thread's browser,
+//! which changes no file of the machine's, goes ahead.
 
 use std::path::{Path, PathBuf};
 
@@ -52,7 +53,7 @@ pub struct Grants {
 #[must_use]
 pub fn patterns_of(effect: &Effect) -> Grants {
     match effect {
-        Effect::Reads => Grants::default(),
+        Effect::Reads | Effect::Browses => Grants::default(),
         Effect::Edits(paths) => Grants {
             paths: paths.iter().map(|path| path.to_string_lossy().into_owned()).collect(),
             ..Grants::default()
@@ -73,7 +74,7 @@ impl Grants {
     #[must_use]
     pub fn cover(&self, effect: &Effect) -> bool {
         match effect {
-            Effect::Reads => true,
+            Effect::Reads | Effect::Browses => true,
             Effect::Edits(paths) => paths.iter().all(|path| self.paths.iter().any(|glob| matches_glob(glob, path))),
             Effect::Runs { line, .. } => Line::read(line).is_ok_and(|read| {
                 !read.commands.is_empty()
@@ -122,12 +123,12 @@ pub struct Bounds {
 /// Weighs `effect` as `mode` and `grants` say, within `bounds`.
 #[must_use]
 pub fn weigh(effect: &Effect, mode: Mode, grants: &Grants, bounds: &Bounds) -> Verdict {
-    if mode == Mode::FullAccess || (*effect != Effect::Reads && grants.cover(effect)) {
+    if mode == Mode::FullAccess || (!matches!(effect, Effect::Reads | Effect::Browses) && grants.cover(effect)) {
         return Verdict::Go(Writes::Anywhere);
     }
     let within = |paths: &[PathBuf]| paths.iter().all(|path| path.starts_with(&bounds.workspace));
     match (mode, effect) {
-        (_, Effect::Reads) => Verdict::Go(Writes::Workspace),
+        (_, Effect::Reads | Effect::Browses) => Verdict::Go(Writes::Workspace),
         (_, Effect::Edits(paths)) if within(paths) => Verdict::Go(Writes::Workspace),
         (
             Mode::Default,

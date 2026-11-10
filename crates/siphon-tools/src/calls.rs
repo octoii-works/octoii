@@ -13,7 +13,7 @@ use siphon_threads::Mode;
 use crate::effect::{Effect, Line};
 use crate::permissions::{Bounds, Grants, Verdict, Writes, patterns_of, weigh};
 use crate::projects;
-use crate::requests::{Decision, Exec, Permission, Review, Shown};
+use crate::requests::{Asks, Decision, Exec, Permission, Review, Shown};
 use crate::tool::Tools;
 
 /// How a call ended.
@@ -91,6 +91,7 @@ fn shown(tool: &str, arguments: &str, effect: &Effect) -> Shown {
             )
         }
         Effect::Acts { tool } => (vec![format!("acts through {tool}, which may do anything")], None),
+        Effect::Browses => (vec!["works the browser".into()], None),
     };
     Shown {
         tool: tool.to_owned(),
@@ -196,6 +197,20 @@ impl Calls {
                     Answer::Interrupted => ended(Status::Interrupted, "the call was cut off before it was judged"),
                 }
             }
+            State::Running if setting.tools.asks(&call.tool, &serde_json::from_str(&call.arguments)?).is_some() => {
+                let Some(answer) = run.answer::<Asks>(&call.key)? else {
+                    return Ok(());
+                };
+                run.take_mail(&call.key);
+                match answer {
+                    Answer::Given(given) => State::Ended {
+                        status: Status::Ok,
+                        output: setting.tools.answered(&call.tool, &serde_json::from_str(&call.arguments)?, given),
+                    },
+                    Answer::Failed(words) => ended(Status::ToolError, words),
+                    Answer::Interrupted => ended(Status::Interrupted, "the call was cut off before the person answered"),
+                }
+            }
             State::Running => {
                 let Some(answer) = run.answer::<Exec>(&call.key)? else {
                     return Ok(());
@@ -292,6 +307,17 @@ impl Calls {
 
     fn exec(&self, at: usize, run: &mut Run<'_>, setting: &Setting<'_>, writes: Writes) -> anyhow::Result<State> {
         let call = &self.0[at];
+        let arguments: serde_json::Value = serde_json::from_str(&call.arguments)?;
+        if let Some(answer_schema) = setting.tools.asks(&call.tool, &arguments) {
+            let asks = Asks {
+                thread: setting.thread.to_owned(),
+                tool: call.tool.clone(),
+                arguments,
+                answer_schema,
+            };
+            run.request(&call.key, &asks)?;
+            return Ok(State::Running);
+        }
         let exec = Exec {
             thread: setting.thread.to_owned(),
             call: call.key.clone(),

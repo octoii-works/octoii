@@ -22,6 +22,8 @@ pub enum Effect {
     },
     /// It acts through the tool `tool`, which may do anything.
     Acts { tool: String },
+    /// It works the thread's browser: a page's state changes, the machine's not.
+    Browses,
 }
 
 /// A command line as a grant and a weighing read it: each simple command, the pattern a grant of it takes, and

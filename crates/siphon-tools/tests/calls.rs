@@ -12,12 +12,14 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use siphon_machine::Host;
 use siphon_machine::paths::Base;
-use siphon_runtime::{Asked, Changes, Ending, Options, Program, Run, Runtime, Unanswered};
+use siphon_runtime::{Asked, Changes, Ending, NotGiven, Options, Program, Run, Runtime};
 use siphon_threads::Mode;
-use siphon_tools::{Calls, Context, Exec, Judgment, Permission, ReadTool, Review, Setting, ShellTool, Status, Tools, WriteTool, projects};
+use siphon_tools::{
+    Calls, Exec, Judgment, Permission, QuestionTool, ReadTool, Review, Setting, ShellTool, Status, Tools, WriteTool, answer_exec, projects,
+};
 
 fn tools() -> Tools {
-    Tools::new().with(ReadTool).with(WriteTool).with(ShellTool)
+    Tools::new().with(ReadTool).with(WriteTool).with(ShellTool).with(QuestionTool)
 }
 
 /// What a caller is given: the thread, how it runs, where it works, and the calls its model made.
@@ -85,28 +87,9 @@ fn said(call: siphon_tools::Call) -> (Status, String) {
 fn runtime(beak: &Beak) -> Runtime {
     Runtime::builder()
         .program(Caller { tools: tools() })
-        .handle(|asked: Asked<Exec>| async move {
-            let exec = asked.payload;
-            let context = Context {
-                thread: exec.thread,
-                process: asked.process,
-                call: exec.call,
-                base: Base {
-                    workspace: PathBuf::from(&exec.workspace),
-                    home: None,
-                },
-                writes: exec.writes,
-                kernel: asked.runtime.kernel().clone(),
-                host: Host::default(),
-                runtime: asked.runtime.clone(),
-                cancelled: asked.cancelled,
-            };
-            tools()
-                .exec(&exec.tool, context, exec.arguments)
-                .await
-                .map_err(|refusal| Unanswered::Failed(refusal.0))
-        })
+        .handle(|asked: Asked<Exec>| async move { answer_exec(&tools(), &Host::default(), asked).await })
         .ask_person::<Permission>()
+        .ask_person::<siphon_tools::Asks>()
         .handle(|asked: Asked<Review>| async move {
             let removes = asked.payload.call.does.iter().any(|does| does.contains(" rm "));
             Ok(Judgment {
@@ -137,6 +120,27 @@ async fn ended(runtime: &Runtime, path: &[u8]) -> Vec<(Status, String)> {
         }
     };
     tokio::time::timeout(Duration::from_secs(10), waiting).await.expect("ended in time")
+}
+
+/// The key of the request named `name` the process at `path` waits on, once it does.
+async fn asked(runtime: &Runtime, path: &[u8], name: &[u8]) -> String {
+    let waiting = async {
+        loop {
+            let snapshot = runtime.snapshot().expect("a snapshot");
+            let query = beak::Query {
+                kind: layout::REQUEST_KIND,
+                name: layout::REQUEST_LABEL,
+                value: Some(name),
+                under: path,
+                after: None,
+            };
+            if let Some(found) = snapshot.find(&query, 10).expect("found").first() {
+                return String::from_utf8_lossy(&found.path).rsplit(':').next().expect("its key").to_owned();
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    };
+    tokio::time::timeout(Duration::from_secs(10), waiting).await.expect("asked in time")
 }
 
 fn call(id: &str, tool: &str, arguments: &serde_json::Value) -> (String, String, String) {
@@ -258,5 +262,74 @@ async fn in_auto_a_second_model_judges_what_would_ask() {
     assert_eq!((said[0].0, said[2].0), (Status::Ok, Status::Ok));
     assert_eq!(said[1], (Status::Rejected, "blocked: it removes files".into()));
     assert!(workspace.join("out.txt").exists(), "what was blocked did not run");
+    runtime.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_call_s_long_output_is_cut_to_its_head_and_tail_the_whole_kept_in_its_thread() {
+    let beak = Beak::new().expect("Beak");
+    let runtime = runtime(&beak);
+    let mut changes = Changes::new();
+    changes.mkdir(siphon_threads::thread::path("t1"));
+    runtime.commit(changes).await.expect("a thread's directory");
+    let (_folder, workspace) = folder();
+    let asking = Asking {
+        thread: "t1".into(),
+        mode: Mode::Default,
+        workspace,
+        calls: vec![call("a", "shell", &json!({ "command": "seq 1 20000" }))],
+    };
+    let path = caller(&runtime, "p1", &asking).await;
+    let said = ended(&runtime, &path).await;
+    let text = &said[0].1;
+    assert!(
+        text.starts_with("1\n2\n3\n") && text.contains("characters left out"),
+        "{}",
+        &text[..200]
+    );
+    assert!(text.contains("20000\n[exit 0]"), "its newest tail");
+    let place = text.rsplit("kept at ").next().expect("where").split(';').next().expect("the path");
+    let kept = runtime
+        .snapshot()
+        .expect("a snapshot")
+        .read(place.as_bytes(), 0, u64::MAX)
+        .expect("read")
+        .expect("kept");
+    assert!(kept.ends_with(b"19999\n20000\n[exit 0]"));
+    runtime.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_question_is_answered_by_the_person_with_what_fits_the_choices_it_offers() {
+    let beak = Beak::new().expect("Beak");
+    let runtime = runtime(&beak);
+    let (_folder, workspace) = folder();
+    let questions = json!({ "questions": [
+        { "question": "Which database?", "options": [{ "label": "Postgres" }, { "label": "SQLite" }] },
+        { "question": "Anything else?" },
+        { "question": "Which features?", "options": [{ "label": "auth" }, { "label": "search" }], "multiple": true }
+    ] });
+    let asking = Asking {
+        thread: "t1".into(),
+        mode: Mode::Default,
+        workspace,
+        calls: vec![call("q", "question", &questions)],
+    };
+    let path = caller(&runtime, "p1", &asking).await;
+    let key = asked(&runtime, &path, b"siphon.asks").await;
+    let unfit = runtime
+        .answer(&path, key.as_bytes(), &json!({ "answers": [{ "chosen": ["MySQL"] }] }))
+        .await;
+    assert!(matches!(unfit, Err(NotGiven::Unfit(_))), "{unfit:?}");
+    let answer = json!({ "answers": [{ "chosen": ["SQLite"] }, null, { "chosen": ["auth", "search"], "text": "both" }] });
+    runtime.answer(&path, key.as_bytes(), &answer).await.expect("answered");
+    let said = ended(&runtime, &path).await;
+    assert_eq!(
+        said[0],
+        (
+            Status::Ok,
+            "Which database?\n→ SQLite\nAnything else?\n→ (unanswered)\nWhich features?\n→ auth, search; both".into()
+        )
+    );
     runtime.close().await;
 }
