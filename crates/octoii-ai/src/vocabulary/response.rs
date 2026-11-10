@@ -25,7 +25,8 @@ pub enum Incomplete {
     Cancelled,
 }
 
-/// What a request used, in tokens, and what it cost, in billionths of a US dollar — the provider's figure where it
+/// What a request used, in tokens — the input's counting those read from the cache and those written to it — and the
+/// web searches its provider ran for it, and what it cost, in billionths of a US dollar — the provider's figure where it
 /// gives one, else the catalogue's prices'.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Usage {
@@ -39,6 +40,9 @@ pub struct Usage {
     /// Of `output_tokens`, those spent reasoning.
     #[serde(default)]
     pub reasoning_tokens: u64,
+    /// The web searches the provider ran for it.
+    #[serde(default)]
+    pub web_searches: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cost_nanodollars: Option<u64>,
 }
