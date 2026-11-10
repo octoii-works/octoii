@@ -1,4 +1,4 @@
-//! The hearer: what the kernel tells, acted on as it comes.
+//! The kernel's events, each handled as it comes.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -13,7 +13,7 @@ use super::{Collection, Shared};
 use crate::changes::{Changes, Mail};
 use crate::request::INTERRUPTED;
 
-/// What a task the hearer started came to.
+/// What a task started for an event came to.
 enum Done {
     /// The request of the process and key was answered, or left.
     Answered(Bytes, Bytes),
@@ -21,10 +21,10 @@ enum Done {
     Collected(beak::Result<u64>),
 }
 
-/// Hears what the kernel tells till the runtime stops: tells whoever follows the volume of each commit, wakes the
+/// Handles the kernel's events till the runtime stops: tells whoever follows the volume of each commit, wakes the
 /// dispatcher, weighs the volume for collection, starts a task for each request a handler answers and cuts off those
 /// Beak interrupts. As it stops, the requests being answered are dropped unanswered.
-pub(super) async fn hear(shared: Arc<Shared>, mut events: Events, collection: Collection, mut base: u64) {
+pub(super) async fn handle_events(shared: Arc<Shared>, mut events: Events, collection: Collection, mut base: u64) {
     let mut tasks: JoinSet<Done> = JoinSet::new();
     let mut asked: HashMap<(Bytes, Bytes), CancellationToken> = HashMap::new();
     let mut collecting = false;

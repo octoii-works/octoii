@@ -13,7 +13,7 @@ use tokio::sync::{Notify, watch};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::{AbortOnDropHandle, TaskTracker};
 
-use super::{Options, Runtime, Shared, dispatcher, hearer};
+use super::{Options, Runtime, Shared, dispatcher, events};
 use crate::person::AskedOfPerson;
 use crate::program::{Program, Runs};
 use crate::request::{Asked, Request, Unanswered, mail_of};
@@ -155,7 +155,7 @@ impl Builder {
         });
         let tasks = TaskTracker::new();
         tasks.spawn(dispatcher::run_dispatcher(Arc::clone(&shared)));
-        tasks.spawn(hearer::hear(Arc::clone(&shared), events, options.collection, base));
+        tasks.spawn(events::handle_events(Arc::clone(&shared), events, options.collection, base));
         tasks.close();
         Ok(Runtime { shared, tasks })
     }

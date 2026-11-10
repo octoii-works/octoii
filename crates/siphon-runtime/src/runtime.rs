@@ -4,7 +4,7 @@
 //!
 //! - one dispatcher runs the phases due, a batch at a time, off the async threads, woken by every commit and by when
 //!   the kernel is next due;
-//! - one task hears what the kernel tells: each request handled in a task of its own that commits its own answer, cut
+//! - one task handles the kernel's events: each request handled in a task of its own that commits its own answer, cut
 //!   off as Beak says, and the volume collected off the async threads as it grows past what it kept after the last;
 //! - the streams are kept by their own task;
 //! - whoever follows the volume watches the latest commit and reads the journal on from where it left off.
@@ -27,7 +27,7 @@ use crate::streams::{Following, Streams};
 
 mod builder;
 mod dispatcher;
-mod hearer;
+mod events;
 
 pub use builder::Builder;
 use builder::{Handles, Schema};
