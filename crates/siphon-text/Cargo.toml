@@ -1,0 +1,15 @@
+[package]
+name = "siphon-text"
+description = "Text as files hold it: a page of its lines, a file's bytes as text and text as a file's bytes, an edit that finds its text by tiers, and the diff between two texts"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+similar = "3.2.1"
+thiserror = "2.0.21"
