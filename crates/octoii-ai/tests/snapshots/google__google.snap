@@ -1,0 +1,94 @@
+---
+source: crates/octoii-ai/tests/google.rs
+expression: body
+---
+{
+  "generation_config": {
+    "max_output_tokens": 2048,
+    "thinking_level": "medium",
+    "thinking_summaries": "auto",
+    "tool_choice": {
+      "allowed_tools": {
+        "mode": "any",
+        "tools": [
+          "read"
+        ]
+      }
+    }
+  },
+  "input": [
+    {
+      "content": [
+        {
+          "text": "read a",
+          "type": "text"
+        }
+      ],
+      "type": "user_input"
+    },
+    {
+      "signature": "thought-sig",
+      "summary": [
+        {
+          "text": "to read",
+          "type": "text"
+        }
+      ],
+      "type": "thought"
+    },
+    {
+      "arguments": {
+        "path": "a"
+      },
+      "id": "g1",
+      "name": "read",
+      "type": "function_call"
+    },
+    {
+      "call_id": "g1",
+      "name": "read",
+      "result": [
+        {
+          "text": "# A",
+          "type": "text"
+        }
+      ],
+      "type": "function_result"
+    },
+    {
+      "content": [
+        {
+          "text": "<system-update>\nthe date changed\n</system-update>",
+          "type": "text"
+        }
+      ],
+      "type": "user_input"
+    },
+    {
+      "content": [
+        {
+          "text": "A title.",
+          "type": "text"
+        }
+      ],
+      "type": "model_output"
+    }
+  ],
+  "model": "gemini-4-argon",
+  "store": false,
+  "stream": true,
+  "system_instruction": "Be brief.\n\nYou work in /repo.",
+  "tools": [
+    {
+      "description": "Reads a file.",
+      "name": "read",
+      "parameters": {
+        "type": "object"
+      },
+      "type": "function"
+    },
+    {
+      "type": "google_search"
+    }
+  ]
+}

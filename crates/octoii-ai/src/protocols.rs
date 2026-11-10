@@ -2,6 +2,7 @@
 
 pub mod anthropic;
 pub mod chat_completions;
+pub mod google;
 pub mod responses;
 
 use base64::Engine;

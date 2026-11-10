@@ -5,6 +5,7 @@
 use crate::driver::Connection;
 use crate::protocols::anthropic::AnthropicDriver;
 use crate::protocols::chat_completions::{self, ChatDriver, Thinking};
+use crate::protocols::google::GoogleDriver;
 use crate::protocols::responses::{DeveloperRole, Dialect, ResponsesDriver};
 use crate::vocabulary::FailureKind;
 
@@ -211,3 +212,6 @@ pub const ZAI: ChatDriver = ChatDriver {
         tool_choices: false,
     },
 };
+
+/// Google's Gemini API, by its Interactions API.
+pub const GOOGLE: GoogleDriver = GoogleDriver;

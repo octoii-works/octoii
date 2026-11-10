@@ -230,10 +230,13 @@ impl TextStream {
         };
         if let (Some(begun), Item::FunctionCall(call)) = (begun, &mut item) {
             call.call_id = begun;
-            call.origin.get_or_insert_with(|| Origin {
-                model: self.reference.clone(),
+            let origin = call.origin.get_or_insert_with(|| Origin {
+                model: String::new(),
                 provider_metadata: None,
             });
+            if origin.model.is_empty() {
+                self.reference.clone_into(&mut origin.model);
+            }
             return item;
         }
         self.stamped(item)
