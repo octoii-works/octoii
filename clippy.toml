@@ -1,0 +1,2 @@
+# Names clippy takes as words, not code, in documentation; ".." keeps its own.
+doc-valid-idents = ["QuickJS", ".."]

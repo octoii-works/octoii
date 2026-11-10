@@ -654,6 +654,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "siphon-script"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "thiserror",
+]
+
+[[package]]
 name = "siphon-shell"
 version = "0.1.0"
 dependencies = [
