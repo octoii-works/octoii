@@ -18,6 +18,7 @@ enum Owned {
     Mkdir(Bytes),
     Write(Bytes, Bytes),
     Append(Bytes, Bytes),
+    Seal(Bytes),
     Rename(Bytes, Bytes),
     Delete(Bytes),
     Expire(Bytes, Option<i64>),
@@ -27,6 +28,7 @@ enum Owned {
     Send(Bytes, Mail, Option<u64>),
     Answer(Bytes, Mail, Option<u64>),
     Signal(Bytes, Signal, Option<Bytes>),
+    Reap(Bytes),
     Remove(Bytes, Option<Bytes>),
     ForceRemove(Bytes, Option<Bytes>),
 }
@@ -88,6 +90,11 @@ impl Changes {
         self.push(Owned::Append(path.into(), bytes.into()))
     }
 
+    /// The file at `path` sealed: it takes no change from then on.
+    pub fn seal(&mut self, path: impl Into<Bytes>) -> &mut Self {
+        self.push(Owned::Seal(path.into()))
+    }
+
     /// What `from` names given the name `to`.
     pub fn rename(&mut self, from: impl Into<Bytes>, to: impl Into<Bytes>) -> &mut Self {
         self.push(Owned::Rename(from.into(), to.into()))
@@ -144,6 +151,11 @@ impl Changes {
         self.push(Owned::Signal(process.into(), signal, reason))
     }
 
+    /// The record of the ended process at `process` let go of, as a parent reaps its child.
+    pub fn reap(&mut self, process: impl Into<Bytes>) -> &mut Self {
+        self.push(Owned::Reap(process.into()))
+    }
+
     /// The name at `path` removed, the processes under it asked to stop first.
     pub fn remove(&mut self, path: impl Into<Bytes>, reason: Option<Bytes>) -> &mut Self {
         self.push(Owned::Remove(path.into(), reason))
@@ -193,6 +205,7 @@ fn lend<'a>(
             bytes,
             append_only: false,
         },
+        Owned::Seal(path) => Change::Seal { path },
         Owned::Rename(from, to) => Change::Rename { from, to },
         Owned::Delete(path) => Change::Delete { path },
         Owned::Expire(path, at) => Change::Expire { path, at: *at },
@@ -228,6 +241,7 @@ fn lend<'a>(
             reason: reason.as_deref(),
             started: None,
         },
+        Owned::Reap(process) => Change::Reap { process },
         Owned::Remove(path, reason) => Change::Remove {
             path,
             reason: reason.as_deref(),
