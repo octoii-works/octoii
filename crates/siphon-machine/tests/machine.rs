@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use beak::{Beak, Kernel, Options};
 use siphon_machine::paths::Base;
-use siphon_machine::{EditOutcome, GrepOptions, Host, Machine, Program, Read, ReadOptions, RunError};
+use siphon_machine::{EditOutcome, GrepOptions, Host, Machine, Program, Read, ReadOptions, RunError, Writes};
 use siphon_text::Edit;
 use tokio_util::sync::CancellationToken;
 
@@ -22,7 +22,11 @@ fn machine(kernel: &Kernel, host: &Host) -> (Machine, tempfile::TempDir, PathBuf
         workspace: workspace.clone(),
         home: Some(PathBuf::from("/home/me")),
     };
-    (Machine::open(kernel, host, base, None).expect("opened"), folder, workspace)
+    (
+        Machine::open(kernel, host, base, &Writes::Anywhere, None).expect("opened"),
+        folder,
+        workspace,
+    )
 }
 
 #[test]
@@ -281,4 +285,42 @@ async fn a_program_runs_to_its_end_and_what_the_host_hides_is_denied() {
         machine.read(&key, &ReadOptions::default()).is_err(),
         "nothing reaches what the host hides"
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn work_held_to_its_workspace_writes_there_and_reads_everywhere_else() {
+    let beak = Beak::new().expect("Beak");
+    let kernel = kernel(&beak);
+    let (workspace_folder, outside_folder) = (tempfile::tempdir().expect("a folder"), tempfile::tempdir().expect("a folder"));
+    let workspace = workspace_folder.path().canonicalize().expect("its real path");
+    let outside = outside_folder.path().canonicalize().expect("its real path");
+    std::fs::write(outside.join("notes.txt"), "kept").expect("written");
+    let base = Base {
+        workspace: workspace.clone(),
+        home: None,
+    };
+    let machine = Machine::open(&kernel, &Host::default(), base, &Writes::Within(vec![workspace.clone()]), None).expect("opened");
+    machine
+        .write(&machine.path("made.txt"), "here", "made.txt")
+        .expect("written within");
+    let elsewhere = machine.path(&outside.join("notes.txt").to_string_lossy());
+    assert!(
+        machine.write(&elsewhere, "changed", "notes.txt").is_err(),
+        "nothing written beyond the workspace"
+    );
+    assert!(
+        matches!(machine.read(&elsewhere, &ReadOptions::default()).expect("read"), Read::Text { .. }),
+        "read everywhere"
+    );
+    let never = CancellationToken::new();
+    let line = format!("echo made > made-too.txt && echo changed > {}", outside.join("notes.txt").display());
+    let ran = machine
+        .run(1_000, b"", &Program::new(vec!["sh".into(), "-c".into(), line], &workspace), &never)
+        .await;
+    if beak::machine_confines() {
+        let ran = ran.expect("ran");
+        assert_ne!(ran.exit, beak::Exit::Code(0), "its command held to the workspace");
+        assert_eq!(std::fs::read_to_string(outside.join("notes.txt")).expect("read"), "kept");
+        assert!(workspace.join("made-too.txt").exists());
+    }
 }

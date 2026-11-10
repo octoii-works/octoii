@@ -313,3 +313,11 @@ impl Command {
         Ok(String::from_utf8_lossy(&buffer(|out| unsafe { sys::beak_command_title(self.raw(), out) })?).into_owned())
     }
 }
+
+/// Whether this machine holds a command started through a namespace to what the namespace reaches; where it does not,
+/// a command reaches what its user may.
+#[must_use]
+pub fn machine_confines() -> bool {
+    // SAFETY: the call takes nothing.
+    unsafe { sys::beak_machine_confines() }
+}

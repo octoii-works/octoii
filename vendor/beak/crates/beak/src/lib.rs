@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 use beak_sys as sys;
 
-pub use command::{Chunk, Command, CommandEvent, CommandEvents, Exec, Spec, Stdio};
+pub use command::{Chunk, Command, CommandEvent, CommandEvents, Exec, Spec, Stdio, machine_confines};
 pub use kernel::{Change, Ending, Event, Events, Kernel, Mail, Options, Program, Run, Wait};
 pub use namespace::{Dirent, FileKind, FileSystem, LabelView, Namespace, Stat};
 pub use snapshot::{

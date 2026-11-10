@@ -1046,6 +1046,10 @@ beak_status beak_command_screen_text(const beak_command *command, beak_buffer *o
 // `command` is valid; `out` is writable.
 beak_status beak_command_title(const beak_command *command, beak_buffer *out);
 
+// Whether this machine holds a command started through a namespace to what the namespace reaches: on macOS by a
+// Seatbelt profile, on Linux by Landlock; where it does not, a command reaches what its user may.
+bool beak_machine_confines(void);
+
 // Opens a kernel as `options` say, its events told on `queue` with `tag`: first every request still waiting, retold,
 // as the commands a crashed host left are stopped.
 //

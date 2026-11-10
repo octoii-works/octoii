@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use beak::{Command, CommandEvent, Exec, Kernel, Spec, Stdio};
 use bytes::Bytes;
 use siphon_machine::paths::Base;
-use siphon_machine::{Host, Machine};
+use siphon_machine::{Host, Machine, Writes};
 use tokio::sync::{broadcast, mpsc, oneshot};
 
 /// How many lines of what scrolls off a terminal's screen it keeps, drawn again with it.
@@ -300,7 +300,7 @@ impl Owner {
             workspace: cwd.to_owned(),
             home: self.host.home.clone(),
         };
-        let machine = Machine::open(&self.kernel, &self.host, base, None)?;
+        let machine = Machine::open(&self.kernel, &self.host, base, &Writes::Anywhere, None)?;
         let spec = Spec {
             set: vec![("TERM".into(), "xterm-256color".into()), ("COLORTERM".into(), "truecolor".into())],
             stdio: Stdio::Terminal {

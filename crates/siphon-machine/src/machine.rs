@@ -20,8 +20,18 @@ pub struct Host {
     pub home: Option<PathBuf>,
     pub shell: Option<PathBuf>,
     pub excludes: Option<PathBuf>,
+    /// The machine's temporary folders, which work held to its workspace writes besides it.
+    pub temporary: Vec<PathBuf>,
     pub hidden: Vec<PathBuf>,
     pub threads: Option<PathBuf>,
+}
+
+/// Where work on the machine may write: anywhere; or within the places given alone — a thread's workspace and the
+/// machine's temporary folders — the rest read alone, as the system's sandbox keeps a command.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Writes {
+    Anywhere,
+    Within(Vec<PathBuf>),
 }
 
 /// What shows the threads: the kind of a thread's directory, and the label each carries of its project.
@@ -90,14 +100,19 @@ pub struct Ran {
 }
 
 impl Machine {
-    /// The machine `host` gives, opened for work whose paths start at `base`: its tree mounted writable, what the host
-    /// keeps hidden, and the threads shown where the host lays them out, where `threads` says how.
+    /// The machine `host` gives, opened for work whose paths start at `base`: its tree mounted, written as `writes`
+    /// says, what the host keeps hidden, and the threads shown where the host lays them out, where `threads` says how.
     ///
     /// # Errors
     /// Beak's failure to make or mount the namespace.
-    pub fn open(kernel: &Kernel, host: &Host, base: Base, threads: Option<ThreadsView<'_>>) -> beak::Result<Self> {
+    pub fn open(kernel: &Kernel, host: &Host, base: Base, writes: &Writes, threads: Option<ThreadsView<'_>>) -> beak::Result<Self> {
         let namespace = Namespace::new()?;
-        namespace.mount("", &FileSystem::Host("/"), true)?;
+        namespace.mount("", &FileSystem::Host("/"), *writes == Writes::Anywhere)?;
+        if let Writes::Within(places) = writes {
+            for place in places {
+                namespace.mount(&inside(place), &FileSystem::Host(&place.to_string_lossy()), true)?;
+            }
+        }
         for place in &host.hidden {
             namespace.mount(&inside(place), &FileSystem::Inaccessible, false)?;
         }

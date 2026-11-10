@@ -16,7 +16,7 @@ use bytes::Bytes;
 use chromiumoxide_cdp::cdp::{CdpEvent, CdpEventMessage};
 use serde_json::{Value, json};
 use siphon_machine::paths::Base;
-use siphon_machine::{Host, Machine};
+use siphon_machine::{Host, Machine, Writes};
 use tokio::sync::{broadcast, mpsc, oneshot};
 
 use crate::cdp::{Cdp, CdpError, connect};
@@ -1081,7 +1081,7 @@ fn launch(host: &BrowserHost) -> Result<Running, BrowserError> {
         workspace: home.clone(),
         home: Some(home.clone()),
     };
-    let machine = Machine::open(&host.kernel, &host.machine, base, None)?;
+    let machine = Machine::open(&host.kernel, &host.machine, base, &Writes::Anywhere, None)?;
     let spec = Spec {
         stdio: Stdio::Channel,
         ..Spec::new(Exec::Argv(argv), home.to_string_lossy())
