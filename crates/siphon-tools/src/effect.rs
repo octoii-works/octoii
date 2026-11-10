@@ -24,6 +24,8 @@ pub enum Effect {
     Acts { tool: String },
     /// It works the thread's browser: a page's state changes, the machine's not.
     Browses,
+    /// It runs a program whose own calls are each weighed as they are made: a script.
+    Calls,
 }
 
 /// A command line as a grant and a weighing read it: each simple command, the pattern a grant of it takes, and

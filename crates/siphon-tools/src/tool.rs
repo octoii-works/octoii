@@ -8,14 +8,16 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use beak::Kernel;
+use bytes::Bytes;
 use octoii_ai::vocabulary::InputContent;
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 use siphon_machine::paths::Base;
 use siphon_machine::{Host, Machine};
-use siphon_runtime::Runtime;
+use siphon_runtime::{Changes, Runtime};
 use tokio_util::sync::CancellationToken;
 
+use crate::calls::Setting;
 use crate::effect::Effect;
 use crate::permissions::Writes;
 
@@ -37,7 +39,7 @@ impl Refusal {
 #[derive(Debug, Clone)]
 pub struct Context {
     pub thread: String,
-    pub process: bytes::Bytes,
+    pub process: Bytes,
     pub call: String,
     pub base: Base,
     pub writes: Writes,
@@ -91,6 +93,23 @@ pub trait Tool: Send + Sync + 'static {
     fn answered(&self, _: &Self::Args, answer: serde_json::Value) -> Vec<InputContent> {
         vec![InputContent::text(answer.to_string())]
     }
+
+    /// What the model is told it does: its description, unless it says more as it stands — as a tool that tells the
+    /// tools it calls does.
+    fn described(&self) -> String {
+        Self::DESCRIPTION.to_owned()
+    }
+
+    /// For a tool that runs as a program of its own: adds to `changes` the start of its process for a call with
+    /// `args`, keyed `key`, under `parent`, the caller, its calls weighed as `setting` says; none for a tool exec'd.
+    fn start(&self, _: &mut Changes, _: &Bytes, _: &str, _: &Self::Args, _: &Setting<'_>) -> Option<serde_json::Result<()>> {
+        None
+    }
+
+    /// For a tool that runs as a program: its process's end, as the model reads it.
+    fn finished(&self, outcome: &beak::Outcome) -> Vec<InputContent> {
+        vec![InputContent::text(format!("{outcome:?}"))]
+    }
 }
 
 type Execing = Pin<Box<dyn Future<Output = Result<Vec<InputContent>, Refusal>> + Send>>;
@@ -101,6 +120,15 @@ trait Erased: Send + Sync {
     fn exec(self: Arc<Self>, context: Context, arguments: serde_json::Value) -> Execing;
     fn asks(&self, arguments: &serde_json::Value) -> Option<serde_json::Value>;
     fn answered(&self, arguments: &serde_json::Value, answer: serde_json::Value) -> Vec<InputContent>;
+    fn start(
+        &self,
+        changes: &mut Changes,
+        parent: &Bytes,
+        key: &str,
+        arguments: &serde_json::Value,
+        setting: &Setting<'_>,
+    ) -> Option<serde_json::Result<()>>;
+    fn finished(&self, outcome: &beak::Outcome) -> Vec<InputContent>;
 }
 
 impl<T: Tool> Erased for T {
@@ -119,6 +147,22 @@ impl<T: Tool> Erased for T {
             Ok(args) => Tool::answered(self, &args, answer),
             Err(_) => vec![InputContent::text(answer.to_string())],
         }
+    }
+
+    fn start(
+        &self,
+        changes: &mut Changes,
+        parent: &Bytes,
+        key: &str,
+        arguments: &serde_json::Value,
+        setting: &Setting<'_>,
+    ) -> Option<serde_json::Result<()>> {
+        let args: T::Args = serde_json::from_value(arguments.clone()).ok()?;
+        Tool::start(self, changes, parent, key, &args, setting)
+    }
+
+    fn finished(&self, outcome: &beak::Outcome) -> Vec<InputContent> {
+        Tool::finished(self, outcome)
     }
 
     fn exec(self: Arc<Self>, context: Context, arguments: serde_json::Value) -> Execing {
@@ -168,7 +212,7 @@ impl Tools {
     pub fn with<T: Tool>(mut self, tool: T) -> Self {
         let declared = Declared {
             name: T::NAME.to_owned(),
-            description: T::DESCRIPTION.to_owned(),
+            description: tool.described(),
             parameters: schemars::schema_for!(T::Args).to_value(),
         };
         let entries = Arc::get_mut(&mut self.entries).expect("tools are built before they are shared");
@@ -225,6 +269,29 @@ impl Tools {
             Some(entry) => entry.tool.answered(arguments, answer),
             None => vec![InputContent::text(answer.to_string())],
         }
+    }
+
+    /// Adds to `changes` the start of the process of a call of `name` with `arguments`, keyed `key`, under `parent`,
+    /// where its tool runs as a program; none where it is exec'd.
+    pub fn start(
+        &self,
+        changes: &mut Changes,
+        parent: &Bytes,
+        key: &str,
+        name: &str,
+        arguments: &serde_json::Value,
+        setting: &Setting<'_>,
+    ) -> Option<serde_json::Result<()>> {
+        self.entries.get(name)?.tool.start(changes, parent, key, arguments, setting)
+    }
+
+    /// The end `outcome` of the process of a call of `name`, as the model reads it.
+    #[must_use]
+    pub fn finished(&self, name: &str, outcome: &beak::Outcome) -> Vec<InputContent> {
+        self.entries.get(name).map_or_else(
+            || vec![InputContent::text(format!("{outcome:?}"))],
+            |entry| entry.tool.finished(outcome),
+        )
     }
 
     /// Execs a call of `name` with `arguments`.

@@ -40,7 +40,12 @@ pub enum State {
     Asking,
     Judging,
     Running,
-    Ended { status: Status, output: Vec<InputContent> },
+    /// Its tool's program runs, as a process under its caller keyed by the call's key.
+    Program,
+    Ended {
+        status: Status,
+        output: Vec<InputContent>,
+    },
 }
 
 /// A call: the model's id of it, Siphon's key of it — which names its requests and its outputs — its tool, its
@@ -92,6 +97,7 @@ fn shown(tool: &str, arguments: &str, effect: &Effect) -> Shown {
         }
         Effect::Acts { tool } => (vec![format!("acts through {tool}, which may do anything")], None),
         Effect::Browses => (vec!["works the browser".into()], None),
+        Effect::Calls => (vec!["runs a script whose calls are each weighed".into()], None),
     };
     Shown {
         tool: tool.to_owned(),
@@ -144,6 +150,11 @@ impl Calls {
                 State::Asking => format!("{}.permission", call.key),
                 State::Judging => format!("{}.review", call.key),
                 State::Running => call.key.clone(),
+                State::Program => {
+                    wait = wait.child(call.key.clone());
+                    waits = true;
+                    continue;
+                }
                 State::Waiting | State::Ended { .. } => continue,
             };
             wait = wait.mail(key);
@@ -223,6 +234,21 @@ impl Calls {
                     },
                     Answer::Failed(words) => ended(Status::ToolError, words),
                     Answer::Interrupted => ended(Status::Interrupted, "the call was cut off"),
+                }
+            }
+            State::Program => {
+                let process = beak::layout::process(run.path(), call.key.as_bytes());
+                let Some(outcome) = run.snapshot().record(&process)?.and_then(|record| record.outcome) else {
+                    return Ok(());
+                };
+                run.changes.reap(process);
+                State::Ended {
+                    status: if matches!(outcome, beak::Outcome::Completed(_)) {
+                        Status::Ok
+                    } else {
+                        Status::ToolError
+                    },
+                    output: setting.tools.finished(&call.tool, &outcome),
                 }
             }
             State::Waiting | State::Ended { .. } => return Ok(()),
@@ -308,6 +334,14 @@ impl Calls {
     fn exec(&self, at: usize, run: &mut Run<'_>, setting: &Setting<'_>, writes: Writes) -> anyhow::Result<State> {
         let call = &self.0[at];
         let arguments: serde_json::Value = serde_json::from_str(&call.arguments)?;
+        let parent = bytes::Bytes::copy_from_slice(run.path());
+        if let Some(started) = setting
+            .tools
+            .start(&mut run.changes, &parent, &call.key, &call.tool, &arguments, setting)
+        {
+            started?;
+            return Ok(State::Program);
+        }
         if let Some(answer_schema) = setting.tools.asks(&call.tool, &arguments) {
             let asks = Asks {
                 thread: setting.thread.to_owned(),

@@ -25,6 +25,7 @@ siphon-browser = { path = "../siphon-browser" }
 siphon-image = { path = "../siphon-image" }
 siphon-machine = { path = "../siphon-machine" }
 siphon-runtime = { path = "../siphon-runtime" }
+siphon-script = { path = "../siphon-script" }
 siphon-shell = { path = "../siphon-shell" }
 siphon-text = { path = "../siphon-text" }
 siphon-threads = { path = "../siphon-threads" }

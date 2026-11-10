@@ -3150,6 +3150,7 @@ dependencies = [
  "siphon-image",
  "siphon-machine",
  "siphon-runtime",
+ "siphon-script",
  "siphon-shell",
  "siphon-text",
  "siphon-threads",
