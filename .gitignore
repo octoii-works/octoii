@@ -9,3 +9,5 @@ packages/code/bin/
 packages/code/app/
 apps/desktop/out/
 .ui-reference/
+
+/target/
