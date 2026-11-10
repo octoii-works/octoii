@@ -2,6 +2,10 @@
 //! developer messages, whether it takes a cache's name and gives back its reasoning encrypted, and the kinds its codes
 //! stand for; Anthropic's API and Claude through its agent are Anthropic's driver, at their addresses.
 
+mod chatgpt;
+
+pub use chatgpt::{CHATGPT, ChatGpt};
+
 use crate::driver::Connection;
 use crate::protocols::anthropic::AnthropicDriver;
 use crate::protocols::chat_completions::{self, ChatDriver, Thinking};

@@ -23,9 +23,9 @@ struct Environment;
 
 impl Credentials for Environment {
     fn read(&self, _: &str) -> Result<Option<Credential>, Unavailable> {
-        Ok(Some(Credential::ApiKey(
-            std::env::var("OPENROUTER_API_KEY").expect("OPENROUTER_API_KEY is set"),
-        )))
+        Ok(Some(Credential::ApiKey {
+            api_key: std::env::var("OPENROUTER_API_KEY").expect("OPENROUTER_API_KEY is set"),
+        }))
     }
 
     fn keep(&self, _: &str, _: &Credential) -> Result<(), Unavailable> {

@@ -2,26 +2,45 @@
 //! bytes of the files a conversation names by reference.
 
 use bytes::Bytes;
+use serde::{Deserialize, Serialize};
 
-/// What a provider is reached with: an API key, a sign-in by OAuth, or nothing, for a server that takes none.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// What a provider is reached with: an API key, a sign-in by OAuth, or nothing, for a server that takes none; as the
+/// host keeps it, its JSON.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Credential {
-    ApiKey(String),
+    ApiKey { api_key: String },
     OAuth(OAuth),
     None,
 }
 
-/// A sign-in by OAuth, as the host keeps it: the issuer and the client issued to this app, who signed in, and the
-/// tokens, the access token's expiry in milliseconds since 1970.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// A sign-in by OAuth: the issuer; the client issued to this app for the person at their first sign-in, kept and
+/// reused; this host's id for the sign-in, chosen once, which the issuer ties it to; who signed in; and the tokens,
+/// none yet where a first sign-in registered its client and went no further.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OAuth {
     pub issuer: String,
     pub client_id: String,
-    pub account_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subject: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub email: Option<String>,
-    pub access_token: String,
-    pub refresh_token: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens: Option<Tokens>,
+}
+
+/// A sign-in's tokens: the access token, its expiry in milliseconds since 1970 and the scopes it was granted; and the
+/// refresh token, where the issuer gave one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Tokens {
+    pub access: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refresh: Option<String>,
     pub expires_at_ms: i64,
+    #[serde(default)]
+    pub scopes: Vec<String>,
 }
 
 /// The host could not read or keep a credential.

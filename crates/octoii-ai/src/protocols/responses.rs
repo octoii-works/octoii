@@ -25,7 +25,7 @@ pub enum DeveloperRole {
     System,
 }
 
-/// How a provider speaks the Responses API: the role it takes developer messages in; whether it takes the name of the
+/// How a provider speaks the Responses API: the role it takes updates in, a developer's or the system's; whether it takes the name of the
 /// conversation for its cache, gives back its models' reasoning encrypted, so a request without state goes on from it,
 /// and takes text files, else sent as the person's text; and the kind of failure its codes and words stand for, where
 /// they say one.
@@ -113,7 +113,7 @@ fn wrote_it(origin: Option<&Origin>, reference: &str) -> bool {
 fn rendered_item(call: &Call, item: &Item, reference: &str, dialect: &Dialect) -> Result<Option<Value>, Failure> {
     Ok(Some(match item {
         Item::Message(Message::User { content }) => message("user", rendered_content(call, content, dialect)?),
-        Item::Message(Message::Developer { content }) => {
+        Item::Message(Message::Developer { content } | Message::System { content }) => {
             let role = if dialect.developer_role == DeveloperRole::Developer {
                 "developer"
             } else {
@@ -121,7 +121,6 @@ fn rendered_item(call: &Call, item: &Item, reference: &str, dialect: &Dialect) -
             };
             message(role, rendered_content(call, content, dialect)?)
         }
-        Item::Message(Message::System { content }) => message("system", rendered_content(call, content, dialect)?),
         Item::Message(Message::Assistant { id, content, origin, .. }) => {
             let mut made = json!({ "type": "message", "role": "assistant", "status": "completed", "content": content.iter().map(rendered_output).collect::<Vec<_>>() });
             if let Some(id) = id.as_ref().filter(|_| wrote_it(origin.as_ref(), reference)) {

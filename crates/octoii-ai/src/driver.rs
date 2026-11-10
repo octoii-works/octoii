@@ -76,7 +76,7 @@ impl Call {
     /// An `auth` failure where the host's credentials cannot be read.
     pub fn api_key(&self) -> Result<Option<String>, Failure> {
         Ok(match self.credential()? {
-            Some(Credential::ApiKey(key)) => Some(key),
+            Some(Credential::ApiKey { api_key }) => Some(api_key),
             _ => None,
         })
     }
@@ -95,10 +95,51 @@ pub trait Driver: Send + Sync {
     /// Streams the answer of `model` to `request`, the request rendered for the provider.
     fn stream<'a>(&'a self, call: &'a Call, model: &'a Model, request: &'a Request) -> BoxFuture<'a, Result<Source, Failure>>;
 
+    /// Begins a sign-in in a browser, for a driver whose provider is reached by one.
+    ///
+    /// # Errors
+    /// `invalid_request` for a provider reached otherwise.
+    fn sign_in<'a>(&'a self, call: &'a Call, options: &'a SignInOptions) -> BoxFuture<'a, Result<SignIn, Failure>> {
+        let _ = (call, options);
+        Box::pin(async move {
+            Err(Failure::new(
+                FailureKind::InvalidRequest,
+                format!("{} is not reached by a sign-in", self.name()),
+            ))
+        })
+    }
+
     /// The models the provider serves now, where it lists them — none for a provider whose models are the
     /// catalogue's alone — each with what the listing says of it.
     fn list<'a>(&'a self, call: &'a Call) -> BoxFuture<'a, Result<Option<Vec<Model>>, Failure>> {
         let _ = call;
         Box::pin(async { Ok(None) })
     }
+}
+
+/// What a sign-in in a browser is begun with: the address the person's browser is sent back to, the name the app is
+/// offered under on a first sign-in, and the host's id for a sign-in, kept where the provider's earlier one holds none.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SignInOptions {
+    pub redirect_uri: String,
+    pub agent_name_hint: String,
+    pub host_id: String,
+}
+
+/// A sign-in begun: where the person signs in, and the attempt it finishes by.
+pub struct SignIn {
+    pub url: String,
+    pub attempt: Box<dyn SignInAttempt>,
+}
+
+impl std::fmt::Debug for SignIn {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SignIn").field("url", &self.url).finish_non_exhaustive()
+    }
+}
+
+/// A sign-in attempt, finished from the address the person's browser was sent back to.
+pub trait SignInAttempt: Send + Sync {
+    /// Finishes the sign-in, its credential kept by the host.
+    fn finish<'a>(&'a self, call: &'a Call, redirect: &'a str) -> BoxFuture<'a, Result<(), Failure>>;
 }

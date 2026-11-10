@@ -95,7 +95,7 @@ pub fn call(provider: Arc<Provider>) -> Call {
     Call {
         provider: "test".into(),
         settings: Settings::default(),
-        credentials: Store::of(Credential::ApiKey("sk".into())),
+        credentials: Store::of(Credential::ApiKey { api_key: "sk".into() }),
         transport: provider,
         files: Arc::new(OneImage),
         now_ms: 0,
