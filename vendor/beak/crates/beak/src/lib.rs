@@ -17,7 +17,7 @@ pub use command::{Command, CommandEvent, CommandEvents, Kept, Program as Exec, S
 pub use kernel::{Change, Ending, Event, Events, Kernel, Mail, Options, Program, Run, Wait};
 pub use namespace::{Dirent, FileKind, FileSystem, LabelView, Namespace, Stat};
 pub use snapshot::{
-    ChangeSet, Changed, Directory, Entry, EntryKind, Feed, Found, Held, Outcome, ProcessState, Query, Range, Record, Scope, Selector,
+    ChangeSet, Changed, Directory, Entry, EntryKind, Found, Held, History, Outcome, ProcessState, Query, Range, Record, Scope, Selector,
     Snapshot,
 };
 

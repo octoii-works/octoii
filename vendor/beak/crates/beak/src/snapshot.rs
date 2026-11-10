@@ -334,10 +334,10 @@ pub struct ChangeSet {
     pub changes: Vec<Changed>,
 }
 
-/// The feed read on from a commit.
+/// The history after a commit.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Feed {
-    pub sets: Vec<ChangeSet>,
+pub struct History {
+    pub change_sets: Vec<ChangeSet>,
     pub through: u64,
     pub oldest: Option<u64>,
     pub latest: u64,
@@ -455,14 +455,15 @@ impl Snapshot {
     ///
     /// # Errors
     /// The volume's failure.
-    pub fn feed(&self, after: u64, limit: usize, filter: &[Selector]) -> Result<Feed> {
+    pub fn history(&self, after: u64, limit: usize, filter: &[Selector]) -> Result<History> {
         let mut keep = Keep::default();
         let selectors: Vec<sys::beak_selector> = filter.iter().map(|selector| selector.lower(&mut keep)).collect();
-        // SAFETY: the call is given what it asks; the feed is read, then let go of once.
-        let feed = object(|out| unsafe { sys::beak_snapshot_feed(self.0.0, after, limit, selectors.as_ptr(), selectors.len(), out) })?;
+        // SAFETY: the call is given what it asks; the history is read, then let go of once.
+        let history =
+            object(|out| unsafe { sys::beak_snapshot_history(self.0.0, after, limit, selectors.as_ptr(), selectors.len(), out) })?;
         // SAFETY: as above.
         unsafe {
-            let sets = items((*feed).sets, (*feed).set_count)
+            let change_sets = items((*history).change_sets, (*history).change_set_count)
                 .iter()
                 .map(|set| ChangeSet {
                     seq: set.seq,
@@ -470,14 +471,14 @@ impl Snapshot {
                     changes: items(set.changes, set.change_count).iter().map(changed).collect(),
                 })
                 .collect();
-            let read = Feed {
-                sets,
-                through: (*feed).through,
-                oldest: of_u64((*feed).oldest),
-                latest: (*feed).latest,
-                missed: (*feed).missed,
+            let read = History {
+                change_sets,
+                through: (*history).through,
+                oldest: of_u64((*history).oldest),
+                latest: (*history).latest,
+                missed: (*history).missed,
             };
-            sys::beak_feed_free(feed);
+            sys::beak_history_free(history);
             Ok(read)
         }
     }

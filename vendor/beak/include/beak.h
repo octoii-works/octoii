@@ -658,7 +658,7 @@ enum beak_event_Tag
   : uint8_t
 #endif // defined(__cplusplus) || __STDC_VERSION__ >= 202311L
  {
-  // A commit was made: what it changed, the feed reads on to.
+  // A commit was made: what it changed, the history reads on to.
   BEAK_EVENT_COMMITTED,
   // A request a process made, for its handler to act on: `retold` where it was made before the volume opened, and
   // the host told of it first may have acted on it.
@@ -875,17 +875,17 @@ typedef struct {
   size_t change_count;
 } beak_change_set;
 
-// The feed read on from a commit: the change sets read, each with what the filter met; the last commit read, which a
+// The history after a commit: the change sets read, each with what the filter met; the last commit read, which a
 // reader reads on from; the oldest the journal keeps; the snapshot's; and whether the journal no longer holds every
 // commit since, so the reader looks at everything again.
 typedef struct {
-  beak_change_set *sets;
-  size_t set_count;
+  beak_change_set *change_sets;
+  size_t change_set_count;
   uint64_t through;
   beak_maybe_u64 oldest;
   uint64_t latest;
   bool missed;
-} beak_feed;
+} beak_history;
 
 #ifdef __cplusplus
 extern "C" {
@@ -1362,23 +1362,23 @@ void beak_record_free(beak_record *record);
 // `snapshot` is valid; `path` is valid for the call; `out` is writable.
 beak_status beak_snapshot_record(const beak_snapshot *snapshot, beak_bytes path, beak_record **out);
 
-// Lets go of a feed Beak gave.
+// Lets go of a history Beak gave.
 //
 // # Safety
-// `feed` is null, or one Beak gave and nothing let go of.
-void beak_feed_free(beak_feed *feed);
+// `history` is null, or one Beak gave and nothing let go of.
+void beak_history_free(beak_history *history);
 
 // The changes of the commits after `after` up to the snapshot's, `limit` change sets read at most, those one of the
 // `selector_count` selectors meets — every one where there are none.
 //
 // # Safety
 // `snapshot` is valid; `selectors` holds `selector_count` selectors valid for the call; `out` is writable.
-beak_status beak_snapshot_feed(const beak_snapshot *snapshot,
-                               uint64_t after,
-                               size_t limit,
-                               const beak_selector *selectors,
-                               size_t selector_count,
-                               beak_feed **out);
+beak_status beak_snapshot_history(const beak_snapshot *snapshot,
+                                  uint64_t after,
+                                  size_t limit,
+                                  const beak_selector *selectors,
+                                  size_t selector_count,
+                                  beak_history **out);
 
 #ifdef __cplusplus
 }  // extern "C"
