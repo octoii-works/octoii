@@ -16,7 +16,7 @@ use crate::{Exit, Result, Signal};
 
 /// What happened, as the binding holds it.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum Told {
+pub(crate) enum Completion {
     Committed(u64),
     Request {
         process: Bytes,
@@ -43,7 +43,7 @@ pub(crate) enum Told {
     Exit(Exit),
 }
 
-impl Told {
+impl Completion {
     /// What a completion tells, copied out of it.
     fn of(completion: &sys::beak_completion) -> Self {
         use sys::beak_event_Tag as Tag;
@@ -102,7 +102,7 @@ impl Drop for Raw {
 /// The queue, and where what it tells goes, by tag.
 pub(crate) struct Router {
     pub(crate) raw: Raw,
-    routes: Mutex<HashMap<u64, mpsc::UnboundedSender<Told>>>,
+    routes: Mutex<HashMap<u64, mpsc::UnboundedSender<Completion>>>,
     next_tag: AtomicU64,
 }
 
@@ -124,7 +124,7 @@ impl Router {
     }
 
     /// A new tag, and what it tells.
-    pub(crate) fn bind(&self) -> (u64, mpsc::UnboundedReceiver<Told>) {
+    pub(crate) fn bind(&self) -> (u64, mpsc::UnboundedReceiver<Completion>) {
         let tag = self.next_tag.fetch_add(1, Ordering::Relaxed);
         let (sender, receiver) = mpsc::unbounded_channel();
         self.routes.lock().insert(tag, sender);
@@ -139,14 +139,14 @@ impl Router {
         check(unsafe { sys::beak_queue_take(self.raw.0, taken.as_mut_ptr().cast(), TAKE_MAX, &raw mut count) })?;
         let mut routes = self.routes.lock();
         for each in taken.iter_mut().take(count) {
-            let completion = each.as_mut_ptr();
+            let raw = each.as_mut_ptr();
             // SAFETY: the first `count` were written; each is let go of once, after it is read.
-            let (tag, told) = unsafe { ((*completion).tag, Told::of(&*completion)) };
+            let (tag, completion) = unsafe { ((*raw).tag, Completion::of(&*raw)) };
             // SAFETY: as above.
-            unsafe { sys::beak_completion_free(completion) };
-            let ends = matches!(told, Told::Exit(_));
+            unsafe { sys::beak_completion_free(raw) };
+            let ends = matches!(completion, Completion::Exit(_));
             if let Some(route) = routes.get(&tag)
-                && (route.send(told).is_err() || ends)
+                && (route.send(completion).is_err() || ends)
             {
                 routes.remove(&tag);
             }

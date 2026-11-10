@@ -188,13 +188,13 @@ impl Namespace {
         check(unsafe { sys::beak_namespace_unmount(self.raw(), lent(at.as_bytes())) })
     }
 
-    /// Whether what works in it reaches the network.
+    /// Allows what works in it to reach the network, or not.
     ///
     /// # Errors
     /// None that a namespace gives.
-    pub fn reach_network(&self, reaches: bool) -> Result<()> {
+    pub fn allow_network(&self, allowed: bool) -> Result<()> {
         // SAFETY: the namespace is open.
-        check(unsafe { sys::beak_namespace_reach_network(self.raw(), reaches) })
+        check(unsafe { sys::beak_namespace_allow_network(self.raw(), allowed) })
     }
 
     /// Registers a copy of it with `kernel` as `name`, the commands of a process naming it to start in it.

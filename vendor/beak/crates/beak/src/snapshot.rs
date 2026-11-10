@@ -237,7 +237,7 @@ impl Record {
             sys::beak_process_state::BEAK_PROCESS_STATE_ZOMBIE => ProcessState::Zombie,
         };
         let held = match record.held {
-            sys::beak_held::BEAK_HELD_NO => None,
+            sys::beak_held::BEAK_HELD_NONE => None,
             sys::beak_held::BEAK_HELD_RESTART_LIMIT => Some(Held::RestartLimit),
             sys::beak_held::BEAK_HELD_MISSING_PROGRAM => Some(Held::MissingProgram),
             sys::beak_held::BEAK_HELD_UNKNOWN_VERSION => Some(Held::UnknownVersion),
@@ -334,9 +334,9 @@ pub struct ChangeSet {
     pub changes: Vec<Changed>,
 }
 
-/// The history after a commit.
+/// What the journal holds after a commit.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct History {
+pub struct Journal {
     pub change_sets: Vec<ChangeSet>,
     pub through: u64,
     pub oldest: Option<u64>,
@@ -455,15 +455,15 @@ impl Snapshot {
     ///
     /// # Errors
     /// The volume's failure.
-    pub fn history(&self, after: u64, limit: usize, filter: &[Selector]) -> Result<History> {
+    pub fn journal(&self, after: u64, limit: usize, filter: &[Selector]) -> Result<Journal> {
         let mut keep = Keep::default();
         let selectors: Vec<sys::beak_selector> = filter.iter().map(|selector| selector.lower(&mut keep)).collect();
-        // SAFETY: the call is given what it asks; the history is read, then let go of once.
-        let history =
-            object(|out| unsafe { sys::beak_snapshot_history(self.0.0, after, limit, selectors.as_ptr(), selectors.len(), out) })?;
+        // SAFETY: the call is given what it asks; the journal is read, then let go of once.
+        let journal =
+            object(|out| unsafe { sys::beak_snapshot_journal(self.0.0, after, limit, selectors.as_ptr(), selectors.len(), out) })?;
         // SAFETY: as above.
         unsafe {
-            let change_sets = items((*history).change_sets, (*history).change_set_count)
+            let change_sets = items((*journal).change_sets, (*journal).change_set_count)
                 .iter()
                 .map(|set| ChangeSet {
                     seq: set.seq,
@@ -471,14 +471,14 @@ impl Snapshot {
                     changes: items(set.changes, set.change_count).iter().map(changed).collect(),
                 })
                 .collect();
-            let read = History {
+            let read = Journal {
                 change_sets,
-                through: (*history).through,
-                oldest: of_u64((*history).oldest),
-                latest: (*history).latest,
-                missed: (*history).missed,
+                through: (*journal).through,
+                oldest: of_u64((*journal).oldest),
+                latest: (*journal).latest,
+                missed: (*journal).missed,
             };
-            sys::beak_history_free(history);
+            sys::beak_journal_free(journal);
             Ok(read)
         }
     }

@@ -10,7 +10,7 @@ use bytes::Bytes;
 use tokio::sync::mpsc;
 
 use crate::ffi::{check, given, lent, maybe, maybe_i64, maybe_u64, object, of_i64, taken};
-use crate::queue::Told;
+use crate::queue::Completion;
 use crate::snapshot::{Selector, Snapshot};
 use crate::{Beak, Result, Signal};
 
@@ -71,15 +71,15 @@ pub enum Event {
 
 /// What the kernel tells, as it tells it.
 #[derive(Debug)]
-pub struct Events(mpsc::UnboundedReceiver<Told>);
+pub struct Events(mpsc::UnboundedReceiver<Completion>);
 
 impl Events {
     /// What it tells next; `None` once the kernel is let go of.
     pub async fn next(&mut self) -> Option<Event> {
         loop {
             let event = match self.0.recv().await? {
-                Told::Committed(seq) => Event::Committed(seq),
-                Told::Request {
+                Completion::Committed(seq) => Event::Committed(seq),
+                Completion::Request {
                     process,
                     key,
                     name,
@@ -94,10 +94,10 @@ impl Events {
                     started,
                     retold,
                 },
-                Told::Interrupted { process, key } => Event::Interrupted { process, key },
-                Told::Limit { process, name } => Event::Limit { process, name },
-                Told::Signalled { process, signal } => Event::Signalled { process, signal },
-                Told::Output(_) | Told::Title(_) | Told::Exit(_) => continue,
+                Completion::Interrupted { process, key } => Event::Interrupted { process, key },
+                Completion::Limit { process, name } => Event::Limit { process, name },
+                Completion::Signalled { process, signal } => Event::Signalled { process, signal },
+                Completion::Output(_) | Completion::Title(_) | Completion::Exit(_) => continue,
             };
             return Some(event);
         }
@@ -205,7 +205,7 @@ pub enum Change<'a> {
         path: &'a [u8],
         reason: Option<&'a [u8]>,
     },
-    RemoveKilling {
+    ForceRemove {
         path: &'a [u8],
         reason: Option<&'a [u8]>,
     },
@@ -473,10 +473,10 @@ impl Change<'_> {
                     },
                 },
             ),
-            Change::RemoveKilling { path, reason } => (
-                Tag::BEAK_CHANGE_REMOVE_KILLING,
+            Change::ForceRemove { path, reason } => (
+                Tag::BEAK_CHANGE_FORCE_REMOVE,
                 Body {
-                    REMOVE_KILLING: sys::beak_change_RemoveKilling_Body {
+                    FORCE_REMOVE: sys::beak_change_ForceRemove_Body {
                         path: lent(path),
                         reason: maybe(reason),
                     },
@@ -507,14 +507,14 @@ pub struct Run {
     pub checkpoint: Bytes,
 }
 
-/// What a process waits for, the first met ending the wait: the processes under it, by their keys, every one ending;
-/// directories changing from the commit given, `None` for one not there; a directory a selector picks; a time.
+/// What a process waits for, the first met ending the wait: its children, by their keys, every one ending; directories
+/// changing from the commit given, `None` for one not there; a directory a selector picks; a deadline.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Wait<'a> {
-    pub on: &'a [&'a [u8]],
+    pub children: &'a [&'a [u8]],
     pub changes: &'a [(&'a [u8], Option<u64>)],
-    pub until: Option<&'a Selector>,
-    pub at: Option<i64>,
+    pub selected: Option<&'a Selector>,
+    pub deadline: Option<i64>,
 }
 
 /// How a phase, or a stop handler, ended.
@@ -542,7 +542,7 @@ impl Ending<'_> {
                 },
             ),
             Ending::Wait { checkpoint, wait } => {
-                let on: Vec<sys::beak_bytes> = wait.on.iter().map(|key| lent(key)).collect();
+                let children: Vec<sys::beak_bytes> = wait.children.iter().map(|key| lent(key)).collect();
                 let changes: Vec<sys::beak_version> = wait
                     .changes
                     .iter()
@@ -551,17 +551,17 @@ impl Ending<'_> {
                         changed_seq: maybe_u64(*seq),
                     })
                     .collect();
-                let until = wait.until.map_or(std::ptr::null(), |selector| {
+                let selected = wait.selected.map_or(std::ptr::null(), |selector| {
                     let lowered = selector.lower(keep);
                     keep.one(lowered)
                 });
                 let lowered = sys::beak_wait {
-                    on: keep.slice(on),
-                    on_count: wait.on.len(),
+                    children: keep.slice(children),
+                    child_count: wait.children.len(),
                     changes: keep.slice(changes),
                     change_count: wait.changes.len(),
-                    until,
-                    at: maybe_i64(wait.at),
+                    selected,
+                    deadline: maybe_i64(wait.deadline),
                 };
                 (
                     Tag::BEAK_ENDING_WAIT,
@@ -633,14 +633,14 @@ impl Kernel {
             directory: lent(directory.as_bytes()),
             time: options.time,
         };
-        let (tag, told) = beak.router.bind();
+        let (tag, completion) = beak.router.bind();
         // SAFETY: the call is given what it asks, alive for it.
         let raw = object(|out| unsafe { sys::beak_kernel_open(&raw const lowered, beak.router.raw.0, tag, out) })?;
         let kernel = Self {
             raw: Arc::new(Raw(raw)),
             beak: beak.clone(),
         };
-        Ok((kernel, Events(told)))
+        Ok((kernel, Events(completion)))
     }
 
     pub(crate) fn raw(&self) -> *const sys::beak_kernel {
@@ -743,13 +743,13 @@ impl Kernel {
         Ok(of_i64(given(|out| unsafe { sys::beak_kernel_next_due(self.raw(), out) })?))
     }
 
-    /// A new id minted at `time`, as text.
+    /// A new id made at `time`, as text.
     ///
     /// # Errors
     /// Past the last id there is.
-    pub fn mint(&self, time: i64) -> Result<String> {
+    pub fn new_id(&self, time: i64) -> Result<String> {
         // SAFETY: the call is given where to put the id.
-        let id: sys::beak_id = given(|out| unsafe { sys::beak_kernel_mint(self.raw(), time, out) })?;
+        let id: sys::beak_id = given(|out| unsafe { sys::beak_kernel_new_id(self.raw(), time, out) })?;
         Ok(String::from_utf8_lossy(&id.text).into_owned())
     }
 

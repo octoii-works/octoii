@@ -8,7 +8,7 @@ use tokio::sync::mpsc;
 use crate::ffi::{check, copied, lent, object};
 use crate::kernel::{Kernel, buffer};
 use crate::namespace::Namespace;
-use crate::queue::Told;
+use crate::queue::Completion;
 use crate::{Exit, Result, Signal};
 
 /// The command as Beak holds it.
@@ -37,7 +37,7 @@ impl std::fmt::Debug for Command {
 
 /// What a command runs: a program and its arguments, or a command line the machine's shell runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Program {
+pub enum Exec {
     Argv(Vec<String>),
     Shell(String),
 }
@@ -51,59 +51,56 @@ pub enum Stdio {
     Terminal { rows: u16, cols: u16, scrollback_lines: usize },
 }
 
-/// What a command keeps of what it writes, for a reader: its first bytes and its newest.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Kept {
-    pub head_bytes: usize,
-    pub tail_bytes: usize,
-}
-
-impl Default for Kept {
-    fn default() -> Self {
-        Self {
-            head_bytes: 16 * 1024,
-            tail_bytes: 16 * 1024,
-        }
-    }
+/// What a read of a command's output at an offset gives: the bytes held from `offset` on without a break — `offset`
+/// past the one asked where what lay between is no longer held.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Chunk {
+    pub offset: u64,
+    pub bytes: Bytes,
 }
 
 /// A command to start.
 #[derive(Debug, Clone)]
 pub struct Spec {
-    pub program: Program,
+    pub exec: Exec,
     pub cwd: String,
     pub set: Vec<(String, String)>,
     pub clear: bool,
     pub stdio: Stdio,
-    pub kept: Kept,
+    /// How much of what it writes is kept for a reader: its first bytes, as `head -c` keeps them, and its newest, as
+    /// `tail -c`.
+    pub head_bytes: usize,
+    pub tail_bytes: usize,
     /// A log of all it writes, and how much of it the log keeps.
     pub log: Option<(String, u64)>,
 }
 
 impl Spec {
-    /// `program` run in `cwd` through pipes, with the machine's variables.
+    /// `exec` run in `cwd` through pipes, with the machine's variables, keeping the first 16 KiB of what it writes and
+    /// the newest 16 KiB.
     #[must_use]
-    pub fn new(program: Program, cwd: impl Into<String>) -> Self {
+    pub fn new(exec: Exec, cwd: impl Into<String>) -> Self {
         Self {
-            program,
+            exec,
             cwd: cwd.into(),
             set: Vec::new(),
             clear: false,
             stdio: Stdio::Pipe,
-            kept: Kept::default(),
+            head_bytes: 16 * 1024,
+            tail_bytes: 16 * 1024,
             log: None,
         }
     }
 
     /// Calls `call` with the spec as the ABI takes it, what it points into alive for the call.
     fn lowered<T>(&self, call: impl FnOnce(&sys::beak_spec) -> T) -> T {
-        let (kind, argv, line): (_, Vec<sys::beak_bytes>, &str) = match &self.program {
-            Program::Argv(argv) => (
-                sys::beak_program_kind::BEAK_PROGRAM_KIND_ARGV,
+        let (kind, argv, line): (_, Vec<sys::beak_bytes>, &str) = match &self.exec {
+            Exec::Argv(argv) => (
+                sys::beak_exec_kind::BEAK_EXEC_KIND_ARGV,
                 argv.iter().map(|arg| lent(arg.as_bytes())).collect(),
                 "",
             ),
-            Program::Shell(line) => (sys::beak_program_kind::BEAK_PROGRAM_KIND_SHELL, Vec::new(), line.as_str()),
+            Exec::Shell(line) => (sys::beak_exec_kind::BEAK_EXEC_KIND_SHELL, Vec::new(), line.as_str()),
         };
         let set: Vec<sys::beak_pair> = self
             .set
@@ -125,7 +122,7 @@ impl Spec {
         };
         let (log_path, log_bytes_max) = self.log.as_ref().map_or(("", 0), |(path, max)| (path.as_str(), *max));
         let lowered = sys::beak_spec {
-            program: kind,
+            exec: kind,
             argv: argv.as_ptr(),
             argc: argv.len(),
             line: lent(line.as_bytes()),
@@ -137,8 +134,8 @@ impl Spec {
             rows,
             cols,
             scrollback_lines,
-            head_bytes: self.kept.head_bytes,
-            tail_bytes: self.kept.tail_bytes,
+            head_bytes: self.head_bytes,
+            tail_bytes: self.tail_bytes,
             log_path: lent(log_path.as_bytes()),
             log_bytes_max,
         };
@@ -156,16 +153,16 @@ pub enum CommandEvent {
 
 /// What a command tells, as it tells it; its end last.
 #[derive(Debug)]
-pub struct CommandEvents(mpsc::UnboundedReceiver<Told>);
+pub struct CommandEvents(mpsc::UnboundedReceiver<Completion>);
 
 impl CommandEvents {
     /// What it tells next; `None` after its end.
     pub async fn next(&mut self) -> Option<CommandEvent> {
         loop {
             let event = match self.0.recv().await? {
-                Told::Output(bytes) => CommandEvent::Output(bytes),
-                Told::Title(title) => CommandEvent::Title(title),
-                Told::Exit(exit) => CommandEvent::Exit(exit),
+                Completion::Output(bytes) => CommandEvent::Output(bytes),
+                Completion::Title(title) => CommandEvent::Title(title),
+                Completion::Exit(exit) => CommandEvent::Exit(exit),
                 _ => continue,
             };
             return Some(event);
@@ -179,7 +176,7 @@ impl Kernel {
     /// # Errors
     /// `MissingProgram` where the machine has none of the name; `Unsupported` for what the system cannot hold it to.
     pub fn spawn(&self, time: i64, under: &[u8], namespace: &Namespace, spec: &Spec) -> Result<(Command, CommandEvents)> {
-        let (tag, told) = self.beak.router.bind();
+        let (tag, completion) = self.beak.router.bind();
         let raw = spec.lowered(|lowered| {
             // SAFETY: the call is given what it asks, alive for it.
             object(|out| unsafe {
@@ -195,7 +192,7 @@ impl Kernel {
                 )
             })
         })?;
-        Ok((Command(Raw(raw)), CommandEvents(told)))
+        Ok((Command(Raw(raw)), CommandEvents(completion)))
     }
 
     /// Starts the command `spec` describes at `time` for the process at `process`, in the namespace it names.
@@ -203,12 +200,12 @@ impl Kernel {
     /// # Errors
     /// `NotFound` where no process is there, or it names no namespace registered; as `spawn`.
     pub fn spawn_for(&self, time: i64, process: &[u8], spec: &Spec) -> Result<(Command, CommandEvents)> {
-        let (tag, told) = self.beak.router.bind();
+        let (tag, completion) = self.beak.router.bind();
         let raw = spec.lowered(|lowered| {
             // SAFETY: as above.
             object(|out| unsafe { sys::beak_kernel_spawn_for(self.raw(), time, lent(process), lowered, self.beak.router.raw.0, tag, out) })
         })?;
-        Ok((Command(Raw(raw)), CommandEvents(told)))
+        Ok((Command(Raw(raw)), CommandEvents(completion)))
     }
 }
 
@@ -269,21 +266,24 @@ impl Command {
         buffer(|out| unsafe { sys::beak_command_output(self.raw(), out) })
     }
 
-    /// What it keeps from `cursor` on: where the bytes start, and the bytes.
+    /// What it keeps from `offset` on, as `pread` reads at an offset.
     ///
     /// # Errors
     /// None that a command gives.
-    pub fn since(&self, cursor: u64) -> Result<(u64, Bytes)> {
-        let mut since = sys::beak_since {
-            from: 0,
+    pub fn read_output_at(&self, offset: u64) -> Result<Chunk> {
+        let mut chunk = sys::beak_output_chunk {
+            offset: 0,
             bytes: crate::ffi::empty(),
         };
         // SAFETY: as above; the bytes are copied, then let go of once.
-        check(unsafe { sys::beak_command_since(self.raw(), cursor, &raw mut since) })?;
-        let bytes = copied(&since.bytes);
+        check(unsafe { sys::beak_command_read_output_at(self.raw(), offset, &raw mut chunk) })?;
+        let bytes = copied(&chunk.bytes);
         // SAFETY: as above.
-        unsafe { sys::beak_buffer_free(&raw mut since.bytes) };
-        Ok((since.from, bytes))
+        unsafe { sys::beak_buffer_free(&raw mut chunk.bytes) };
+        Ok(Chunk {
+            offset: chunk.offset,
+            bytes,
+        })
     }
 
     /// The sequences that draw its terminal again whole.

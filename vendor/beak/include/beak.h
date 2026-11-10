@@ -38,9 +38,9 @@ typedef enum {
 
 // What a command runs: a program and its arguments, or a command line the machine's shell runs.
 typedef enum {
-  BEAK_PROGRAM_KIND_ARGV,
-  BEAK_PROGRAM_KIND_SHELL,
-} beak_program_kind;
+  BEAK_EXEC_KIND_ARGV,
+  BEAK_EXEC_KIND_SHELL,
+} beak_exec_kind;
 
 // How a command's streams are wired: through pipes, its output and errors one stream kept and told; as a coprocess,
 // its output told and its errors kept; on a channel of descriptors 3 and 4, its own streams kept; or on a terminal of
@@ -111,7 +111,7 @@ typedef enum {
 
 // Why a process that would run is held.
 typedef enum {
-  BEAK_HELD_NO,
+  BEAK_HELD_NONE,
   BEAK_HELD_RESTART_LIMIT,
   BEAK_HELD_MISSING_PROGRAM,
   BEAK_HELD_UNKNOWN_VERSION,
@@ -154,7 +154,7 @@ typedef struct {
 // or those alone where `clear`; its streams; the first `head_bytes` and newest `tail_bytes` of what it keeps; and a
 // log of all of it at `log_path`, up to `log_bytes_max`, where the path is not empty.
 typedef struct {
-  beak_program_kind program;
+  beak_exec_kind exec;
   const beak_bytes *argv;
   size_t argc;
   beak_bytes line;
@@ -172,12 +172,12 @@ typedef struct {
   uint64_t log_bytes_max;
 } beak_spec;
 
-// What a follower reads on from a cursor: the bytes held from `from` on without a break, `from` past the cursor where
+// What a read at an offset gives: the bytes held from `offset` on without a break, `offset` past the one asked where
 // what lay between is no longer held.
 typedef struct {
-  uint64_t from;
+  uint64_t offset;
   beak_buffer bytes;
-} beak_since;
+} beak_output_chunk;
 
 // How a kernel opens: the directory its volume is kept in — memory, gone with it, where it is empty — and the time.
 typedef struct {
@@ -280,7 +280,7 @@ enum beak_change_Tag
   // A name removed, the processes under it asked to stop first.
   BEAK_CHANGE_REMOVE,
   // A name removed, the processes under it killed first.
-  BEAK_CHANGE_REMOVE_KILLING,
+  BEAK_CHANGE_FORCE_REMOVE,
 };
 #ifndef __cplusplus
 #if __STDC_VERSION__ >= 202311L
@@ -405,7 +405,7 @@ typedef struct {
 typedef struct {
   beak_bytes path;
   beak_maybe_bytes reason;
-} beak_change_RemoveKilling_Body;
+} beak_change_ForceRemove_Body;
 
 typedef struct {
   beak_change_Tag tag;
@@ -430,7 +430,7 @@ typedef struct {
     beak_change_Retry_Body RETRY;
     beak_change_Reap_Body REAP;
     beak_change_Remove_Body REMOVE;
-    beak_change_RemoveKilling_Body REMOVE_KILLING;
+    beak_change_ForceRemove_Body FORCE_REMOVE;
   };
 } beak_change;
 
@@ -477,15 +477,15 @@ typedef struct {
   beak_maybe_bytes from;
 } beak_selector;
 
-// What a process waits for, the first met ending the wait: the processes under it, by their keys, every one ending;
-// directories changing; a directory the selector picks — `until`, or null; the time `at`.
+// What a process waits for, the first met ending the wait: its children, by their keys, every one ending; directories
+// changing; a directory the selector picks — `selected`, or null; the time `deadline`.
 typedef struct {
-  const beak_bytes *on;
-  size_t on_count;
+  const beak_bytes *children;
+  size_t child_count;
   const beak_version *changes;
   size_t change_count;
-  const beak_selector *until;
-  beak_maybe_i64 at;
+  const beak_selector *selected;
+  beak_maybe_i64 deadline;
 } beak_wait;
 
 // How a phase, or a stop handler, ended.
@@ -658,7 +658,7 @@ enum beak_event_Tag
   : uint8_t
 #endif // defined(__cplusplus) || __STDC_VERSION__ >= 202311L
  {
-  // A commit was made: what it changed, the history reads on to.
+  // A commit was made: what it changed, the journal reads on to.
   BEAK_EVENT_COMMITTED,
   // A request a process made, for its handler to act on: `retold` where it was made before the volume opened, and
   // the host told of it first may have acted on it.
@@ -875,7 +875,7 @@ typedef struct {
   size_t change_count;
 } beak_change_set;
 
-// The history after a commit: the change sets read, each with what the filter met; the last commit read, which a
+// What the journal holds after a commit: the change sets read, each with what the filter met; the last commit read, which a
 // reader reads on from; the oldest the journal keeps; the snapshot's; and whether the journal no longer holds every
 // commit since, so the reader looks at everything again.
 typedef struct {
@@ -885,7 +885,7 @@ typedef struct {
   beak_maybe_u64 oldest;
   uint64_t latest;
   bool missed;
-} beak_history;
+} beak_journal;
 
 #ifdef __cplusplus
 extern "C" {
@@ -983,11 +983,13 @@ beak_status beak_command_resize(const beak_command *command,
 beak_status beak_command_output(const beak_command *command,
                                 beak_buffer *out);
 
-// What the command keeps from `cursor` on, as a follower reads on.
+// What the command keeps from `offset` on, as `pread` reads at an offset.
 //
 // # Safety
 // `command` is valid; `out` is writable.
-beak_status beak_command_since(const beak_command *command, uint64_t cursor, beak_since *out);
+beak_status beak_command_read_output_at(const beak_command *command,
+                                        uint64_t offset,
+                                        beak_output_chunk *out);
 
 // The sequences that draw the command's terminal again whole. `Invalid` for a command with no terminal.
 //
@@ -1079,11 +1081,11 @@ beak_status beak_kernel_finish(const beak_kernel *kernel,
 beak_status beak_kernel_next_due(const beak_kernel *kernel,
                                  beak_maybe_i64 *out);
 
-// A new id minted at `time`, later than every one the volume minted before.
+// A new id made at `time`, later than every one the volume made before.
 //
 // # Safety
 // `kernel` is valid; `out` is writable.
-beak_status beak_kernel_mint(const beak_kernel *kernel, int64_t time, beak_id *out);
+beak_status beak_kernel_new_id(const beak_kernel *kernel, int64_t time, beak_id *out);
 
 // Makes every commit so far survive a power loss.
 //
@@ -1130,11 +1132,11 @@ beak_status beak_namespace_mount(const beak_namespace *namespace_,
 // `namespace` is valid; `at` is valid for the call.
 beak_status beak_namespace_unmount(const beak_namespace *namespace_, beak_bytes at);
 
-// Whether what works in the namespace reaches the network.
+// Allows what works in the namespace to reach the network, or not.
 //
 // # Safety
 // `namespace` is valid.
-beak_status beak_namespace_reach_network(const beak_namespace *namespace_, bool reaches);
+beak_status beak_namespace_allow_network(const beak_namespace *namespace_, bool allowed);
 
 // Registers a copy of `namespace` with the kernel as `name`: the commands of a process naming it start in it.
 //
@@ -1362,23 +1364,23 @@ void beak_record_free(beak_record *record);
 // `snapshot` is valid; `path` is valid for the call; `out` is writable.
 beak_status beak_snapshot_record(const beak_snapshot *snapshot, beak_bytes path, beak_record **out);
 
-// Lets go of a history Beak gave.
+// Lets go of a journal Beak gave.
 //
 // # Safety
-// `history` is null, or one Beak gave and nothing let go of.
-void beak_history_free(beak_history *history);
+// `journal` is null, or one Beak gave and nothing let go of.
+void beak_journal_free(beak_journal *journal);
 
 // The changes of the commits after `after` up to the snapshot's, `limit` change sets read at most, those one of the
 // `selector_count` selectors meets — every one where there are none.
 //
 // # Safety
 // `snapshot` is valid; `selectors` holds `selector_count` selectors valid for the call; `out` is writable.
-beak_status beak_snapshot_history(const beak_snapshot *snapshot,
+beak_status beak_snapshot_journal(const beak_snapshot *snapshot,
                                   uint64_t after,
                                   size_t limit,
                                   const beak_selector *selectors,
                                   size_t selector_count,
-                                  beak_history **out);
+                                  beak_journal **out);
 
 #ifdef __cplusplus
 }  // extern "C"
