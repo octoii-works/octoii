@@ -3131,6 +3131,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "siphon-tools"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "beak",
+ "bytes",
+ "globset",
+ "jsonschema",
+ "octoii-ai",
+ "schemars 1.2.3",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "siphon-machine",
+ "siphon-runtime",
+ "siphon-shell",
+ "siphon-text",
+ "siphon-threads",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
 name = "slab"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
