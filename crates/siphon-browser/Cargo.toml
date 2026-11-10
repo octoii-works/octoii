@@ -1,0 +1,27 @@
+[package]
+name = "siphon-browser"
+description = "The browser of the threads: one headless Chromium spoken to over its DevTools pipe on Beak's channel, its pages each a thread's, painted for the person and read and acted on for the model"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+beak = { path = "../../vendor/beak/crates/beak" }
+base64 = "0.23.1"
+bytes = "1.12.1"
+chromiumoxide_cdp = "0.9.1"
+chromiumoxide_types = "0.9.1"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+siphon-machine = { path = "../siphon-machine" }
+thiserror = "2.0.21"
+tokio = { version = "1.54.1", features = ["rt", "sync", "macros", "time"] }
+
+[dev-dependencies]
+tempfile = "3.27.0"
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "time", "net", "io-util"] }

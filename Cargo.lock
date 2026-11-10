@@ -311,6 +311,44 @@ dependencies = [
 ]
 
 [[package]]
+name = "chromiumoxide_cdp"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "68a6a03a7ebac4ea85308f285d6959a3e6b2ce32a0c9465dc7a7b1db0144eec7"
+dependencies = [
+ "chromiumoxide_pdl",
+ "chromiumoxide_types",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "chromiumoxide_pdl"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c602dea92337bc4d824668d78c5b79c3b4ddb29b40dd7218282bbe8fd3fc2091"
+dependencies = [
+ "chromiumoxide_types",
+ "either",
+ "heck",
+ "once_cell",
+ "proc-macro2",
+ "quote",
+ "regex",
+ "serde_json",
+]
+
+[[package]]
+name = "chromiumoxide_types"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "678d5146e74f16fc4a41978b275af572cd913de1f10270d2b93b6c276bc57d80"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "chrono"
 version = "0.4.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2954,6 +2992,23 @@ dependencies = [
  "serde_json",
  "siphon-runtime",
  "siphon-threads",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "siphon-browser"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "beak",
+ "bytes",
+ "chromiumoxide_cdp",
+ "chromiumoxide_types",
+ "serde",
+ "serde_json",
+ "siphon-machine",
+ "tempfile",
  "thiserror",
  "tokio",
 ]
