@@ -44,6 +44,7 @@ fn input(id: &str, content: Vec<InputContent>) -> Entry {
         actor: "person".into(),
         delivery: id.into(),
         content,
+        reply_to: None,
     }
 }
 

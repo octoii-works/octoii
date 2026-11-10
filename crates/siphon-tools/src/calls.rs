@@ -84,6 +84,7 @@ fn shown(tool: &str, arguments: &str, effect: &Effect) -> Shown {
         Effect::Acts { tool } => (vec![format!("acts through {tool}, which may do anything")], None),
         Effect::Browses => (vec!["works the browser".into()], None),
         Effect::Calls => (vec!["runs a script whose calls are each weighed".into()], None),
+        Effect::Delegates => (vec!["hands a task to a sub-thread, whose calls are weighed in it".into()], None),
     };
     Shown {
         tool: tool.to_owned(),
@@ -287,7 +288,7 @@ impl Calls {
                         self.0[at].state = ended(status, refusal.0);
                     }
                     Ok(effect) => {
-                        let acts = effect != Effect::Reads;
+                        let acts = !matches!(effect, Effect::Reads | Effect::Delegates);
                         self.0[at].acts = Some(acts);
                         if !(acting || (acts && unended)) {
                             self.0[at].state = self.start(at, run, setting, &effect)?;

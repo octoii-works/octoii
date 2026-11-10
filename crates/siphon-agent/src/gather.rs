@@ -14,9 +14,10 @@ use serde::{Deserialize, Serialize};
 use siphon_machine::Host;
 use siphon_runtime::{Asked, Request, Runtime, Unanswered};
 use siphon_threads::{Config, Mode, thread};
-use siphon_tools::Tools;
 use siphon_tools::mcp::{Place, Servers};
+use siphon_tools::{Tool as _, Tools};
 
+use crate::delegate::DelegateTool;
 use crate::skills;
 use crate::told::Told;
 
@@ -124,6 +125,14 @@ pub async fn gathered(sources: &Sources, runtime: &Runtime, id: &str) -> anyhow:
             parameters: declared.parameters,
         })
         .collect();
+    // A sub-thread delegates no further.
+    if directory
+        .label(thread::PARENT_LABEL.as_bytes())
+        .is_some_and(|parent| !parent.is_empty())
+    {
+        told.tools
+            .retain(|tool| !matches!(tool, Tool::Function { name, .. } if name == DelegateTool::NAME));
+    }
     let searches = config
         .model
         .as_deref()

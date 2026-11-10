@@ -1,5 +1,6 @@
 //! What a call does to the machine, as its tool tells it from its arguments: it reads alone; it edits files; it runs a
-//! command line; or it acts through a tool that may do anything. A command line is read as the shell's language reads
+//! command line; it acts through a tool that may do anything; it works the browser; it runs a script, or a sub-thread,
+//! whose own calls are weighed. A command line is read as the shell's language reads
 //! it — each simple command its program and its words — so a grant covers a command by the words that name what it
 //! does, `git push *` of `git push origin main`; a line no reading knows whole is covered by no grant.
 
@@ -26,6 +27,9 @@ pub enum Effect {
     Browses,
     /// It runs a program whose own calls are each weighed as they are made: a script.
     Calls,
+    /// It hands a task to a sub-thread, whose own calls are weighed in it: it does nothing to the machine itself, and
+    /// goes ahead beside the calls around it, as a read does.
+    Delegates,
 }
 
 /// A command line as a grant and a weighing read it: each simple command, the pattern a grant of it takes, and

@@ -3033,6 +3033,7 @@ dependencies = [
  "bytes",
  "futures",
  "octoii-ai",
+ "schemars 1.2.3",
  "serde",
  "serde_json",
  "siphon-accounts",

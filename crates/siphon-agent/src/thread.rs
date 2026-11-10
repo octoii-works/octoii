@@ -12,7 +12,7 @@ use bytes::Bytes;
 use octoii_ai::vocabulary::{FunctionCallOutput, InputContent, Item};
 use serde::{Deserialize, Serialize};
 use siphon_runtime::{Answer, Ending, Program, Retries, Run, Wait};
-use siphon_threads::inbox::{self, Inbound};
+use siphon_threads::inbox::{self, Ended, Inbound};
 use siphon_threads::log::Writer;
 use siphon_threads::{CallStatus, Config, Entry, MainInput, Outcome as TurnOutcome, Turn, Usage, Window, thread};
 use siphon_tools::mcp::TrustProgram;
@@ -145,6 +145,7 @@ fn begin(run: &mut Run<'_>, id: &str, told: Told) -> anyhow::Result<Ending<MainS
     if !taken.iter().any(|each| matches!(each.entry, Entry::Input { .. })) {
         return Ok(Ending::Next(MainState::Rest));
     }
+    let taken: Vec<Entry> = taken.into_iter().map(|each| each.entry).collect();
     let config = Config::of(
         &run.snapshot()
             .stat(&thread::path(id))?
@@ -153,13 +154,13 @@ fn begin(run: &mut Run<'_>, id: &str, told: Told) -> anyhow::Result<Ending<MainS
     )?;
     let left = budget_left(run, id, &config)?;
     if left == Some(0) {
-        return end_before(run, id, &mut writer, "its thread's budget is spent");
+        return end_before(run, id, &mut writer, &taken, "its thread's budget is spent");
     }
     if let Some(model) = &config.model
         && let Some(used_up) = siphon_accounts::used_up(run.snapshot(), siphon_accounts::provider_of(model))?
     {
         let reason = format!("its model's account is used up till {} ms since the epoch", used_up.reset_at_ms);
-        return end_before(run, id, &mut writer, &reason);
+        return end_before(run, id, &mut writer, &taken, &reason);
     }
     if config.title.is_none() && config.model.is_some() {
         let titling = layout::process(run.path(), TitleProgram::KEY.as_bytes());
@@ -199,16 +200,16 @@ fn budget_left(run: &Run<'_>, id: &str, config: &Config) -> anyhow::Result<Optio
 /// Ends the inputs that wait as a turn that failed before its model was asked, for `reason`.
 fn fail_before(run: &mut Run<'_>, id: &str, reason: &str) -> anyhow::Result<Ending<MainState, ()>> {
     let mut writer = Writer::open(run.snapshot(), id)?;
-    let taken = inbox::take(run, id, &mut writer)?;
-    if !taken.iter().any(|each| matches!(each.entry, Entry::Input { .. })) {
+    let taken: Vec<Entry> = inbox::take(run, id, &mut writer)?.into_iter().map(|each| each.entry).collect();
+    if !taken.iter().any(|entry| matches!(entry, Entry::Input { .. })) {
         return Ok(Ending::Next(MainState::Rest));
     }
-    end_before(run, id, &mut writer, reason)
+    end_before(run, id, &mut writer, &taken, reason)
 }
 
-/// Ends the inputs just taken as a turn that failed before its model was asked, for `reason`: its end appended with the
-/// same commit.
-fn end_before(run: &mut Run<'_>, id: &str, writer: &mut Writer, reason: &str) -> anyhow::Result<Ending<MainState, ()>> {
+/// Ends the inputs just taken, `taken`, as a turn that failed before its model was asked, for `reason`: its end
+/// appended with the same commit, and who waits on them told.
+fn end_before(run: &mut Run<'_>, id: &str, writer: &mut Writer, taken: &[Entry], reason: &str) -> anyhow::Result<Ending<MainState, ()>> {
     let entry = Entry::TurnEnd {
         id: run.new_id()?,
         turn: None,
@@ -218,7 +219,24 @@ fn end_before(run: &mut Run<'_>, id: &str, writer: &mut Writer, reason: &str) ->
     writer.append(&mut run.changes, &entry)?;
     let now = run.time_ms();
     siphon_threads::ended(&mut run.changes, id, Turn::Failed, now);
+    let ended = Ended::Failed { reason: reason.to_owned() };
+    tell(run, taken, &ended)?;
     Ok(Ending::Next(MainState::Rest))
+}
+
+/// Tells who waits on each input of `entries` how the turn that took it ended, as `ended` says.
+fn tell(run: &mut Run<'_>, entries: &[Entry], ended: &Ended) -> anyhow::Result<()> {
+    let mut told = siphon_runtime::Changes::new();
+    for entry in entries {
+        if let Entry::Input {
+            reply_to: Some(reply_to), ..
+        } = entry
+        {
+            inbox::tell(run.snapshot(), &mut told, reply_to, ended)?;
+        }
+    }
+    run.changes.extend(told);
+    Ok(())
 }
 
 /// The turn keyed `turn` running: settled once it ended, and reaped.
@@ -256,7 +274,8 @@ fn said(bytes: Option<&[u8]>, otherwise: &str) -> String {
 }
 
 /// Settles the turn `turn` — none for one whose process is gone — as it ended: every call the replies since the last
-/// turn's end made that has no result answered interrupted, its end appended, and how and when it ended set.
+/// turn's end made that has no result answered interrupted, its end appended, how and when it ended set, and who
+/// waits on its inputs told.
 fn settle(run: &mut Run<'_>, id: &str, ended: TurnOutcome, reason: Option<String>, turn: Option<&str>) -> anyhow::Result<()> {
     let window = Window::read(run.snapshot(), id)?;
     let since = window
@@ -266,12 +285,19 @@ fn settle(run: &mut Run<'_>, id: &str, ended: TurnOutcome, reason: Option<String
         .map_or(0, |at| at + 1);
     let mut made = Vec::new();
     let mut answered = Vec::new();
+    let mut said = String::new();
     for entry in &window.conversation[since..] {
         match entry {
-            Entry::Reply { response, .. } => made.extend(response.output.iter().filter_map(|item| match item {
-                Item::FunctionCall(call) => Some(call.call_id.clone()),
-                _ => None,
-            })),
+            Entry::Reply { response, .. } => {
+                made.extend(response.output.iter().filter_map(|item| match item {
+                    Item::FunctionCall(call) => Some(call.call_id.clone()),
+                    _ => None,
+                }));
+                let words = response.words();
+                if !words.is_empty() {
+                    said = words;
+                }
+            }
             Entry::Result { output, .. } => answered.push(output.call_id.clone()),
             _ => {}
         }
@@ -290,6 +316,14 @@ fn settle(run: &mut Run<'_>, id: &str, ended: TurnOutcome, reason: Option<String
         };
         writer.append(&mut run.changes, &entry)?;
     }
+    let told = match ended {
+        TurnOutcome::Replied => Ended::Replied { said },
+        TurnOutcome::Failed => Ended::Failed {
+            reason: reason.clone().unwrap_or_default(),
+        },
+        TurnOutcome::Stopped => Ended::Stopped,
+    };
+    tell(run, &window.conversation[since..], &told)?;
     let entry = Entry::TurnEnd {
         id: run.new_id()?,
         turn: turn.map(str::to_owned),

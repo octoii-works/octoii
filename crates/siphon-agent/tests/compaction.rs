@@ -10,6 +10,7 @@ fn input(id: &str) -> Entry {
         actor: "person".into(),
         delivery: id.into(),
         content: vec![InputContent::text("x")],
+        reply_to: None,
     }
 }
 

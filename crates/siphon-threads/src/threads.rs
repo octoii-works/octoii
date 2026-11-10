@@ -3,7 +3,7 @@
 
 use std::marker::PhantomData;
 
-use beak::{Query, Range, Signal, layout};
+use beak::{Query, Range, layout};
 use bytes::Bytes;
 use octoii_ai::vocabulary::InputContent;
 use serde::{Deserialize, Serialize};
@@ -85,7 +85,7 @@ impl<M: Program<Input = MainInput>> Threads<M> {
         }
         let id = self.runtime.new_id()?;
         let mut changes = Changes::new();
-        self.made(&mut changes, &id, new)?;
+        Self::made(&mut changes, &id, &self.runtime.new_id()?, new)?;
         let done = Done {
             method: "threads.create".into(),
             thread: None,
@@ -97,12 +97,13 @@ impl<M: Program<Input = MainInput>> Threads<M> {
     }
 
     /// Adds to `changes` what makes the thread `id` as `new` says: its directory, labelled and annotated, its inbox, its
-    /// log begun with how it runs, and its main process started — committed with whatever else `changes` holds, as a
-    /// process that delegates makes its sub-thread with its own commit. The log has no writer before this commit.
+    /// log begun with how it runs, by the entry `entry`, and its main process started — committed with whatever else
+    /// `changes` holds, as a process that delegates makes its sub-thread with its own commit. The log has no writer
+    /// before this commit.
     ///
     /// # Errors
-    /// What cannot be written as JSON; past the last id there is.
-    pub fn made(&self, changes: &mut Changes, id: &str, new: &NewThread) -> Result<(), Error> {
+    /// What cannot be written as JSON.
+    pub fn made(changes: &mut Changes, id: &str, entry: &str, new: &NewThread) -> Result<(), Error> {
         let path = thread::path(id);
         let named = |name: &'static str, value: Option<&str>| {
             (
@@ -131,7 +132,7 @@ impl<M: Program<Input = MainInput>> Threads<M> {
             .mkdir(inbox::path(id))
             .mkdir(log::path(id));
         let entry = Entry::Config {
-            id: self.runtime.new_id()?,
+            id: entry.to_owned(),
             actor: new.actor.clone(),
             changed: made,
         };
@@ -155,15 +156,18 @@ impl<M: Program<Input = MainInput>> Threads<M> {
     fn put(&self, id: &str, inbound: &Inbound, changes: &mut Changes) -> Result<String, Error> {
         let delivery = self.runtime.new_id()?;
         inbox::put(changes, id, &delivery, inbound)?;
-        self.revive(id, changes)?;
+        Self::revive(&self.runtime.snapshot()?, changes, id)?;
         Ok(delivery)
     }
 
     /// Adds to `changes` the main process of the thread `id` started again where it ended — failed past its retries,
     /// or killed — as socket activation starts a service a message comes for; one that lives is left as it is.
-    fn revive(&self, id: &str, changes: &mut Changes) -> Result<(), Error> {
+    ///
+    /// # Errors
+    /// The volume's failure; what cannot be written as JSON.
+    pub fn revive(snapshot: &beak::Snapshot, changes: &mut Changes, id: &str) -> Result<(), Error> {
         let main = thread::main(id);
-        match self.runtime.snapshot()?.record(&main)? {
+        match snapshot.record(&main)? {
             Some(record) if record.state != beak::ProcessState::Zombie => return Ok(()),
             Some(_) => {
                 changes.reap(main);
@@ -188,6 +192,7 @@ impl<M: Program<Input = MainInput>> Threads<M> {
         let inbound = Inbound::Input {
             actor: actor.to_owned(),
             content,
+            reply_to: None,
         };
         let delivery = self.put(id, &inbound, &mut changes)?;
         let done = Done {
@@ -232,23 +237,31 @@ impl<M: Program<Input = MainInput>> Threads<M> {
         Ok(())
     }
 
-    /// Takes back what was delivered to the thread `id` as `delivery`, while it waits in its inbox: whether it did.
+    /// Takes back what was delivered to the thread `id` as `delivery`, while it waits in its inbox — who waits on an
+    /// input told it was — whether it did.
     ///
     /// # Errors
     /// The commit's failure.
     pub async fn withdraw(&self, id: &str, delivery: &str) -> Result<bool, Error> {
+        let snapshot = self.runtime.snapshot()?;
         let file = inbox::file(id, delivery);
-        if self.runtime.snapshot()?.stat(&file)?.is_none() {
+        let Some(bytes) = snapshot.read(&file, 0, u64::MAX)? else {
             return Ok(false);
-        }
+        };
         let mut changes = Changes::new();
+        if let Inbound::Input {
+            reply_to: Some(reply_to), ..
+        } = serde_json::from_slice(&bytes)?
+        {
+            inbox::tell(&snapshot, &mut changes, &reply_to, &inbox::Ended::Withdrawn)?;
+        }
         changes.delete(file);
         self.runtime.commit(changes).await?;
         Ok(true)
     }
 
-    /// Stops the thread `id` for `actor`: the inputs of theirs that wait withdrawn, and each process under its main
-    /// process — its turn — asked to stop, in one commit.
+    /// Stops the thread `id` for `actor`: the inputs of theirs that wait withdrawn, and its turn asked to stop — none of
+    /// what runs beside it, as an interrupt reaches the foreground alone — in one commit.
     ///
     /// # Errors
     /// `NoSuchThread`; the commit's failure.
@@ -261,16 +274,7 @@ impl<M: Program<Input = MainInput>> Threads<M> {
                 changes.delete(inbox::file(id, &waiting.id));
             }
         }
-        let main = thread::main(id);
-        let under = Range {
-            prefix: layout::PROCESS_KIND,
-            limit: usize::MAX,
-            ..Range::default()
-        };
-        for child in snapshot.list(&main, &under)?.unwrap_or_default() {
-            let path: Bytes = [&main[..], b"/", &child.name[..]].concat().into();
-            changes.signal(path, Signal::Terminate, Some(Bytes::from_static(b"stopped")));
-        }
+        thread::stop_turn(&snapshot, &mut changes, id)?;
         if !changes.is_empty() {
             self.runtime.commit(changes).await?;
         }

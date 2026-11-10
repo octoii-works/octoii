@@ -12,6 +12,7 @@ workspace = true
 
 [dependencies]
 anyhow = "1.0.104"
+schemars = "1.2.3"
 beak = { path = "../../vendor/beak/crates/beak" }
 bytes = "1.12.1"
 octoii-ai = { path = "../octoii-ai" }

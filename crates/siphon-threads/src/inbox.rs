@@ -7,7 +7,7 @@ use beak::{Range, Snapshot};
 use bytes::Bytes;
 use octoii_ai::vocabulary::InputContent;
 use serde::{Deserialize, Serialize};
-use siphon_runtime::{Changes, Run};
+use siphon_runtime::{Changes, Mail, Run};
 
 use crate::config::{Config, ConfigChange};
 use crate::log::{Address, Entry, Error, Writer};
@@ -17,14 +17,65 @@ use crate::thread;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum Inbound {
-    /// An input: whose it is — the person's, or a thread's — and what it says.
-    Input { actor: String, content: Vec<InputContent> },
+    /// An input: whose it is — the person's, or a thread's — what it says, and who is told how the turn that takes it
+    /// ends, where someone waits on it.
+    Input {
+        actor: String,
+        content: Vec<InputContent>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reply_to: Option<ReplyTo>,
+    },
     /// A change of how the thread runs, by whom.
     Config {
         actor: String,
         #[serde(flatten)]
         change: ConfigChange,
     },
+}
+
+/// Who is told how the turn that takes an input ends, by mail of `key`: the process at `process`, by its path, as the
+/// commit `started` started it — whichever lives there, where none — as `wait(2)` tells a parent its child's status.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReplyTo {
+    pub process: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub started: Option<u64>,
+    pub key: String,
+}
+
+/// How the turn that took an input ended, as who waits on it is told: replied, with what it said last; failed, and
+/// why; stopped; or the input taken back before a turn took it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "ended", rename_all = "kebab-case")]
+pub enum Ended {
+    Replied { said: String },
+    Failed { reason: String },
+    Stopped,
+    Withdrawn,
+}
+
+/// The name of the mail that tells how the turn that took an input ended.
+pub const ENDED_MAIL: &str = "siphon.ended";
+
+/// Adds to `changes` mail to `reply_to` that the turn that took its input ended as `ended`, where the process waits
+/// still — one that ended is told nothing.
+///
+/// # Errors
+/// The volume's failure.
+pub fn tell(snapshot: &Snapshot, changes: &mut Changes, reply_to: &ReplyTo, ended: &Ended) -> beak::Result<()> {
+    let process = Bytes::copy_from_slice(reply_to.process.as_bytes());
+    let lives = snapshot
+        .record(&process)?
+        .is_some_and(|record| record.outcome.is_none() && reply_to.started.is_none_or(|started| record.created_seq == started));
+    if lives {
+        let mail = Mail {
+            key: Bytes::copy_from_slice(reply_to.key.as_bytes()),
+            name: Bytes::from_static(ENDED_MAIL.as_bytes()),
+            payload: serde_json::to_vec(ended).unwrap_or_default().into(),
+        };
+        changes.send(process, mail, reply_to.started);
+    }
+    Ok(())
 }
 
 /// What waits in an inbox: its id, by which it is withdrawn, and what was delivered.
@@ -106,11 +157,12 @@ pub fn take(run: &mut Run<'_>, id: &str, writer: &mut Writer) -> Result<Vec<Take
     for each in waiting {
         run.changes.delete(file(id, &each.id));
         let entry = match each.inbound {
-            Inbound::Input { actor, content } => Entry::Input {
+            Inbound::Input { actor, content, reply_to } => Entry::Input {
                 id: run.new_id()?,
                 actor,
                 delivery: each.id,
                 content,
+                reply_to,
             },
             Inbound::Config { actor, change } => {
                 let (after, changed) = config.with(&change);

@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use siphon_runtime::Changes;
 
 use crate::config::ConfigChanged;
+use crate::inbox::ReplyTo;
 use crate::thread;
 
 /// Past it, the next entry begins a segment of its own.
@@ -31,12 +32,15 @@ pub enum Entry {
         #[serde(flatten)]
         changed: ConfigChanged,
     },
-    /// An input taken from the inbox: whose it is, the inbox's id of it, and what it says.
+    /// An input taken from the inbox: whose it is, the inbox's id of it, what it says, and who is told how the turn that
+    /// took it ends.
     Input {
         id: String,
         actor: String,
         delivery: String,
         content: Vec<InputContent>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reply_to: Option<ReplyTo>,
     },
     /// What the model is told of itself and of where it works, where it changed before a turn: each section new or
     /// changed, whole, and each no longer told; and, in the entry that begins a window, the tools the window declares.
@@ -339,6 +343,14 @@ pub fn cursor_of(snapshot: &Snapshot, id: &str, from: Option<&Cursor>, entry: &s
         }
     }
     Ok(None)
+}
+
+/// The time, in milliseconds since the epoch, an id made by the volume — a `UUIDv7` — was made at; none for what is no
+/// such id. A segment's name begins with one.
+#[must_use]
+pub fn time_of(id: &str) -> Option<i64> {
+    let hex: String = id.chars().filter(char::is_ascii_hexdigit).take(12).collect();
+    (hex.len() == 12).then(|| i64::from_str_radix(&hex, 16).ok()).flatten()
 }
 
 /// The entry of `line`.

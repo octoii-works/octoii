@@ -83,7 +83,7 @@ pub struct TurnProgram {
 }
 
 impl Program for TurnProgram {
-    const KIND: &'static str = "siphon.turn";
+    const KIND: &'static str = siphon_threads::thread::TURN_KIND;
     const STOP_HANDLER: bool = true;
     const RETRIES: Retries = Retries {
         count: 3,

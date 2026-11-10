@@ -20,8 +20,12 @@ pub const ARCHIVED_LABEL: &str = "siphon.archived";
 /// The annotation of the call of its parent that delegated it.
 pub const PARENT_CALL_ANNOTATION: &str = "siphon.parent_call";
 
-/// The key of a thread's main process, which alone appends to its log.
+/// The key of a thread's main process.
 pub const MAIN_KEY: &str = "main";
+
+/// The kind of a thread's turn, a process under its main process — which a stop of the thread asks to stop, and
+/// nothing else beside it.
+pub const TURN_KIND: &str = "siphon.turn";
 
 /// The directory of the thread `id`.
 #[must_use]
@@ -52,4 +56,26 @@ pub fn within(id: &str, name: &str) -> Bytes {
 /// A flag as a label holds it.
 pub(crate) fn flag(on: bool) -> Bytes {
     if on { Bytes::from_static(b"true") } else { Bytes::new() }
+}
+
+/// Adds to `changes` the turn of the thread `id` asked to stop, where one runs — none of what runs beside it.
+///
+/// # Errors
+/// The volume's failure.
+pub fn stop_turn(snapshot: &beak::Snapshot, changes: &mut siphon_runtime::Changes, id: &str) -> beak::Result<()> {
+    let main = main(id);
+    let under = beak::Range {
+        prefix: layout::PROCESS_KIND,
+        limit: usize::MAX,
+        ..beak::Range::default()
+    };
+    for child in snapshot.list(&main, &under)?.unwrap_or_default() {
+        let path: Bytes = [&main[..], b"/", &child.name[..]].concat().into();
+        let directory = snapshot.stat(&path)?.and_then(|entry| entry.directory);
+        let kind = directory.as_ref().and_then(|directory| directory.label(layout::PROGRAM_LABEL));
+        if kind.is_some_and(|kind| kind == TURN_KIND.as_bytes()) {
+            changes.signal(path, beak::Signal::Terminate, Some(Bytes::from_static(b"stopped")));
+        }
+    }
+    Ok(())
 }

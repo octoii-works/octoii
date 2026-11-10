@@ -325,15 +325,9 @@ fn expire_before(run: &mut Run<'_>, id: &str, segment: &str) -> anyhow::Result<(
         return Ok(());
     };
     for pair in segments[..=end].windows(2) {
-        let Some(last_written) = time_of(&pair[1].0) else { continue };
+        let Some(last_written) = log::time_of(&pair[1].0) else { continue };
         let at = last_written + i64::from(days) * 86_400_000;
         run.changes.expire(log::segment(id, &pair[0].0), Some(at));
     }
     Ok(())
-}
-
-/// The time, in milliseconds since the epoch, of the `UUIDv7` a segment's name begins with.
-fn time_of(name: &str) -> Option<i64> {
-    let hex: String = name.chars().filter(char::is_ascii_hexdigit).take(12).collect();
-    (hex.len() == 12).then(|| i64::from_str_radix(&hex, 16).ok()).flatten()
 }
