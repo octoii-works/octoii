@@ -58,7 +58,7 @@ pub async fn read_whole(mut body: Body) -> Result<Bytes, Failure> {
 ///
 /// # Errors
 /// The failure of a response that is not ok, or an `invalid_response` one where its JSON is no `T`.
-pub async fn json<T: serde::de::DeserializeOwned>(call: &Call, response: http::Response<Body>, details: Details) -> Result<T, Failure> {
+pub async fn json<T: serde::de::DeserializeOwned>(call: &Call, response: http::Response<Body>, details: Details<'_>) -> Result<T, Failure> {
     if !response.status().is_success() {
         return Err(failure_of(call, response, details).await);
     }
@@ -84,7 +84,7 @@ pub struct Said {
 }
 
 /// How a protocol reads what a failure's body says.
-pub type Details = fn(&str) -> Option<Said>;
+pub type Details<'a> = &'a (dyn Fn(&str) -> Option<Said> + Sync);
 
 /// What a body says of nothing.
 #[must_use]
@@ -95,7 +95,7 @@ pub fn nothing(_: &str) -> Option<Said> {
 /// The failure a response that is not ok stands for, its body read: its kind by its status unless the body says;
 /// the wait its headers ask for, else the body's, else for a rate limit the reset of its spent limits; a quota used up
 /// given again when the body says, else once that wait is over.
-pub async fn failure_of(call: &Call, response: http::Response<Body>, details: Details) -> Failure {
+pub async fn failure_of(call: &Call, response: http::Response<Body>, details: Details<'_>) -> Failure {
     let status = response.status().as_u16();
     let headers = response.headers().clone();
     let body = read_whole(response.into_body()).await.unwrap_or_default();

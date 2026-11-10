@@ -77,7 +77,7 @@ async fn a_failure_is_its_statuss_kind_with_the_wait_its_headers_ask_for_unless_
     )
     .await
     .expect("sent");
-    let failure = wire::failure_of(&made, response, wire::nothing).await;
+    let failure = wire::failure_of(&made, response, &wire::nothing).await;
     assert_eq!(
         (failure.kind, failure.status, failure.retry_after_ms),
         (FailureKind::RateLimit, Some(429), Some(2000))
@@ -106,7 +106,7 @@ async fn a_failure_is_its_statuss_kind_with_the_wait_its_headers_ask_for_unless_
     )
     .await
     .expect("sent");
-    let failure = wire::failure_of(&made, response, said).await;
+    let failure = wire::failure_of(&made, response, &said).await;
     assert_eq!((failure.kind, failure.message.as_str()), (FailureKind::Quota, "used up"));
     assert_eq!(failure.reset_at_ms, Some(1_000_000 + 1500));
 }

@@ -1,0 +1,78 @@
+---
+source: crates/octoii-ai/tests/responses.rs
+expression: response
+---
+{
+  "id": "resp_1",
+  "model": "openrouter/deepseek/deepseek-v4.1-flash",
+  "status": "completed",
+  "output": [
+    {
+      "type": "reasoning",
+      "id": "rs_2",
+      "summary": [
+        "thinking"
+      ],
+      "encrypted_content": "e2",
+      "origin": {
+        "model": "openrouter/deepseek/deepseek-v4.1-flash"
+      }
+    },
+    {
+      "type": "web_search_call",
+      "id": "ws_1",
+      "status": "completed",
+      "action": {
+        "type": "search",
+        "query": "rust"
+      },
+      "origin": {
+        "model": "openrouter/deepseek/deepseek-v4.1-flash"
+      }
+    },
+    {
+      "type": "message",
+      "role": "assistant",
+      "id": "msg_2",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "Rust is fast.",
+          "annotations": [
+            {
+              "url": "https://rust-lang.org",
+              "title": "Rust",
+              "start_index": 0,
+              "end_index": 4
+            }
+          ]
+        }
+      ],
+      "status": "completed",
+      "origin": {
+        "model": "openrouter/deepseek/deepseek-v4.1-flash"
+      }
+    },
+    {
+      "type": "function_call",
+      "id": "fc_2",
+      "call_id": "call_2",
+      "name": "read",
+      "arguments": "{\"path\":\"b\"}",
+      "status": "incomplete",
+      "origin": {
+        "model": "openrouter/deepseek/deepseek-v4.1-flash"
+      }
+    }
+  ],
+  "usage": {
+    "input_tokens": 120,
+    "cached_tokens": 100,
+    "cache_write_tokens": 0,
+    "output_tokens": 30,
+    "reasoning_tokens": 10,
+    "web_searches": 1,
+    "cost_nanodollars": 12500
+  },
+  "context_tokens": 120
+}

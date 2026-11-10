@@ -1,0 +1,99 @@
+---
+source: crates/octoii-ai/tests/responses.rs
+expression: "sent_to(&OPENAI, \"openai\", \"gpt-6-sol\", &conversation()).await"
+---
+{
+  "include": [
+    "reasoning.encrypted_content"
+  ],
+  "input": [
+    {
+      "content": [
+        {
+          "text": "what is this?",
+          "type": "input_text"
+        },
+        {
+          "detail": "auto",
+          "image_url": "data:image/png;base64,cG5n",
+          "type": "input_image"
+        }
+      ],
+      "role": "user",
+      "type": "message"
+    },
+    {
+      "encrypted_content": "sealed",
+      "id": "rs_1",
+      "summary": [
+        {
+          "text": "looked",
+          "type": "summary_text"
+        }
+      ],
+      "type": "reasoning"
+    },
+    {
+      "arguments": "{\"path\":\"a\"}",
+      "call_id": "call_1",
+      "name": "read",
+      "type": "function_call"
+    },
+    {
+      "call_id": "call_1",
+      "output": "# A",
+      "type": "function_call_output"
+    },
+    {
+      "content": [
+        {
+          "text": "<system-update>the date changed</system-update>",
+          "type": "input_text"
+        }
+      ],
+      "role": "developer",
+      "type": "message"
+    },
+    {
+      "content": [
+        {
+          "annotations": [],
+          "text": "an image",
+          "type": "output_text"
+        }
+      ],
+      "id": "msg_1",
+      "role": "assistant",
+      "status": "completed",
+      "type": "message"
+    }
+  ],
+  "instructions": "Be brief.",
+  "model": "gpt-6-sol",
+  "prompt_cache_key": "thread-1",
+  "reasoning": {
+    "effort": "high",
+    "summary": "auto"
+  },
+  "store": false,
+  "stream": true,
+  "tool_choice": "auto",
+  "tools": [
+    {
+      "description": "Reads a file.",
+      "name": "read",
+      "parameters": {
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "type": "function"
+    },
+    {
+      "type": "web_search"
+    }
+  ]
+}

@@ -4,7 +4,9 @@
 
 pub mod catalogue;
 pub mod driver;
+pub mod drivers;
 pub mod host;
+pub mod protocols;
 pub mod stream;
 pub mod transport;
 pub mod vocabulary;
