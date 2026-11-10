@@ -538,7 +538,7 @@ impl Driver for ResponsesDriver {
     fn stream<'a>(&'a self, call: &'a Call, model: &'a Model, request: &'a Request) -> BoxFuture<'a, Result<Source, Failure>> {
         Box::pin(async move {
             let key = call
-                .api_key()
+                .api_key()?
                 .ok_or_else(|| Failure::new(FailureKind::Auth, format!("No API key is set for {}", self.name)))?;
             let body = render(call, model, request, &self.dialect)?;
             let request = http::Request::post(format!("{}/responses", call.base_url(self.base_url)))

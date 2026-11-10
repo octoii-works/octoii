@@ -7,10 +7,10 @@ use std::sync::Arc;
 use futures::future::BoxFuture;
 
 use crate::catalogue::Model;
-use crate::host::{Credential, Files};
+use crate::host::{Credential, Credentials, Files};
 use crate::stream::Source;
 use crate::transport::Transport;
-use crate::vocabulary::{Failure, Request};
+use crate::vocabulary::{Failure, FailureKind, Request};
 
 /// How a provider is reached: by an API key, its environment's variable named; by a sign-in in a browser; as a server
 /// of the person's that takes no credential; or through an agent the person signs in to on its own.
@@ -30,14 +30,14 @@ pub struct Settings {
     pub headers: Vec<(String, String)>,
 }
 
-/// A call of a driver's: the provider it is made for, by its id, and its settings; its credential, where the host
-/// keeps one; where its requests go; the files a conversation names; and the time it is made, in milliseconds since
-/// 1970.
+/// A call of a driver's: the provider it is made for, by its id, and its settings; the host's credentials, read for
+/// the provider's at each use and kept as a sign-in renews; where its requests go; the files a conversation names; and
+/// the time it is made, in milliseconds since 1970.
 #[derive(Clone)]
 pub struct Call {
     pub provider: String,
     pub settings: Settings,
-    pub credential: Option<Credential>,
+    pub credentials: Arc<dyn Credentials>,
     pub transport: Arc<dyn Transport>,
     pub files: Arc<dyn Files>,
     pub now_ms: i64,
@@ -60,13 +60,25 @@ impl Call {
         self.settings.base_url.as_deref().unwrap_or(default)
     }
 
-    /// The API key the call holds; none where it holds another credential, or none.
-    #[must_use]
-    pub fn api_key(&self) -> Option<&str> {
-        match &self.credential {
+    /// The provider's credential, as the host keeps it now; none where it keeps none.
+    ///
+    /// # Errors
+    /// An `auth` failure where the host's credentials cannot be read.
+    pub fn credential(&self) -> Result<Option<Credential>, Failure> {
+        self.credentials
+            .read(&self.provider)
+            .map_err(|unavailable| Failure::new(FailureKind::Auth, unavailable.to_string()))
+    }
+
+    /// The provider's API key; none where the host keeps another credential for it, or none.
+    ///
+    /// # Errors
+    /// An `auth` failure where the host's credentials cannot be read.
+    pub fn api_key(&self) -> Result<Option<String>, Failure> {
+        Ok(match self.credential()? {
             Some(Credential::ApiKey(key)) => Some(key),
             _ => None,
-        }
+        })
     }
 }
 

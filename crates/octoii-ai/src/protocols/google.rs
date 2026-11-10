@@ -811,7 +811,7 @@ impl Driver for GoogleDriver {
     fn stream<'a>(&'a self, call: &'a Call, model: &'a Model, request: &'a Request) -> BoxFuture<'a, Result<Source, Failure>> {
         Box::pin(async move {
             let key = call
-                .api_key()
+                .api_key()?
                 .ok_or_else(|| Failure::new(FailureKind::Auth, "No API key is set for Google"))?;
             let body = render(call, model, request)?;
             let made = http::Request::post(format!("{}/interactions", call.base_url(BASE_URL)))

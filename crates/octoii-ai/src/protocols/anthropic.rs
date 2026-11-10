@@ -995,9 +995,8 @@ impl Driver for AnthropicDriver {
         Box::pin(async move {
             let key = match self.connection {
                 Connection::ApiKey { .. } => Some(
-                    call.api_key()
-                        .ok_or_else(|| Failure::new(FailureKind::Auth, format!("No API key is set for {}", self.name)))?
-                        .to_owned(),
+                    call.api_key()?
+                        .ok_or_else(|| Failure::new(FailureKind::Auth, format!("No API key is set for {}", self.name)))?,
                 ),
                 _ => None,
             };

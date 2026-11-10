@@ -236,7 +236,7 @@ async fn an_account_whose_unified_limits_are_spent_has_used_its_quota_till_their
     });
     let mut call = support::call(support::Provider::streaming(&[]));
     call.transport = answers;
-    call.credential = None;
+    call.credentials = Arc::new(support::Store::default());
     let Err(failure) = CLAUDE.stream(&call, &claude(), &conversation()).await else {
         panic!("refused")
     };

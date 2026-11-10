@@ -8,7 +8,7 @@ use futures::StreamExt;
 use futures::future::BoxFuture;
 use http::HeaderMap;
 use octoii_ai::driver::{Call, Settings};
-use octoii_ai::host::{Files, NoSuchFile};
+use octoii_ai::host::{Credential, Credentials, Files, NoSuchFile, Unavailable};
 use octoii_ai::transport::{Body, Transport, TransportError};
 use octoii_ai::vocabulary::FailureKind;
 use octoii_ai::wire::{self, Said};
@@ -36,6 +36,22 @@ impl Transport for Answering {
 
 struct NoFiles;
 
+struct NoCredentials;
+
+impl Credentials for NoCredentials {
+    fn read(&self, _: &str) -> Result<Option<Credential>, Unavailable> {
+        Ok(None)
+    }
+
+    fn keep(&self, _: &str, _: &Credential) -> Result<(), Unavailable> {
+        Ok(())
+    }
+
+    fn forget(&self, _: &str) -> Result<(), Unavailable> {
+        Ok(())
+    }
+}
+
 impl Files for NoFiles {
     fn read(&self, reference: &str) -> Result<Bytes, NoSuchFile> {
         Err(NoSuchFile(reference.into()))
@@ -49,7 +65,7 @@ fn call(transport: Arc<dyn Transport>) -> Call {
             base_url: None,
             headers: vec![("x-proxy-key".into(), "k".into())],
         },
-        credential: None,
+        credentials: Arc::new(NoCredentials),
         transport,
         files: Arc::new(NoFiles),
         now_ms: 1_000_000,

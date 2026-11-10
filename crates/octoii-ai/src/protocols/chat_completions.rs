@@ -585,7 +585,7 @@ impl Driver for ChatDriver {
             let mut made = http::Request::post(format!("{}/chat/completions", call.base_url(self.base_url)))
                 .header("accept", "text/event-stream")
                 .header("content-type", "application/json");
-            if let Some(key) = call.api_key() {
+            if let Some(key) = call.api_key()? {
                 made = made.header("authorization", format!("Bearer {key}"));
             } else if matches!(self.connection, Connection::ApiKey { .. }) {
                 return Err(Failure::new(FailureKind::Auth, format!("No API key is set for {}", self.name)));

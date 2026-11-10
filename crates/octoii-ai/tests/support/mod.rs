@@ -9,7 +9,7 @@ use bytes::Bytes;
 use futures::future::BoxFuture;
 use octoii_ai::catalogue::{Features, InputLimits, Model};
 use octoii_ai::driver::{Call, Settings};
-use octoii_ai::host::{Credential, Files, NoSuchFile};
+use octoii_ai::host::{Credential, Credentials, Files, NoSuchFile, Unavailable};
 use octoii_ai::stream::{Event, TextStream};
 use octoii_ai::transport::{Body, Transport, TransportError};
 use octoii_ai::vocabulary::Response;
@@ -64,11 +64,38 @@ impl Files for OneImage {
     }
 }
 
+/// The host's credentials, as a test keeps them: by provider, read and written as a store is.
+#[derive(Default)]
+pub struct Store(pub Mutex<std::collections::HashMap<String, Credential>>);
+
+impl Store {
+    /// A store that keeps `credential` for the test's provider.
+    pub fn of(credential: Credential) -> Arc<Self> {
+        Arc::new(Self(Mutex::new([("test".to_owned(), credential)].into())))
+    }
+}
+
+impl Credentials for Store {
+    fn read(&self, provider: &str) -> Result<Option<Credential>, Unavailable> {
+        Ok(self.0.lock().expect("held").get(provider).cloned())
+    }
+
+    fn keep(&self, provider: &str, credential: &Credential) -> Result<(), Unavailable> {
+        self.0.lock().expect("held").insert(provider.to_owned(), credential.clone());
+        Ok(())
+    }
+
+    fn forget(&self, provider: &str) -> Result<(), Unavailable> {
+        self.0.lock().expect("held").remove(provider);
+        Ok(())
+    }
+}
+
 pub fn call(provider: Arc<Provider>) -> Call {
     Call {
         provider: "test".into(),
         settings: Settings::default(),
-        credential: Some(Credential::ApiKey("sk".into())),
+        credentials: Store::of(Credential::ApiKey("sk".into())),
         transport: provider,
         files: Arc::new(OneImage),
         now_ms: 0,

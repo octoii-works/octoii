@@ -7,7 +7,7 @@ use bytes::Bytes;
 use octoii_ai::catalogue;
 use octoii_ai::driver::{Call, Driver, Settings};
 use octoii_ai::drivers::OPENROUTER;
-use octoii_ai::host::{Credential, Files, NoSuchFile};
+use octoii_ai::host::{Credential, Credentials, Files, NoSuchFile, Unavailable};
 use octoii_ai::stream::{Event, TextStream};
 use octoii_ai::transport::Network;
 use octoii_ai::vocabulary::{
@@ -17,6 +17,25 @@ use octoii_ai::vocabulary::{
 use serde_json::json;
 
 struct NoFiles;
+
+/// The key in the environment, as the host's credentials.
+struct Environment;
+
+impl Credentials for Environment {
+    fn read(&self, _: &str) -> Result<Option<Credential>, Unavailable> {
+        Ok(Some(Credential::ApiKey(
+            std::env::var("OPENROUTER_API_KEY").expect("OPENROUTER_API_KEY is set"),
+        )))
+    }
+
+    fn keep(&self, _: &str, _: &Credential) -> Result<(), Unavailable> {
+        Ok(())
+    }
+
+    fn forget(&self, _: &str) -> Result<(), Unavailable> {
+        Ok(())
+    }
+}
 
 impl Files for NoFiles {
     fn read(&self, reference: &str) -> Result<Bytes, NoSuchFile> {
@@ -28,9 +47,7 @@ fn call() -> Call {
     Call {
         provider: "openrouter".into(),
         settings: Settings::default(),
-        credential: Some(Credential::ApiKey(
-            std::env::var("OPENROUTER_API_KEY").expect("OPENROUTER_API_KEY is set"),
-        )),
+        credentials: Arc::new(Environment),
         transport: Arc::new(Network::default()),
         files: Arc::new(NoFiles),
         now_ms: 0,
