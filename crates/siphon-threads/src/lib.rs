@@ -4,6 +4,7 @@
 //! logged where it took effect, from what it was to what it is.
 
 mod config;
+pub mod files;
 pub mod idempotency;
 pub mod inbox;
 pub mod log;

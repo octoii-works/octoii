@@ -75,6 +75,16 @@ pub struct Program {
     pub set: Vec<(String, String)>,
     pub timeout: Duration,
     pub output_max: usize,
+    pub errors: Errors,
+}
+
+/// Where a program's errors go: kept apart, their head and tail told after it ends; or into its output, as a shell's
+/// `2>&1` sends them, one stream in the order written.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Errors {
+    #[default]
+    Kept,
+    WithOutput,
 }
 
 impl Program {
@@ -87,6 +97,7 @@ impl Program {
             set: Vec::new(),
             timeout: Duration::from_secs(30),
             output_max: 16 << 20,
+            errors: Errors::Kept,
         }
     }
 }
@@ -161,7 +172,10 @@ impl Machine {
     pub async fn run(&self, time: i64, under: &[u8], program: &Program, cancelled: &CancellationToken) -> Result<Ran, RunError> {
         let spec = Spec {
             set: program.set.clone(),
-            stdio: Stdio::Coprocess,
+            stdio: match program.errors {
+                Errors::Kept => Stdio::Coprocess,
+                Errors::WithOutput => Stdio::Pipe,
+            },
             ..Spec::new(Exec::Argv(program.argv.clone()), program.cwd.to_string_lossy())
         };
         let (command, mut events) = self.kernel.spawn(time, under, &self.namespace, &spec).map_err(|error| {
@@ -199,10 +213,14 @@ impl Machine {
                 }
             }
         };
+        let errors = match program.errors {
+            Errors::Kept => command.output()?,
+            Errors::WithOutput => Bytes::new(),
+        };
         Ok(Ran {
             exit,
             output: output.freeze(),
-            errors: command.output()?,
+            errors,
         })
     }
 }

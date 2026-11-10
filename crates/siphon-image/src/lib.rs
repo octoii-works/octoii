@@ -54,6 +54,18 @@ impl Format {
 /// The formats models and browsers read, which a fitting keeps unless its bounds say fewer.
 pub const UNIVERSAL_FORMATS: &[Format] = &[Format::Png, Format::Jpeg, Format::Gif, Format::Webp];
 
+impl Bounds {
+    /// What every provider's models read, the tightest's: Anthropic's long side of 1568 and some 1.15 megapixels, and
+    /// under its bytes per image.
+    pub const MODELS: Self = Self {
+        width_max: 1568,
+        height_max: 1568,
+        pixels_max: 1_150_000,
+        bytes_max: 3_750_000,
+        formats: UNIVERSAL_FORMATS,
+    };
+}
+
 /// The box an image is fitted to — the widest and the tallest it may be, its pixels and its bytes — and the formats it
 /// may stay in as it is, of those models and browsers read.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -8,5 +8,5 @@ pub mod paths;
 mod search;
 
 pub use files::{Change, EditOutcome, Error, Read, ReadOptions, media_type};
-pub use machine::{Host, Machine, Program, Ran, RunError, ThreadsView, Writes};
+pub use machine::{Errors, Host, Machine, Program, Ran, RunError, ThreadsView, Writes};
 pub use search::{Globbed, GrepError, GrepFile, GrepLine, GrepOptions, Grepped, Walked};
