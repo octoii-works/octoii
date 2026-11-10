@@ -1,0 +1,16 @@
+[package]
+name = "siphon-shell"
+description = "The shell's language read: a command line's simple commands as Bash reads them, by tree-sitter's grammar, or why no reading knows them"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+thiserror = "2.0.21"
+tree-sitter = "0.27.2"
+tree-sitter-bash = "0.25.1"
