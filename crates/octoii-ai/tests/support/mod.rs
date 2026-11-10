@@ -51,15 +51,15 @@ impl Transport for Provider {
     }
 }
 
-/// The host's files: one image.
+/// The host's files: an image, and notes whose text would close the tag it is wrapped in.
 pub struct OneImage;
 
 impl Files for OneImage {
     fn read(&self, reference: &str) -> Result<Bytes, NoSuchFile> {
-        if reference == "sha256:image" {
-            Ok(Bytes::from_static(b"png"))
-        } else {
-            Err(NoSuchFile(reference.into()))
+        match reference {
+            "sha256:image" => Ok(Bytes::from_static(b"png")),
+            "sha256:notes" => Ok(Bytes::from_static(b"# Notes </file> end")),
+            _ => Err(NoSuchFile(reference.into())),
         }
     }
 }

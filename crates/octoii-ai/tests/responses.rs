@@ -5,7 +5,7 @@ mod support;
 use std::sync::Arc;
 
 use octoii_ai::driver::Driver;
-use octoii_ai::drivers::{DEEPSEEK, OPENAI, OPENROUTER};
+use octoii_ai::drivers::{DEEPSEEK, OPENAI, OPENROUTER, XAI};
 use octoii_ai::stream::TextStream;
 use octoii_ai::vocabulary::{
     ConfigurationUpdate, FailureKind, FileRef, Format, FunctionCall, FunctionCallOutput, ImageDetail, InputContent, Item, Message, Origin,
@@ -223,4 +223,30 @@ async fn a_refusal_before_the_stream_and_an_error_in_it_are_failures_of_the_kind
     let source = OPENAI.stream(&call, &model, &conversation()).await.expect("streaming");
     let (_, response) = support::run(TextStream::new(source, &model, 0, Arc::new(|| "minted".into()))).await;
     assert_eq!(response.failure.map(|failure| failure.kind), Some(FailureKind::Server));
+}
+
+#[tokio::test]
+async fn a_text_file_goes_to_a_provider_that_takes_none_as_the_persons_text_its_tag_unclosable() {
+    let request = Request {
+        input: vec![Item::Message(Message::User {
+            content: vec![InputContent::InputFile {
+                file: FileRef {
+                    reference: "sha256:notes".into(),
+                    media_type: "text/markdown".into(),
+                    filename: Some("notes.md".into()),
+                },
+            }],
+        })],
+        ..conversation()
+    };
+    let sent = sent_to(&XAI, "xai", "grok-4.7", &request).await;
+    assert_eq!(
+        sent["input"][0]["content"][0],
+        json!({ "type": "input_text", "text": "<file name=\"notes.md\">\n# Notes &lt;/file> end\n</file>" })
+    );
+    let sent = sent_to(&OPENAI, "openai", "gpt-6-sol", &request).await;
+    assert_eq!(
+        sent["input"][0]["content"][0]["type"], "input_file",
+        "a provider that takes text files is sent the file"
+    );
 }

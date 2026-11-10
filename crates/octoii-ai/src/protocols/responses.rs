@@ -26,13 +26,15 @@ pub enum DeveloperRole {
 }
 
 /// How a provider speaks the Responses API: the role it takes developer messages in; whether it takes the name of the
-/// conversation for its cache, and gives back its models' reasoning encrypted, so a request without state goes on from
-/// it; and the kind of failure its codes and words stand for, where they say one.
+/// conversation for its cache, gives back its models' reasoning encrypted, so a request without state goes on from it,
+/// and takes text files, else sent as the person's text; and the kind of failure its codes and words stand for, where
+/// they say one.
 #[derive(Debug, Clone, Copy)]
 pub struct Dialect {
     pub developer_role: DeveloperRole,
     pub cache_key: bool,
     pub encrypted_reasoning: bool,
+    pub takes_text_files: bool,
     pub kind_of: fn(code: Option<&str>, message: &str) -> Option<FailureKind>,
 }
 
@@ -110,16 +112,16 @@ fn wrote_it(origin: Option<&Origin>, reference: &str) -> bool {
 /// on from, is left out; an id another model's item carries is left out, as a provider takes ids of its own alone.
 fn rendered_item(call: &Call, item: &Item, reference: &str, dialect: &Dialect) -> Result<Option<Value>, Failure> {
     Ok(Some(match item {
-        Item::Message(Message::User { content }) => message("user", rendered_content(call, content)?),
+        Item::Message(Message::User { content }) => message("user", rendered_content(call, content, dialect)?),
         Item::Message(Message::Developer { content }) => {
             let role = if dialect.developer_role == DeveloperRole::Developer {
                 "developer"
             } else {
                 "system"
             };
-            message(role, rendered_content(call, content)?)
+            message(role, rendered_content(call, content, dialect)?)
         }
-        Item::Message(Message::System { content }) => message("system", rendered_content(call, content)?),
+        Item::Message(Message::System { content }) => message("system", rendered_content(call, content, dialect)?),
         Item::Message(Message::Assistant { id, content, origin, .. }) => {
             let mut made = json!({ "type": "message", "role": "assistant", "status": "completed", "content": content.iter().map(rendered_output).collect::<Vec<_>>() });
             if let Some(id) = id.as_ref().filter(|_| wrote_it(origin.as_ref(), reference)) {
@@ -144,7 +146,7 @@ fn rendered_item(call: &Call, item: &Item, reference: &str, dialect: &Dialect) -
         Item::FunctionCallOutput(output) => {
             let made = match output.output.as_slice() {
                 [InputContent::InputText { text }] => json!(text),
-                parts => Value::Array(rendered_content(call, parts)?),
+                parts => Value::Array(rendered_content(call, parts, dialect)?),
             };
             json!({ "type": "function_call_output", "call_id": output.call_id, "output": made })
         }
@@ -173,7 +175,7 @@ fn message(role: &str, content: Vec<Value>) -> Value {
     json!({ "type": "message", "role": role, "content": Value::Array(content) })
 }
 
-fn rendered_content(call: &Call, content: &[InputContent]) -> Result<Vec<Value>, Failure> {
+fn rendered_content(call: &Call, content: &[InputContent], dialect: &Dialect) -> Result<Vec<Value>, Failure> {
     content
         .iter()
         .map(|part| {
@@ -186,6 +188,9 @@ fn rendered_content(call: &Call, content: &[InputContent]) -> Result<Vec<Value>,
                         crate::vocabulary::ImageDetail::Low => "low",
                     };
                     json!({ "type": "input_image", "image_url": super::data_url(call, file)?, "detail": detail })
+                }
+                InputContent::InputFile { file } if !dialect.takes_text_files && super::is_text(&file.media_type) => {
+                    json!({ "type": "input_text", "text": super::file_as_text(call, file)? })
                 }
                 InputContent::InputFile { file } => json!({
                     "type": "input_file",
@@ -545,7 +550,7 @@ impl Driver for ResponsesDriver {
             let response = wire::send(call, request).await?;
             let mut reader = Reader::new(self.dialect);
             if !response.status().is_success() {
-                return Err(wire::failure_of(call, response, &|body: &str| reader.said(body)).await);
+                return Err(wire::failure_of(call, response, &|_: &http::HeaderMap, body: &str| reader.said(body)).await);
             }
             let events = wire::events(response.into_body()).filter_map(move |event| {
                 let made = match event {

@@ -1,7 +1,9 @@
 //! The providers' drivers. Those that speak the Responses API are its driver with their dialects — how each takes
 //! developer messages, whether it takes a cache's name and gives back its reasoning encrypted, and the kinds its codes
-//! stand for.
+//! stand for; Anthropic's API and Claude through its agent are Anthropic's driver, at their addresses.
 
+use crate::driver::Connection;
+use crate::protocols::anthropic::AnthropicDriver;
 use crate::protocols::responses::{DeveloperRole, Dialect, ResponsesDriver};
 use crate::vocabulary::FailureKind;
 
@@ -38,6 +40,7 @@ pub const OPENAI: ResponsesDriver = ResponsesDriver {
         developer_role: DeveloperRole::Developer,
         cache_key: true,
         encrypted_reasoning: true,
+        takes_text_files: true,
         kind_of: |code, _| kind_in(&OPENAI_CODES, code),
     },
 };
@@ -86,6 +89,7 @@ pub const OPENROUTER: ResponsesDriver = ResponsesDriver {
         developer_role: DeveloperRole::Developer,
         cache_key: true,
         encrypted_reasoning: false,
+        takes_text_files: true,
         kind_of: |code, _| kind_in(&OPENROUTER_CODES, code),
     },
 };
@@ -101,11 +105,12 @@ pub const DEEPSEEK: ResponsesDriver = ResponsesDriver {
         developer_role: DeveloperRole::System,
         cache_key: false,
         encrypted_reasoning: false,
+        takes_text_files: true,
         kind_of: |_, _| None,
     },
 };
 
-/// xAI's Responses API.
+/// xAI's Responses API, which takes no text files: they go as the person's text.
 pub const XAI: ResponsesDriver = ResponsesDriver {
     id: "xai",
     name: "xAI",
@@ -115,6 +120,7 @@ pub const XAI: ResponsesDriver = ResponsesDriver {
         developer_role: DeveloperRole::Developer,
         cache_key: true,
         encrypted_reasoning: false,
+        takes_text_files: false,
         kind_of: |_, _| None,
     },
 };
@@ -145,6 +151,26 @@ pub const META: ResponsesDriver = ResponsesDriver {
         developer_role: DeveloperRole::Developer,
         cache_key: false,
         encrypted_reasoning: false,
+        takes_text_files: true,
         kind_of: |code, _| kind_in(&META_CODES, code),
     },
+};
+
+/// Anthropic's Messages API, reached with an API key.
+pub const ANTHROPIC: AnthropicDriver = AnthropicDriver {
+    id: "anthropic",
+    name: "Anthropic",
+    base_url: "https://api.anthropic.com/v1",
+    connection: Connection::ApiKey {
+        variable: "ANTHROPIC_API_KEY",
+    },
+};
+
+/// Claude through the person's own Claude Code: the agent gateway beside the host, which speaks Anthropic's Messages
+/// API and is signed in to on its own.
+pub const CLAUDE: AnthropicDriver = AnthropicDriver {
+    id: "claude",
+    name: "Claude",
+    base_url: "gateway://claude/v1",
+    connection: Connection::Agent { through: "Claude Code" },
 };

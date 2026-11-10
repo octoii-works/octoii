@@ -89,7 +89,7 @@ async fn a_failure_is_its_statuss_kind_with_the_wait_its_headers_ask_for_unless_
         "the provider's headers go with each request"
     );
     // A body that says its own kind is believed; a quota used up is given again once its wait is over.
-    let said = |_: &str| {
+    let said = |_: &HeaderMap, _: &str| {
         Some(Said {
             kind: Some(FailureKind::Quota),
             message: Some("used up".into()),

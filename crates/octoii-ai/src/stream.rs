@@ -198,10 +198,13 @@ impl TextStream {
     /// `item` stamped with the model that wrote it, a call given a `call_id` of its own.
     fn stamped(&mut self, mut item: Item) -> Item {
         let origin = |origin: &mut Option<Origin>, reference: &str| {
-            origin.get_or_insert_with(|| Origin {
-                model: reference.to_owned(),
+            let given = origin.get_or_insert_with(|| Origin {
+                model: String::new(),
                 provider_metadata: None,
             });
+            if given.model.is_empty() {
+                reference.clone_into(&mut given.model);
+            }
         };
         match &mut item {
             Item::Message(Message::Assistant { origin: given, .. }) => origin(given, &self.reference),
