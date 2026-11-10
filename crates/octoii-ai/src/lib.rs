@@ -3,5 +3,9 @@
 //! reads its answer back.
 
 pub mod catalogue;
+pub mod driver;
+pub mod host;
 pub mod stream;
+pub mod transport;
 pub mod vocabulary;
+pub mod wire;
