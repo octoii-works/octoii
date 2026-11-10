@@ -1497,6 +1497,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "json-patch"
+version = "5.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aa295c8f71b9bad32d060e0e145f96dcba0cc6c6171e129646140d1c96b05617"
+dependencies = [
+ "jsonptr",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "jsonptr"
+version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72c22d99362c7aac7d77efab6b49c2181674b165d7e6e7c755b3432ded64bf51"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "jsonschema"
 version = "0.61.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2760,6 +2782,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "siphon-accounts"
+version = "0.1.0"
+dependencies = [
+ "beak",
+ "bytes",
+ "octoii-ai",
+ "serde",
+ "serde_json",
+ "siphon-runtime",
+ "siphon-threads",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "siphon-image"
 version = "0.1.0"
 dependencies = [
@@ -2792,6 +2829,22 @@ version = "0.1.0"
 dependencies = [
  "cc",
  "thiserror",
+]
+
+[[package]]
+name = "siphon-settings"
+version = "0.1.0"
+dependencies = [
+ "beak",
+ "bytes",
+ "json-patch",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "siphon-runtime",
+ "siphon-threads",
+ "thiserror",
+ "tokio",
 ]
 
 [[package]]
