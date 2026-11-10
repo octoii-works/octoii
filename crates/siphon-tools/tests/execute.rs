@@ -15,7 +15,7 @@ use siphon_machine::paths::Base;
 use siphon_runtime::{Asked, Changes, Ending, Options, Program, Run, Runtime};
 use siphon_threads::Mode;
 use siphon_tools::{
-    Calls, Exec, ExecuteTool, Permission, ReadTool, ScriptProgram, Setting, ShellTool, Status, Tool, Tools, WriteTool, answer_exec,
+    CallStatus, Calls, Exec, ExecuteTool, Permission, ReadTool, ScriptProgram, Setting, ShellTool, Tool, Tools, WriteTool, answer_exec,
 };
 
 fn inner() -> Tools {
@@ -39,9 +39,9 @@ impl Program for Caller {
     const KIND: &'static str = "test.caller";
     type Input = Asking;
     type Checkpoint = Calls;
-    type Output = (Status, String);
+    type Output = (CallStatus, String);
 
-    fn run(&self, run: &mut Run<'_>, input: Asking, checkpoint: Option<Calls>) -> anyhow::Result<Ending<Calls, (Status, String)>> {
+    fn run(&self, run: &mut Run<'_>, input: Asking, checkpoint: Option<Calls>) -> anyhow::Result<Ending<Calls, (CallStatus, String)>> {
         let mut calls = match checkpoint {
             Some(calls) => calls,
             None => Calls::new(run, vec![("x".into(), "execute".into(), json!({ "code": input.code }).to_string())])?,
@@ -100,7 +100,7 @@ async fn executed(runtime: &Runtime, workspace: PathBuf, code: &str) -> Bytes {
     layout::process(b"", b"p1")
 }
 
-async fn ended(runtime: &Runtime, path: &[u8]) -> (Status, String) {
+async fn ended(runtime: &Runtime, path: &[u8]) -> (CallStatus, String) {
     let mut committed = runtime.committed();
     let waiting = async {
         loop {
@@ -178,7 +178,7 @@ async fn a_script_calls_its_tools_at_once_and_in_turn_working_on_what_they_gave(
     ";
     let path = executed(&runtime, workspace.clone(), code).await;
     let (status, said) = ended(&runtime, &path).await;
-    assert_eq!((status, said.as_str()), (Status::Ok, "read three\n60"));
+    assert_eq!((status, said.as_str()), (CallStatus::Ok, "read three\n60"));
     assert_eq!(std::fs::read_to_string(workspace.join("f2.txt")).expect("written"), "20\n");
     runtime.close().await;
 }
@@ -205,7 +205,7 @@ async fn a_call_that_waits_on_the_person_is_waited_for_and_one_they_decline_reje
         runtime.answer(&process, key.as_bytes(), &answer).await.expect("answered");
     }
     let (status, said) = ended(&runtime, &path).await;
-    assert_eq!(status, Status::Ok);
+    assert_eq!(status, CallStatus::Ok);
     assert_eq!(said, r#"[true,"the person declined it: not b"]"#);
     assert!(outside.join("a.txt").exists() && !outside.join("b.txt").exists());
     runtime.close().await;
@@ -220,7 +220,7 @@ async fn what_a_script_threw_is_what_it_gives() {
     let (status, said) = ended(&runtime, &path).await;
     assert_eq!(
         (status, said.as_str()),
-        (Status::Ok, "began\n[the script threw: TypeError: no such thing]")
+        (CallStatus::Ok, "began\n[the script threw: TypeError: no such thing]")
     );
     runtime.close().await;
 }

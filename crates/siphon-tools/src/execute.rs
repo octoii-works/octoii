@@ -17,7 +17,9 @@ use siphon_runtime::{Changes, Ending, Program, Run};
 use siphon_script::{Host, Limits, Progress, Script};
 use siphon_threads::Mode;
 
-use crate::calls::{Calls, Setting, State, Status};
+use siphon_threads::CallStatus;
+
+use crate::calls::{Calls, Setting, State};
 use crate::declarations::declarations;
 use crate::effect::Effect;
 use crate::tool::{Context, Refusal, Tool, Tools};
@@ -273,7 +275,7 @@ impl Program for ScriptProgram {
             let State::Ended { status, output } = call.state else { continue };
             state.settled.push(Settled {
                 id: call.id.parse().unwrap_or_default(),
-                ok: status == Status::Ok,
+                ok: status == CallStatus::Ok,
                 text: text_of(&output),
                 time_ms: run.time_ms(),
             });

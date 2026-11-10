@@ -15,7 +15,7 @@ use siphon_machine::paths::Base;
 use siphon_runtime::{Asked, Changes, Ending, Options, Program, Run, Runtime};
 use siphon_threads::Mode;
 use siphon_tools::mcp::{Launch, Place, Servers, Trust, TrustProgram, parse, trust};
-use siphon_tools::{Calls, Exec, ExecuteTool, ReadTool, ScriptProgram, Setting, Status, Tools, answer_exec};
+use siphon_tools::{CallStatus, Calls, Exec, ExecuteTool, ReadTool, ScriptProgram, Setting, Tools, answer_exec};
 
 fn fixture() -> String {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -58,7 +58,7 @@ impl Program for Caller {
     const KIND: &'static str = "test.caller";
     type Input = Asking;
     type Checkpoint = Calls;
-    type Output = Vec<(Status, String, usize)>;
+    type Output = Vec<(CallStatus, String, usize)>;
 
     fn run(&self, run: &mut Run<'_>, input: Asking, checkpoint: Option<Calls>) -> anyhow::Result<Ending<Calls, Self::Output>> {
         let mut calls = match checkpoint {
@@ -85,9 +85,9 @@ impl Program for Caller {
     }
 }
 
-fn said(call: siphon_tools::Call) -> (Status, String, usize) {
+fn said(call: siphon_tools::Call) -> (CallStatus, String, usize) {
     let siphon_tools::State::Ended { status, output } = call.state else {
-        return (Status::Interrupted, String::new(), 0);
+        return (CallStatus::Interrupted, String::new(), 0);
     };
     let mut texts = Vec::new();
     let mut images = 0;
@@ -123,7 +123,7 @@ fn runtime(beak: &Beak, servers: &Servers) -> Runtime {
         .expect("started")
 }
 
-async fn ended(runtime: &Runtime, path: &[u8]) -> Vec<(Status, String, usize)> {
+async fn ended(runtime: &Runtime, path: &[u8]) -> Vec<(CallStatus, String, usize)> {
     let mut committed = runtime.committed();
     let waiting = async {
         loop {
@@ -244,19 +244,19 @@ async fn the_person_s_servers_tools_are_listed_and_called_as_the_model_s_own() {
     changes.start::<Caller>(Bytes::new(), "p1", &asking).expect("an input");
     runtime.commit(changes).await.expect("started");
     let said = ended(&runtime, &layout::process(b"", b"p1")).await;
-    assert_eq!(said[0], (Status::Ok, "hello".into(), 0));
-    assert_eq!(said[1], (Status::ToolError, "it failed".into(), 0));
+    assert_eq!(said[0], (CallStatus::Ok, "hello".into(), 0));
+    assert_eq!(said[1], (CallStatus::ToolError, "it failed".into(), 0));
     assert_eq!(
         said[2],
-        (Status::Ok, format!("{} hi there", home.display()), 0),
+        (CallStatus::Ok, format!("{} hi there", home.display()), 0),
         "run in its configuration's folder"
     );
-    assert_eq!(said[3], (Status::Ok, "an image of 1×1".into(), 1));
+    assert_eq!(said[3], (CallStatus::Ok, "an image of 1×1".into(), 1));
     assert_eq!(
         said[4],
-        (Status::ToolError, "no MCP server other where this thread works".into(), 0)
+        (CallStatus::ToolError, "no MCP server other where this thread works".into(), 0)
     );
-    assert_eq!(said[5], (Status::Ok, r#""from a script""#.into(), 0));
+    assert_eq!(said[5], (CallStatus::Ok, r#""from a script""#.into(), 0));
     runtime.close().await;
 }
 

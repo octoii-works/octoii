@@ -3025,6 +3025,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "siphon-agent"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "beak",
+ "bytes",
+ "futures",
+ "octoii-ai",
+ "serde",
+ "serde_json",
+ "siphon-accounts",
+ "siphon-machine",
+ "siphon-runtime",
+ "siphon-threads",
+ "siphon-tools",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
 name = "siphon-browser"
 version = "0.1.0"
 dependencies = [

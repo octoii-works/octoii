@@ -21,6 +21,7 @@ pub const REQUEST_KIND: &[u8] = name(sys::BEAK_REQUEST_KIND);
 pub const PAYLOAD_NAME: &[u8] = name(sys::BEAK_PAYLOAD_NAME);
 pub const RUNNING_MAX_ANNOTATION: &[u8] = name(sys::BEAK_RUNNING_MAX_ANNOTATION);
 pub const MAX_ANNOTATION_PREFIX: &[u8] = name(sys::BEAK_MAX_ANNOTATION_PREFIX);
+pub const LIMIT_REASON: &[u8] = name(sys::BEAK_LIMIT_REASON);
 pub const REMOVALS: &[u8] = name(sys::BEAK_REMOVALS);
 pub const PROGRAM_LABEL: &[u8] = name(sys::BEAK_PROGRAM_LABEL);
 pub const FROZEN_LABEL: &[u8] = name(sys::BEAK_FROZEN_LABEL);

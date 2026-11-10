@@ -15,7 +15,8 @@ use siphon_machine::paths::Base;
 use siphon_runtime::{Asked, Changes, Ending, NotGiven, Options, Program, Run, Runtime};
 use siphon_threads::Mode;
 use siphon_tools::{
-    Calls, Exec, Judgment, Permission, QuestionTool, ReadTool, Review, Setting, ShellTool, Status, Tools, WriteTool, answer_exec, projects,
+    CallStatus, Calls, Exec, Judgment, Permission, QuestionTool, ReadTool, Review, Setting, ShellTool, Tools, WriteTool, answer_exec,
+    projects,
 };
 
 fn tools() -> Tools {
@@ -40,9 +41,9 @@ impl Program for Caller {
     const KIND: &'static str = "test.caller";
     type Input = Asking;
     type Checkpoint = Calls;
-    type Output = Vec<(Status, String)>;
+    type Output = Vec<(CallStatus, String)>;
 
-    fn run(&self, run: &mut Run<'_>, input: Asking, checkpoint: Option<Calls>) -> anyhow::Result<Ending<Calls, Vec<(Status, String)>>> {
+    fn run(&self, run: &mut Run<'_>, input: Asking, checkpoint: Option<Calls>) -> anyhow::Result<Ending<Calls, Vec<(CallStatus, String)>>> {
         let mut calls = match checkpoint {
             Some(calls) => calls,
             None => Calls::new(run, input.calls)?,
@@ -68,9 +69,9 @@ impl Program for Caller {
     }
 }
 
-fn said(call: siphon_tools::Call) -> (Status, String) {
+fn said(call: siphon_tools::Call) -> (CallStatus, String) {
     let siphon_tools::State::Ended { status, output } = call.state else {
-        return (Status::Interrupted, String::new());
+        return (CallStatus::Interrupted, String::new());
     };
     let text = output
         .iter()
@@ -109,7 +110,7 @@ async fn caller(runtime: &Runtime, key: &str, asking: &Asking) -> Bytes {
     layout::process(b"", key.as_bytes())
 }
 
-async fn ended(runtime: &Runtime, path: &[u8]) -> Vec<(Status, String)> {
+async fn ended(runtime: &Runtime, path: &[u8]) -> Vec<(CallStatus, String)> {
     let mut committed = runtime.committed();
     let waiting = async {
         loop {
@@ -173,10 +174,16 @@ async fn calls_that_act_go_one_after_another_and_a_read_after_them_sees_what_the
     };
     let path = caller(&runtime, "p1", &asking).await;
     let said = ended(&runtime, &path).await;
-    let statuses: Vec<Status> = said.iter().map(|(status, _)| *status).collect();
+    let statuses: Vec<CallStatus> = said.iter().map(|(status, _)| *status).collect();
     assert_eq!(
         statuses,
-        [Status::Ok, Status::Ok, Status::Ok, Status::Unavailable, Status::InvalidArguments],
+        [
+            CallStatus::Ok,
+            CallStatus::Ok,
+            CallStatus::Ok,
+            CallStatus::Unavailable,
+            CallStatus::InvalidArguments
+        ],
         "{said:?}"
     );
     assert_eq!(said[2].1, "one\ntwo", "read after what acted before it");
@@ -235,9 +242,9 @@ async fn a_call_the_person_lets_go_ahead_for_good_is_granted_its_project_and_one
         runtime.answer(&path, request.as_bytes(), &answer).await.expect("answered");
     }
     let said = ended(&runtime, &path).await;
-    assert_eq!(said[0].0, Status::Ok);
+    assert_eq!(said[0].0, CallStatus::Ok);
     assert!(target.exists(), "run beyond the sandbox, as the person let it");
-    assert_eq!(said[1], (Status::Rejected, "the person declined it: not there".into()));
+    assert_eq!(said[1], (CallStatus::Rejected, "the person declined it: not there".into()));
     let grants = projects::grants(&runtime.snapshot().expect("a snapshot"), &workspace.to_string_lossy()).expect("read");
     assert_eq!(grants.commands, ["touch *"]);
     runtime.close().await;
@@ -260,8 +267,8 @@ async fn in_auto_a_second_model_judges_what_would_ask() {
     };
     let path = caller(&runtime, "p1", &asking).await;
     let said = ended(&runtime, &path).await;
-    assert_eq!((said[0].0, said[2].0), (Status::Ok, Status::Ok));
-    assert_eq!(said[1], (Status::Rejected, "blocked: it removes files".into()));
+    assert_eq!((said[0].0, said[2].0), (CallStatus::Ok, CallStatus::Ok));
+    assert_eq!(said[1], (CallStatus::Rejected, "blocked: it removes files".into()));
     assert!(workspace.join("out.txt").exists(), "what was blocked did not run");
     runtime.close().await;
 }
@@ -328,7 +335,7 @@ async fn a_question_is_answered_by_the_person_with_what_fits_the_choices_it_offe
     assert_eq!(
         said[0],
         (
-            Status::Ok,
+            CallStatus::Ok,
             "Which database?\n→ SQLite\nAnything else?\n→ (unanswered)\nWhich features?\n→ auth, search; both".into()
         )
     );

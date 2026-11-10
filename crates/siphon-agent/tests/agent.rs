@@ -1,0 +1,390 @@
+//! The agent on a scripted model: a thread's turn asks, takes on the calls its replies make, appends each result and
+//! asks again till a reply calls nothing; asks again after a failure that may pass; and a stop ends it with every call
+//! it made answered.
+
+use std::collections::VecDeque;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use beak::Beak;
+use bytes::Bytes;
+use futures::future::BoxFuture;
+use octoii_ai::catalogue::{Features, InputLimits, Model};
+use octoii_ai::driver::{Call, Connection, Driver, Settings};
+use octoii_ai::host::{Credential, Credentials, Files, NoSuchFile, Unavailable};
+use octoii_ai::models::{Host, Models, Provider};
+use octoii_ai::stream::{Event, Source};
+use octoii_ai::vocabulary::{
+    Failure, FailureKind, FunctionCall, InputContent, Item, Message, OutputContent, Request, Response, ResponseStatus, Tool, Usage,
+};
+use siphon_agent::{Gather, ModelRequest, Sources, ThreadProgram, TurnProgram, answer_gather, answer_model};
+use siphon_machine::Host as Machine;
+use siphon_runtime::{Asked, Options, Runtime};
+use siphon_threads::{CallStatus, Config, Entry, Mode, NewThread, Outcome, Threads, Turn};
+use siphon_tools::mcp::{Servers, Trust, TrustProgram};
+use siphon_tools::{Asks, Exec, ExecuteTool, Permission, ReadTool, ScriptProgram, ShellTool, Tools, WriteTool, answer_exec};
+
+/// What the scripted provider answers each request with, in turn, and the requests it was sent.
+#[derive(Default)]
+struct Script {
+    replies: Mutex<VecDeque<Result<Vec<Item>, Failure>>>,
+    asked: Mutex<Vec<Request>>,
+}
+
+/// A provider that answers as its script says.
+struct Scripted(Arc<Script>);
+
+impl Driver for Scripted {
+    fn id(&self) -> &'static str {
+        "test"
+    }
+
+    fn name(&self) -> &'static str {
+        "Test"
+    }
+
+    fn connection(&self) -> Connection {
+        Connection::Server
+    }
+
+    fn stream<'a>(&'a self, _: &'a Call, model: &'a Model, request: &'a Request) -> BoxFuture<'a, Result<Source, Failure>> {
+        Box::pin(async move {
+            let script = &self.0;
+            script.asked.lock().expect("held").push(request.clone());
+            let next = script.replies.lock().expect("held").pop_front();
+            let output = match next {
+                Some(Ok(output)) => output,
+                Some(Err(failure)) => return Err(failure),
+                None => futures::future::pending().await,
+            };
+            let mut events: Vec<Result<Event, Failure>> = Vec::new();
+            for (index, item) in output.iter().enumerate() {
+                let index = u32::try_from(index).expect("few items");
+                events.push(Ok(Event::Began { index, item: item.clone() }));
+                events.push(Ok(Event::Ended { index, item: item.clone() }));
+            }
+            events.push(Ok(Event::Finished(Response {
+                id: "r".into(),
+                model: model.reference(),
+                status: ResponseStatus::Completed,
+                output,
+                usage: Some(Usage {
+                    input_tokens: 10,
+                    cached_tokens: 0,
+                    cache_write_tokens: 0,
+                    output_tokens: 5,
+                    reasoning_tokens: 0,
+                    web_searches: 0,
+                    cost_nanodollars: Some(100),
+                }),
+                failure: None,
+                incomplete: None,
+                context_tokens: None,
+            })));
+            let source: Source = Box::pin(futures::stream::iter(events));
+            Ok(source)
+        })
+    }
+}
+
+struct Nothing;
+
+impl Credentials for Nothing {
+    fn read(&self, _: &str) -> Result<Option<Credential>, Unavailable> {
+        Ok(None)
+    }
+
+    fn keep(&self, _: &str, _: &Credential) -> Result<(), Unavailable> {
+        Ok(())
+    }
+
+    fn forget(&self, _: &str) -> Result<(), Unavailable> {
+        Ok(())
+    }
+}
+
+impl Files for Nothing {
+    fn read(&self, reference: &str) -> Result<Bytes, NoSuchFile> {
+        Err(NoSuchFile(reference.into()))
+    }
+}
+
+fn models(script: &Arc<Script>) -> Arc<Models> {
+    // A driver lives as long as the models do, which a test's runtime keeps to its end.
+    let driver: &'static Scripted = Box::leak(Box::new(Scripted(Arc::clone(script))));
+    let host = Host {
+        credentials: Arc::new(Nothing),
+        files: Arc::new(Nothing),
+        transport: Arc::new(octoii_ai::transport::Network::default()),
+        new_id: Arc::new(|| "minted".into()),
+        clock: Arc::new(|| 0),
+    };
+    let provider = Provider {
+        id: "test".into(),
+        name: "Test".into(),
+        driver,
+        settings: Settings::default(),
+        catalogue: "test".into(),
+    };
+    let model = Model {
+        id: "m".into(),
+        provider: "test".into(),
+        name: "m".into(),
+        context_length: None,
+        max_output_tokens: None,
+        reads_images: true,
+        reads_files: true,
+        reasoning: None,
+        parameters: None,
+        pricing: None,
+        release_date: None,
+        searches_web: false,
+        limits: InputLimits::default(),
+        features: Features::default(),
+    };
+    Arc::new(Models::new(host, vec![provider], vec![model]))
+}
+
+fn runtime(beak: &Beak, script: &Arc<Script>) -> Runtime {
+    let servers = Servers::start(Machine::default(), None);
+    let inner = Tools::new()
+        .with(ReadTool)
+        .with(WriteTool)
+        .with(ShellTool)
+        .with_servers(servers.clone());
+    let tools = inner.clone().with(ExecuteTool { tools: inner.clone() });
+    let models = models(script);
+    let sources = Sources {
+        tools: tools.clone(),
+        servers,
+        models: Arc::clone(&models),
+        host: Machine::default(),
+        home: None,
+    };
+    let execs = tools.clone();
+    Runtime::builder()
+        .program(ThreadProgram)
+        .program(TurnProgram { tools, home: None })
+        .program(ScriptProgram { tools: inner })
+        .program(TrustProgram)
+        .handle(move |asked: Asked<Gather>| {
+            let sources = sources.clone();
+            async move { answer_gather(&sources, asked).await }
+        })
+        .handle(move |asked: Asked<ModelRequest>| {
+            let models = Arc::clone(&models);
+            async move { answer_model(&models, asked).await }
+        })
+        .handle(move |asked: Asked<Exec>| {
+            let tools = execs.clone();
+            async move { answer_exec(&tools, &Machine::default(), asked).await }
+        })
+        .ask_person::<Permission>()
+        .ask_person::<Asks>()
+        .ask_person::<Trust>()
+        .start(beak, Options::default())
+        .expect("started")
+}
+
+fn script(replies: Vec<Result<Vec<Item>, Failure>>) -> Arc<Script> {
+    Arc::new(Script {
+        replies: Mutex::new(replies.into()),
+        asked: Mutex::new(Vec::new()),
+    })
+}
+
+fn says(text: &str) -> Item {
+    Item::Message(Message::Assistant {
+        id: None,
+        content: vec![OutputContent::OutputText {
+            text: text.into(),
+            annotations: Vec::new(),
+        }],
+        status: None,
+        origin: None,
+    })
+}
+
+fn calls(call_id: &str, name: &str, arguments: &serde_json::Value) -> Item {
+    Item::FunctionCall(FunctionCall {
+        id: None,
+        call_id: call_id.into(),
+        name: name.into(),
+        arguments: arguments.to_string(),
+        status: None,
+        origin: None,
+    })
+}
+
+async fn thread(threads: &Threads<ThreadProgram>, workspace: &std::path::Path) -> String {
+    let new = NewThread {
+        actor: "person".into(),
+        config: Config {
+            model: Some("test/m".into()),
+            workspace: Some(workspace.to_string_lossy().into_owned()),
+            mode: Some(Mode::FullAccess),
+            ..Config::default()
+        },
+        ..NewThread::default()
+    };
+    threads.create(&new, "k").await.expect("made")
+}
+
+/// Waits till the thread `id`'s turn stands as `turn`.
+async fn until(threads: &Threads<ThreadProgram>, id: &str, turn: Turn) {
+    let mut committed = threads.runtime().committed();
+    let waiting = async {
+        while threads.listed(id).expect("listed").status.turn != turn {
+            committed.changed().await.expect("the runtime runs");
+        }
+    };
+    tokio::time::timeout(Duration::from_secs(20), waiting).await.expect("in time");
+}
+
+/// The entries of the thread `id`'s log, in its order.
+fn entries(threads: &Threads<ThreadProgram>, id: &str) -> Vec<Entry> {
+    let snapshot = threads.runtime().snapshot().expect("a snapshot");
+    let read = siphon_threads::log::read_after(&snapshot, id, None, u64::MAX).expect("read");
+    read.lines
+        .iter()
+        .map(|line| siphon_threads::log::entry_of(line).expect("an entry"))
+        .collect()
+}
+
+fn folder() -> (tempfile::TempDir, PathBuf) {
+    let folder = tempfile::tempdir().expect("a folder");
+    let path = folder.path().canonicalize().expect("its real path");
+    (folder, path)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_turn_takes_on_the_calls_its_replies_make_and_asks_again_till_one_calls_nothing() {
+    let script = script(vec![
+        Ok(vec![calls(
+            "c1",
+            "write",
+            &serde_json::json!({ "path": "a.txt", "content": "hello\n" }),
+        )]),
+        Ok(vec![says("written")]),
+    ]);
+    let beak = Beak::new().expect("Beak");
+    let runtime = runtime(&beak, &script);
+    let threads = Threads::<ThreadProgram>::new(runtime.clone());
+    let (_folder, workspace) = folder();
+    let id = thread(&threads, &workspace).await;
+    threads
+        .deliver(&id, "person", vec![InputContent::text("write a.txt")], "d1")
+        .await
+        .expect("delivered");
+    until(&threads, &id, Turn::Replied).await;
+    assert_eq!(std::fs::read_to_string(workspace.join("a.txt")).expect("written"), "hello\n");
+    let kinds: Vec<&str> = entries(&threads, &id)
+        .iter()
+        .map(|entry| match entry {
+            Entry::Config { .. } => "config",
+            Entry::System { .. } => "system",
+            Entry::Input { .. } => "input",
+            Entry::Reply { .. } => "reply",
+            Entry::Result { .. } => "result",
+            Entry::TurnEnd { .. } => "turn-end",
+            Entry::Discarded { .. } => "discarded",
+        })
+        .collect();
+    assert_eq!(kinds, ["config", "system", "input", "reply", "result", "reply", "turn-end"]);
+    let asked = script.asked.lock().expect("held").clone();
+    assert_eq!(asked.len(), 2);
+    let names: Vec<&str> = asked[0]
+        .tools
+        .iter()
+        .filter_map(|tool| match tool {
+            Tool::Function { name, .. } => Some(name.as_str()),
+            Tool::WebSearch => None,
+        })
+        .collect();
+    assert_eq!(names, ["execute", "read", "shell", "write"]);
+    assert!(
+        matches!(&asked[0].input[0], Item::Message(Message::Developer { content }) if content.len() == 2),
+        "the base and the environment"
+    );
+    assert!(
+        matches!(asked[1].input.last(), Some(Item::FunctionCallOutput(output)) if output.call_id == "c1" && !output.is_error),
+        "{:?}",
+        asked[1].input.last()
+    );
+    assert_eq!(asked[1].prompt_cache_key.as_deref(), Some(id.as_str()));
+    let usage = threads.listed(&id).expect("listed").status.usage.expect("used");
+    assert_eq!((usage.input_tokens, usage.output_tokens, usage.cost_nanodollars), (20, 10, 200));
+    runtime.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failure_that_may_pass_is_kept_and_the_model_asked_again() {
+    let mut failure = Failure::new(FailureKind::Server, "overloaded");
+    failure.retry_after_ms = Some(10);
+    let script = script(vec![Err(failure), Ok(vec![says("there")])]);
+    let beak = Beak::new().expect("Beak");
+    let runtime = runtime(&beak, &script);
+    let threads = Threads::<ThreadProgram>::new(runtime.clone());
+    let (_folder, workspace) = folder();
+    let id = thread(&threads, &workspace).await;
+    threads
+        .deliver(&id, "person", vec![InputContent::text("hi")], "d1")
+        .await
+        .expect("delivered");
+    until(&threads, &id, Turn::Replied).await;
+    let all = entries(&threads, &id);
+    assert!(
+        matches!(&all[3], Entry::Discarded { response, .. } if response.failure.as_ref().is_some_and(|failure| failure.message == "overloaded"))
+    );
+    assert!(matches!(&all[4], Entry::Reply { .. }));
+    assert_eq!(script.asked.lock().expect("held").len(), 2);
+    runtime.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stop_ends_the_turn_with_every_call_it_made_answered() {
+    let script = script(vec![Ok(vec![
+        calls("c1", "shell", &serde_json::json!({ "command": "sleep 30" })),
+        calls("c2", "write", &serde_json::json!({ "path": "never.txt", "content": "x" })),
+    ])]);
+    let beak = Beak::new().expect("Beak");
+    let runtime = runtime(&beak, &script);
+    let threads = Threads::<ThreadProgram>::new(runtime.clone());
+    let (_folder, workspace) = folder();
+    let id = thread(&threads, &workspace).await;
+    threads
+        .deliver(&id, "person", vec![InputContent::text("wait")], "d1")
+        .await
+        .expect("delivered");
+    let mut committed = runtime.committed();
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while !entries(&threads, &id).iter().any(|entry| matches!(entry, Entry::Reply { .. })) {
+            committed.changed().await.expect("the runtime runs");
+        }
+    })
+    .await
+    .expect("replied in time");
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    threads.stop(&id, "person").await.expect("stopped");
+    until(&threads, &id, Turn::Stopped).await;
+    let all = entries(&threads, &id);
+    let results: Vec<(String, CallStatus)> = all
+        .iter()
+        .filter_map(|entry| match entry {
+            Entry::Result { output, status, .. } => Some((output.call_id.clone(), *status)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(results.len(), 2, "{all:?}");
+    assert_eq!(results[1], ("c2".into(), CallStatus::Interrupted));
+    assert!(!workspace.join("never.txt").exists());
+    assert!(matches!(
+        all.last(),
+        Some(Entry::TurnEnd {
+            outcome: Outcome::Stopped,
+            ..
+        })
+    ));
+    runtime.close().await;
+}

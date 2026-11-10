@@ -8,29 +8,13 @@ use octoii_ai::vocabulary::InputContent;
 use serde::{Deserialize, Serialize};
 use siphon_machine::paths::Base;
 use siphon_runtime::{Answer, Run, Wait};
-use siphon_threads::Mode;
+use siphon_threads::{CallStatus, Mode};
 
 use crate::effect::{Effect, Line};
 use crate::permissions::{Bounds, Grants, Verdict, Writes, patterns_of, weigh};
 use crate::projects;
 use crate::requests::{Asks, Decision, Exec, Permission, Review, Shown};
 use crate::tool::Tools;
-
-/// How a call ended.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Status {
-    Ok,
-    /// Its tool is none of those the model may call.
-    Unavailable,
-    InvalidArguments,
-    /// Its tool refused, or failed.
-    ToolError,
-    /// The person, or a second model, did not let it go ahead.
-    Rejected,
-    /// It was cut off with nothing to give: by a stop, or by the host's end.
-    Interrupted,
-}
 
 /// Where a call stands.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -43,7 +27,7 @@ pub enum State {
     /// Its tool's program runs, as a process under its caller keyed by the call's key.
     Program,
     Ended {
-        status: Status,
+        status: CallStatus,
         output: Vec<InputContent>,
     },
 }
@@ -79,7 +63,7 @@ pub struct Setting<'a> {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Calls(pub Vec<Call>);
 
-fn ended(status: Status, words: impl Into<String>) -> State {
+fn ended(status: CallStatus, words: impl Into<String>) -> State {
     State::Ended {
         status,
         output: vec![InputContent::text(words)],
@@ -145,6 +129,27 @@ impl Calls {
             self.take_answer(at, run, setting)?;
         }
         self.start_free(run, setting)?;
+        Ok(self.wait())
+    }
+
+    /// Takes the calls on as a stop has them end: the answers that come taken — a call cut off is answered so — and
+    /// those not yet started ended, never run. What to wait for till those that run are answered; none once every
+    /// call ended.
+    ///
+    /// # Errors
+    /// The volume's failure; what cannot be read or written as JSON.
+    pub fn stop(&mut self, run: &mut Run<'_>, setting: &Setting<'_>) -> anyhow::Result<Option<Wait>> {
+        for at in 0..self.0.len() {
+            if self.0[at].state == State::Waiting {
+                self.0[at].state = ended(CallStatus::Interrupted, "the turn was stopped before it ran");
+            }
+            self.take_answer(at, run, setting)?;
+        }
+        Ok(self.wait())
+    }
+
+    /// What to wait for till the calls that run are answered; none where none runs.
+    fn wait(&self) -> Option<Wait> {
         let mut wait = Wait::new();
         let mut waits = false;
         for call in &self.0 {
@@ -162,7 +167,7 @@ impl Calls {
             wait = wait.mail(key);
             waits = true;
         }
-        Ok(waits.then_some(wait))
+        waits.then_some(wait)
     }
 
     /// Takes the answer the call at `at` waits for, where it came.
@@ -187,14 +192,14 @@ impl Calls {
                         self.exec(at, run, setting, Writes::Anywhere)?
                     }
                     Answer::Given(Decision::Deny { reason }) => ended(
-                        Status::Rejected,
+                        CallStatus::Rejected,
                         reason.map_or_else(
                             || "the person declined it".into(),
                             |reason| format!("the person declined it: {reason}"),
                         ),
                     ),
                     Answer::Failed(_) | Answer::Interrupted => {
-                        ended(Status::Interrupted, "the call was cut off before the person answered")
+                        ended(CallStatus::Interrupted, "the call was cut off before the person answered")
                     }
                 }
             }
@@ -204,10 +209,10 @@ impl Calls {
                 run.take_mail(&key);
                 match answer {
                     Answer::Given(judgment) if judgment.allow => self.exec(at, run, setting, Writes::Anywhere)?,
-                    Answer::Given(judgment) => ended(Status::Rejected, format!("blocked: {}", judgment.reason)),
+                    Answer::Given(judgment) => ended(CallStatus::Rejected, format!("blocked: {}", judgment.reason)),
                     // A judgment that came to nothing leaves the call to the person.
                     Answer::Failed(_) => self.ask(at, run, setting)?,
-                    Answer::Interrupted => ended(Status::Interrupted, "the call was cut off before it was judged"),
+                    Answer::Interrupted => ended(CallStatus::Interrupted, "the call was cut off before it was judged"),
                 }
             }
             State::Running if setting.tools.asks(&call.tool, &serde_json::from_str(&call.arguments)?).is_some() => {
@@ -217,11 +222,11 @@ impl Calls {
                 run.take_mail(&call.key);
                 match answer {
                     Answer::Given(given) => State::Ended {
-                        status: Status::Ok,
+                        status: CallStatus::Ok,
                         output: setting.tools.answered(&call.tool, &serde_json::from_str(&call.arguments)?, given),
                     },
-                    Answer::Failed(words) => ended(Status::ToolError, words),
-                    Answer::Interrupted => ended(Status::Interrupted, "the call was cut off before the person answered"),
+                    Answer::Failed(words) => ended(CallStatus::ToolError, words),
+                    Answer::Interrupted => ended(CallStatus::Interrupted, "the call was cut off before the person answered"),
                 }
             }
             State::Running => {
@@ -231,11 +236,11 @@ impl Calls {
                 run.take_mail(&call.key);
                 match answer {
                     Answer::Given(output) => State::Ended {
-                        status: Status::Ok,
+                        status: CallStatus::Ok,
                         output,
                     },
-                    Answer::Failed(words) => ended(Status::ToolError, words),
-                    Answer::Interrupted => ended(Status::Interrupted, "the call was cut off"),
+                    Answer::Failed(words) => ended(CallStatus::ToolError, words),
+                    Answer::Interrupted => ended(CallStatus::Interrupted, "the call was cut off"),
                 }
             }
             State::Program => {
@@ -246,9 +251,9 @@ impl Calls {
                 run.changes.reap(process);
                 State::Ended {
                     status: if matches!(outcome, beak::Outcome::Completed(_)) {
-                        Status::Ok
+                        CallStatus::Ok
                     } else {
-                        Status::ToolError
+                        CallStatus::ToolError
                     },
                     output: setting.tools.finished(&call.tool, &outcome),
                 }
@@ -271,9 +276,9 @@ impl Calls {
                 match effect {
                     Err(refusal) => {
                         let status = if setting.tools.has(&call.tool) {
-                            Status::InvalidArguments
+                            CallStatus::InvalidArguments
                         } else {
-                            Status::Unavailable
+                            CallStatus::Unavailable
                         };
                         self.0[at].state = ended(status, refusal.0);
                     }

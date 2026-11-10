@@ -19,7 +19,7 @@ mod shell;
 mod tool;
 
 pub use browser::BrowserTool;
-pub use calls::{Call, Calls, Setting, State, Status};
+pub use calls::{Call, Calls, Setting, State};
 pub use coding::{EditTool, GlobTool, GrepTool, ReadTool, WriteTool};
 pub use declarations::declarations;
 pub use effect::{Effect, Line};
@@ -29,4 +29,5 @@ pub use permissions::{Bounds, Grants, Verdict, Writes, patterns_of, weigh};
 pub use question::{Asked, Choice, QuestionArgs, QuestionTool};
 pub use requests::{Asks, Decision, Exec, Judgment, Permission, Review, Shown};
 pub use shell::ShellTool;
+pub use siphon_threads::CallStatus;
 pub use tool::{Context, Declared, Refusal, Tool, Tools};

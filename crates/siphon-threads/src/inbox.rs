@@ -78,7 +78,7 @@ pub fn waiting(snapshot: &Snapshot, id: &str) -> Result<Vec<Waiting>, Error> {
 }
 
 /// What was taken from an inbox into the log: the entry, and where it is.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Taken {
     pub entry: Entry,
     pub address: Address,

@@ -28,6 +28,8 @@ enum Owned {
     Send(Bytes, Mail, Option<u64>),
     Answer(Bytes, Mail, Option<u64>),
     Signal(Bytes, Signal, Option<Bytes>),
+    Charge(Bytes, Vec<(Bytes, u64)>),
+    Retry(Bytes),
     Reap(Bytes),
     Remove(Bytes, Option<Bytes>),
     ForceRemove(Bytes, Option<Bytes>),
@@ -151,6 +153,17 @@ impl Changes {
         self.push(Owned::Signal(process.into(), signal, reason))
     }
 
+    /// `counters` charged to the process at `process` and every group above it, as a cgroup charges its ancestors: a
+    /// group taken past its limit asked to terminate, for `beak::layout::LIMIT_REASON`.
+    pub fn charge(&mut self, process: impl Into<Bytes>, counters: Vec<(Bytes, u64)>) -> &mut Self {
+        self.push(Owned::Charge(process.into(), counters))
+    }
+
+    /// The held process at `process` reset, so it runs again.
+    pub fn retry(&mut self, process: impl Into<Bytes>) -> &mut Self {
+        self.push(Owned::Retry(process.into()))
+    }
+
     /// The record of the ended process at `process` let go of, as a parent reaps its child.
     pub fn reap(&mut self, process: impl Into<Bytes>) -> &mut Self {
         self.push(Owned::Reap(process.into()))
@@ -183,15 +196,20 @@ impl Changes {
             .0
             .iter()
             .map(|change| match change {
-                Owned::Meta(_, labels, annotations) => (lent(labels), lent(annotations)),
-                _ => (Vec::new(), Vec::new()),
+                Owned::Meta(_, labels, annotations) => (lent(labels), lent(annotations), Vec::new()),
+                Owned::Charge(_, counters) => (
+                    Vec::new(),
+                    Vec::new(),
+                    counters.iter().map(|(name, value)| (&name[..], *value)).collect(),
+                ),
+                _ => (Vec::new(), Vec::new(), Vec::new()),
             })
             .collect();
         let changes: Vec<beak::Change<'_>> = self
             .0
             .iter()
             .zip(&named)
-            .map(|(change, (labels, annotations))| lend(change, labels, annotations))
+            .map(|(change, (labels, annotations, counters))| lend(change, labels, annotations, counters))
             .collect();
         call(&changes)
     }
@@ -201,6 +219,7 @@ fn lend<'a>(
     change: &'a Owned,
     labels: &'a [(&'a [u8], Option<&'a [u8]>)],
     annotations: &'a [(&'a [u8], Option<&'a [u8]>)],
+    counters: &'a [(&'a [u8], u64)],
 ) -> beak::Change<'a> {
     use beak::Change;
     match change {
@@ -247,6 +266,8 @@ fn lend<'a>(
             reason: reason.as_deref(),
             started: None,
         },
+        Owned::Charge(process, _) => Change::Charge { process, counters },
+        Owned::Retry(process) => Change::Retry { process },
         Owned::Reap(process) => Change::Reap { process },
         Owned::Remove(path, reason) => Change::Remove {
             path,

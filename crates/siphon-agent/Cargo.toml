@@ -1,0 +1,32 @@
+[package]
+name = "siphon-agent"
+description = "The agent: a thread's main process and its turns, what its model is told and asked, the calls its replies make taken on, and the second model that judges them"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = "1.0.104"
+beak = { path = "../../vendor/beak/crates/beak" }
+bytes = "1.12.1"
+octoii-ai = { path = "../octoii-ai" }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+siphon-accounts = { path = "../siphon-accounts" }
+siphon-machine = { path = "../siphon-machine" }
+siphon-runtime = { path = "../siphon-runtime" }
+siphon-threads = { path = "../siphon-threads" }
+siphon-tools = { path = "../siphon-tools" }
+thiserror = "2.0.21"
+tokio = { version = "1.54.1", features = ["rt", "sync", "macros", "time"] }
+tokio-util = "0.7.20"
+
+[dev-dependencies]
+futures = "0.3.34"
+tempfile = "3.27.0"
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "time"] }

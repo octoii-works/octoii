@@ -4,7 +4,7 @@
 use beak::{Directory, Query, Snapshot, layout};
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
-use siphon_runtime::Runtime;
+use siphon_runtime::{Changes, Named, Runtime};
 
 use crate::config::Config;
 use crate::inbox::{self, Waiting};
@@ -29,6 +29,29 @@ pub enum Turn {
 pub const TURN_ANNOTATION: &str = "siphon.turn";
 pub const BEGAN_AT_ANNOTATION: &str = "siphon.began_at";
 pub const ENDED_AT_ANNOTATION: &str = "siphon.ended_at";
+
+/// The changes that mark a turn of the thread `id` begun at `at`: running, its last end let go of.
+pub fn began(changes: &mut Changes, id: &str, at: i64) {
+    let annotations = vec![
+        named(TURN_ANNOTATION, Some(serde_json::to_vec(&Turn::Running).unwrap_or_default())),
+        named(BEGAN_AT_ANNOTATION, Some(at.to_string().into_bytes())),
+        named(ENDED_AT_ANNOTATION, None),
+    ];
+    changes.meta(thread::path(id), Vec::new(), annotations);
+}
+
+/// The changes that mark the turn of the thread `id` ended as `turn` at `at`.
+pub fn ended(changes: &mut Changes, id: &str, turn: Turn, at: i64) {
+    let annotations = vec![
+        named(TURN_ANNOTATION, Some(serde_json::to_vec(&turn).unwrap_or_default())),
+        named(ENDED_AT_ANNOTATION, Some(at.to_string().into_bytes())),
+    ];
+    changes.meta(thread::path(id), Vec::new(), annotations);
+}
+
+fn named(name: &'static str, value: Option<Vec<u8>>) -> Named {
+    (Bytes::from_static(name.as_bytes()), value.map(Bytes::from))
+}
 
 /// What a thread's model requests used, as Beak counts it on its main process for every process under it, as cgroup v2
 /// charges a group and its ancestors.

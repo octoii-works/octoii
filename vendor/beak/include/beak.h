@@ -25,6 +25,8 @@
 #define BEAK_RUNNING_MAX_ANNOTATION "system.running-max"
 // The prefix of the annotations on a process's directory that limit its group's usage of the counter after it.
 #define BEAK_MAX_ANNOTATION_PREFIX "system.max."
+// The reason a group is asked to terminate for, where a charge took it past one of its limits.
+#define BEAK_LIMIT_REASON "limit"
 // The directory at the root where removals waiting for their processes are listed.
 #define BEAK_REMOVALS "system.removals"
 // The label on a process's directory that names its program's kind.

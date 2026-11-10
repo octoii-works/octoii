@@ -72,7 +72,7 @@ async fn entries<M>(threads: &Threads<M>, id: &str, done: impl Fn(&[Entry]) -> b
 fn changes_of(entry: &Entry) -> Option<&ConfigChanged> {
     match entry {
         Entry::Config { changed, .. } => Some(changed),
-        Entry::Input { .. } => None,
+        _ => None,
     }
 }
 

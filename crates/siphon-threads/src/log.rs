@@ -1,12 +1,13 @@
 //! A thread's log: JSON Lines in segments under its `log/`, each named by the id of the entry that begins it, as a
 //! log's segment is named by its first offset, so the names sort in the order the segments began. Only the last is
 //! appended to; it is sealed as the next begins, past `SEGMENT_BYTES_MAX`. An entry is one line: its `id`, made as it
-//! is appended, its `type`, and its fields. The log has one writer — the commit that makes the thread, then its main
-//! process — so its ids rise along it and each entry's place is where its writer put it.
+//! is appended, its `type`, and its fields. The log has one writer at a time — the commit that makes the thread, then
+//! its main process, or the turn it runs while it runs — so its ids rise along it and each entry's place is where its
+//! writer put it.
 
 use beak::{Range, Snapshot};
 use bytes::Bytes;
-use octoii_ai::vocabulary::InputContent;
+use octoii_ai::vocabulary::{FunctionCallOutput, InputContent, Response, Tool};
 use serde::{Deserialize, Serialize};
 use siphon_runtime::Changes;
 
@@ -20,7 +21,7 @@ pub const SEGMENT_BYTES_MAX: u64 = 32 << 20;
 const SEGMENT_EXTENSION: &str = ".jsonl";
 
 /// An entry of a thread's log.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum Entry {
     /// How the thread runs changed, from here on: by whom, and each field from what it was to what it is.
@@ -37,15 +38,90 @@ pub enum Entry {
         delivery: String,
         content: Vec<InputContent>,
     },
+    /// What the model is told of itself and of where it works, where it changed before a turn: each section new or
+    /// changed, whole, and each no longer told; and, in the entry that begins a window, the tools the window declares.
+    System {
+        id: String,
+        sections: Vec<Section>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        tools: Vec<Tool>,
+    },
+    /// The model's reply, as it came, to the model request of `request`, by its key; `cancelled` where a stop cut it.
+    Reply {
+        id: String,
+        request: String,
+        response: Response,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        cancelled: bool,
+    },
+    /// A call's result, as its turn appends it once the call ended: Siphon's key of the call, how it ended, and the
+    /// output the model is sent.
+    Result {
+        id: String,
+        call: String,
+        status: CallStatus,
+        output: FunctionCallOutput,
+    },
+    /// A turn's end: the turn, by its id — none for inputs that failed before a turn ran — how it ended, and why,
+    /// unless it replied.
+    TurnEnd {
+        id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        turn: Option<String>,
+        outcome: Outcome,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+    },
+    /// A model request's answer that came to nothing — one that failed, or one a stop came before it was used — its
+    /// response as it came, kept for the record and never sent to the model.
+    Discarded { id: String, request: String, response: Response },
 }
 
 impl Entry {
     #[must_use]
     pub fn id(&self) -> &str {
         match self {
-            Self::Config { id, .. } | Self::Input { id, .. } => id,
+            Self::Config { id, .. }
+            | Self::Input { id, .. }
+            | Self::System { id, .. }
+            | Self::Reply { id, .. }
+            | Self::Result { id, .. }
+            | Self::TurnEnd { id, .. }
+            | Self::Discarded { id, .. } => id,
         }
     }
+}
+
+/// A section of what the model is told, by its name, with its text as it is sent; none for a section no longer told.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Section {
+    pub name: String,
+    pub text: Option<String>,
+}
+
+/// How a call ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum CallStatus {
+    Ok,
+    /// Its tool is none of those the model may call.
+    Unavailable,
+    InvalidArguments,
+    /// Its tool refused, or failed.
+    ToolError,
+    /// The person, or a second model, did not let it go ahead.
+    Rejected,
+    /// It was cut off with nothing to give: by a stop, or by the host's end.
+    Interrupted,
+}
+
+/// How a turn ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Outcome {
+    Replied,
+    Failed,
+    Stopped,
 }
 
 /// Where an entry is: its segment, and its line's offset and length there, newline and all, so it is read again as
