@@ -1,0 +1,19 @@
+[package]
+name = "siphon-image"
+description = "Images as models and a person's view are given them: an image of any format read fitted within bounds — kept as it is where it fits them, else resized and written again"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+fast_image_resize = "6.1.0"
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "qoi"] }
+thiserror = "2.0.21"
+
+[dev-dependencies]
+image = { version = "0.25.10", default-features = false, features = ["png", "gif"] }
