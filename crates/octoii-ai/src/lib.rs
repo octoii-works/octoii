@@ -3,4 +3,5 @@
 //! reads its answer back.
 
 pub mod catalogue;
+pub mod stream;
 pub mod vocabulary;

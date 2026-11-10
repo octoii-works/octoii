@@ -85,12 +85,27 @@ pub struct Failure {
 }
 
 impl Failure {
-    /// Whether asking again may come to more: a failure of the way there or of the provider's, or a limit that passes.
+    /// A failure of `kind`, in the words given.
+    #[must_use]
+    pub fn new(kind: FailureKind, message: impl Into<String>) -> Self {
+        Self {
+            kind,
+            message: message.into(),
+            code: None,
+            status: None,
+            retry_after_ms: None,
+            reset_at_ms: None,
+            window_minutes: None,
+        }
+    }
+
+    /// Whether asking again may come to more, as its kind says: a limit that passes, a failure of the provider's or of
+    /// the way there, or one that took too long.
     #[must_use]
     pub fn retryable(&self) -> bool {
         matches!(
             self.kind,
-            FailureKind::RateLimit | FailureKind::Server | FailureKind::Transport | FailureKind::Timeout | FailureKind::InvalidResponse
+            FailureKind::RateLimit | FailureKind::Server | FailureKind::Transport | FailureKind::Timeout
         )
     }
 }
