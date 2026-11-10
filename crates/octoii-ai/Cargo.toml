@@ -1,0 +1,16 @@
+[package]
+name = "octoii-ai"
+description = "Octoii's access to models: one vocabulary of conversations in and out, the catalogue of models, and each provider's driver"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+thiserror = "2.0.21"
