@@ -10,7 +10,7 @@ use siphon_runtime::{Answer, Ending, Program, Run, Wait};
 use siphon_threads::inbox::{self, Inbound};
 use siphon_threads::{Config, ConfigChange, Entry, Window, thread};
 
-use crate::model::{ModelRequest, words_of};
+use crate::model::ModelRequest;
 use crate::turn::charge;
 
 /// What a title request asks of the model, after the window.
@@ -68,7 +68,7 @@ impl Program for TitleProgram {
             return Ok(Ending::Done(None));
         };
         charge(run, &response);
-        let title = title_of(&words_of(&response));
+        let title = title_of(&response.words());
         if title.is_empty() || config.title.is_some() {
             return Ok(Ending::Done(None));
         }

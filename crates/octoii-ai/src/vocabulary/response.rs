@@ -3,7 +3,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::items::Item;
+use super::content::OutputContent;
+use super::items::{Item, Message};
 
 /// Where a response stands: under way, or ended `completed`, `incomplete` or `failed`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -127,4 +128,23 @@ pub struct Response {
     /// The input tokens of the response's last request alone, where it was continued across several.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context_tokens: Option<u64>,
+}
+
+impl Response {
+    /// The words its messages gave, trimmed.
+    #[must_use]
+    pub fn words(&self) -> String {
+        let mut words = String::new();
+        for item in &self.output {
+            let Item::Message(Message::Assistant { content, .. }) = item else {
+                continue;
+            };
+            for part in content {
+                if let OutputContent::OutputText { text, .. } = part {
+                    words.push_str(text);
+                }
+            }
+        }
+        words.trim().to_owned()
+    }
 }

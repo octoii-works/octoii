@@ -126,8 +126,7 @@ fn begin(run: &mut Run<'_>, id: &str, told: Told) -> anyhow::Result<Ending<MainS
     let mut writer = Writer::open(run.snapshot(), id)?;
     let window = Window::read(run.snapshot(), id)?;
     let sections = told::news(&told::held(&window), &told.sections);
-    let begins = window.told.is_empty() && !window.conversation.iter().any(|entry| matches!(entry, Entry::System { .. }));
-    let tools = if begins { told.tools } else { Vec::new() };
+    let tools = if window.begins() { told.tools } else { Vec::new() };
     if !sections.is_empty() || !tools.is_empty() {
         let entry = Entry::System {
             id: run.new_id()?,

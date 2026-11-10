@@ -7,7 +7,7 @@
 
 use beak::{Range, Snapshot};
 use bytes::Bytes;
-use octoii_ai::vocabulary::{FunctionCallOutput, InputContent, Response, Tool};
+use octoii_ai::vocabulary::{FunctionCallOutput, InputContent, ReasoningEffort, Response, Tool};
 use serde::{Deserialize, Serialize};
 use siphon_runtime::Changes;
 
@@ -72,6 +72,21 @@ pub enum Entry {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
     },
+    /// Where the conversation grew past what its model takes: the recap the model wrote, by the request of `request`,
+    /// its response as it came, of everything before the entry `from` but the input `kept` — the latest the person gave
+    /// before it, none where the cut falls at an input — and how hard the model reasons as the new window begins. From
+    /// here on a window of its own begins with what the model is told, gathered anew, then the recap, then the input
+    /// as the person gave it and the entries from `from` on as they stand, nothing copied.
+    Compaction {
+        id: String,
+        request: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        kept: Option<String>,
+        from: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        effort: Option<ReasoningEffort>,
+        response: Response,
+    },
     /// A model request's answer that came to nothing — one that failed, or one a stop came before it was used — its
     /// response as it came, kept for the record and never sent to the model.
     Discarded { id: String, request: String, response: Response },
@@ -87,6 +102,7 @@ impl Entry {
             | Self::Reply { id, .. }
             | Self::Result { id, .. }
             | Self::TurnEnd { id, .. }
+            | Self::Compaction { id, .. }
             | Self::Discarded { id, .. } => id,
         }
     }
@@ -164,7 +180,9 @@ pub fn path(id: &str) -> Bytes {
     thread::within(id, "log")
 }
 
-fn segment_path(id: &str, segment: &str) -> Bytes {
+/// The segment `segment`, by its name, of the log of the thread `id`.
+#[must_use]
+pub fn segment(id: &str, segment: &str) -> Bytes {
     [&path(id)[..], b"/", segment.as_bytes()].concat().into()
 }
 
@@ -224,13 +242,13 @@ impl Writer {
         line.push(b'\n');
         let length = line.len() as u64;
         let fits = self.last.as_ref().is_some_and(|(_, used)| used + length <= SEGMENT_BYTES_MAX);
-        if !fits && let Some((segment, _)) = self.last.take() {
-            changes.seal(segment_path(&self.thread, &segment));
+        if !fits && let Some((full, _)) = self.last.take() {
+            changes.seal(segment(&self.thread, &full));
         }
-        let (segment, used) = self.last.get_or_insert_with(|| (format!("{}{SEGMENT_EXTENSION}", entry.id()), 0));
-        changes.append(segment_path(&self.thread, segment), line);
+        let (name, used) = self.last.get_or_insert_with(|| (format!("{}{SEGMENT_EXTENSION}", entry.id()), 0));
+        changes.append(segment(&self.thread, name), line);
         let address = Address {
-            segment: segment.clone(),
+            segment: name.clone(),
             offset: *used,
             length,
         };
@@ -256,7 +274,7 @@ pub fn read_after(snapshot: &Snapshot, id: &str, from: Option<&Cursor>, bytes_ma
     for (index, (name, length)) in all.iter().enumerate().skip(start) {
         let offset = cursor.as_ref().filter(|at| at.segment == *name).map_or(0, |at| at.offset);
         let whole = if offset < *length {
-            whole_lines(snapshot, &segment_path(id, name), offset, *length, bytes_max.saturating_sub(read))?
+            whole_lines(snapshot, &segment(id, name), offset, *length, bytes_max.saturating_sub(read))?
         } else {
             Bytes::new()
         };
@@ -293,6 +311,34 @@ fn whole_lines(snapshot: &Snapshot, path: &[u8], offset: u64, length: u64, budge
     let rest = snapshot.read(path, offset, length - offset)?.unwrap_or_default();
     let end = rest.iter().position(|&byte| byte == b'\n').map_or(rest.len(), |end| end + 1);
     Ok(rest.slice(..end))
+}
+
+/// Where the entry `entry`, by its id, begins in the log of the thread `id`, looked for from `from` on — from the log's
+/// first, where none; none where it is not there.
+///
+/// # Errors
+/// The volume's failure; a line that is no entry.
+pub fn cursor_of(snapshot: &Snapshot, id: &str, from: Option<&Cursor>, entry: &str) -> Result<Option<Cursor>, Error> {
+    #[derive(Deserialize)]
+    struct Head {
+        id: String,
+    }
+    let all = segments(snapshot, id)?;
+    let start = from.map_or(0, |cursor| all.iter().position(|(name, _)| *name == cursor.segment).unwrap_or(0));
+    for (name, _) in all.iter().skip(start) {
+        let bytes = snapshot.read(&segment(id, name), 0, u64::MAX)?.unwrap_or_default();
+        let mut offset = 0;
+        for line in bytes.split(|&byte| byte == b'\n') {
+            if !line.is_empty() && serde_json::from_slice::<Head>(line)?.id == entry {
+                return Ok(Some(Cursor {
+                    segment: name.clone(),
+                    offset,
+                }));
+            }
+            offset += line.len() as u64 + 1;
+        }
+    }
+    Ok(None)
 }
 
 /// The entry of `line`.

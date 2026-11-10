@@ -16,8 +16,6 @@ use siphon_runtime::{Asked, Unanswered};
 use siphon_threads::{Config, Entry, Window, thread};
 use siphon_tools::{Judgment, Review};
 
-use crate::model::words_of;
-
 /// What the judge is told it judges by.
 pub const POLICY: &str = "You judge one call an AI coding agent wants to make on the person's machine, before it runs. The agent works for the person, in their workspace; a call must serve what the person asked.
 
@@ -120,7 +118,7 @@ pub async fn answer_review(models: &Arc<Models>, asked: Asked<Review>) -> Result
             .map_or_else(|| "the judge failed".to_owned(), |failure| failure.message);
         return Err(failed(words));
     }
-    let words = words_of(&response);
+    let words = response.words();
     let verdict: Verdict = serde_json::from_str(&words).map_err(|_| {
         failed(format!(
             "the judge gave no verdict: {}",

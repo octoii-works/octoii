@@ -51,8 +51,10 @@ impl Driver for Scripted {
     fn stream<'a>(&'a self, _: &'a Call, model: &'a Model, request: &'a Request) -> BoxFuture<'a, Result<Source, Failure>> {
         Box::pin(async move {
             let script = &self.0;
-            let output = if asks_title(request) {
+            let output = if asks(request, siphon_agent::title::INSTRUCTION) {
                 vec![says("Writing a file.")]
+            } else if asks(request, siphon_agent::compaction::RECAP) {
+                vec![says("the recap")]
             } else if request.format.is_some() {
                 let told = format!("{:?}", request.input);
                 let removes = told.rsplit("<call>").next().is_some_and(|call| call.contains("rm -rf"));
@@ -98,9 +100,9 @@ impl Driver for Scripted {
     }
 }
 
-/// Whether `request` asks a thread's title.
-fn asks_title(request: &Request) -> bool {
-    matches!(request.input.last(), Some(Item::Message(Message::User { content })) if content == &[InputContent::text(siphon_agent::title::INSTRUCTION)])
+/// Whether `request` asks `instruction` after the window.
+fn asks(request: &Request, instruction: &str) -> bool {
+    matches!(request.input.last(), Some(Item::Message(Message::User { content })) if content == &[InputContent::text(instruction)])
 }
 
 struct Nothing;
@@ -146,7 +148,7 @@ fn models(script: &Arc<Script>) -> Arc<Models> {
         id: "m".into(),
         provider: "test".into(),
         name: "m".into(),
-        context_length: None,
+        context_length: Some(30_000),
         max_output_tokens: None,
         reads_images: true,
         reads_files: true,
@@ -180,10 +182,15 @@ fn runtime(beak: &Beak, script: &Arc<Script>) -> Runtime {
     let execs = tools.clone();
     Runtime::builder()
         .program(ThreadProgram)
-        .program(TurnProgram { tools, home: None })
+        .program(TurnProgram {
+            tools,
+            home: None,
+            models: Arc::clone(&models),
+        })
         .program(ScriptProgram { tools: inner })
         .program(TrustProgram)
         .program(TitleProgram)
+        .program(siphon_agent::CompactProgram)
         .handle(move |asked: Asked<Gather>| {
             let sources = sources.clone();
             async move { answer_gather(&sources, asked).await }
@@ -325,6 +332,7 @@ async fn a_turn_takes_on_the_calls_its_replies_make_and_asks_again_till_one_call
             Entry::Reply { .. } => "reply",
             Entry::Result { .. } => "result",
             Entry::TurnEnd { .. } => "turn-end",
+            Entry::Compaction { .. } => "compaction",
             Entry::Discarded { .. } => "discarded",
         })
         .collect();
@@ -469,5 +477,63 @@ async fn in_auto_a_call_that_would_ask_is_judged_by_the_model_the_environment_na
     assert!(results[0].1.contains("blocked: it removes files"));
     assert_eq!(results[1].0, CallStatus::Ok, "{results:?}");
     assert!(workspace.join("build").exists() && workspace.join("out.txt").exists());
+    runtime.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_window_too_full_for_its_next_request_is_compacted_and_the_model_asked_on_the_new_one() {
+    let script = script(vec![Ok(vec![says("hello")]), Ok(vec![says("read it")])]);
+    let beak = Beak::new().expect("Beak");
+    let runtime = runtime(&beak, &script);
+    let threads = Threads::<ThreadProgram>::new(runtime.clone());
+    let (_folder, workspace) = folder();
+    let id = thread(&threads, &workspace).await;
+    threads
+        .deliver(&id, "person", vec![InputContent::text("hi")], "d1")
+        .await
+        .expect("delivered");
+    until(&threads, &id, Turn::Replied).await;
+    let long = "word ".repeat(22_000);
+    threads
+        .deliver(&id, "person", vec![InputContent::text(long.clone())], "d2")
+        .await
+        .expect("delivered");
+    let mut committed = runtime.committed();
+    tokio::time::timeout(Duration::from_secs(20), async {
+        while entries(&threads, &id)
+            .iter()
+            .filter(|entry| matches!(entry, Entry::TurnEnd { .. }))
+            .count()
+            < 2
+        {
+            committed.changed().await.expect("the runtime runs");
+        }
+    })
+    .await
+    .expect("ended in time");
+    let all = entries(&threads, &id);
+    let compaction = all
+        .iter()
+        .position(|entry| matches!(entry, Entry::Compaction { .. }))
+        .expect("compacted");
+    let Entry::Compaction { kept, from, .. } = &all[compaction] else {
+        unreachable!()
+    };
+    assert_eq!(*kept, None, "cut at the long input, which it keeps as it stands");
+    assert!(
+        matches!(&all[compaction + 1], Entry::System { tools, .. } if !tools.is_empty()),
+        "the new window begins told anew"
+    );
+    let long_input = all
+        .iter()
+        .find(|entry| matches!(entry, Entry::Input { content, .. } if content[0] == InputContent::text(long.clone())));
+    assert_eq!(Some(from.as_str()), long_input.map(Entry::id));
+    let asked = script.asked.lock().expect("held").clone();
+    let last = asked.last().expect("asked");
+    assert!(
+        matches!(&last.input[1], Item::Message(Message::Developer { content }) if content == &[InputContent::text("<recap>\nthe recap\n</recap>")])
+    );
+    assert!(matches!(&last.input[2], Item::Message(Message::User { content }) if content[0] == InputContent::text(long)));
+    assert_eq!(last.input.len(), 3, "nothing before the cut is sent");
     runtime.close().await;
 }

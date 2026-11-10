@@ -3,12 +3,16 @@
 //! once, one that may act after those before it — appending each result as it and every call before it ended, in the
 //! order the model made them; then takes in what waits in the thread's inbox, so what the person sent while the calls
 //! ran steers the turn at its next step, and asks again, until a reply calls nothing. It asks again after a failure
-//! that may pass. Asked to stop, it keeps what had come of the reply and what its calls gave as they were cut off, and
+//! that may pass, and has its window compacted before a request it is too full for, or once after its provider refused
+//! one as too long. Asked to stop, it keeps what had come of the reply and what its calls gave as they were cut off, and
 //! ends every call it never ran as stopped, so every call the log holds has its result.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
-use octoii_ai::vocabulary::{FunctionCallOutput, InputContent, Item, ItemStatus, Response, ResponseStatus};
+use octoii_ai::models::Models;
+
+use octoii_ai::vocabulary::{FailureKind, FunctionCallOutput, InputContent, Item, ItemStatus, Response, ResponseStatus};
 use serde::{Deserialize, Serialize};
 use siphon_machine::paths::Base;
 use siphon_runtime::{Answer, Ending, Program, Retries, Run, Wait};
@@ -17,6 +21,7 @@ use siphon_threads::{CallStatus, Config, Entry, Usage, Window, inbox, thread};
 use siphon_tools::mcp::Place;
 use siphon_tools::{Calls, Setting, State, Tools};
 
+use crate::compaction;
 use crate::model::ModelRequest;
 
 /// How many times a turn asks again after its model failed in a way that may pass, before the turn fails.
@@ -34,22 +39,47 @@ pub struct TurnInput {
     pub catalog: Vec<String>,
 }
 
-/// Where a turn stands: about to ask, its `attempt` counting the failures that may pass; asked, by the request of
-/// `key`; or taking on the calls of a reply, those before `appended` with their results in the log.
+/// Where a turn stands: about to ask, its `attempt` counting the failures that may pass, `compacted` where its window
+/// was compacted for this request; asked, by the request of `key`; waiting for the thread's compaction to end; or
+/// taking on the calls of a reply, those before `appended` with their results in the log.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "state", rename_all = "kebab-case")]
 pub enum TurnState {
-    Asking { attempt: u32 },
-    Asked { key: String, attempt: u32 },
-    Calling { calls: Calls, appended: usize },
+    Asking {
+        attempt: u32,
+        #[serde(default)]
+        compacted: bool,
+    },
+    Asked {
+        key: String,
+        attempt: u32,
+        #[serde(default)]
+        compacted: bool,
+    },
+    Compacting {
+        attempt: u32,
+    },
+    Calling {
+        calls: Calls,
+        appended: usize,
+    },
+}
+
+impl TurnState {
+    /// About to ask for the first time, or after its calls.
+    const FRESH: Self = Self::Asking {
+        attempt: 0,
+        compacted: false,
+    };
 }
 
 /// The program of a thread's turns: its calls taken on with `tools`, their paths starting from the person's `home`
-/// where the thread names no workspace.
+/// where the thread names no workspace; how full a window may grow told by the `models`' facts.
 #[derive(Debug, Clone)]
 pub struct TurnProgram {
     pub tools: Tools,
     pub home: Option<PathBuf>,
+    pub models: Arc<Models>,
 }
 
 impl Program for TurnProgram {
@@ -65,37 +95,46 @@ impl Program for TurnProgram {
     type Output = ();
 
     fn run(&self, run: &mut Run<'_>, input: TurnInput, state: Option<TurnState>) -> anyhow::Result<Ending<TurnState, ()>> {
-        let state = state.unwrap_or(TurnState::Asking { attempt: 0 });
+        let state = state.unwrap_or(TurnState::FRESH);
         if run.is_stop_handler() {
             return self.stop(run, &input, state);
         }
         match state {
-            TurnState::Asking { attempt } => ask(run, &input.thread, attempt),
-            TurnState::Asked { key, attempt } => self.answered(run, &input, &key, attempt),
+            TurnState::Asking { attempt, compacted } => self.ask(run, &input.thread, attempt, compacted),
+            TurnState::Asked { key, attempt, compacted } => self.answered(run, &input, &key, attempt, compacted),
+            TurnState::Compacting { attempt } => compaction_ended(run, &input.thread, attempt),
             TurnState::Calling { calls, appended } => self.calling(run, &input, calls, appended),
         }
     }
 }
 
-/// Asks the thread's model for what follows its window, and sleeps till the answer comes.
-fn ask(run: &mut Run<'_>, id: &str, attempt: u32) -> anyhow::Result<Ending<TurnState, ()>> {
-    let config = config_of(run, id)?;
-    let Some(model) = config.model else {
-        return Ok(Ending::Fail("the thread names no model".into()));
-    };
-    let window = Window::read(run.snapshot(), id)?;
-    let Some(until) = window.last() else {
-        return Ok(Ending::Fail("the thread's window is empty".into()));
-    };
-    let key = run.new_id()?;
-    let request = ModelRequest {
-        thread: id.to_owned(),
-        until: until.to_owned(),
-        model,
-        instruction: None,
-    };
-    run.request(&key, &request)?;
-    Ok(Ending::Wait(TurnState::Asked { key: key.clone(), attempt }, Wait::new().mail(key)))
+/// Has the thread's window compacted — its compaction started where it is not running — and sleeps on it: not the
+/// turn's own process, it is waited on by its record's changes.
+fn compact(run: &mut Run<'_>, id: &str, attempt: u32) -> anyhow::Result<Ending<TurnState, ()>> {
+    let mut started = siphon_runtime::Changes::new();
+    compaction::start(run.snapshot(), &mut started, id)?;
+    run.changes.extend(started);
+    Ok(Ending::Wait(
+        TurnState::Compacting { attempt },
+        Wait::new().change(compaction::path(id)),
+    ))
+}
+
+/// The thread's compaction ended: the model asked on the window it began; the turn fails as it failed.
+fn compaction_ended(run: &Run<'_>, id: &str, attempt: u32) -> anyhow::Result<Ending<TurnState, ()>> {
+    let record = run.snapshot().record(&compaction::path(id))?;
+    match record.and_then(|record| record.outcome) {
+        None => Ok(Ending::Wait(
+            TurnState::Compacting { attempt },
+            Wait::new().change(compaction::path(id)),
+        )),
+        Some(beak::Outcome::Completed(_)) => Ok(Ending::Next(TurnState::Asking { attempt, compacted: true })),
+        Some(beak::Outcome::Failed { error, .. }) => Ok(Ending::Fail(format!(
+            "its window could not be compacted: {}",
+            String::from_utf8_lossy(&error.unwrap_or_default())
+        ))),
+        Some(beak::Outcome::Stopped { .. }) => Ok(Ending::Fail("its window's compaction was stopped".into())),
+    }
 }
 
 fn config_of(run: &Run<'_>, id: &str) -> anyhow::Result<Config> {
@@ -108,22 +147,56 @@ fn config_of(run: &Run<'_>, id: &str) -> anyhow::Result<Config> {
 }
 
 impl TurnProgram {
+    /// Asks the thread's model for what follows its window, and sleeps till the answer comes; has the window compacted
+    /// first where it is too full for the request, once for it.
+    fn ask(&self, run: &mut Run<'_>, id: &str, attempt: u32, compacted: bool) -> anyhow::Result<Ending<TurnState, ()>> {
+        let config = config_of(run, id)?;
+        let Some(model) = config.model else {
+            return Ok(Ending::Fail("the thread names no model".into()));
+        };
+        let window = Window::read(run.snapshot(), id)?;
+        let context = self.models.model(&model).and_then(|served| served.context_length);
+        if !compacted && compaction::is_full(&window, context) && compaction::cut(&window).is_some() {
+            return compact(run, id, attempt);
+        }
+        let Some(until) = window.last() else {
+            return Ok(Ending::Fail("the thread's window is empty".into()));
+        };
+        let key = run.new_id()?;
+        let request = ModelRequest {
+            thread: id.to_owned(),
+            until: until.to_owned(),
+            model,
+            instruction: None,
+        };
+        run.request(&key, &request)?;
+        let wait = Wait::new().mail(key.clone());
+        Ok(Ending::Wait(TurnState::Asked { key, attempt, compacted }, wait))
+    }
+
     /// The model's answer to the request of `key`: its reply appended and the calls it made taken on; asked again
     /// where it was cut off, or failed in a way that may pass.
-    fn answered(&self, run: &mut Run<'_>, input: &TurnInput, key: &str, attempt: u32) -> anyhow::Result<Ending<TurnState, ()>> {
+    fn answered(
+        &self,
+        run: &mut Run<'_>,
+        input: &TurnInput,
+        key: &str,
+        attempt: u32,
+        compacted: bool,
+    ) -> anyhow::Result<Ending<TurnState, ()>> {
         let Some(answer) = run.answer::<ModelRequest>(key)? else {
-            return Ok(Ending::Wait(
-                TurnState::Asked {
-                    key: key.to_owned(),
-                    attempt,
-                },
-                Wait::new().mail(key.to_owned()),
-            ));
+            let wait = Wait::new().mail(key.to_owned());
+            let state = TurnState::Asked {
+                key: key.to_owned(),
+                attempt,
+                compacted,
+            };
+            return Ok(Ending::Wait(state, wait));
         };
         run.take_mail(key);
         let response = match answer {
             Answer::Given(response) => response,
-            Answer::Interrupted => return Ok(Ending::Next(TurnState::Asking { attempt })),
+            Answer::Interrupted => return Ok(Ending::Next(TurnState::Asking { attempt, compacted })),
             Answer::Failed(words) => return Ok(Ending::Fail(words)),
         };
         charge(run, &response);
@@ -137,6 +210,13 @@ impl TurnProgram {
                 response: response.clone(),
             };
             writer.append(&mut run.changes, &entry)?;
+            let too_long = response
+                .failure
+                .as_ref()
+                .is_some_and(|failure| failure.kind == FailureKind::ContextOverflow);
+            if too_long && !compacted && compaction::cut(&Window::read(run.snapshot(), id)?).is_some() {
+                return compact(run, id, attempt);
+            }
             return Ok(failed(run, &response, attempt));
         }
         let (made, cut) = calls_of(&response);
@@ -184,7 +264,7 @@ impl TurnProgram {
             return Ok(Ending::Wait(TurnState::Calling { calls, appended }, wait));
         }
         inbox::take(run, &input.thread, &mut writer)?;
-        Ok(Ending::Next(TurnState::Asking { attempt: 0 }))
+        Ok(Ending::Next(TurnState::FRESH))
     }
 
     /// Where the thread's paths start: its workspace, else the person's home, else the machine's root.
@@ -206,11 +286,11 @@ impl TurnProgram {
     fn stop(&self, run: &mut Run<'_>, input: &TurnInput, state: TurnState) -> anyhow::Result<Ending<TurnState, ()>> {
         let mut writer = Writer::open(run.snapshot(), &input.thread)?;
         match state {
-            TurnState::Asking { .. } => Ok(Ending::Stopped(None)),
-            TurnState::Asked { key, attempt } => {
+            TurnState::Asking { .. } | TurnState::Compacting { .. } => Ok(Ending::Stopped(None)),
+            TurnState::Asked { key, attempt, compacted } => {
                 let Some(answer) = run.answer::<ModelRequest>(&key)? else {
                     let wait = Wait::new().mail(key.clone());
-                    return Ok(Ending::Wait(TurnState::Asked { key, attempt }, wait));
+                    return Ok(Ending::Wait(TurnState::Asked { key, attempt, compacted }, wait));
                 };
                 run.take_mail(&key);
                 let Answer::Given(response) = answer else {
@@ -361,8 +441,9 @@ fn failed(run: &Run<'_>, response: &Response, attempt: u32) -> Ending<TurnState,
         Some(after) => i64::try_from(after).unwrap_or(i64::MAX).min(RETRY_AFTER_MOST_MS),
         None => (RETRY_FIRST_MS << attempt.min(16)).min(RETRY_MOST_MS),
     };
-    Ending::Wait(
-        TurnState::Asking { attempt: attempt + 1 },
-        Wait::new().deadline(run.time_ms() + wait),
-    )
+    let state = TurnState::Asking {
+        attempt: attempt + 1,
+        compacted: false,
+    };
+    Ending::Wait(state, Wait::new().deadline(run.time_ms() + wait))
 }

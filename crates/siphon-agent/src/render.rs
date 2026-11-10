@@ -1,7 +1,7 @@
 //! A model request rendered from a thread's window, every part of it from the log, so what the window begins with stays
 //! as it was sent and every provider's cache of it holds: the system entries it begins with as developer messages, a
-//! part for each section, their tools the request's tools; the effort the window is asked at, as the changes before its
-//! first reply set it; then its conversation — a later system entry as the sections it changed, a later change of the
+//! part for each section, their tools the request's tools; its compaction's recap; the effort the window is asked at,
+//! as it began and as the changes before its first reply set it; then its conversation — a later system entry as the sections it changed, a later change of the
 //! effort where it stands, each input as the person's message, each reply as the items its response gave, each result
 //! as the output its call gave, and a turn the person stopped as a note that they stopped it there. It is rendered for
 //! the model asked, where its facts are known: a window that declares a search its model does not run leaves it out,
@@ -34,12 +34,17 @@ pub fn request(thread: &str, reference: &str, served: Option<&Model>, window: &W
             }
         }
     }
+    if let Some(recap) = &window.recap {
+        input.push(developer(vec![InputContent::text(format!("<recap>\n{recap}\n</recap>"))]));
+    }
+    // The window's own first reply: a change of the effort before it is how the window is asked.
     let first_reply = window
         .conversation
         .iter()
-        .position(|entry| matches!(entry, Entry::Reply { .. }))
+        .enumerate()
+        .position(|(at, entry)| at >= window.carried && matches!(entry, Entry::Reply { .. }))
         .unwrap_or(window.conversation.len());
-    let mut effort = None;
+    let mut effort = window.effort;
     for (at, entry) in window.conversation.iter().enumerate() {
         match entry {
             Entry::Config { changed, .. } => {
@@ -57,7 +62,7 @@ pub fn request(thread: &str, reference: &str, served: Option<&Model>, window: &W
             Entry::TurnEnd {
                 outcome: Outcome::Stopped, ..
             } => input.push(developer(vec![InputContent::text(STOPPED_NOTE)])),
-            Entry::System { .. } | Entry::TurnEnd { .. } | Entry::Discarded { .. } => {}
+            Entry::System { .. } | Entry::TurnEnd { .. } | Entry::Compaction { .. } | Entry::Discarded { .. } => {}
         }
     }
     if let Some(instruction) = instruction {

@@ -101,20 +101,3 @@ pub async fn answer_model(models: &Arc<Models>, asked: Asked<ModelRequest>) -> R
         }
     }
 }
-
-/// The words `response`'s messages gave, trimmed.
-#[must_use]
-pub fn words_of(response: &Response) -> String {
-    let mut words = String::new();
-    for item in &response.output {
-        let Item::Message(octoii_ai::vocabulary::Message::Assistant { content, .. }) = item else {
-            continue;
-        };
-        for part in content {
-            if let octoii_ai::vocabulary::OutputContent::OutputText { text, .. } = part {
-                words.push_str(text);
-            }
-        }
-    }
-    words.trim().to_owned()
-}
