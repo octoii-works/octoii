@@ -5,13 +5,17 @@
 pub mod gather;
 pub mod model;
 pub mod render;
+pub mod review;
 pub mod skills;
 pub mod thread;
+pub mod title;
 pub mod told;
 pub mod turn;
 
 pub use gather::{Gather, Sources, answer_gather};
-pub use model::{ModelRequest, answer_model};
+pub use model::{ModelRequest, answer_model, words_of};
+pub use review::answer_review;
 pub use thread::{MainState, ThreadProgram};
+pub use title::{TitleInput, TitleProgram};
 pub use told::Told;
 pub use turn::{TurnInput, TurnProgram, TurnState};

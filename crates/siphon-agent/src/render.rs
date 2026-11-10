@@ -5,19 +5,21 @@
 //! effort where it stands, each input as the person's message, each reply as the items its response gave, each result
 //! as the output its call gave, and a turn the person stopped as a note that they stopped it there. It is rendered for
 //! the model asked, where its facts are known: a window that declares a search its model does not run leaves it out,
-//! and a model that reads no images is told of each in words in its place.
+//! and a model that reads no images is told of each in words in its place. A request with an instruction asks it after
+//! the window — a title, a recap — the tools declared as ever, so the window's cache holds, but none to be called.
 
 use octoii_ai::catalogue::Model;
-use octoii_ai::vocabulary::{ConfigurationUpdate, InputContent, Item, Message, ReasoningConfig, Request, Tool};
+use octoii_ai::vocabulary::{ConfigurationUpdate, InputContent, Item, Message, ReasoningConfig, Request, Tool, ToolChoice};
 use siphon_threads::{Entry, Outcome, Section, Window};
 
 /// What the model is told where the person stopped a turn: what came before was cut off there, not finished.
 pub const STOPPED_NOTE: &str = "The person stopped this turn here.";
 
 /// The request of the model `reference`, whose facts are `served` where they are known, for what follows `window` of
-/// the thread `thread`, which names the conversation a provider keeps its cache by.
+/// the thread `thread`, which names the conversation a provider keeps its cache by; or for what `instruction` asks
+/// after it, where one is given.
 #[must_use]
-pub fn request(thread: &str, reference: &str, served: Option<&Model>, window: &Window) -> Request {
+pub fn request(thread: &str, reference: &str, served: Option<&Model>, window: &Window, instruction: Option<&str>) -> Request {
     let searches = served.is_none_or(|model| model.searches_web);
     let mut input = Vec::new();
     let mut tools = Vec::new();
@@ -58,17 +60,23 @@ pub fn request(thread: &str, reference: &str, served: Option<&Model>, window: &W
             Entry::System { .. } | Entry::TurnEnd { .. } | Entry::Discarded { .. } => {}
         }
     }
+    if let Some(instruction) = instruction {
+        input.push(Item::Message(Message::User {
+            content: vec![InputContent::text(instruction)],
+        }));
+    }
     if served.is_some_and(|model| !model.reads_images) {
         for item in &mut input {
             tell_images(item, reference);
         }
     }
+    let tool_choice = (instruction.is_some() && !tools.is_empty()).then_some(ToolChoice::None);
     Request {
         model: reference.to_owned(),
         instructions: None,
         input,
         tools,
-        tool_choice: None,
+        tool_choice,
         reasoning: effort.map(|effort| ReasoningConfig { effort }),
         format: None,
         max_output_tokens: None,

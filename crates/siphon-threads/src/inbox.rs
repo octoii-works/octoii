@@ -46,11 +46,12 @@ pub fn file(id: &str, delivery: &str) -> Bytes {
     [&path(id)[..], b"/", delivery.as_bytes(), b".json"].concat().into()
 }
 
-/// Puts `inbound` in the inbox of the thread `id` as `delivery`, with `changes`.
+/// Puts `inbound` in the inbox of the thread `id` as `delivery`, with `changes`, for its main process to take — which
+/// the caller sees runs.
 ///
 /// # Errors
 /// What cannot be written as JSON.
-pub(crate) fn put(changes: &mut Changes, id: &str, delivery: &str, inbound: &Inbound) -> serde_json::Result<()> {
+pub fn put(changes: &mut Changes, id: &str, delivery: &str, inbound: &Inbound) -> serde_json::Result<()> {
     changes.write(file(id, delivery), serde_json::to_vec(inbound)?);
     Ok(())
 }

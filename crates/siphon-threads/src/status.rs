@@ -74,6 +74,24 @@ impl Usage {
         "cost-nanodollars",
     ];
 
+    /// What `used` charges, as the counters Beak keeps it as: each by its name, those it used none of left out.
+    #[must_use]
+    pub fn counters_of(used: &octoii_ai::vocabulary::Usage) -> Vec<(Bytes, u64)> {
+        let values = [
+            used.input_tokens,
+            used.cached_tokens,
+            used.output_tokens,
+            used.reasoning_tokens,
+            used.cost_nanodollars.unwrap_or(0),
+        ];
+        Self::COUNTERS
+            .iter()
+            .zip(values)
+            .filter(|(_, value)| *value > 0)
+            .map(|(name, value)| (Bytes::from_static(name.as_bytes()), value))
+            .collect()
+    }
+
     /// The usage `counters` hold; none where they hold none of it.
     #[must_use]
     pub fn of(counters: &[(Bytes, u64)]) -> Option<Self> {

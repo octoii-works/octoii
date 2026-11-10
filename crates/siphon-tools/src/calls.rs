@@ -13,7 +13,7 @@ use siphon_threads::{CallStatus, Mode};
 use crate::effect::{Effect, Line};
 use crate::permissions::{Bounds, Grants, Verdict, Writes, patterns_of, weigh};
 use crate::projects;
-use crate::requests::{Asks, Decision, Exec, Permission, Review, Shown};
+use crate::requests::{Asks, Decision, Exec, Judgment, Permission, Review, Shown};
 use crate::tool::Tools;
 
 /// Where a call stands.
@@ -207,6 +207,10 @@ impl Calls {
                 let key = format!("{}.review", call.key);
                 let Some(answer) = run.answer::<Review>(&key)? else { return Ok(()) };
                 run.take_mail(&key);
+                if let Answer::Given(Judgment { usage: Some(used), .. }) = &answer {
+                    let process = bytes::Bytes::copy_from_slice(run.path());
+                    run.changes.charge(process, siphon_threads::Usage::counters_of(used));
+                }
                 match answer {
                     Answer::Given(judgment) if judgment.allow => self.exec(at, run, setting, Writes::Anywhere)?,
                     Answer::Given(judgment) => ended(CallStatus::Rejected, format!("blocked: {}", judgment.reason)),

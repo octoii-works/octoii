@@ -73,11 +73,14 @@ pub struct Review {
     pub call: Shown,
 }
 
-/// The model's judgment: let it go ahead, or not; and why.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+/// The model's judgment: let it go ahead, or not; and why; and what asking the model used, which is charged to the
+/// call's caller.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Judgment {
     pub allow: bool,
     pub reason: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage: Option<octoii_ai::vocabulary::Usage>,
 }
 
 impl Request for Review {

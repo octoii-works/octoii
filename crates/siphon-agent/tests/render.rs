@@ -129,7 +129,7 @@ fn a_window_is_asked_at_the_effort_set_before_its_first_reply_and_told_a_change_
         effort("6", ReasoningEffort::High),
         input("7", vec![InputContent::text("again")]),
     ]);
-    let asked = request("t1", "test/m", Some(&model(true, false)), &window);
+    let asked = request("t1", "test/m", Some(&model(true, false)), &window, None);
     assert_eq!(
         asked.reasoning,
         Some(ReasoningConfig {
@@ -159,7 +159,7 @@ fn a_model_that_reads_no_images_is_told_of_each_in_words() {
         detail: ImageDetail::Auto,
     };
     let window = Window::of(vec![input("1", vec![InputContent::text("see"), image.clone()])]);
-    let blind = request("t1", "test/m", Some(&model(false, true)), &window);
+    let blind = request("t1", "test/m", Some(&model(false, true)), &window, None);
     assert_eq!(
         blind.input[0],
         Item::Message(Message::User {
@@ -169,7 +169,7 @@ fn a_model_that_reads_no_images_is_told_of_each_in_words() {
             ]
         })
     );
-    let seeing = request("t1", "test/m", Some(&model(true, true)), &window);
+    let seeing = request("t1", "test/m", Some(&model(true, true)), &window, None);
     assert_eq!(
         seeing.input[0],
         Item::Message(Message::User {

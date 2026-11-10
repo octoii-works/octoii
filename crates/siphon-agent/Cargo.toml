@@ -20,6 +20,7 @@ serde_json = "1.0.154"
 siphon-accounts = { path = "../siphon-accounts" }
 siphon-machine = { path = "../siphon-machine" }
 siphon-runtime = { path = "../siphon-runtime" }
+siphon-settings = { path = "../siphon-settings" }
 siphon-threads = { path = "../siphon-threads" }
 siphon-tools = { path = "../siphon-tools" }
 thiserror = "2.0.21"
@@ -28,5 +29,6 @@ tokio-util = "0.7.20"
 
 [dev-dependencies]
 futures = "0.3.34"
+siphon-settings = { path = "../siphon-settings" }
 tempfile = "3.27.0"
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "time"] }

@@ -1,8 +1,9 @@
 //! A thread's main process. At rest it takes what waits in the inbox into the log — a change of how the thread runs
 //! where it stands — and where an input waits, has what the model is told gathered, then begins a turn with it in one
 //! commit: what of it the model was not told appended as a system entry, the person asked to trust what its project
-//! names where they decided nothing on it, the inputs taken in, and the turn started — bounded by what the thread's
-//! budget leaves — unless the budget is spent or its model's account is used up. Once the turn ended, it settles it, as
+//! names where they decided nothing on it, the inputs taken in, the thread's title asked of its model where it has
+//! none, and the turn started — bounded by what the thread's budget leaves — unless the budget is spent or its model's
+//! account is used up. Once the turn ended, it settles it, as
 //! a parent reaps a child: every call it left without a result answered, its `turn-end` appended, and how and when it
 //! ended set; so a turn killed, or one that failed, is settled all the same.
 
@@ -17,6 +18,7 @@ use siphon_threads::{CallStatus, Config, Entry, MainInput, Outcome as TurnOutcom
 use siphon_tools::mcp::TrustProgram;
 
 use crate::gather::Gather;
+use crate::title::{TitleInput, TitleProgram};
 use crate::told::{self, Told};
 use crate::turn::{TurnInput, TurnProgram};
 
@@ -159,6 +161,12 @@ fn begin(run: &mut Run<'_>, id: &str, told: Told) -> anyhow::Result<Ending<MainS
     {
         let reason = format!("its model's account is used up till {} ms since the epoch", used_up.reset_at_ms);
         return end_before(run, id, &mut writer, &reason);
+    }
+    if config.title.is_none() && config.model.is_some() {
+        let titling = layout::process(run.path(), TitleProgram::KEY.as_bytes());
+        if run.snapshot().record(&titling)?.is_none() {
+            run.start::<TitleProgram>(TitleProgram::KEY, &TitleInput { thread: id.to_owned() })?;
+        }
     }
     let turn = run.new_id()?;
     run.start::<TurnProgram>(

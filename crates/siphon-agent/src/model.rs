@@ -1,7 +1,8 @@
 //! A thread's model, as Siphon asks it: a `siphon.model` request — a record of what to ask — rendered from the thread's
 //! window when it is answered, sent through `octoii-ai`, and answered with the response as it came: completed, cut
 //! short, or failed with what its provider said. What streams while it is answered is published on the thread, by the
-//! request's key, for those that follow it; a stop cuts the stream, and the response answered is what had come.
+//! request's key, for those that follow it — but of one that asks an instruction after the window, a title or a recap;
+//! a stop cuts the stream, and the response answered is what had come.
 
 use std::sync::Arc;
 
@@ -16,12 +17,14 @@ use siphon_threads::Window;
 use crate::render;
 
 /// What a model request asks: what follows the window of the thread `thread`, by its id, up to its entry `until`, of
-/// the model `model`, by its reference.
+/// the model `model`, by its reference; or, where `instruction` is given, what it asks after them, answered in words.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModelRequest {
     pub thread: String,
     pub until: String,
     pub model: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instruction: Option<String>,
 }
 
 impl Request for ModelRequest {
@@ -66,7 +69,13 @@ pub async fn answer_model(models: &Arc<Models>, asked: Asked<ModelRequest>) -> R
         .ok_or_else(|| Unanswered::Failed(format!("the window no longer holds the entry {}", request.until)))?;
     window.conversation.truncate(end + 1);
     let served = models.model(&request.model);
-    let rendered = render::request(&request.thread, &request.model, served.as_ref(), &window);
+    let rendered = render::request(
+        &request.thread,
+        &request.model,
+        served.as_ref(),
+        &window,
+        request.instruction.as_deref(),
+    );
     let mut stream = models.text(&rendered).await;
     loop {
         let event = tokio::select! {
@@ -84,8 +93,28 @@ pub async fn answer_model(models: &Arc<Models>, asked: Asked<ModelRequest>) -> R
             Some(Event::Finished(response)) => return Ok(response.clone()),
             None => return Err(Unanswered::Failed("the model's stream ended before its response".into())),
         };
-        if let Ok(data) = serde_json::to_vec(&told) {
+        // What a request asks after the window, a title or a recap, is no reply the thread's followers are shown.
+        if request.instruction.is_none()
+            && let Ok(data) = serde_json::to_vec(&told)
+        {
             asked.publish(&request.thread, Bytes::from(data));
         }
     }
+}
+
+/// The words `response`'s messages gave, trimmed.
+#[must_use]
+pub fn words_of(response: &Response) -> String {
+    let mut words = String::new();
+    for item in &response.output {
+        let Item::Message(octoii_ai::vocabulary::Message::Assistant { content, .. }) = item else {
+            continue;
+        };
+        for part in content {
+            if let octoii_ai::vocabulary::OutputContent::OutputText { text, .. } = part {
+                words.push_str(text);
+            }
+        }
+    }
+    words.trim().to_owned()
 }

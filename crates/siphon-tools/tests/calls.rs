@@ -97,6 +97,7 @@ fn runtime(beak: &Beak) -> Runtime {
             Ok(Judgment {
                 allow: !removes,
                 reason: if removes { "it removes files".into() } else { "it builds".into() },
+                usage: None,
             })
         })
         .start(beak, Options::default())

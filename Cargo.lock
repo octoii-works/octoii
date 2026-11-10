@@ -3038,6 +3038,7 @@ dependencies = [
  "siphon-accounts",
  "siphon-machine",
  "siphon-runtime",
+ "siphon-settings",
  "siphon-threads",
  "siphon-tools",
  "tempfile",

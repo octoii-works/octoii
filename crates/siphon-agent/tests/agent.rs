@@ -18,12 +18,12 @@ use octoii_ai::stream::{Event, Source};
 use octoii_ai::vocabulary::{
     Failure, FailureKind, FunctionCall, InputContent, Item, Message, OutputContent, Request, Response, ResponseStatus, Tool, Usage,
 };
-use siphon_agent::{Gather, ModelRequest, Sources, ThreadProgram, TurnProgram, answer_gather, answer_model};
+use siphon_agent::{Gather, ModelRequest, Sources, ThreadProgram, TitleProgram, TurnProgram, answer_gather, answer_model, answer_review};
 use siphon_machine::Host as Machine;
 use siphon_runtime::{Asked, Options, Runtime};
 use siphon_threads::{CallStatus, Config, Entry, Mode, NewThread, Outcome, Threads, Turn};
 use siphon_tools::mcp::{Servers, Trust, TrustProgram};
-use siphon_tools::{Asks, Exec, ExecuteTool, Permission, ReadTool, ScriptProgram, ShellTool, Tools, WriteTool, answer_exec};
+use siphon_tools::{Asks, Exec, ExecuteTool, Permission, ReadTool, Review, ScriptProgram, ShellTool, Tools, WriteTool, answer_exec};
 
 /// What the scripted provider answers each request with, in turn, and the requests it was sent.
 #[derive(Default)]
@@ -51,12 +51,22 @@ impl Driver for Scripted {
     fn stream<'a>(&'a self, _: &'a Call, model: &'a Model, request: &'a Request) -> BoxFuture<'a, Result<Source, Failure>> {
         Box::pin(async move {
             let script = &self.0;
-            script.asked.lock().expect("held").push(request.clone());
-            let next = script.replies.lock().expect("held").pop_front();
-            let output = match next {
-                Some(Ok(output)) => output,
-                Some(Err(failure)) => return Err(failure),
-                None => futures::future::pending().await,
+            let output = if asks_title(request) {
+                vec![says("Writing a file.")]
+            } else if request.format.is_some() {
+                let told = format!("{:?}", request.input);
+                let removes = told.rsplit("<call>").next().is_some_and(|call| call.contains("rm -rf"));
+                vec![says(
+                    &serde_json::json!({ "allow": !removes, "reason": if removes { "it removes files" } else { "" } }).to_string(),
+                )]
+            } else {
+                script.asked.lock().expect("held").push(request.clone());
+                let next = script.replies.lock().expect("held").pop_front();
+                match next {
+                    Some(Ok(output)) => output,
+                    Some(Err(failure)) => return Err(failure),
+                    None => futures::future::pending().await,
+                }
             };
             let mut events: Vec<Result<Event, Failure>> = Vec::new();
             for (index, item) in output.iter().enumerate() {
@@ -86,6 +96,11 @@ impl Driver for Scripted {
             Ok(source)
         })
     }
+}
+
+/// Whether `request` asks a thread's title.
+fn asks_title(request: &Request) -> bool {
+    matches!(request.input.last(), Some(Item::Message(Message::User { content })) if content == &[InputContent::text(siphon_agent::title::INSTRUCTION)])
 }
 
 struct Nothing;
@@ -168,13 +183,21 @@ fn runtime(beak: &Beak, script: &Arc<Script>) -> Runtime {
         .program(TurnProgram { tools, home: None })
         .program(ScriptProgram { tools: inner })
         .program(TrustProgram)
+        .program(TitleProgram)
         .handle(move |asked: Asked<Gather>| {
             let sources = sources.clone();
             async move { answer_gather(&sources, asked).await }
         })
-        .handle(move |asked: Asked<ModelRequest>| {
+        .handle({
             let models = Arc::clone(&models);
-            async move { answer_model(&models, asked).await }
+            move |asked: Asked<ModelRequest>| {
+                let models = Arc::clone(&models);
+                async move { answer_model(&models, asked).await }
+            }
+        })
+        .handle(move |asked: Asked<Review>| {
+            let models = Arc::clone(&models);
+            async move { answer_review(&models, asked).await }
         })
         .handle(move |asked: Asked<Exec>| {
             let tools = execs.clone();
@@ -218,12 +241,16 @@ fn calls(call_id: &str, name: &str, arguments: &serde_json::Value) -> Item {
 }
 
 async fn thread(threads: &Threads<ThreadProgram>, workspace: &std::path::Path) -> String {
+    made(threads, workspace, Mode::FullAccess).await
+}
+
+async fn made(threads: &Threads<ThreadProgram>, workspace: &std::path::Path, mode: Mode) -> String {
     let new = NewThread {
         actor: "person".into(),
         config: Config {
             model: Some("test/m".into()),
             workspace: Some(workspace.to_string_lossy().into_owned()),
-            mode: Some(Mode::FullAccess),
+            mode: Some(mode),
             ..Config::default()
         },
         ..NewThread::default()
@@ -279,8 +306,18 @@ async fn a_turn_takes_on_the_calls_its_replies_make_and_asks_again_till_one_call
         .expect("delivered");
     until(&threads, &id, Turn::Replied).await;
     assert_eq!(std::fs::read_to_string(workspace.join("a.txt")).expect("written"), "hello\n");
+    let mut titled = threads.runtime().committed();
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while threads.listed(&id).expect("listed").config.title.is_none() {
+            titled.changed().await.expect("the runtime runs");
+        }
+    })
+    .await
+    .expect("titled in time");
+    assert_eq!(threads.listed(&id).expect("listed").config.title.as_deref(), Some("Writing a file"));
     let kinds: Vec<&str> = entries(&threads, &id)
         .iter()
+        .filter(|entry| !matches!(entry, Entry::Config { actor, .. } if actor == siphon_agent::title::ACTOR))
         .map(|entry| match entry {
             Entry::Config { .. } => "config",
             Entry::System { .. } => "system",
@@ -314,7 +351,11 @@ async fn a_turn_takes_on_the_calls_its_replies_make_and_asks_again_till_one_call
     );
     assert_eq!(asked[1].prompt_cache_key.as_deref(), Some(id.as_str()));
     let usage = threads.listed(&id).expect("listed").status.usage.expect("used");
-    assert_eq!((usage.input_tokens, usage.output_tokens, usage.cost_nanodollars), (20, 10, 200));
+    assert_eq!(
+        (usage.input_tokens, usage.output_tokens, usage.cost_nanodollars),
+        (30, 15, 300),
+        "the turn's two requests and the title's"
+    );
     runtime.close().await;
 }
 
@@ -386,5 +427,47 @@ async fn a_stop_ends_the_turn_with_every_call_it_made_answered() {
             ..
         })
     ));
+    runtime.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn in_auto_a_call_that_would_ask_is_judged_by_the_model_the_environment_names() {
+    let script = script(vec![
+        Ok(vec![
+            calls("c1", "shell", &serde_json::json!({ "command": "rm -rf build" })),
+            calls("c2", "shell", &serde_json::json!({ "command": "echo built > out.txt" })),
+        ]),
+        Ok(vec![says("done")]),
+    ]);
+    let beak = Beak::new().expect("Beak");
+    let runtime = runtime(&beak, &script);
+    let change = siphon_settings::SettingsChange {
+        environment: Some(siphon_settings::EnvironmentChange {
+            review_model: Some(Some("test/m".into())),
+            ..siphon_settings::EnvironmentChange::default()
+        }),
+        device: None,
+    };
+    siphon_settings::set(&runtime, "s", &change).await.expect("set");
+    let threads = Threads::<ThreadProgram>::new(runtime.clone());
+    let (_folder, workspace) = folder();
+    std::fs::create_dir(workspace.join("build")).expect("a folder");
+    let id = made(&threads, &workspace, Mode::Auto).await;
+    threads
+        .deliver(&id, "person", vec![InputContent::text("build")], "d1")
+        .await
+        .expect("delivered");
+    until(&threads, &id, Turn::Replied).await;
+    let results: Vec<(CallStatus, String)> = entries(&threads, &id)
+        .into_iter()
+        .filter_map(|entry| match entry {
+            Entry::Result { status, output, .. } => Some((status, format!("{:?}", output.output))),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(results[0].0, CallStatus::Rejected, "{results:?}");
+    assert!(results[0].1.contains("blocked: it removes files"));
+    assert_eq!(results[1].0, CallStatus::Ok, "{results:?}");
+    assert!(workspace.join("build").exists() && workspace.join("out.txt").exists());
     runtime.close().await;
 }

@@ -92,6 +92,7 @@ fn ask(run: &mut Run<'_>, id: &str, attempt: u32) -> anyhow::Result<Ending<TurnS
         thread: id.to_owned(),
         until: until.to_owned(),
         model,
+        instruction: None,
     };
     run.request(&key, &request)?;
     Ok(Ending::Wait(TurnState::Asked { key: key.clone(), attempt }, Wait::new().mail(key)))
@@ -317,23 +318,11 @@ fn append_unrun(run: &mut Run<'_>, writer: &mut Writer, call_id: &str, why: &str
     Ok(())
 }
 
-/// Charges what `response` says its request used to the turn and every group above it, as a cgroup charges its
-/// ancestors.
-fn charge(run: &mut Run<'_>, response: &Response) {
+/// Charges what `response` says its request used to the process of `run` and every group above it, as a cgroup
+/// charges its ancestors.
+pub(crate) fn charge(run: &mut Run<'_>, response: &Response) {
     let Some(used) = &response.usage else { return };
-    let values = [
-        used.input_tokens,
-        used.cached_tokens,
-        used.output_tokens,
-        used.reasoning_tokens,
-        used.cost_nanodollars.unwrap_or(0),
-    ];
-    let counters = Usage::COUNTERS
-        .iter()
-        .zip(values)
-        .filter(|(_, value)| *value > 0)
-        .map(|(name, value)| (bytes::Bytes::from_static(name.as_bytes()), value))
-        .collect::<Vec<_>>();
+    let counters = Usage::counters_of(used);
     if !counters.is_empty() {
         let process = bytes::Bytes::copy_from_slice(run.path());
         run.changes.charge(process, counters);
