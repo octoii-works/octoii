@@ -1,16 +1,17 @@
-//! The browser of the threads: one headless Chromium spoken to over its DevTools pipe on Beak's channel; its pages each
-//! a thread's — painted for the person; read as a screen reader reads them, painted for the model to see, and acted on
-//! as a person does, each action waiting till the page settles and telling what came of it.
+//! The browser of the threads: one headless Chromium spoken to over its DevTools pipe on Beak's channel, its pages each
+//! a thread's. The Agent works it through one interface, `Browser::act`: an `Action` — tabs, navigation, reading,
+//! looking, a person's input, scripts, waits, the console, downloads, raw CDP — and what came of it, an `Outcome` or a
+//! `Refusal` in words the model reads; the same action a tool's call or a script's. The person sees the pages painted,
+//! by their frames and the events that tell of them.
 
-mod act;
+mod action;
 mod browser;
-pub mod cdp;
+mod cdp;
+mod input;
 mod keys;
 mod page;
+mod primitives;
 mod snapshot;
 
-pub use act::{ActError, Action, Button, Target};
-pub use browser::{Attached, Browser, BrowserError, BrowserEvent, BrowserHost, Dialog, Download, Frame, Message, Network, PageView, Size};
-pub use cdp::{Cdp, CdpError};
-pub use page::{Evaluated, Landed, Page, Probe, Wanted};
-pub use snapshot::{Snapshot, node_of, ref_of};
+pub use action::{Action, MouseButton, Outcome, Place, Refusal, Shown};
+pub use browser::{Browser, BrowserError, BrowserEvent, BrowserHost, Frame, PageView, Size};

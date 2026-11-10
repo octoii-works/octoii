@@ -1,14 +1,12 @@
 //! The DevTools protocol over the browser's pipe, as Chrome speaks it with `--remote-debugging-pipe`: each message
 //! JSON ended by a NUL, the host's on the browser's descriptor 3 and the browser's on 4 — Beak's channel. A task of its
 //! own owns the pipe: it writes each call with an id of its own and hands the browser's answer to what waits for it, and
-//! each event on to whoever hears the browser, by the session of the target it is of. Calls are typed by the protocol's
-//! generated commands.
+//! each event on, as it came, to whoever hears the browser. Calls may be typed by the protocol's generated commands.
 
 use std::collections::HashMap;
 
 use beak::{Command, CommandEvent, CommandEvents};
 use bytes::BytesMut;
-use chromiumoxide_cdp::cdp::CdpEventMessage;
 use chromiumoxide_types::Command as CdpCommand;
 use serde_json::Value;
 use tokio::sync::{mpsc, oneshot};
@@ -93,7 +91,7 @@ impl Cdp {
 
 /// Speaks the protocol over the pipe of `command`, whose events are `told`: the pipe, and the browser's events, which
 /// end as the browser ends.
-pub(crate) fn connect(command: Command, told: CommandEvents) -> (Cdp, mpsc::UnboundedReceiver<CdpEventMessage>) {
+pub(crate) fn connect(command: Command, told: CommandEvents) -> (Cdp, mpsc::UnboundedReceiver<Value>) {
     let (calls, inbox) = mpsc::unbounded_channel();
     let (events, heard) = mpsc::unbounded_channel();
     tokio::spawn(own(command, told, inbox, events));
@@ -101,12 +99,7 @@ pub(crate) fn connect(command: Command, told: CommandEvents) -> (Cdp, mpsc::Unbo
 }
 
 /// Owns the pipe till the browser ends, or every handle to it goes.
-async fn own(
-    command: Command,
-    mut told: CommandEvents,
-    mut calls: mpsc::UnboundedReceiver<Call>,
-    events: mpsc::UnboundedSender<CdpEventMessage>,
-) {
+async fn own(command: Command, mut told: CommandEvents, mut calls: mpsc::UnboundedReceiver<Call>, events: mpsc::UnboundedSender<Value>) {
     let mut waiting: HashMap<u64, oneshot::Sender<Result<Value, CdpError>>> = HashMap::new();
     let mut next_id = 1_u64;
     let mut unended = BytesMut::new();
@@ -147,11 +140,7 @@ async fn own(
 }
 
 /// Hands on one message of the browser's: an answer to what waits for it, an event to whoever hears the browser.
-fn handle(
-    message: &[u8],
-    waiting: &mut HashMap<u64, oneshot::Sender<Result<Value, CdpError>>>,
-    events: &mpsc::UnboundedSender<CdpEventMessage>,
-) {
+fn handle(message: &[u8], waiting: &mut HashMap<u64, oneshot::Sender<Result<Value, CdpError>>>, events: &mpsc::UnboundedSender<Value>) {
     let Ok(mut value) = serde_json::from_slice::<Value>(message) else {
         return;
     };
@@ -167,7 +156,5 @@ fn handle(
         let _ = reply.send(answer);
         return;
     }
-    if let Ok(event) = serde_json::from_value::<CdpEventMessage>(value) {
-        let _ = events.send(event);
-    }
+    let _ = events.send(value);
 }

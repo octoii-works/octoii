@@ -3005,6 +3005,7 @@ dependencies = [
  "bytes",
  "chromiumoxide_cdp",
  "chromiumoxide_types",
+ "schemars 1.2.3",
  "serde",
  "serde_json",
  "siphon-machine",

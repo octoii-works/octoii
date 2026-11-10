@@ -6,7 +6,7 @@
 //! closes itself is gone. One task owns the pages, telling whoever listens as a thread's pages come, change and go, and
 //! as a page is painted anew; what reads and acts on a page speaks to its target itself, through the pipe.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -27,6 +27,8 @@ const FRAME_QUALITY: u32 = 70;
 const MESSAGES_MAX: usize = 50;
 const MESSAGE_CHARS_MAX: usize = 2000;
 const EVENTS_MAX: usize = 1024;
+/// How many of a page's own events it keeps for a script to take, the oldest let go of past them.
+const EVENTS_KEPT: usize = 500;
 
 /// The world of its own a page's title is watched from, out of the page's reach, and the binding it tells the title
 /// through — as a document loads, as its title changes, and as it comes back from the back-forward cache.
@@ -191,6 +193,31 @@ enum Ask {
         page: String,
         reply: oneshot::Sender<Option<PageView>>,
     },
+    Drain {
+        page: String,
+        reply: oneshot::Sender<Vec<Value>>,
+    },
+    /// The session of the page's frame of another site's process whose address holds `part`.
+    FrameSession {
+        page: String,
+        part: String,
+        reply: oneshot::Sender<Option<String>>,
+    },
+    /// The refs the page's last reading named, and those this one names in their place.
+    Refs {
+        page: String,
+        read: Vec<i64>,
+        reply: oneshot::Sender<HashSet<i64>>,
+    },
+    Current {
+        thread: String,
+        reply: oneshot::Sender<Option<String>>,
+    },
+    Switch {
+        thread: String,
+        page: String,
+        reply: Reply<()>,
+    },
     Network {
         page: String,
         reply: oneshot::Sender<Network>,
@@ -291,6 +318,40 @@ impl Browser {
         self.get(|reply| Ask::View { page, reply }).await
     }
 
+    /// The page's own events since they were last taken, as they came, oldest first.
+    pub async fn drain_events(&self, page: &str) -> Vec<Value> {
+        let page = page.to_owned();
+        self.get(|reply| Ask::Drain { page, reply }).await
+    }
+
+    /// The session of the page's frame of another site's process whose address holds `part`, where it has one.
+    pub(crate) async fn frame_session(&self, page: &str, part: &str) -> Option<String> {
+        let (page, part) = (page.to_owned(), part.to_owned());
+        self.get(|reply| Ask::FrameSession { page, part, reply }).await
+    }
+
+    /// Keeps `read`, the refs a reading of the page named: those its reading before named.
+    pub(crate) async fn swap_refs(&self, page: &str, read: Vec<i64>) -> HashSet<i64> {
+        let page = page.to_owned();
+        self.get(|reply| Ask::Refs { page, read, reply }).await
+    }
+
+    /// The page of `thread`'s the agent works, as a person works one tab at a time: the one it opened or switched to
+    /// last, else the thread's newest.
+    pub async fn current(&self, thread: &str) -> Option<String> {
+        let thread = thread.to_owned();
+        self.get(|reply| Ask::Current { thread, reply }).await
+    }
+
+    /// Has the agent of `thread` work the page `page` from now on.
+    ///
+    /// # Errors
+    /// `NoSuchPage` for no page of the thread's.
+    pub async fn switch(&self, thread: &str, page: &str) -> Result<(), BrowserError> {
+        let (thread, page) = (thread.to_owned(), page.to_owned());
+        self.ask(|reply| Ask::Switch { thread, page, reply }).await
+    }
+
     /// How busy the page's network is.
     pub async fn network(&self, page: &str) -> Network {
         let page = page.to_owned();
@@ -333,12 +394,26 @@ struct Page {
     in_flight: HashMap<String, Instant>,
     network_at: Instant,
     downloads: Vec<Download>,
+    /// The newest events of its target, as they came, for a script to take.
+    events: VecDeque<Value>,
+    /// The refs its last reading named, so the next marks those new.
+    refs: HashSet<i64>,
+    /// Its frames of other sites' processes, as the browser attached to them: each target, its session and address.
+    frames: Vec<FrameTarget>,
+}
+
+/// A frame of another site's process, attached to as the browser made it.
+#[derive(Debug, Clone)]
+struct FrameTarget {
+    target: String,
+    session: String,
+    url: String,
 }
 
 /// The browser as it runs: its pipe, and what it tells.
 struct Running {
     cdp: Cdp,
-    events: mpsc::UnboundedReceiver<CdpEventMessage>,
+    events: mpsc::UnboundedReceiver<Value>,
     /// The machine it was started in, kept as long as it runs.
     _machine: Machine,
 }
@@ -347,6 +422,8 @@ struct Owner {
     host: BrowserHost,
     running: Option<Running>,
     pages: Vec<Page>,
+    /// The page each thread's agent works, by the thread.
+    current: HashMap<String, String>,
     events: broadcast::Sender<BrowserEvent>,
 }
 
@@ -356,6 +433,7 @@ impl Owner {
             host,
             running: None,
             pages: Vec::new(),
+            current: HashMap::new(),
             events,
         }
     }
@@ -422,6 +500,47 @@ impl Owner {
             Ask::View { page, reply } => {
                 let _ = reply.send(self.page(&page).map(view));
             }
+            Ask::FrameSession { page, part, reply } => {
+                let session = self.page(&page).and_then(|page| {
+                    page.frames
+                        .iter()
+                        .find(|frame| frame.url.contains(&part))
+                        .map(|frame| frame.session.clone())
+                });
+                let _ = reply.send(session);
+            }
+            Ask::Refs { page, read, reply } => {
+                let before = self
+                    .page_mut(&page)
+                    .map(|page| std::mem::replace(&mut page.refs, read.into_iter().collect()));
+                let _ = reply.send(before.unwrap_or_default());
+            }
+            Ask::Drain { page, reply } => {
+                let drained = self.page_mut(&page).map(|page| page.events.drain(..).collect());
+                let _ = reply.send(drained.unwrap_or_default());
+            }
+            Ask::Current { thread, reply } => {
+                let current = self
+                    .current
+                    .get(&thread)
+                    .filter(|page| self.page(page).is_some())
+                    .cloned()
+                    .or_else(|| {
+                        self.pages
+                            .iter()
+                            .rev()
+                            .find(|page| page.thread == thread)
+                            .map(|page| page.id.clone())
+                    });
+                let _ = reply.send(current);
+            }
+            Ask::Switch { thread, page, reply } => {
+                let theirs = self.page(&page).is_some_and(|found| found.thread == thread);
+                if theirs {
+                    self.current.insert(thread, page);
+                }
+                let _ = reply.send(if theirs { Ok(()) } else { Err(BrowserError::NoSuchPage) });
+            }
             Ask::Network { page, reply } => {
                 let busy = self.page(&page).map(|page| Network {
                     in_flight: page.in_flight.values().filter(|began| began.elapsed().as_millis() < 1500).count(),
@@ -485,8 +604,12 @@ impl Owner {
             in_flight: HashMap::new(),
             network_at: Instant::now(),
             downloads: Vec::new(),
+            events: VecDeque::new(),
+            refs: HashSet::new(),
+            frames: Vec::new(),
         });
         self.create(&cdp, &id).await?;
+        self.current.insert(thread.clone(), id.clone());
         self.told(&thread);
         Ok(id)
     }
@@ -563,12 +686,31 @@ impl Owner {
         }
     }
 
-    async fn heard(&mut self, message: CdpEventMessage) {
-        let session = message.session_id.clone();
+    async fn heard(&mut self, raw: Value) {
+        let session = raw["sessionId"].as_str().map(str::to_owned);
+        if let Some(session) = &session
+            && let Some(page) = self.pages.iter_mut().find(|page| page.session.as_deref() == Some(session.as_str()))
+        {
+            page.events.push_back(raw.clone());
+            while page.events.len() > EVENTS_KEPT {
+                page.events.pop_front();
+            }
+        }
+        let Ok(message) = serde_json::from_value::<CdpEventMessage>(raw) else {
+            return;
+        };
         match message.params {
-            CdpEvent::TargetAttachedToTarget(event) => self.attach(&event).await,
+            CdpEvent::TargetAttachedToTarget(event) => match message.session_id.as_deref() {
+                Some(parent) if event.target_info.r#type == "iframe" => self.attach_frame(parent, &event).await,
+                _ => self.attach(&event).await,
+            },
             CdpEvent::TargetTargetInfoChanged(event) => {
                 let info = &event.target_info;
+                for frame in self.pages.iter_mut().flat_map(|page| page.frames.iter_mut()) {
+                    if frame.target == info.target_id.as_ref() {
+                        frame.url.clone_from(&info.url);
+                    }
+                }
                 let Some(page) = self
                     .pages
                     .iter_mut()
@@ -581,7 +723,15 @@ impl Owner {
                 let thread = page.thread.clone();
                 self.told(&thread);
             }
+            CdpEvent::TargetDetachedFromTarget(event) => {
+                for page in &mut self.pages {
+                    page.frames.retain(|frame| frame.session != event.session_id.as_ref());
+                }
+            }
             CdpEvent::TargetTargetDestroyed(event) => {
+                for page in &mut self.pages {
+                    page.frames.retain(|frame| frame.target != event.target_id.as_ref());
+                }
                 let gone = self
                     .pages
                     .iter()
@@ -593,6 +743,18 @@ impl Owner {
                     self.told(&thread);
                 }
             }
+            event @ (CdpEvent::BrowserDownloadWillBegin(_) | CdpEvent::BrowserDownloadProgress(_)) => self.heard_download(event),
+            other => {
+                if let Some(session) = session {
+                    self.heard_of_page(&session, other).await;
+                }
+            }
+        }
+    }
+
+    /// Hears of a download: one a page began, by its main frame, which has its target's id; how far one got.
+    fn heard_download(&mut self, event: CdpEvent) {
+        match event {
             CdpEvent::BrowserDownloadWillBegin(began) => {
                 // A page's main frame has its target's id.
                 let Some(page) = self
@@ -637,11 +799,7 @@ impl Owner {
                     self.told(&thread);
                 }
             }
-            other => {
-                if let Some(session) = session {
-                    self.heard_of_page(&session, other).await;
-                }
-            }
+            _ => {}
         }
     }
 
@@ -745,6 +903,34 @@ impl Owner {
 
     /// Sets up a target the browser attached to, held at its start: the page that asked for it, or one a page of a
     /// thread's opened, made a page of that thread; any other let run and let be.
+    /// Sets up a frame of another site's process a page's target attached to, held at its start: its scripts heard,
+    /// its own frames attached to in turn, then let run — kept by the page whose session it came through.
+    async fn attach_frame(&mut self, parent: &str, event: &chromiumoxide_cdp::cdp::browser_protocol::target::EventAttachedToTarget) {
+        let Some(running) = &self.running else { return };
+        let cdp = running.cdp.clone();
+        let session = event.session_id.as_ref().to_owned();
+        let owner = self
+            .pages
+            .iter_mut()
+            .find(|page| page.session.as_deref() == Some(parent) || page.frames.iter().any(|frame| frame.session == parent));
+        if let Some(page) = owner {
+            page.frames.push(FrameTarget {
+                target: event.target_info.target_id.as_ref().to_owned(),
+                session: session.clone(),
+                url: event.target_info.url.clone(),
+            });
+        }
+        let _ = cdp.call(Some(&session), "Runtime.enable", json!({})).await;
+        let _ = cdp
+            .call(
+                Some(&session),
+                "Target.setAutoAttach",
+                json!({ "autoAttach": true, "waitForDebuggerOnStart": true, "flatten": true }),
+            )
+            .await;
+        let _ = cdp.call(Some(&session), "Runtime.runIfWaitingForDebugger", json!({})).await;
+    }
+
     async fn attach(&mut self, event: &chromiumoxide_cdp::cdp::browser_protocol::target::EventAttachedToTarget) {
         let Some(running) = &self.running else { return };
         let cdp = running.cdp.clone();
@@ -777,6 +963,9 @@ impl Owner {
                 in_flight: HashMap::new(),
                 network_at: Instant::now(),
                 downloads: Vec::new(),
+                events: VecDeque::new(),
+                refs: HashSet::new(),
+                frames: Vec::new(),
             });
         }
         let ours = self.pages.iter().position(|page| page.target.as_deref() == Some(target.as_str()));
@@ -841,6 +1030,9 @@ async fn set_up(cdp: &Cdp, session: &str, size: Size) -> Result<(), CdpError> {
     let watch = json!({ "source": TITLE_WATCH, "worldName": WORLD, "runImmediately": true });
     cdp.call(Some(session), "Page.addScriptToEvaluateOnNewDocument", watch).await?;
     lay_out(cdp, session, size).await?;
+    // Its frames of other sites' processes attached to as they are made, held at their start, as the page itself was.
+    let frames = json!({ "autoAttach": true, "waitForDebuggerOnStart": true, "flatten": true });
+    cdp.call(Some(session), "Target.setAutoAttach", frames).await?;
     let screencast = json!({ "format": "jpeg", "quality": FRAME_QUALITY, "everyNthFrame": 1 });
     cdp.call(Some(session), "Page.startScreencast", screencast).await?;
     Ok(())

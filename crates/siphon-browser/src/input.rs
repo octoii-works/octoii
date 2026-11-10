@@ -1,4 +1,4 @@
-//! Acting on a page as a person does: on an element by its ref, or at a point in its CSS pixels — clicked, hovered,
+//! Input to a page as a person gives it: on an element by its ref, or at a point in its CSS pixels — clicked, hovered,
 //! typed into, keys pressed, an option selected, scrolled, dragged, files given to an upload, a dialog answered. An
 //! element is scrolled into view and clicked at its middle only where nothing covers it there; where something does,
 //! nothing is clicked and what covers it is named. Each action waits till the page settles and tells what came of it:
@@ -29,9 +29,9 @@ pub enum Button {
     Right,
 }
 
-/// What is done on a page.
+/// What a person gives a page: a click, keys, text, a choice, a scroll, a drag, files, a dialog's answer.
 #[derive(Debug, Clone, PartialEq)]
-pub enum Action {
+pub enum Input {
     Click {
         target: Target,
         button: Button,
@@ -82,7 +82,7 @@ pub enum Action {
 
 /// Why an action was not done, in words the model reads.
 #[derive(Debug, Clone, thiserror::Error)]
-pub enum ActError {
+pub enum InputError {
     #[error("{0}")]
     Refused(String),
     #[error(transparent)]
@@ -134,13 +134,13 @@ const SELECT: &str = r"function(wanted) {
 }";
 
 /// Calls `function` on the element of `node`, with `arguments`: what it gives, or the words it threw.
-async fn on_node(attached: &Attached, node: i64, function: &str, arguments: &[Value]) -> Result<Value, ActError> {
+async fn on_node(attached: &Attached, node: i64, function: &str, arguments: &[Value]) -> Result<Value, InputError> {
     let session = Some(attached.session.as_str());
     let resolved = attached
         .cdp
         .call(session, "DOM.resolveNode", json!({ "backendNodeId": node }))
         .await
-        .map_err(|_| ActError::Refused(format!("no element e{node} on the page now; read it again")))?;
+        .map_err(|_| InputError::Refused(format!("no element e{node} on the page now; read it again")))?;
     let object = resolved["object"]["objectId"].clone();
     let arguments: Vec<Value> = arguments.iter().map(|value| json!({ "value": value })).collect();
     let called = attached
@@ -157,7 +157,7 @@ async fn on_node(attached: &Attached, node: i64, function: &str, arguments: &[Va
             .as_str()
             .or_else(|| thrown["text"].as_str())
             .unwrap_or("it failed");
-        return Err(ActError::Refused(
+        return Err(InputError::Refused(
             words.trim_start_matches("Error: ").lines().next().unwrap_or_default().to_owned(),
         ));
     }
@@ -166,7 +166,7 @@ async fn on_node(attached: &Attached, node: i64, function: &str, arguments: &[Va
 
 /// The point of the page's view `target` is at: an element's middle, scrolled into view and, where something covers
 /// it, to the view's middle; refused where something covers it still.
-async fn point_of(attached: &Attached, target: Target) -> Result<(f64, f64), ActError> {
+async fn point_of(attached: &Attached, target: Target) -> Result<(f64, f64), InputError> {
     let node = match target {
         Target::Point { x, y } => return Ok((x, y)),
         Target::Node(node) => node,
@@ -185,7 +185,9 @@ async fn point_of(attached: &Attached, target: Target) -> Result<(f64, f64), Act
         point = on_node(attached, node, POINT, &[]).await?;
     }
     if let Some(cover) = point["covered"].as_str() {
-        return Err(ActError::Refused(format!("e{node} is covered by {cover} there; nothing was done")));
+        return Err(InputError::Refused(format!(
+            "e{node} is covered by {cover} there; nothing was done"
+        )));
     }
     Ok((point["x"].as_f64().unwrap_or_default(), point["y"].as_f64().unwrap_or_default()))
 }
@@ -195,38 +197,38 @@ async fn point_of(attached: &Attached, target: Target) -> Result<(f64, f64), Act
 const INPUT_WAIT: Duration = Duration::from_secs(2);
 
 /// Sends the input event `method` with `params`.
-async fn input(attached: &Attached, method: &str, params: Value) -> Result<(), ActError> {
+async fn send(attached: &Attached, method: &str, params: Value) -> Result<(), InputError> {
     match attached.cdp.call_within(Some(&attached.session), method, params, INPUT_WAIT).await {
         Ok(_) | Err(CdpError::TimedOut(_)) => Ok(()),
         Err(error) => Err(BrowserError::from(error).into()),
     }
 }
 
-async fn mouse(attached: &Attached, kind: &str, (x, y): (f64, f64), button: &str, clicks: u32, extra: Value) -> Result<(), ActError> {
+async fn mouse(attached: &Attached, kind: &str, (x, y): (f64, f64), button: &str, clicks: u32, extra: Value) -> Result<(), InputError> {
     let mut event = json!({ "type": kind, "x": x, "y": y, "button": button, "clickCount": clicks });
     if let (Value::Object(event), Value::Object(extra)) = (&mut event, extra) {
         event.extend(extra);
     }
-    input(attached, "Input.dispatchMouseEvent", event).await
+    send(attached, "Input.dispatchMouseEvent", event).await
 }
 
-async fn press(attached: &Attached, name: &str, modifier_names: &[String]) -> Result<(), ActError> {
+async fn press(attached: &Attached, name: &str, modifier_names: &[String]) -> Result<(), InputError> {
     let key = keys::key(name)
-        .ok_or_else(|| ActError::Refused(format!("no key {name}; name it as the DOM does, as Enter, Tab, ArrowDown or a")))?;
+        .ok_or_else(|| InputError::Refused(format!("no key {name}; name it as the DOM does, as Enter, Tab, ArrowDown or a")))?;
     let modifiers = keys::modifiers(modifier_names);
     let typed = key.text.as_ref().filter(|_| modifiers & 0b0110 == 0);
     let mut down = json!({ "type": if typed.is_some() { "keyDown" } else { "rawKeyDown" }, "key": key.name, "code": key.code, "windowsVirtualKeyCode": key.windows_code, "modifiers": modifiers });
     if let Some(text) = typed {
         down["text"] = json!(text);
     }
-    input(attached, "Input.dispatchKeyEvent", down).await?;
+    send(attached, "Input.dispatchKeyEvent", down).await?;
     let up =
         json!({ "type": "keyUp", "key": key.name, "code": key.code, "windowsVirtualKeyCode": key.windows_code, "modifiers": modifiers });
-    input(attached, "Input.dispatchKeyEvent", up).await
+    send(attached, "Input.dispatchKeyEvent", up).await
 }
 
 /// Clicks `target` with `button`, `clicks` times in a row, the pointer moved there first.
-async fn click(attached: &Attached, target: Target, button: Button, clicks: u32) -> Result<(), ActError> {
+async fn click(attached: &Attached, target: Target, button: Button, clicks: u32) -> Result<(), InputError> {
     let at = point_of(attached, target).await?;
     let name = match button {
         Button::Left => "left",
@@ -242,7 +244,7 @@ async fn click(attached: &Attached, target: Target, button: Button, clicks: u32)
 }
 
 /// Drags from `from` to `to`, pressed at the one, moved in steps, released at the other.
-async fn drag(attached: &Attached, from: Target, to: Target) -> Result<(), ActError> {
+async fn drag(attached: &Attached, from: Target, to: Target) -> Result<(), InputError> {
     let (start, end) = (point_of(attached, from).await?, point_of(attached, to).await?);
     mouse(attached, "mouseMoved", start, "none", 0, json!({})).await?;
     mouse(attached, "mousePressed", start, "left", 1, json!({})).await?;
@@ -255,18 +257,18 @@ async fn drag(attached: &Attached, from: Target, to: Target) -> Result<(), ActEr
 }
 
 impl Page {
-    /// Does `action`, then waits till the page settles: what came of it, in a line the model reads.
+    /// Gives the page `input`, then waits till it settles: what came of it, in a line the model reads.
     ///
     /// # Errors
     /// `Refused`, saying why, where it could not be done as asked; the browser's refusal.
-    pub async fn act(&self, action: &Action) -> Result<String, ActError> {
+    pub async fn input(&self, input: &Input) -> Result<String, InputError> {
         let attached = self.attached().await?;
         let before = match self.browser.view(&self.id).await.and_then(|view| view.dialog) {
             Some(_) => None,
             None => self.probe().await.ok(),
         };
         let dialog_before = self.browser.view(&self.id).await.and_then(|view| view.dialog);
-        let detail = self.perform(&attached, action).await?;
+        let detail = self.perform(&attached, input).await?;
         let since = Instant::now();
         let after = self.settle(since, SETTLE_CAP).await;
         let came = match (&before, &after) {
@@ -286,45 +288,45 @@ impl Page {
         Ok(format!("{detail}{came}{raised}"))
     }
 
-    async fn perform(&self, attached: &Attached, action: &Action) -> Result<String, ActError> {
+    async fn perform(&self, attached: &Attached, input: &Input) -> Result<String, InputError> {
         let session = Some(attached.session.as_str());
-        match action {
-            Action::Click { target, button, clicks } => {
+        match input {
+            Input::Click { target, button, clicks } => {
                 click(attached, *target, *button, *clicks).await?;
                 Ok(String::new())
             }
-            Action::Hover { target } => {
+            Input::Hover { target } => {
                 let at = point_of(attached, *target).await?;
                 mouse(attached, "mouseMoved", at, "none", 0, json!({})).await?;
                 Ok(String::new())
             }
-            Action::Type { node, text, clear, submit } => {
+            Input::Type { node, text, clear, submit } => {
                 if let Some(node) = node {
                     attached
                         .cdp
                         .call(session, "DOM.focus", json!({ "backendNodeId": node }))
                         .await
-                        .map_err(|_| ActError::Refused(format!("e{node} takes no focus")))?;
+                        .map_err(|_| InputError::Refused(format!("e{node} takes no focus")))?;
                     if *clear {
                         on_node(attached, *node, CLEAR, &[]).await?;
                         press(attached, "Backspace", &[]).await?;
                     }
                 }
-                input(attached, "Input.insertText", json!({ "text": text })).await?;
+                send(attached, "Input.insertText", json!({ "text": text })).await?;
                 if *submit {
                     press(attached, "Enter", &[]).await?;
                 }
                 Ok(String::new())
             }
-            Action::Press { key, modifiers } => {
+            Input::Press { key, modifiers } => {
                 press(attached, key, modifiers).await?;
                 Ok(String::new())
             }
-            Action::Select { node, values } => {
+            Input::Select { node, values } => {
                 let chosen = on_node(attached, *node, SELECT, &[json!(values)]).await?;
                 Ok(format!("chose {chosen}; "))
             }
-            Action::Scroll { target, delta_x, delta_y } => {
+            Input::Scroll { target, delta_x, delta_y } => {
                 let at = if let Some(target) = target {
                     point_of(attached, *target).await?
                 } else {
@@ -342,19 +344,19 @@ impl Page {
                 .await?;
                 Ok(String::new())
             }
-            Action::Drag { from, to } => {
+            Input::Drag { from, to } => {
                 drag(attached, *from, *to).await?;
                 Ok(String::new())
             }
-            Action::Upload { node, files } => {
+            Input::Upload { node, files } => {
                 attached
                     .cdp
                     .call(session, "DOM.setFileInputFiles", json!({ "backendNodeId": node, "files": files }))
                     .await
-                    .map_err(|error| ActError::Refused(format!("e{node} took no files: {error}")))?;
+                    .map_err(|error| InputError::Refused(format!("e{node} took no files: {error}")))?;
                 Ok(format!("gave {} files; ", files.len()))
             }
-            Action::Dialog { accept, text } => {
+            Input::Dialog { accept, text } => {
                 let mut answer = json!({ "accept": accept });
                 if let Some(text) = text {
                     answer["promptText"] = json!(text);
@@ -363,7 +365,7 @@ impl Page {
                     .cdp
                     .call(session, "Page.handleJavaScriptDialog", answer)
                     .await
-                    .map_err(|error| ActError::Refused(format!("the dialog was not answered: {error}")))?;
+                    .map_err(|error| InputError::Refused(format!("the dialog was not answered: {error}")))?;
                 Ok(String::new())
             }
         }
