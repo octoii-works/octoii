@@ -36,7 +36,7 @@ impl Default for Bounds {
 
 /// What a read of a page came to: the page of a text, or bytes that are no text.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Paged {
+pub enum Content {
     Text(Page),
     Binary,
 }
@@ -55,7 +55,7 @@ impl Page {
     ///
     /// # Errors
     /// What reading `source` failed with.
-    pub fn read(mut source: impl BufRead, bounds: &Bounds) -> io::Result<Paged> {
+    pub fn read(mut source: impl BufRead, bounds: &Bounds) -> io::Result<Content> {
         let mut page = Self {
             lines: Vec::new(),
             seen: 0,
@@ -73,7 +73,7 @@ impl Page {
                     break;
                 }
                 if chunk.contains(&0) {
-                    return Ok(Paged::Binary);
+                    return Ok(Content::Binary);
                 }
                 let (piece, ended) = match chunk.iter().position(|byte| *byte == b'\n') {
                     Some(newline) => (&chunk[..newline], true),
@@ -88,14 +88,14 @@ impl Page {
             if ended {
                 begun = false;
                 if !page.end(&mut line, &mut bytes, bounds) {
-                    return Ok(Paged::Text(page));
+                    return Ok(Content::Text(page));
                 }
             }
         }
         if begun {
             page.end(&mut line, &mut bytes, bounds);
         }
-        Ok(Paged::Text(page))
+        Ok(Content::Text(page))
     }
 
     /// Ends the line read: kept where the page has room for it; false once it is past the page.

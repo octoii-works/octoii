@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use futures::StreamExt;
 use octoii_ai::catalogue::{Features, InputLimits, Model, Prices, Pricing, Rate};
-use octoii_ai::stream::{Event, Mint, Part, Source, TextStream};
+use octoii_ai::stream::{Event, NewId, Part, Source, TextStream};
 use octoii_ai::vocabulary::{
     Failure, FailureKind, FunctionCall, Incomplete, Item, ItemStatus, Message, OutputContent, Response, ResponseStatus, Usage,
 };
@@ -37,7 +37,7 @@ fn model() -> Model {
     }
 }
 
-fn mint() -> Mint {
+fn new_id() -> NewId {
     let next = Arc::new(AtomicU32::new(0));
     Arc::new(move || format!("minted-{}", next.fetch_add(1, Ordering::Relaxed)))
 }
@@ -133,7 +133,7 @@ async fn items_are_numbered_without_a_gap_stamped_with_their_model_and_the_respo
         ]),
         &model(),
         0,
-        mint(),
+        new_id(),
     ))
     .await;
     assert!(
@@ -185,7 +185,7 @@ async fn a_call_with_no_id_or_another_calls_is_given_one_of_its_own_and_keeps_it
         ]),
         &model(),
         0,
-        mint(),
+        new_id(),
     ))
     .await;
     let ids: Vec<&str> = response(&events)
@@ -211,7 +211,7 @@ async fn a_failure_ends_every_item_begun_and_the_response_fails_with_what_had_co
         ]),
         &model(),
         0,
-        mint(),
+        new_id(),
     ))
     .await;
     assert!(matches!(&events[1], Event::Ended { index: 0, item: Item::FunctionCall(call) } if call.status == Some(ItemStatus::Incomplete)));
@@ -220,7 +220,7 @@ async fn a_failure_ends_every_item_begun_and_the_response_fails_with_what_had_co
     assert_eq!(response.failure.as_ref().map(|failure| failure.kind), Some(FailureKind::Server));
     assert_eq!(response.output.len(), 1);
     // A provider done before its response is a failure of its own.
-    let early = all(TextStream::new(source(vec![]), &model(), 0, mint())).await;
+    let early = all(TextStream::new(source(vec![]), &model(), 0, new_id())).await;
     assert_eq!(response_kind(&early), Some(FailureKind::InvalidResponse));
 }
 
@@ -232,7 +232,7 @@ fn response_kind(events: &[Event]) -> Option<FailureKind> {
 async fn a_provider_that_never_begins_or_falls_silent_times_out() {
     let never: Source = Box::pin(futures::stream::pending());
     assert_eq!(
-        response_kind(&all(TextStream::new(never, &model(), 0, mint())).await),
+        response_kind(&all(TextStream::new(never, &model(), 0, new_id())).await),
         Some(FailureKind::Timeout)
     );
     let silent: Source = Box::pin(
@@ -242,7 +242,7 @@ async fn a_provider_that_never_begins_or_falls_silent_times_out() {
         })])
         .chain(futures::stream::pending()),
     );
-    let events = all(TextStream::new(silent, &model(), 0, mint())).await;
+    let events = all(TextStream::new(silent, &model(), 0, new_id())).await;
     assert_eq!(response_kind(&events), Some(FailureKind::Timeout));
     assert_eq!(response(&events).output.len(), 1);
 }
@@ -266,7 +266,7 @@ async fn a_stream_cancelled_gives_what_had_come_cut_off() {
         ),
         &model(),
         0,
-        mint(),
+        new_id(),
     );
     stream.next().await;
     stream.next().await;

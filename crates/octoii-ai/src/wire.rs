@@ -74,7 +74,7 @@ pub async fn json<T: serde::de::DeserializeOwned>(call: &Call, response: http::R
 /// What a protocol reads of a failure from its body: the provider's own kind, words, code and waits, each where it
 /// says; and, for a quota used up, when it is given again and the window it is counted over.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Said {
+pub struct FailureDetail {
     pub kind: Option<FailureKind>,
     pub message: Option<String>,
     pub code: Option<String>,
@@ -84,11 +84,11 @@ pub struct Said {
 }
 
 /// How a protocol reads what a failure's headers and body say.
-pub type Details<'a> = &'a (dyn Fn(&HeaderMap, &str) -> Option<Said> + Sync);
+pub type Details<'a> = &'a (dyn Fn(&HeaderMap, &str) -> Option<FailureDetail> + Sync);
 
 /// What a failure says of nothing.
 #[must_use]
-pub fn nothing(_: &HeaderMap, _: &str) -> Option<Said> {
+pub fn nothing(_: &HeaderMap, _: &str) -> Option<FailureDetail> {
     None
 }
 
@@ -100,10 +100,10 @@ pub async fn failure_of(call: &Call, response: http::Response<Body>, details: De
     let headers = response.headers().clone();
     let body = read_whole(response.into_body()).await.unwrap_or_default();
     let body = String::from_utf8_lossy(&body);
-    let said = details(&headers, &body).unwrap_or_default();
-    let kind = said.kind.unwrap_or_else(|| kind_of_status(status));
-    let wait = retry_after_ms(&headers, call.now_ms).or(said.retry_after_ms);
-    let reset_at_ms = said.reset_at_ms.or_else(|| {
+    let detail = details(&headers, &body).unwrap_or_default();
+    let kind = detail.kind.unwrap_or_else(|| kind_of_status(status));
+    let wait = retry_after_ms(&headers, call.now_ms).or(detail.retry_after_ms);
+    let reset_at_ms = detail.reset_at_ms.or_else(|| {
         (kind == FailureKind::Quota)
             .then_some(wait)
             .flatten()
@@ -111,18 +111,18 @@ pub async fn failure_of(call: &Call, response: http::Response<Body>, details: De
     });
     Failure {
         kind,
-        message: said.message.unwrap_or_else(|| {
+        message: detail.message.unwrap_or_else(|| {
             if body.is_empty() {
                 format!("The provider answered {status}")
             } else {
                 format!("The provider answered {status}: {body}")
             }
         }),
-        code: said.code,
+        code: detail.code,
         status: Some(status),
         retry_after_ms: wait.or_else(|| (kind == FailureKind::RateLimit).then(|| rate_limit_reset_ms(&headers)).flatten()),
         reset_at_ms,
-        window_minutes: said.window_minutes,
+        window_minutes: detail.window_minutes,
     }
 }
 

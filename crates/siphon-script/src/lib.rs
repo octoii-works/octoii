@@ -57,7 +57,7 @@ pub struct Thrown {
 /// Where a step left a script: waiting on its calls — those it made in the step given — returned a value, as JSON;
 /// threw; or ran past its steps.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Step {
+pub enum Progress {
     Waiting(Vec<Call>),
     Returned(String),
     Threw(Thrown),
@@ -82,7 +82,7 @@ impl Script {
     /// # Panics
     /// Where there is no memory for an engine.
     #[must_use]
-    pub fn start(source: &str, host: &Host<'_>, time_ms: i64) -> (Self, Step) {
+    pub fn start(source: &str, host: &Host<'_>, time_ms: i64) -> (Self, Progress) {
         let functions: Vec<engine::Name> = host.functions.iter().map(|function| engine::Name::of(function)).collect();
         // SAFETY: every name points into memory that outlives the call, which copies them.
         let made = unsafe {
@@ -100,16 +100,16 @@ impl Script {
         };
         // SAFETY: the engine is the script's, and the source outlives the call.
         let status = unsafe { engine::engine_run(script.engine.as_ptr(), source.as_ptr().cast::<c_char>(), source.len(), time_ms) };
-        let step = script.step_of(status);
+        let step = script.progress_of(status);
         (script, step)
     }
 
     /// Runs it on, its clock telling `time_ms`, until it waits on calls, returns, throws or spends its steps. A script
     /// that came to an end stays as it ended.
-    pub fn step(&mut self, time_ms: i64) -> Step {
+    pub fn resume(&mut self, time_ms: i64) -> Progress {
         // SAFETY: the engine is the script's.
         let status = unsafe { engine::engine_step(self.engine.as_ptr(), time_ms) };
-        self.step_of(status)
+        self.progress_of(status)
     }
 
     /// Settles call `id`: with the JSON `Ok` holds, or rejected with an Error whose message `Err` holds. JSON that does
@@ -142,32 +142,32 @@ impl Script {
         unsafe { engine::engine_steps(self.engine.as_ptr()) }
     }
 
-    fn step_of(&mut self, status: i32) -> Step {
+    fn progress_of(&mut self, status: i32) -> Progress {
         let engine = self.engine.as_ptr();
         match status {
             engine::WAITING => {
                 let mut calls: Vec<Call> = Vec::new();
                 // SAFETY: the engine is the script's; `push_call` is handed `calls`, which outlives the call.
                 unsafe { engine::engine_calls(engine, push_call, (&raw mut calls).cast::<c_void>()) };
-                Step::Waiting(calls)
+                Progress::Waiting(calls)
             }
             engine::RETURNED => {
                 let mut returned: Vec<String> = Vec::new();
                 // SAFETY: as above.
                 unsafe { engine::engine_returned(engine, push_text, (&raw mut returned).cast::<c_void>()) };
-                Step::Returned(returned.pop().unwrap_or_default())
+                Progress::Returned(returned.pop().unwrap_or_default())
             }
             engine::THREW => {
                 let mut thrown = None;
                 // SAFETY: as above.
                 unsafe { engine::engine_thrown(engine, keep_thrown, (&raw mut thrown).cast::<c_void>()) };
-                Step::Threw(thrown.unwrap_or_else(|| Thrown {
+                Progress::Threw(thrown.unwrap_or_else(|| Thrown {
                     name: String::new(),
                     message: String::new(),
                     stack: String::new(),
                 }))
             }
-            _ => Step::OutOfSteps,
+            _ => Progress::OutOfSteps,
         }
     }
 }

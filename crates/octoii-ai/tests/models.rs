@@ -28,7 +28,7 @@ fn host(transport: Arc<Answering>) -> Host {
         credentials: Arc::new(keys),
         files: call.files,
         transport: call.transport,
-        mint: Arc::new(|| "minted".into()),
+        new_id: Arc::new(|| "minted".into()),
         clock: Arc::new(|| 1000),
     }
 }

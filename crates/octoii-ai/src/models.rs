@@ -12,7 +12,7 @@ use parking_lot::RwLock;
 use crate::catalogue::{self, Model};
 use crate::driver::{Call, Driver, Settings};
 use crate::host::{Credentials, Files};
-use crate::stream::{Mint, Source, TextStream};
+use crate::stream::{NewId, Source, TextStream};
 use crate::transport::Transport;
 use crate::vocabulary::{Failure, FailureKind, FunctionCall, InputContent, Item, Message, ReasoningConfig, ReasoningEffort, Request, Tool};
 
@@ -58,7 +58,7 @@ pub struct Host {
     pub credentials: Arc<dyn Credentials>,
     pub files: Arc<dyn Files>,
     pub transport: Arc<dyn Transport>,
-    pub mint: Mint,
+    pub new_id: NewId,
     pub clock: Arc<dyn Fn() -> i64 + Send + Sync>,
 }
 
@@ -209,14 +209,14 @@ impl Models {
             Err(failure) => Err(failure),
         };
         match sent {
-            Ok(source) => TextStream::new(source, &model, call.now_ms, Arc::clone(&self.host.mint)),
+            Ok(source) => TextStream::new(source, &model, call.now_ms, Arc::clone(&self.host.new_id)),
             Err(failure) => self.failed(&model, failure),
         }
     }
 
     fn failed(&self, model: &Model, failure: Failure) -> TextStream {
         let source: Source = Box::pin(futures::stream::iter([Err(failure)]));
-        TextStream::new(source, model, (self.host.clock)(), Arc::clone(&self.host.mint))
+        TextStream::new(source, model, (self.host.clock)(), Arc::clone(&self.host.new_id))
     }
 }
 

@@ -11,7 +11,7 @@ use octoii_ai::driver::{Call, Settings};
 use octoii_ai::host::{Credential, Credentials, Files, NoSuchFile, Unavailable};
 use octoii_ai::transport::{Body, Transport, TransportError};
 use octoii_ai::vocabulary::FailureKind;
-use octoii_ai::wire::{self, Said};
+use octoii_ai::wire::{self, FailureDetail};
 
 /// A transport that answers every request with one response, and says what it was sent.
 struct Answering {
@@ -106,10 +106,10 @@ async fn a_failure_is_its_statuss_kind_with_the_wait_its_headers_ask_for_unless_
     );
     // A body that says its own kind is believed; a quota used up is given again once its wait is over.
     let said = |_: &HeaderMap, _: &str| {
-        Some(Said {
+        Some(FailureDetail {
             kind: Some(FailureKind::Quota),
             message: Some("used up".into()),
-            ..Said::default()
+            ..FailureDetail::default()
         })
     };
     let quota = answering(429, vec![("retry-after-ms", "1500")], "{}");

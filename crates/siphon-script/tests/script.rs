@@ -1,7 +1,7 @@
 //! Scripts on their engines: calls made and settled, values returned, errors thrown, steps spent, and a clock and
 //! random numbers that are the host's, so a replay runs alike.
 
-use siphon_script::{Call, Host, Limits, NoSuchCall, Script, Step, Thrown};
+use siphon_script::{Call, Host, Limits, NoSuchCall, Progress, Script, Thrown};
 
 /// The time a test's scripts start at: 2026-11-05, 00:00 UTC.
 const TIME: i64 = 1_793_836_800_000;
@@ -15,7 +15,7 @@ fn host<'a>(functions: &'a [&'a str], limits: Limits) -> Host<'a> {
     }
 }
 
-fn started(source: &str, functions: &[&str]) -> (Script, Step) {
+fn started(source: &str, functions: &[&str]) -> (Script, Progress) {
     Script::start(source, &host(functions, Limits::default()), TIME)
 }
 
@@ -27,15 +27,15 @@ fn call(id: u32, function: &str, arguments: &str) -> Call {
     }
 }
 
-fn thrown(step: Step) -> Thrown {
+fn thrown(step: Progress) -> Thrown {
     match step {
-        Step::Threw(thrown) => thrown,
+        Progress::Threw(thrown) => thrown,
         other => panic!("it did not throw: {other:?}"),
     }
 }
 
 /// What `source` comes to, run with no functions.
-fn ran(source: &str) -> Step {
+fn ran(source: &str) -> Progress {
     started(source, &[]).1
 }
 
@@ -47,25 +47,25 @@ const [x, y] = await Promise.all([host.math.add({ a: 1, b: 2 }), host.math.add({
 console.log("read", page.lines, { x });
 return { first: page.lines[0], sum: x + y };"#;
     let (mut script, step) = started(source, &["coding.read", "math.add"]);
-    assert_eq!(step, Step::Waiting(vec![call(1, "coding.read", r#"{"path":"a.md"}"#)]));
+    assert_eq!(step, Progress::Waiting(vec![call(1, "coding.read", r#"{"path":"a.md"}"#)]));
     script.settle(1, Ok(r##"{"lines":["# A"]}"##)).expect("waits on it");
     assert_eq!(
-        script.step(TIME),
-        Step::Waiting(vec![
+        script.resume(TIME),
+        Progress::Waiting(vec![
             call(2, "math.add", r#"{"a":1,"b":2}"#),
             call(3, "math.add", r#"{"a":3,"b":4}"#)
         ])
     );
     script.settle(3, Ok("7")).expect("waits on it");
     // A step with a call still unsettled waits on, telling no call it told before.
-    assert_eq!(script.step(TIME), Step::Waiting(vec![]));
+    assert_eq!(script.resume(TIME), Progress::Waiting(vec![]));
     script.settle(2, Ok("3")).expect("waits on it");
-    assert_eq!(script.step(TIME), Step::Returned(r##"{"first":"# A","sum":10}"##.into()));
+    assert_eq!(script.resume(TIME), Progress::Returned(r##"{"first":"# A","sum":10}"##.into()));
     assert_eq!(script.output(), [r##"read ["# A"] {"x":3}"##]);
     assert_eq!(script.output(), Vec::<String>::new());
     assert_eq!(script.settle(2, Ok("3")), Err(NoSuchCall));
     // A script that came to an end stays as it ended.
-    assert_eq!(script.step(TIME), Step::Returned(r##"{"first":"# A","sum":10}"##.into()));
+    assert_eq!(script.resume(TIME), Progress::Returned(r##"{"first":"# A","sum":10}"##.into()));
 }
 
 #[test]
@@ -75,14 +75,14 @@ fn a_rejected_call_is_thrown_into_the_script_and_json_that_does_not_parse_reject
         &["t.fail"],
     );
     caught.settle(1, Err("no such file")).expect("waits on it");
-    assert_eq!(caught.step(TIME), Step::Returned(r#""caught no such file""#.into()));
+    assert_eq!(caught.resume(TIME), Progress::Returned(r#""caught no such file""#.into()));
     let (mut garbled, _) = started("try { await host.t.get(); } catch (e) { return e.name; }", &["t.get"]);
     garbled.settle(1, Ok("{not json")).expect("waits on it");
-    assert_eq!(garbled.step(TIME), Step::Returned(r#""SyntaxError""#.into()));
+    assert_eq!(garbled.resume(TIME), Progress::Returned(r#""SyntaxError""#.into()));
     // A call with no argument, or one JSON cannot hold, is made with null.
     assert_eq!(
         started("await host.t.get(() => 1);", &["t.get"]).1,
-        Step::Waiting(vec![call(1, "t.get", "null")])
+        Progress::Waiting(vec![call(1, "t.get", "null")])
     );
 }
 
@@ -107,11 +107,11 @@ fn a_script_throws_its_errors_and_its_steps_bound_it() {
         )
         .1
     };
-    assert_eq!(bounded("while (true) {}"), Step::OutOfSteps);
-    assert_eq!(bounded("await 0; while (true) {}"), Step::OutOfSteps);
+    assert_eq!(bounded("while (true) {}"), Progress::OutOfSteps);
+    assert_eq!(bounded("await 0; while (true) {}"), Progress::OutOfSteps);
     assert_eq!(
         bounded("try { while (true) {} } catch { return 'caught'; }"),
-        Step::OutOfSteps,
+        Progress::OutOfSteps,
         "no script catches its bound"
     );
     assert!(thrown(ran("await new Promise(() => {});")).message.contains("waits on nothing"));
@@ -120,7 +120,7 @@ fn a_script_throws_its_errors_and_its_steps_bound_it() {
         "TypeError",
         "a value JSON cannot hold is thrown as saying so threw"
     );
-    assert_eq!(ran("return;"), Step::Returned("null".into()));
+    assert_eq!(ran("return;"), Progress::Returned("null".into()));
 }
 
 #[test]
@@ -146,12 +146,12 @@ fn scripts_run_each_on_its_engine_what_one_does_another_knows_not() {
         "globalThis.mine = 1; const n = await host.t.get({}); return [n, typeof globalThis.mine];",
         &["t.get"],
     );
-    assert_eq!(step, Step::Waiting(vec![call(1, "t.get", "{}")]));
+    assert_eq!(step, Progress::Waiting(vec![call(1, "t.get", "{}")]));
     second.settle(1, Ok("7")).expect("waits on it");
     first.settle(1, Ok("21")).expect("waits on it");
-    assert_eq!(second.step(TIME), Step::Returned(r#"[7,"number"]"#.into()));
-    assert_eq!(first.step(TIME), Step::Returned("42".into()));
-    assert_eq!(ran("return typeof globalThis.mine;"), Step::Returned(r#""undefined""#.into()));
+    assert_eq!(second.resume(TIME), Progress::Returned(r#"[7,"number"]"#.into()));
+    assert_eq!(first.resume(TIME), Progress::Returned("42".into()));
+    assert_eq!(ran("return typeof globalThis.mine;"), Progress::Returned(r#""undefined""#.into()));
 }
 
 #[test]
@@ -160,7 +160,7 @@ fn a_script_has_the_whole_language_quickjs_gives() {
 return { made, kinds: [typeof Proxy, typeof WeakRef, typeof BigInt, typeof Reflect] };"#;
     assert_eq!(
         ran(source),
-        Step::Returned(r#"{"made":[2,2],"kinds":["function","function","function","object"]}"#.into())
+        Progress::Returned(r#"{"made":[2,2],"kinds":["function","function","function","object"]}"#.into())
     );
 }
 
@@ -174,8 +174,8 @@ return [before, Date.now(), new Later() instanceof Date, Date.UTC(2026, 0, 1), D
     let (mut script, _) = started(source, &["t.wait"]);
     script.settle(1, Ok("null")).expect("waits on it");
     assert_eq!(
-        script.step(TIME + 5),
-        Step::Returned(format!(
+        script.resume(TIME + 5),
+        Progress::Returned(format!(
             r#"[[{TIME},{TIME},"string",0,true],{},true,1767225600000,"Date",7]"#,
             TIME + 5
         ))
@@ -189,7 +189,7 @@ return [before, Date.now(), new Later() instanceof Date, Date.UTC(2026, 0, 1), D
     };
     assert_eq!(random(1), random(1), "the same seed, the same numbers");
     assert_ne!(random(1), random(2));
-    let Step::Returned(numbers) = random(7) else {
+    let Progress::Returned(numbers) = random(7) else {
         panic!("it returned")
     };
     assert!(numbers.starts_with("[0."), "{numbers}");

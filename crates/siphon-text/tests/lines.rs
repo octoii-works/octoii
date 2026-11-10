@@ -2,17 +2,17 @@
 
 use std::io::BufReader;
 
-use siphon_text::{Bounds, Page, Paged};
+use siphon_text::{Bounds, Content, Page};
 
 /// The page `bounds` take of `text`, its bytes coming `range` at a time.
-fn paged(text: &[u8], range: usize, bounds: Bounds) -> Paged {
+fn paged(text: &[u8], range: usize, bounds: Bounds) -> Content {
     Page::read(BufReader::with_capacity(range, text), &bounds).expect("a slice reads")
 }
 
 fn page(text: &[u8], range: usize, bounds: Bounds) -> Page {
     match paged(text, range, bounds) {
-        Paged::Text(page) => page,
-        Paged::Binary => panic!("text read as binary"),
+        Content::Text(page) => page,
+        Content::Binary => panic!("text read as binary"),
     }
 }
 
@@ -53,7 +53,7 @@ fn a_text_ending_with_a_newline_has_no_line_after_it_and_a_nul_tells_it_is_no_te
     assert_eq!(page(b"a\nb\n", 2, Bounds::default()).seen, 2);
     assert_eq!(page(b"a\nb", 1, Bounds::default()).seen, 2);
     assert_eq!(page(b"", 1, Bounds::default()).seen, 0);
-    assert_eq!(paged(b"text\x00more", 64, Bounds::default()), Paged::Binary);
+    assert_eq!(paged(b"text\x00more", 64, Bounds::default()), Content::Binary);
 }
 
 #[test]

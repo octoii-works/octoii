@@ -47,7 +47,7 @@ pub const OPENAI: ResponsesDriver = ResponsesDriver {
         cache_key: true,
         encrypted_reasoning: true,
         takes_text_files: true,
-        kind_of: |code, _| kind_in(&OPENAI_CODES, code),
+        failure_kind: |code, _| kind_in(&OPENAI_CODES, code),
     },
 };
 
@@ -96,7 +96,7 @@ pub const OPENROUTER: ResponsesDriver = ResponsesDriver {
         cache_key: true,
         encrypted_reasoning: false,
         takes_text_files: true,
-        kind_of: |code, _| kind_in(&OPENROUTER_CODES, code),
+        failure_kind: |code, _| kind_in(&OPENROUTER_CODES, code),
     },
 };
 
@@ -112,7 +112,7 @@ pub const DEEPSEEK: ResponsesDriver = ResponsesDriver {
         cache_key: false,
         encrypted_reasoning: false,
         takes_text_files: true,
-        kind_of: |_, _| None,
+        failure_kind: |_, _| None,
     },
 };
 
@@ -127,7 +127,7 @@ pub const XAI: ResponsesDriver = ResponsesDriver {
         cache_key: true,
         encrypted_reasoning: false,
         takes_text_files: false,
-        kind_of: |_, _| None,
+        failure_kind: |_, _| None,
     },
 };
 
@@ -158,7 +158,7 @@ pub const META: ResponsesDriver = ResponsesDriver {
         cache_key: false,
         encrypted_reasoning: false,
         takes_text_files: true,
-        kind_of: |code, _| kind_in(&META_CODES, code),
+        failure_kind: |code, _| kind_in(&META_CODES, code),
     },
 };
 

@@ -9,14 +9,14 @@ use similar::{Algorithm, DiffOp};
 
 /// How an edit found what it replaced.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Tier {
+pub enum Matching {
     Exact,
     Typographic,
     Lines,
 }
 
-impl Tier {
-    /// The tier by its name, as a call's result tells it.
+impl Matching {
+    /// The matching by its name, as a call's result tells it.
     #[must_use]
     pub fn name(self) -> &'static str {
         match self {
@@ -51,12 +51,12 @@ pub enum Refusal {
     Unchanged,
 }
 
-/// What an edit made of a text: the text after, how many matches it replaced and by which tier it found them.
+/// What an edit made of a text: the text after, how many matches it replaced and by which matching it found them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Edited {
     pub text: String,
     pub replacements: usize,
-    pub tier: Tier,
+    pub matching: Matching,
 }
 
 /// A place in a text: from its start to its end, in bytes.
@@ -81,14 +81,14 @@ impl Edit<'_> {
         if self.old.replace('\r', "") == self.new.replace('\r', "") {
             let spans = occurrences(text, self.old);
             check(spans.len(), self.all)?;
-            return made(text, replaced_as_written(text, &spans, self.new), spans.len(), Tier::Exact);
+            return made(text, replaced_as_written(text, &spans, self.new), spans.len(), Matching::Exact);
         }
         let old = lf_view(self.old).text;
         let view = lf_view(text);
-        let (spans, tier) = matched(&view.text, &old);
+        let (spans, matching) = matched(&view.text, &old);
         check(spans.len(), self.all)?;
         let after = replaced(text, &view, &spans, &old, &lf_view(self.new).text);
-        made(text, after, spans.len(), tier)
+        made(text, after, spans.len(), matching)
     }
 }
 
@@ -101,22 +101,22 @@ fn check(matches: usize, all: bool) -> Result<(), Refusal> {
     }
 }
 
-fn made(before: &str, after: String, replacements: usize, tier: Tier) -> Result<Edited, Refusal> {
+fn made(before: &str, after: String, replacements: usize, matching: Matching) -> Result<Edited, Refusal> {
     if before == after {
         return Err(Refusal::Unchanged);
     }
     Ok(Edited {
         text: after,
         replacements,
-        tier,
+        matching,
     })
 }
 
-/// Where `old` matches `view`, by the first tier that finds it.
-fn matched(view: &str, old: &str) -> (Vec<Span>, Tier) {
+/// Where `old` matches `view`, by the first matching that finds it.
+fn matched(view: &str, old: &str) -> (Vec<Span>, Matching) {
     let exact = occurrences(view, old);
     if !exact.is_empty() {
-        return (exact, Tier::Exact);
+        return (exact, Matching::Exact);
     }
     let plain_view = plain_view(view);
     let plain: Vec<Span> = occurrences(&plain_view.text, &plain_view_of(old))
@@ -127,9 +127,9 @@ fn matched(view: &str, old: &str) -> (Vec<Span>, Tier) {
         })
         .collect();
     if !plain.is_empty() {
-        return (plain, Tier::Typographic);
+        return (plain, Matching::Typographic);
     }
-    (line_spans(view, old), Tier::Lines)
+    (line_spans(view, old), Matching::Lines)
 }
 
 /// Where `needle` occurs in `text`, left to right, none overlapping the one before.
@@ -216,7 +216,7 @@ fn plain_of(character: char) -> Option<char> {
     }
 }
 
-/// A line as the line tier reads it: typographic characters as their plain ones, trailing spaces and tabs left aside.
+/// A line as the matching by lines reads it: typographic characters as their plain ones, trailing spaces and tabs left aside.
 fn loose(line: &str) -> String {
     let mut plain = plain_view_of(line);
     plain.truncate(plain.trim_end_matches([' ', '\t']).len());

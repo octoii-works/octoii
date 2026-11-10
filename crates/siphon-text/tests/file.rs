@@ -9,9 +9,9 @@ fn a_text_files_bytes_are_text_with_its_mark_apart_and_new_text_is_written_as_th
     assert_eq!(marked.text, "one\r\ntwo\r\n");
     assert_eq!(Text::of(b"a\x00b"), None);
     assert_eq!(Text::of(b"\xff\xfe"), None);
-    let written = marked.replacing("three\nfour\r\n");
+    let written = marked.with_line_endings("three\nfour\r\n");
     assert_eq!(written, "three\r\nfour\r\n");
-    assert_eq!(marked.bytes_of(&written), b"\xef\xbb\xbfthree\r\nfour\r\n");
-    assert_eq!(Text::of(b"plain\n").expect("text").replacing("a\nb"), "a\nb");
-    assert_eq!(Text::of(b"plain\n").expect("text").bytes_of("a"), b"a");
+    assert_eq!(marked.encode(&written), b"\xef\xbb\xbfthree\r\nfour\r\n");
+    assert_eq!(Text::of(b"plain\n").expect("text").with_line_endings("a\nb"), "a\nb");
+    assert_eq!(Text::of(b"plain\n").expect("text").encode("a"), b"a");
 }

@@ -27,14 +27,14 @@ impl<'a> Text<'a> {
 
     /// The bytes `text` is written as in this file: its mark first where it had one.
     #[must_use]
-    pub fn bytes_of(&self, text: &str) -> Vec<u8> {
+    pub fn encode(&self, text: &str) -> Vec<u8> {
         let mark: &[u8] = if self.marked { BYTE_ORDER_MARK } else { &[] };
         [mark, text.as_bytes()].concat()
     }
 
     /// `content` as it replaces this file's text: its lines ending `\r\n` where the file's first line did.
     #[must_use]
-    pub fn replacing<'c>(&self, content: &'c str) -> Cow<'c, str> {
+    pub fn with_line_endings<'c>(&self, content: &'c str) -> Cow<'c, str> {
         let first_line_crlf = self.text.find('\n').is_some_and(|newline| self.text[..newline].ends_with('\r'));
         if !first_line_crlf {
             return Cow::Borrowed(content);

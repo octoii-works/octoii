@@ -2,14 +2,14 @@
 
 use std::borrow::Cow;
 
-use siphon_image::{Bounds, Error, Format, READ_EVERYWHERE, Size, fit};
+use siphon_image::{Bounds, Error, Format, Size, UNIVERSAL_FORMATS, fit};
 
 const MODELS: Bounds = Bounds {
     width_max: 1568,
     height_max: 1568,
     pixels_max: 1_150_000,
     bytes_max: 3_750_000,
-    formats: READ_EVERYWHERE,
+    formats: UNIVERSAL_FORMATS,
 };
 
 /// A `width` by `height` PNG of the pixels `paint` gives.

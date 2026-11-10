@@ -52,7 +52,7 @@ impl Format {
 }
 
 /// The formats models and browsers read, which a fitting keeps unless its bounds say fewer.
-pub const READ_EVERYWHERE: &[Format] = &[Format::Png, Format::Jpeg, Format::Gif, Format::Webp];
+pub const UNIVERSAL_FORMATS: &[Format] = &[Format::Png, Format::Jpeg, Format::Gif, Format::Webp];
 
 /// The box an image is fitted to — the widest and the tallest it may be, its pixels and its bytes — and the formats it
 /// may stay in as it is, of those models and browsers read.
@@ -162,7 +162,7 @@ pub fn fit<'a>(bytes: &'a [u8], bounds: &Bounds) -> Result<Fitted<'a>, Error> {
         height: decoded.height(),
     };
     let size = original.within(bounds);
-    let kept_as_is = size == original && bounds.formats.contains(&format) && READ_EVERYWHERE.contains(&format);
+    let kept_as_is = size == original && bounds.formats.contains(&format) && UNIVERSAL_FORMATS.contains(&format);
     if kept_as_is && bytes.len() <= bounds.bytes_max {
         return Ok(Fitted {
             format,

@@ -18,7 +18,7 @@ use crate::vocabulary::{
     Failure, FailureKind, FunctionCall, Incomplete, InputContent, Item, ItemStatus, Message, Origin, OutputContent, Reasoning,
     ReasoningEffort, Request, Response, ResponseStatus, Tool, ToolChoice, Usage,
 };
-use crate::wire::{self, Said};
+use crate::wire::{self, FailureDetail};
 
 /// How a provider asks its model to reason: by `reasoning_effort`, or by Z.ai's `thinking` beside it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -535,23 +535,23 @@ fn usage_of(given: &Value) -> Usage {
     }
 }
 
-fn said_of(error: &Value) -> Said {
+fn detail_of(error: &Value) -> FailureDetail {
     let message = error["message"]
         .as_str()
         .unwrap_or("The provider failed without saying why")
         .to_owned();
-    Said {
+    FailureDetail {
         kind: super::context_too_long(&message).then_some(FailureKind::ContextOverflow),
         message: Some(message),
         code: error["code"].as_str().or_else(|| error["type"].as_str()).map(str::to_owned),
-        ..Said::default()
+        ..FailureDetail::default()
     }
 }
 
 fn failure_of(error: &Value) -> Failure {
-    let said = said_of(error);
-    let mut failure = Failure::new(said.kind.unwrap_or(FailureKind::Server), said.message.unwrap_or_default());
-    failure.code = said.code;
+    let detail = detail_of(error);
+    let mut failure = Failure::new(detail.kind.unwrap_or(FailureKind::Server), detail.message.unwrap_or_default());
+    failure.code = detail.code;
     failure
 }
 
@@ -596,7 +596,7 @@ impl Driver for ChatDriver {
             let response = wire::send(call, request).await?;
             if !response.status().is_success() {
                 return Err(wire::failure_of(call, response, &|_: &http::HeaderMap, body: &str| {
-                    serde_json::from_str::<Value>(body).ok().map(|value| said_of(&value["error"]))
+                    serde_json::from_str::<Value>(body).ok().map(|value| detail_of(&value["error"]))
                 })
                 .await);
             }

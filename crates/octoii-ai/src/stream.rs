@@ -1,7 +1,7 @@
 //! A text request's stream, made whole and safe. A driver streams its provider's answer in the vocabulary's terms — an
 //! item begun, text added to one, an item whole, the response finished — and this makes of it what every caller may
 //! trust: items numbered from 0 without a gap in the order they began; each stamped with the model that wrote it; each
-//! call a `call_id` of its own, one empty or another call's given a new one from the host's mint — every other id the
+//! call a `call_id` of its own, one empty or another call's given a new one from the host's `new_id` — every other id the
 //! provider gave carried as it came, as its data. Whatever ends it — the response, a failure, a provider gone silent
 //! or done too soon — every item begun is ended, then the response is told whole, with every item in its output and
 //! its cost where the provider gave none and the catalogue prices it. Cancelled, it gives what had come.
@@ -45,7 +45,7 @@ pub enum Event {
 pub type Source = Pin<Box<dyn Stream<Item = Result<Event, Failure>> + Send>>;
 
 /// Where new ids come from, unique and rising, as the host mints them.
-pub type Mint = Arc<dyn Fn() -> String + Send + Sync>;
+pub type NewId = Arc<dyn Fn() -> String + Send + Sync>;
 
 /// An item as it is written: its parts so far, and whether it is whole.
 #[derive(Debug)]
@@ -60,7 +60,7 @@ pub struct TextStream {
     reference: String,
     pricing: Option<Pricing>,
     sent_at_ms: i64,
-    mint: Mint,
+    new_id: NewId,
     /// The place each of the provider's items has, by the provider's place.
     places: HashMap<u32, u32>,
     written: Vec<Written>,
@@ -84,13 +84,13 @@ impl std::fmt::Debug for TextStream {
 impl TextStream {
     /// The stream of `source`, the answer of `model` to a request sent at `sent_at_ms`.
     #[must_use]
-    pub fn new(source: Source, model: &Model, sent_at_ms: i64, mint: Mint) -> Self {
+    pub fn new(source: Source, model: &Model, sent_at_ms: i64, new_id: NewId) -> Self {
         Self {
             source: Some(source),
             reference: model.reference(),
             pricing: model.pricing.clone(),
             sent_at_ms,
-            mint,
+            new_id,
             places: HashMap::new(),
             written: Vec::new(),
             call_ids: HashSet::new(),
@@ -136,7 +136,7 @@ impl TextStream {
         self.source = None;
         let output = self.end_all();
         Response {
-            id: (self.mint)(),
+            id: (self.new_id)(),
             model: self.reference,
             status: ResponseStatus::Incomplete,
             output,
@@ -211,7 +211,7 @@ impl TextStream {
             Item::FunctionCall(call) => {
                 origin(&mut call.origin, &self.reference);
                 if call.call_id.is_empty() || !self.call_ids.insert(call.call_id.clone()) {
-                    call.call_id = (self.mint)();
+                    call.call_id = (self.new_id)();
                     self.call_ids.insert(call.call_id.clone());
                 }
             }
@@ -277,7 +277,7 @@ impl TextStream {
 
     fn fail(&mut self, failure: Failure) {
         let response = Response {
-            id: (self.mint)(),
+            id: (self.new_id)(),
             model: self.reference.clone(),
             status: ResponseStatus::Failed,
             output: Vec::new(),

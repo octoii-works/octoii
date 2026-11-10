@@ -16,7 +16,7 @@ use crate::vocabulary::{
     ReasoningEffort, Request, Response, ResponseStatus, Tool, ToolChoice, UrlCitation, Usage, WebSearchAction, WebSearchCall,
     WebSearchStatus,
 };
-use crate::wire::{self, Said};
+use crate::wire::{self, FailureDetail};
 
 /// The role a provider takes a developer message in: its own, or the system's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,7 +35,7 @@ pub struct Dialect {
     pub cache_key: bool,
     pub encrypted_reasoning: bool,
     pub takes_text_files: bool,
-    pub kind_of: fn(code: Option<&str>, message: &str) -> Option<FailureKind>,
+    pub failure_kind: fn(code: Option<&str>, message: &str) -> Option<FailureKind>,
 }
 
 /// `request` as the Responses API takes it for `model`, in `dialect`.
@@ -318,36 +318,36 @@ impl Reader {
     /// The kind of failure the provider's code and words say, as the dialect reads them, else a context too long by
     /// its words; none where they say none.
     fn kind(&self, code: Option<&str>, message: &str) -> Option<FailureKind> {
-        (self.dialect.kind_of)(code, message).or_else(|| super::context_too_long(message).then_some(FailureKind::ContextOverflow))
+        (self.dialect.failure_kind)(code, message).or_else(|| super::context_too_long(message).then_some(FailureKind::ContextOverflow))
     }
 
     /// The failure an error of the provider's stream stands for, `server` where it says no kind.
     fn failure(&self, error: &Value) -> Failure {
-        let said = said_of(error);
+        let detail = detail_of(error);
         let mut failure = Failure::new(
-            self.kind(said.code.as_deref(), &said.message).unwrap_or(FailureKind::Server),
-            said.message,
+            self.kind(detail.code.as_deref(), &detail.message).unwrap_or(FailureKind::Server),
+            detail.message,
         );
-        failure.code = said.code;
+        failure.code = detail.code;
         failure
     }
 
     /// What a body of the provider's says of a refusal before the stream.
     #[must_use]
-    pub fn said(&self, body: &str) -> Option<Said> {
+    pub fn failure_detail(&self, body: &str) -> Option<FailureDetail> {
         let value: Value = serde_json::from_str(body).ok()?;
         if let Some(detail) = value["detail"].as_str() {
-            return Some(Said {
+            return Some(FailureDetail {
                 message: Some(detail.to_owned()),
-                ..Said::default()
+                ..FailureDetail::default()
             });
         }
-        let said = said_of(value.get("error")?);
-        Some(Said {
-            kind: self.kind(said.code.as_deref(), &said.message),
-            message: Some(said.message),
-            code: said.code,
-            ..Said::default()
+        let detail = detail_of(value.get("error")?);
+        Some(FailureDetail {
+            kind: self.kind(detail.code.as_deref(), &detail.message),
+            message: Some(detail.message),
+            code: detail.code,
+            ..FailureDetail::default()
         })
     }
 }
@@ -359,7 +359,7 @@ struct ErrorSaid {
     message: String,
 }
 
-fn said_of(error: &Value) -> ErrorSaid {
+fn detail_of(error: &Value) -> ErrorSaid {
     let message = error["message"].as_str().unwrap_or("The provider failed without saying why");
     ErrorSaid {
         code: error["code"].as_str().or_else(|| error["type"].as_str()).map(str::to_owned),
@@ -549,7 +549,7 @@ impl Driver for ResponsesDriver {
             let response = wire::send(call, request).await?;
             let mut reader = Reader::new(self.dialect);
             if !response.status().is_success() {
-                return Err(wire::failure_of(call, response, &|_: &http::HeaderMap, body: &str| reader.said(body)).await);
+                return Err(wire::failure_of(call, response, &|_: &http::HeaderMap, body: &str| reader.failure_detail(body)).await);
             }
             let events = wire::events(response.into_body()).filter_map(move |event| {
                 let made = match event {
