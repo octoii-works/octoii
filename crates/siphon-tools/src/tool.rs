@@ -30,12 +30,14 @@ impl Refusal {
     }
 }
 
-/// What a call's exec is given: the thread whose model called it, and its key, which names this call alone; where its
-/// paths start; where it may write, as its weighing said; the machine and the runtime; and its cancellation — a stop
-/// cuts it off, and it gives at once what has come.
+/// What a call's exec is given: the thread whose model called it; the process the call is of, under which what it runs
+/// on the machine is recorded; its key, which names this call alone; where its paths start; where it may write, as its
+/// weighing said; the machine and the runtime; and its cancellation — a stop cuts it off, and it gives at once what has
+/// come.
 #[derive(Debug, Clone)]
 pub struct Context {
     pub thread: String,
+    pub process: bytes::Bytes,
     pub call: String,
     pub base: Base,
     pub writes: Writes,
@@ -154,6 +156,12 @@ impl Tools {
             },
         );
         self
+    }
+
+    /// Whether there is a tool of `name`.
+    #[must_use]
+    pub fn has(&self, name: &str) -> bool {
+        self.entries.contains_key(name)
     }
 
     /// The tools, as the model is told of them, in order by name.

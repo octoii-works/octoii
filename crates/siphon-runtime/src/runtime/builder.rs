@@ -23,7 +23,7 @@ pub(super) type Answering = Pin<Box<dyn Future<Output = (&'static str, Bytes)> +
 
 /// A handler of any request, as the runtime calls it: the payload as bytes in, the answer's mail out.
 pub(super) trait Handles: Send + Sync {
-    fn handle(&self, payload: &[u8], process: Bytes, key: String, cancelled: CancellationToken, streams: Streams) -> Answering;
+    fn handle(&self, payload: &[u8], process: Bytes, key: String, cancelled: CancellationToken, runtime: Runtime) -> Answering;
 }
 
 struct Handler<R, F> {
@@ -37,7 +37,7 @@ where
     F: Fn(Asked<R>) -> A + Send + Sync,
     A: Future<Output = Result<R::Answer, Unanswered>> + Send + 'static,
 {
-    fn handle(&self, payload: &[u8], process: Bytes, key: String, cancelled: CancellationToken, streams: Streams) -> Answering {
+    fn handle(&self, payload: &[u8], process: Bytes, key: String, cancelled: CancellationToken, runtime: Runtime) -> Answering {
         let payload = match serde_json::from_slice::<R>(payload) {
             Ok(payload) => payload,
             Err(error) => {
@@ -50,7 +50,7 @@ where
             process,
             key,
             cancelled,
-            streams,
+            runtime,
         });
         Box::pin(async move {
             // In a task of its own, so a handler that panics is answered for.
@@ -152,11 +152,13 @@ impl Builder {
             streams: Streams::start(),
             dispatch: Notify::new(),
             shutdown: CancellationToken::new(),
+            tasks: TaskTracker::new(),
         });
-        let tasks = TaskTracker::new();
-        tasks.spawn(dispatcher::run_dispatcher(Arc::clone(&shared)));
-        tasks.spawn(events::handle_events(Arc::clone(&shared), events, options.collection, base));
-        tasks.close();
-        Ok(Runtime { shared, tasks })
+        shared.tasks.spawn(dispatcher::run_dispatcher(Arc::clone(&shared)));
+        shared
+            .tasks
+            .spawn(events::handle_events(Arc::clone(&shared), events, options.collection, base));
+        shared.tasks.close();
+        Ok(Runtime { shared })
     }
 }

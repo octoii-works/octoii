@@ -9,7 +9,7 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
 use super::builder::Answering;
-use super::{Collection, Shared};
+use super::{Collection, Runtime, Shared};
 use crate::changes::{Changes, Mail};
 use crate::request::INTERRUPTED;
 
@@ -51,7 +51,7 @@ pub(super) async fn handle_events(shared: Arc<Shared>, mut events: Events, colle
                             let cancelled = CancellationToken::new();
                             asked.insert((process.clone(), key.clone()), cancelled.clone());
                             let key = String::from_utf8_lossy(&key).into_owned();
-                            handler.handle(&payload, process.clone(), key, cancelled, shared.streams.clone())
+                            handler.handle(&payload, process.clone(), key, cancelled, Runtime { shared: Arc::clone(&shared) })
                         };
                         tasks.spawn(answer(Arc::clone(&shared), process, key, started, answering));
                     }

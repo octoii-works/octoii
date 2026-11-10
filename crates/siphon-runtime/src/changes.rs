@@ -166,6 +166,12 @@ impl Changes {
         self.push(Owned::ForceRemove(path.into(), reason))
     }
 
+    /// `more`'s changes after these, in their order.
+    pub fn extend(&mut self, more: Changes) -> &mut Self {
+        self.0.extend(more.0);
+        self
+    }
+
     fn push(&mut self, change: Owned) -> &mut Self {
         self.0.push(change);
         self

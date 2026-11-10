@@ -8,7 +8,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use tokio_util::sync::CancellationToken;
 
-use crate::streams::Streams;
+use crate::runtime::Runtime;
 
 /// A request of one name, its payload the value itself, and what answers it.
 pub trait Request: Serialize + DeserializeOwned + Send + 'static {
@@ -58,14 +58,15 @@ pub struct Asked<R> {
     pub process: Bytes,
     pub key: String,
     pub cancelled: CancellationToken,
-    pub(crate) streams: Streams,
+    /// The runtime the request is answered on, for what its handler reads and commits.
+    pub runtime: Runtime,
 }
 
 impl<R> Asked<R> {
     /// Publishes `data` on `topic` to the request's stream: what streams while it is answered, kept till its handler
     /// ends for one who follows the topic later.
     pub fn publish(&self, topic: &str, data: Bytes) {
-        self.streams.publish(topic, &self.key, data);
+        self.runtime.streams().publish(topic, &self.key, data);
     }
 }
 

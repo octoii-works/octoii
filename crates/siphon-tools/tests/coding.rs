@@ -34,6 +34,7 @@ async fn context(beak: &Beak, writes: Writes) -> (Context, tempfile::TempDir) {
     let workspace = folder.path().canonicalize().expect("its real path");
     let context = Context {
         thread: "t1".into(),
+        process: siphon_threads::thread::path("t1"),
         call: "c1".into(),
         base: Base { workspace, home: None },
         writes,

@@ -58,8 +58,7 @@ impl Tool for ShellTool {
         };
         let machine = context.machine()?;
         let time = context.runtime.now_ms();
-        let under = siphon_threads::thread::path(&context.thread);
-        let ran = machine.run(time, &under, &program, &context.cancelled).await;
+        let ran = machine.run(time, &context.process, &program, &context.cancelled).await;
         let (output, ended) = match ran {
             Ok(ran) => {
                 let ended = match ran.exit {

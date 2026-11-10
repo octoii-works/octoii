@@ -3,14 +3,19 @@
 //! project's grants, a second model or the person deciding where they say; and gives what the model reads, as the
 //! model's vocabulary holds a call's output, or refuses, saying why.
 
+mod calls;
 mod coding;
 mod effect;
 mod permissions;
+pub mod projects;
+mod requests;
 mod shell;
 mod tool;
 
+pub use calls::{Call, Calls, Setting, State, Status};
 pub use coding::{EditTool, GlobTool, GrepTool, ReadTool, WriteTool};
 pub use effect::{Effect, Line};
 pub use permissions::{Bounds, Grants, Verdict, Writes, patterns_of, weigh};
+pub use requests::{Decision, Exec, Judgment, Permission, Review, Shown};
 pub use shell::ShellTool;
 pub use tool::{Context, Declared, Refusal, Tool, Tools};

@@ -115,6 +115,8 @@ struct Shared {
     /// Wakes the dispatcher.
     dispatch: Notify,
     shutdown: CancellationToken,
+    /// The runtime's own tasks, waited for as it closes.
+    tasks: TaskTracker,
 }
 
 impl Shared {
@@ -139,7 +141,6 @@ impl Shared {
 #[derive(Clone)]
 pub struct Runtime {
     shared: Arc<Shared>,
-    tasks: TaskTracker,
 }
 
 impl std::fmt::Debug for Runtime {
@@ -194,6 +195,11 @@ impl Runtime {
     #[must_use]
     pub fn committed(&self) -> watch::Receiver<u64> {
         self.shared.committed.subscribe()
+    }
+
+    /// The streams of what is published while requests are answered.
+    pub(crate) fn streams(&self) -> &Streams {
+        &self.shared.streams
     }
 
     /// Follows what streams on `topic`.
@@ -259,6 +265,6 @@ impl Runtime {
     /// process interrupted as the volume opens again, as though the host had ended.
     pub async fn close(&self) {
         self.shared.shutdown.cancel();
-        self.tasks.wait().await;
+        self.shared.tasks.wait().await;
     }
 }
