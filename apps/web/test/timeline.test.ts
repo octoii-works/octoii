@@ -4,7 +4,7 @@
  * ended; a turn that ended read once, a call's line kept while its call is; and its work as the page lays it out.
  */
 import { describe, expect, it } from "bun:test";
-import { type Ask, conversationOf, type Entry, type Item, type Streamed, type ThreadView } from "@octoii-works/octoii-client";
+import { type Ask, conversationOf, type Entry, type Item, type Streamed, type Structured, type ThreadView } from "@octoii-works/octoii-client";
 import {
 	type CallLine,
 	declinedText,
@@ -39,7 +39,7 @@ const callOf = (id: string, tool: string, step: string): CallLine => ({
 	trouble: undefined,
 	arguments: "{}",
 	output: undefined,
-	printed: undefined,
+	structured: undefined,
 	began: undefined,
 	ended: undefined,
 	state: "done",
@@ -68,12 +68,13 @@ const reply = (at: string, request: string, output: Item[]): Entry => ({
 	response: { id: "r", model: "m", status: "completed", output },
 	calls: keysOf(output),
 });
-const result = (at: string, callId: string, status: "ok" | "tool-error" | "rejected", output = "…"): Entry => ({
+const result = (at: string, callId: string, status: "ok" | "tool-error" | "rejected", output = "…", structured?: Structured): Entry => ({
 	id: at,
 	type: "result",
 	call: `k${callId}`,
 	status,
 	output: { call_id: callId, output: text(output) },
+	...(structured === undefined ? {} : { structured }),
 });
 const end = (at: string, outcome: "replied" | "failed" | "stopped", reason?: string): Entry => ({
 	id: at,
@@ -312,8 +313,8 @@ describe("a thread's timeline", () => {
 		const entries: Entry[] = [
 			said(id(0, 1), "Tidy"),
 			reply(id(1, 2), "q1", [call("c1", "edit", { path: "a.md" }), call("c2", "write", { path: "b.md" })]),
-			result(id(2, 3), "c1", "ok", diff),
-			result(id(2, 4), "c2", "ok", "created b.md +3"),
+			result(id(2, 3), "c1", "ok", diff, { type: "changed", path: "a.md", created: false, additions: 1, deletions: 1 }),
+			result(id(2, 4), "c2", "ok", "made b.md: +3 -0", { type: "changed", path: "b.md", created: true, additions: 3, deletions: 0 }),
 			end(id(3, 5), "replied"),
 			said(id(4, 6), "And c"),
 			reply(id(5, 7), "q2", [call("c3", "read", { path: "c.md" })]),

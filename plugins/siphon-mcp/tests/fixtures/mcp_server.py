@@ -1,5 +1,6 @@
-"""An MCP server over standard input and output, for the tests: `say` says its words back, `fail` fails, `where` tells
-the folder it runs in and the variable GREETING, and `picture` gives a picture of one pixel."""
+"""An MCP server over standard input and output, for the tests: `say` says its words back, and gives them as structured
+content too, `fail` fails, `where` tells the folder it runs in and the variable GREETING, and `picture` gives a picture of
+one pixel."""
 
 import json
 import os
@@ -30,7 +31,7 @@ def send(message):
 
 def called(name, arguments):
     if name == "say":
-        return {"content": [{"type": "text", "text": arguments["words"]}]}
+        return {"content": [{"type": "text", "text": arguments["words"]}], "structuredContent": {"words": arguments["words"]}}
     if name == "fail":
         return {"content": [{"type": "text", "text": "it failed"}], "isError": True}
     if name == "where":

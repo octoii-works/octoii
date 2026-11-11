@@ -11,6 +11,7 @@ use siphon_machine::paths::Base;
 use siphon_machine::{Errors, Program, RunError};
 
 use crate::effect::Effect;
+use crate::told::{CommandEnd, Structured, Told};
 use crate::tool::{Context, Refusal, Tool};
 
 /// How long a command line runs where its call says no other time, and at most.
@@ -49,7 +50,7 @@ impl Tool for ShellTool {
         }
     }
 
-    async fn exec(&self, context: &Context, args: ShellArgs) -> Result<Vec<InputContent>, Refusal> {
+    async fn exec(&self, context: &Context, args: ShellArgs) -> Result<Told, Refusal> {
         let seconds = args.timeout_seconds.unwrap_or(TIMEOUT_SECONDS).clamp(1, TIMEOUT_SECONDS_MAX);
         let program = Program {
             timeout: Duration::from_secs(seconds),
@@ -59,21 +60,29 @@ impl Tool for ShellTool {
         let machine = context.machine()?;
         let time = context.runtime.now_ms();
         let ran = machine.run(time, &context.process, &program, &context.cancelled).await;
-        let (output, ended) = match ran {
+        let (output, end) = match ran {
             Ok(ran) => {
-                let ended = match ran.exit {
-                    beak::Exit::Code(code) => format!("[exit {code}]"),
-                    beak::Exit::Signal(signal) => format!("[ended by signal {signal}]"),
+                let end = match ran.exit {
+                    beak::Exit::Code(code) => CommandEnd::Exited { code },
+                    beak::Exit::Signal(signal) => CommandEnd::Signalled { signal },
                 };
-                (String::from_utf8_lossy(&ran.output).into_owned(), ended)
+                (String::from_utf8_lossy(&ran.output).into_owned(), end)
             }
-            Err(RunError::TimedOut(_)) => (String::new(), format!("[its {seconds} s ran out; it was ended]")),
-            Err(RunError::Stopped) => (String::new(), "[it was stopped]".into()),
+            Err(RunError::TimedOut(_)) => (String::new(), CommandEnd::TimedOut { seconds }),
+            Err(RunError::Stopped) => (String::new(), CommandEnd::Stopped),
             Err(RunError::MissingProgram(program)) => return Err(Refusal(format!("no {program} on the machine"))),
-            Err(RunError::OutputTooLarge(max)) => (String::new(), format!("[it wrote past {max} bytes; it was ended]")),
+            Err(RunError::OutputTooLarge(bytes)) => (String::new(), CommandEnd::TooLarge { bytes }),
             Err(RunError::Beak(error)) => return Err(Refusal(error.to_string())),
         };
+        let ended = match end {
+            CommandEnd::Exited { code } => format!("[exit {code}]"),
+            CommandEnd::Signalled { signal } => format!("[ended by signal {signal}]"),
+            CommandEnd::TimedOut { seconds } => format!("[its {seconds} s ran out; it was ended]"),
+            CommandEnd::Stopped => "[it was stopped]".into(),
+            CommandEnd::TooLarge { bytes } => format!("[it wrote past {bytes} bytes; it was ended]"),
+        };
         let separator = if output.is_empty() || output.ends_with('\n') { "" } else { "\n" };
-        Ok(vec![InputContent::text(format!("{output}{separator}{ended}"))])
+        let words = vec![InputContent::text(format!("{output}{separator}{ended}"))];
+        Ok(Told::structured(words, &Structured::Ran { ended: end }))
     }
 }

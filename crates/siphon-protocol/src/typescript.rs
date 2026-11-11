@@ -75,6 +75,8 @@ pub fn typescript(sets: &[Set]) -> String {
     declarations.visit::<ConnectionEvent>();
     declarations.visit::<Subscribed>();
     declarations.visit::<Unsubscribe>();
+    // What Siphon's own tools tell typed of a call, which a result keeps as JSON beside any MCP tool's.
+    declarations.visit::<siphon_tools::Structured>();
     let mut methods = String::new();
     let (mut topics, mut events) = (Vec::new(), vec![<ConnectionEvent as TS>::name(&cfg)]);
     for set in sets {

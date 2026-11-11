@@ -56,7 +56,7 @@ impl Toolset for Servers {
         context: &'a Context,
         name: &'a str,
         arguments: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<octoii_ai::vocabulary::InputContent>, Refusal>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<siphon_tools::Told, Refusal>> + Send + 'a>> {
         Box::pin(Servers::call(self, context, name, arguments))
     }
 }

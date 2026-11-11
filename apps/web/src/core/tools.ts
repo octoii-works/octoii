@@ -12,7 +12,7 @@ import {
 	type CallState,
 	changeOf,
 	commandToldOf,
-	exitOf,
+	endOf,
 	type Field,
 	fieldsOf,
 	type Found,
@@ -143,7 +143,7 @@ const TOOLS: Readonly<Partial<Record<string, ToolView>>> = {
 		detail: (call, given) => ({
 			shape: "command",
 			command: given.command ?? "",
-			told: call.output === undefined ? printedOfCall(call) : commandToldOf(call.output),
+			told: call.output === undefined ? undefined : commandToldOf(call.output),
 		}),
 	}),
 	execute: toolView({
@@ -249,11 +249,6 @@ function toldOfCall(call: ToolCall): Told | undefined {
 	return call.output === undefined ? undefined : toldOf(call.output);
 }
 
-/** What `call` has printed so far while it runs, as what its tool told; none where it printed nothing. */
-function printedOfCall(call: ToolCall): Told | undefined {
-	return call.printed === undefined ? undefined : { text: call.printed, notes: [] };
-}
-
 /** `text` as quiet words beside a line's subject; none where there is no text. */
 function wordsAside(text: string | undefined): Aside | undefined {
 	return text === undefined ? undefined : { kind: "words", text };
@@ -272,16 +267,20 @@ function foundAside(call: ToolCall, one: string, many: string): Aside | undefine
 	return wordsAside(found === 0 ? "no match" : counted(found, one, many));
 }
 
-/** How a command went wrong though it ran: exited with a code other than nought, by a signal, or killed as its time ran out. */
+/** How a command went wrong though it ran: exited with a code other than nought, by a signal, its time ran out, it was stopped, or it wrote too much. */
 function exitTrouble(call: ToolCall): string | undefined {
-	const exit = exitOf(call);
-	switch (exit?.kind) {
-		case "code":
-			return exit.code === 0 ? undefined : `exit ${String(exit.code)}`;
-		case "signal":
-			return `signal ${String(exit.signal)}`;
-		case "timed-out":
+	const end = endOf(call);
+	switch (end?.type) {
+		case "exited":
+			return end.code === 0 ? undefined : `exit ${String(end.code)}`;
+		case "signalled":
+			return `signal ${String(end.signal)}`;
+		case "timed_out":
 			return "timed out";
+		case "stopped":
+			return "stopped";
+		case "too_large":
+			return "wrote too much";
 		case undefined:
 			return undefined;
 	}

@@ -29,6 +29,9 @@ pub enum State {
     Ended {
         status: CallStatus,
         output: Vec<InputContent>,
+        /// What it did, typed by its tool, where the tool told it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        structured: Option<serde_json::Value>,
     },
 }
 
@@ -67,6 +70,7 @@ fn ended(status: CallStatus, words: impl Into<String>) -> State {
     State::Ended {
         status,
         output: vec![InputContent::text(words)],
+        structured: None,
     }
 }
 
@@ -247,6 +251,7 @@ impl Calls {
                     Answer::Given(given) => State::Ended {
                         status: CallStatus::Ok,
                         output: setting.tools.answered(&call.tool, &serde_json::from_str(&call.arguments)?, given),
+                        structured: None,
                     },
                     Answer::Failed(words) => ended(CallStatus::ToolError, words),
                     Answer::Interrupted => ended(CallStatus::Interrupted, "the call was cut off before the person answered"),
@@ -258,9 +263,10 @@ impl Calls {
                 };
                 run.take_mail(&call.key);
                 match answer {
-                    Answer::Given(output) => State::Ended {
+                    Answer::Given(told) => State::Ended {
                         status: CallStatus::Ok,
-                        output,
+                        output: told.output,
+                        structured: told.structured,
                     },
                     Answer::Failed(words) => ended(CallStatus::ToolError, words),
                     Answer::Interrupted => ended(CallStatus::Interrupted, "the call was cut off"),
@@ -279,6 +285,7 @@ impl Calls {
                         CallStatus::ToolError
                     },
                     output: setting.tools.finished(&call.tool, &outcome),
+                    structured: None,
                 }
             }
             State::Waiting | State::Ended { .. } => return Ok(()),

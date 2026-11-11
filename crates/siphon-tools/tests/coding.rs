@@ -50,6 +50,7 @@ async fn exec(tools: &Tools, context: &Context, name: &str, arguments: serde_jso
     tools.effect(name, &arguments, &context.base).map_err(|refusal| refusal.0)?;
     let given = tools.exec(name, context.clone(), arguments).await.map_err(|refusal| refusal.0)?;
     Ok(given
+        .output
         .iter()
         .filter_map(|part| match part {
             InputContent::InputText { text } => Some(text.as_str()),
@@ -113,7 +114,8 @@ async fn an_image_read_is_shown_as_an_image_kept_in_its_thread() {
     let shown = tools()
         .exec("read", context.clone(), json!({ "path": "shot.png" }))
         .await
-        .expect("read");
+        .expect("read")
+        .output;
     assert_eq!(shown[0], InputContent::text("shot.png, an image of 64×32"));
     let InputContent::InputImage { file, .. } = &shown[1] else {
         panic!("an image")
@@ -190,4 +192,38 @@ fn the_tools_are_told_with_their_schemas_and_a_call_s_arguments_checked_against_
         tools.effect("write", &json!({ "path": "a.txt", "content": "" }), &base),
         Ok(Effect::Edits(vec![PathBuf::from("/work/a.txt")]))
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_command_a_write_and_a_read_tell_what_they_did_typed_beside_what_the_model_reads() {
+    let beak = Beak::new().expect("Beak");
+    let (context, _folder) = context(&beak, Writes::Workspace).await;
+    let structured = |name: &'static str, arguments: serde_json::Value| {
+        let context = context.clone();
+        async move {
+            tools()
+                .exec(name, context, arguments)
+                .await
+                .expect("done")
+                .structured
+                .expect("told typed")
+        }
+    };
+    assert_eq!(
+        structured("shell", json!({ "command": "echo hi; exit 3" })).await,
+        json!({ "type": "ran", "ended": { "type": "exited", "code": 3 } })
+    );
+    assert_eq!(
+        structured("write", json!({ "path": "notes.md", "content": "one\ntwo\nthree\n" })).await,
+        json!({ "type": "changed", "path": "notes.md", "created": true, "additions": 3, "deletions": 0 })
+    );
+    assert_eq!(
+        structured("read", json!({ "path": "notes.md" })).await,
+        json!({ "type": "read", "path": "notes.md", "from": 1, "to": 3, "total": 3 })
+    );
+    let globbed = tools()
+        .exec("glob", context.clone(), json!({ "pattern": "*.md" }))
+        .await
+        .expect("done");
+    assert_eq!(globbed.structured, None, "a search's lines are what it found, told as they are");
 }

@@ -12,6 +12,7 @@ use siphon_machine::{EditOutcome, GrepOptions, Machine, Read, ReadOptions};
 use siphon_text::{Bounds, Edit};
 
 use crate::effect::Effect;
+use crate::told::{Structured, Told};
 use crate::tool::{Context, Refusal, Tool};
 
 /// How many files a page of glob gives, matching lines a page of grep, and the characters of a line grep shows.
@@ -69,7 +70,7 @@ impl Tool for ReadTool {
         Effect::Reads
     }
 
-    async fn exec(&self, context: &Context, args: ReadArgs) -> Result<Vec<InputContent>, Refusal> {
+    async fn exec(&self, context: &Context, args: ReadArgs) -> Result<Told, Refusal> {
         let mut bounds = Bounds::default();
         bounds.offset = args.offset.unwrap_or(1);
         bounds.limit = args.limit.unwrap_or(bounds.limit);
@@ -90,7 +91,27 @@ impl Tool for ReadTool {
             Ok((read, name))
         })
         .await?;
-        shown(context, &name, read).await
+        let lines = match &read {
+            Read::Text { page, .. } => {
+                let (from, to) = (
+                    page.lines.first().map_or(0, |line| line.number),
+                    page.lines.last().map_or(0, |line| line.number),
+                );
+                let total = page.whole.then_some(to);
+                Some(Structured::Read {
+                    path: name.clone(),
+                    from,
+                    to,
+                    total,
+                })
+            }
+            _ => None,
+        };
+        let output = shown(context, &name, read).await?;
+        Ok(match lines {
+            Some(lines) => Told::structured(output, &lines),
+            None => Told::from(output),
+        })
     }
 }
 
@@ -167,17 +188,20 @@ impl Tool for WriteTool {
         edits(base, &args.path)
     }
 
-    async fn exec(&self, context: &Context, args: WriteArgs) -> Result<Vec<InputContent>, Refusal> {
+    async fn exec(&self, context: &Context, args: WriteArgs) -> Result<Told, Refusal> {
         blocking(context, move |machine| {
             let path = machine.path(&args.path);
-            let change = machine.write(&path, &args.content, &machine.shown(&path)).map_err(failed)?;
+            let shown = machine.shown(&path);
+            let change = machine.write(&path, &args.content, &shown).map_err(failed)?;
             let made = if change.created { "made" } else { "wrote" };
-            Ok(text(format!(
-                "{made} {}: +{} -{}",
-                machine.shown(&path),
-                change.diff.additions,
-                change.diff.deletions
-            )))
+            let words = text(format!("{made} {shown}: +{} -{}", change.diff.additions, change.diff.deletions));
+            let changed = Structured::Changed {
+                path: shown,
+                created: change.created,
+                additions: change.diff.additions,
+                deletions: change.diff.deletions,
+            };
+            Ok(Told::structured(words, &changed))
         })
         .await
     }
@@ -210,7 +234,7 @@ impl Tool for EditTool {
         edits(base, &args.path)
     }
 
-    async fn exec(&self, context: &Context, args: EditArgs) -> Result<Vec<InputContent>, Refusal> {
+    async fn exec(&self, context: &Context, args: EditArgs) -> Result<Told, Refusal> {
         blocking(context, move |machine| {
             let path = machine.path(&args.path);
             let edit = Edit {
@@ -220,6 +244,12 @@ impl Tool for EditTool {
             };
             match machine.edit(&path, &edit, &machine.shown(&path)).map_err(failed)? {
                 EditOutcome::Made { change, edited } => {
+                    let changed = Structured::Changed {
+                        path: machine.shown(&path),
+                        created: change.created,
+                        additions: change.diff.additions,
+                        deletions: change.diff.deletions,
+                    };
                     let mut out = change.diff.unified;
                     if edited.matching.name() != "exact" {
                         let _ = write!(out, "\n[matched {}]", edited.matching.name());
@@ -227,7 +257,7 @@ impl Tool for EditTool {
                     if edited.replacements > 1 {
                         let _ = write!(out, "\n[{} places replaced]", edited.replacements);
                     }
-                    Ok(text(out))
+                    Ok(Told::structured(text(out), &changed))
                 }
                 EditOutcome::Refused(siphon_text::Refusal::Many(count)) => {
                     Err(Refusal(format!("many: {count} places match; give more of old, or set all")))
@@ -267,7 +297,7 @@ impl Tool for GlobTool {
         Effect::Reads
     }
 
-    async fn exec(&self, context: &Context, args: GlobArgs) -> Result<Vec<InputContent>, Refusal> {
+    async fn exec(&self, context: &Context, args: GlobArgs) -> Result<Told, Refusal> {
         blocking(context, move |machine| {
             let offset = args.offset.unwrap_or(1).max(1) - 1;
             let found = machine
@@ -296,6 +326,7 @@ impl Tool for GlobTool {
             Ok(text(out))
         })
         .await
+        .map(Told::from)
     }
 }
 
@@ -343,7 +374,7 @@ impl Tool for GrepTool {
         Effect::Reads
     }
 
-    async fn exec(&self, context: &Context, args: GrepArgs) -> Result<Vec<InputContent>, Refusal> {
+    async fn exec(&self, context: &Context, args: GrepArgs) -> Result<Told, Refusal> {
         blocking(context, move |machine| {
             let offset = args.offset.unwrap_or(1).max(1) - 1;
             let options = GrepOptions {
@@ -361,6 +392,7 @@ impl Tool for GrepTool {
             Ok(text(grep_text(machine, &grepped, offset)))
         })
         .await
+        .map(Told::from)
     }
 }
 

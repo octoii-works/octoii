@@ -21,10 +21,11 @@ import {
 	type Response,
 	type Step,
 	type Streamed,
+	type Structured,
 	type Turn,
 } from "@octoii-works/octoii-client";
 import { type Attachment, attachmentsOf } from "./attachments.ts";
-import type { CallState } from "./calls.ts";
+import { type CallState, structuredOf } from "./calls.ts";
 import { duration, mintedAt } from "./time.ts";
 import type { Limited } from "./limits.ts";
 import { type Aside, givenOf, summaryOf, toolOf, verbOf, type WorkKind } from "./tools.ts";
@@ -60,8 +61,8 @@ export type CallLine = {
 	readonly arguments: string;
 	/** What its tool told: its result's output; none before it ended. */
 	readonly output: string | undefined;
-	/** What its tool has printed so far, while it runs — a command's output, its latest part; none where it printed nothing. */
-	readonly printed: string | undefined;
+	/** What it did, as one of Siphon's own tools told it typed; none before it ended, or where its tool told nothing. */
+	readonly structured: Structured | undefined;
 	/** When it began and ended, in ms: as the reply that made it and its result were minted; none of either it has not had. */
 	readonly began: number | undefined;
 	readonly ended: number | undefined;
@@ -374,7 +375,8 @@ function lineOf(call: Call, turn: Turn, step: Step, ask: Ask | undefined): CallL
 	const given = givenOf(call.arguments);
 	const state = call.result === undefined ? liveState(turn, ask) : CALL_STATES[call.result.status];
 	const output = call.result === undefined ? undefined : partsText(call.result.output.output);
-	const told = { tool: call.name, arguments: call.arguments, output, printed: undefined, state };
+	const structured = structuredOf(call.name, call.result?.structured);
+	const told = { tool: call.name, arguments: call.arguments, output, structured, state };
 	const calls: readonly CallLine[] = [];
 	return {
 		kind: "call",
@@ -391,7 +393,7 @@ function lineOf(call: Call, turn: Turn, step: Step, ask: Ask | undefined): CallL
 		trouble: tool.trouble(told),
 		arguments: call.arguments,
 		output,
-		printed: undefined,
+		structured,
 		began: step.reply === undefined ? undefined : mintedAt(step.reply.id),
 		ended: call.result === undefined ? undefined : mintedAt(call.result.id),
 		state,

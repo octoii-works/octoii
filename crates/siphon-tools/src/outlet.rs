@@ -13,6 +13,7 @@ use siphon_runtime::{Asked, Changes, Unanswered};
 use siphon_threads::thread;
 
 use crate::requests::Exec;
+use crate::told::Told;
 use crate::tool::{Context, Tools};
 
 /// How many characters of a call's text the model is told at once; past them, its head and its newest tail.
@@ -22,7 +23,7 @@ pub const TEXT_CHARS_MAX: usize = 30_000;
 ///
 /// # Errors
 /// `Failed` with the tool's refusal.
-pub async fn answer_exec(tools: &Tools, host: &Host, asked: Asked<Exec>) -> Result<Vec<InputContent>, Unanswered> {
+pub async fn answer_exec(tools: &Tools, host: &Host, asked: Asked<Exec>) -> Result<Told, Unanswered> {
     let exec = asked.payload;
     let context = Context {
         thread: exec.thread,
@@ -42,7 +43,10 @@ pub async fn answer_exec(tools: &Tools, host: &Host, asked: Asked<Exec>) -> Resu
         .exec(&exec.tool, context.clone(), exec.arguments)
         .await
         .map_err(|refusal| Unanswered::Failed(refusal.0))?;
-    Ok(bounded(&context, given).await)
+    Ok(Told {
+        output: bounded(&context, given.output).await,
+        structured: given.structured,
+    })
 }
 
 /// `given` as the model is told it: its text, past `TEXT_CHARS_MAX`, cut to its head and its newest tail, the whole kept

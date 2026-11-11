@@ -1,12 +1,14 @@
 /**
- * A call as its tool told it, read: its text and the notes after it, how a command exited, what an edit or a write
- * changed and an edit's diff, the lines a read held, what a search found, and its arguments as fields.
+ * A call as its tool told it, read: its text and the notes after it; how a command ended, what an edit or a write
+ * changed and the lines a read held, as its tool told them typed; an edit's diff, what a search found, and its
+ * arguments as fields.
  */
 import { describe, expect, it } from "bun:test";
-import { changeOf, exitOf, fieldsOf, foundOf, hunksOf, prettyArguments, spanOf, type ToolCall, toldOf } from "../src/core/calls.ts";
+import type { Structured } from "@octoii-works/octoii-client";
+import { changeOf, endOf, fieldsOf, foundOf, hunksOf, prettyArguments, spanOf, structuredOf, type ToolCall, toldOf } from "../src/core/calls.ts";
 
-/** A call of `tool` that ran, its tool having told `output`. */
-const ran = (tool: string, output: string): ToolCall => ({ tool, arguments: "{}", output, printed: undefined, state: "done" });
+/** A call of `tool` that ran, its tool having told `output`, and `structured` typed. */
+const ran = (tool: string, output: string, structured?: Structured): ToolCall => ({ tool, arguments: "{}", output, structured, state: "done" });
 
 describe("a call as its tool told it", () => {
 	it("tells a tool's text from the notes after it, a line each in brackets, the text left as it is", () => {
@@ -15,25 +17,32 @@ describe("a call as its tool told it", () => {
 		expect(toldOf("plain\n")).toEqual({ text: "plain\n", notes: [] });
 	});
 
-	it("reads how a command exited: its code, a signal, or its time running out; nothing while it runs", () => {
-		expect(exitOf(ran("shell", "built\n[exit 0]"))).toEqual({ kind: "code", code: 0 });
-		expect(exitOf(ran("shell", "[signal 9]"))).toEqual({ kind: "signal", signal: 9 });
-		expect(exitOf(ran("shell", "…\n[timed out after 120 s; killed]"))).toEqual({ kind: "timed-out" });
-		expect(exitOf({ ...ran("shell", ""), output: undefined, state: "running" })).toBeUndefined();
+	it("takes what one of Siphon's own tools told typed, none of an MCP server's", () => {
+		const ended: Structured = { type: "ran", ended: { type: "exited", code: 0 } };
+		expect(structuredOf("shell", ended)).toEqual(ended);
+		expect(structuredOf("github.create_issue", { type: "ran" })).toBeUndefined();
+		expect(structuredOf("shell", null)).toBeUndefined();
 	});
 
-	it("counts what an edit changed from its diff — a removed line of dashes still removed — and reads a write's words", () => {
+	it("tells how a command ended as its tool told it; nothing while it runs", () => {
+		expect(endOf(ran("shell", "built\n[exit 0]", { type: "ran", ended: { type: "exited", code: 0 } }))).toEqual({ type: "exited", code: 0 });
+		expect(endOf(ran("shell", "[ended by signal 9]", { type: "ran", ended: { type: "signalled", signal: 9 } }))).toEqual({ type: "signalled", signal: 9 });
+		expect(endOf({ ...ran("shell", ""), output: undefined, state: "running" })).toBeUndefined();
+	});
+
+	it("tells what an edit or a write changed as its tool told it, and gives an edit's diff from its first hunk", () => {
 		const diff = "--- a.sql\n+++ a.sql\n@@ -1,3 +1,2 @@\n--- an old comment\n-select 1;\n+select 2;\n kept";
-		expect(changeOf(ran("edit", `${diff}\n[tier fuzzy]`))).toEqual({ added: 1, removed: 2 });
+		const changed = (additions: number, deletions: number): Structured => ({ type: "changed", path: "a.sql", created: false, additions, deletions });
+		expect(changeOf(ran("edit", diff, changed(1, 2)))).toEqual({ added: 1, removed: 2 });
 		expect(hunksOf(ran("edit", diff))).toBe("@@ -1,3 +1,2 @@\n--- an old comment\n-select 1;\n+select 2;\n kept");
-		expect(changeOf(ran("write", "created b.md +12"))).toEqual({ added: 12, removed: 0 });
-		expect(changeOf(ran("write", "wrote b.md +3 -9"))).toEqual({ added: 3, removed: 9 });
-		expect(changeOf({ ...ran("edit", "not-found"), state: "failed" })).toBeUndefined();
+		expect(changeOf(ran("write", "made b.md: +12 -0", changed(12, 0)))).toEqual({ added: 12, removed: 0 });
+		expect(changeOf({ ...ran("edit", "not-found", changed(1, 1)), state: "failed" })).toBeUndefined();
 	});
 
 	it("reads the lines a read held, and what a glob and a grep found", () => {
-		expect(spanOf(ran("read", "…\n[lines 1-200; more from offset 201]"))).toBe("lines 1–200");
-		expect(spanOf(ran("read", "whole"))).toBeUndefined();
+		expect(spanOf(ran("read", "…", { type: "read", path: "a.md", from: 1, to: 200 }))).toBe("lines 1–200");
+		expect(spanOf(ran("read", "…", { type: "read", path: "a.md", from: 201, to: 300, total: 300 }))).toBe("lines 201–300");
+		expect(spanOf(ran("read", "whole", { type: "read", path: "a.md", from: 1, to: 12, total: 12 }))).toBeUndefined();
 		expect(foundOf(ran("glob", "src/a.ts\nsrc/b.ts"))).toEqual([
 			{ path: "src/a.ts", line: undefined, text: undefined },
 			{ path: "src/b.ts", line: undefined, text: undefined },

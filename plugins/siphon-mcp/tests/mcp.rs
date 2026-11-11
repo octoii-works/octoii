@@ -60,7 +60,7 @@ impl Program for Caller {
     const KIND: &'static str = "test.caller";
     type Input = Asking;
     type Checkpoint = Calls;
-    type Output = Vec<(CallStatus, String, usize)>;
+    type Output = Vec<(CallStatus, String, usize, Option<serde_json::Value>)>;
 
     fn run(&self, run: &mut Run<'_>, input: Asking, checkpoint: Option<Calls>) -> anyhow::Result<Ending<Calls, Self::Output>> {
         let mut calls = match checkpoint {
@@ -87,9 +87,14 @@ impl Program for Caller {
     }
 }
 
-fn said(call: siphon_tools::Call) -> (CallStatus, String, usize) {
-    let siphon_tools::State::Ended { status, output } = call.state else {
-        return (CallStatus::Interrupted, String::new(), 0);
+fn said(call: siphon_tools::Call) -> (CallStatus, String, usize, Option<serde_json::Value>) {
+    let siphon_tools::State::Ended {
+        status,
+        output,
+        structured,
+    } = call.state
+    else {
+        return (CallStatus::Interrupted, String::new(), 0, None);
     };
     let mut texts = Vec::new();
     let mut images = 0;
@@ -100,7 +105,7 @@ fn said(call: siphon_tools::Call) -> (CallStatus, String, usize) {
             InputContent::InputFile { .. } => {}
         }
     }
-    (status, texts.join("\n"), images)
+    (status, texts.join("\n"), images, structured)
 }
 
 fn tools(servers: &Servers) -> (Tools, Tools) {
@@ -125,7 +130,7 @@ fn runtime(beak: &Beak, servers: &Servers) -> Runtime {
         .expect("started")
 }
 
-async fn ended(runtime: &Runtime, path: &[u8]) -> Vec<(CallStatus, String, usize)> {
+async fn ended(runtime: &Runtime, path: &[u8]) -> Vec<(CallStatus, String, usize, Option<serde_json::Value>)> {
     let mut committed = runtime.committed();
     let waiting = async {
         loop {
@@ -246,19 +251,23 @@ async fn the_person_s_servers_tools_are_listed_and_called_as_the_model_s_own() {
     changes.start::<Caller>(Bytes::new(), "p1", &asking).expect("an input");
     runtime.commit(changes).await.expect("started");
     let said = ended(&runtime, &layout::process(b"", b"p1")).await;
-    assert_eq!(said[0], (CallStatus::Ok, "hello".into(), 0));
-    assert_eq!(said[1], (CallStatus::ToolError, "it failed".into(), 0));
+    assert_eq!(
+        said[0],
+        (CallStatus::Ok, "hello".into(), 0, Some(json!({ "words": "hello" }))),
+        "its structured content kept beside what the model reads"
+    );
+    assert_eq!(said[1], (CallStatus::ToolError, "it failed".into(), 0, None));
     assert_eq!(
         said[2],
-        (CallStatus::Ok, format!("{} hi there", home.display()), 0),
+        (CallStatus::Ok, format!("{} hi there", home.display()), 0, None),
         "run in its configuration's folder"
     );
-    assert_eq!(said[3], (CallStatus::Ok, "an image of 1×1".into(), 1));
+    assert_eq!(said[3], (CallStatus::Ok, "an image of 1×1".into(), 1, None));
     assert_eq!(
         said[4],
-        (CallStatus::ToolError, "no MCP server other where this thread works".into(), 0)
+        (CallStatus::ToolError, "no MCP server other where this thread works".into(), 0, None)
     );
-    assert_eq!(said[5], (CallStatus::Ok, r#""from a script""#.into(), 0));
+    assert_eq!(said[5], (CallStatus::Ok, r#""from a script""#.into(), 0, None));
     runtime.close().await;
 }
 

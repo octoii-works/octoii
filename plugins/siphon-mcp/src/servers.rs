@@ -25,7 +25,7 @@ use siphon_runtime::Runtime;
 use crate::config::{Configured, Launch, OWN_FILE, PROJECT_FILE, Server, parse};
 use crate::trust::{self, ShownServer, Trust};
 use siphon_tools::projects::Place;
-use siphon_tools::{Context, Declared, Refusal};
+use siphon_tools::{Context, Declared, Refusal, Told};
 
 /// How long a server nothing uses keeps running before it is stopped.
 pub const IDLE: Duration = Duration::from_secs(600);
@@ -161,7 +161,7 @@ impl Servers {
     ///
     /// # Errors
     /// A `Refusal` where no server has the name, the server could not be reached, or the tool said it failed.
-    pub async fn call(&self, context: &Context, name: &str, arguments: serde_json::Value) -> Result<Vec<InputContent>, Refusal> {
+    pub async fn call(&self, context: &Context, name: &str, arguments: serde_json::Value) -> Result<Told, Refusal> {
         let (named, tool) = name.split_once('.').ok_or_else(|| Refusal(format!("no tool {name}")))?;
         let snapshot = context.runtime.snapshot().map_err(|error| Refusal(error.to_string()))?;
         let found = self
@@ -405,7 +405,7 @@ async fn connect(runtime: Runtime, host: Host, server: Server) -> Result<Connect
 
 /// What a server's tool gave, as the model reads it: its text, each block on a line of its own; of what is no text, an
 /// image shown, the rest noted; its structured content where it gave no text; refused where it says it failed.
-async fn given(context: &Context, result: CallToolResult) -> Result<Vec<InputContent>, Refusal> {
+async fn given(context: &Context, result: CallToolResult) -> Result<Told, Refusal> {
     let mut texts = Vec::new();
     let mut images = Vec::new();
     for block in result.content {
@@ -428,8 +428,9 @@ async fn given(context: &Context, result: CallToolResult) -> Result<Vec<InputCon
             _ => texts.push("[content of a kind not shown]".into()),
         }
     }
+    // Its structured content, a client's to read, is the model's too where the server gave it no content.
     if texts.is_empty()
-        && let Some(structured) = result.structured_content
+        && let Some(structured) = &result.structured_content
     {
         texts.push(structured.to_string());
     }
@@ -444,5 +445,8 @@ async fn given(context: &Context, result: CallToolResult) -> Result<Vec<InputCon
     for bytes in images {
         out.extend(context.show_image(&bytes, None).await?);
     }
-    Ok(out)
+    Ok(Told {
+        output: out,
+        structured: result.structured_content,
+    })
 }

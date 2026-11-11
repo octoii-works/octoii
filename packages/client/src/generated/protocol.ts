@@ -90,6 +90,12 @@ export type Changes = { root: string, comparison: Comparison, base?: string, fil
 export type ChangesScope = { "type": "uncommitted" } | { "type": "branch", base?: string, } | { "type": "commit", commit: string, };
 
 /**
+ * How a command ended: it exited with a code, a signal ended it, its time ran out, it was stopped, or it wrote past
+ * what a call takes.
+ */
+export type CommandEnd = { "type": "exited", code: number, } | { "type": "signalled", signal: number, } | { "type": "timed_out", seconds: number, } | { "type": "stopped" } | { "type": "too_large", bytes: number, };
+
+/**
  * A commit of a branch: its id, when it was committed, in seconds since the epoch, and its subject.
  */
 export type Commit = { commit: string, time: number, subject: string, };
@@ -188,7 +194,7 @@ export type Delivered = { delivery: string, };
 /**
  * An entry of a thread's log.
  */
-export type Entry = { "type": "config", id: string, actor: string, model?: Changed<string> | null, effort?: Changed<ReasoningEffort> | null, mode?: Changed<Mode> | null, workspace?: Changed<string> | null, title?: Changed<string> | null, budget_nanodollars?: Changed<number> | null, } | { "type": "input", id: string, actor: string, delivery: string, content: Array<InputContent>, reply_to?: ReplyTo | null, } | { "type": "system", id: string, sections: Array<Section>, tools?: Array<Tool>, } | { "type": "reply", id: string, request: string, response: Response, calls?: Array<CallKey>, cancelled?: boolean, } | { "type": "result", id: string, call: string, status: CallStatus, output: FunctionCallOutput, } | { "type": "turn-end", id: string, turn?: string | null, outcome: Outcome, reason?: string | null, failure?: Failure | null, } | { "type": "compaction", id: string, request: string, kept?: string | null, from: string, effort?: ReasoningEffort | null, response: Response, } | { "type": "discarded", id: string, request: string, response: Response, };
+export type Entry = { "type": "config", id: string, actor: string, model?: Changed<string> | null, effort?: Changed<ReasoningEffort> | null, mode?: Changed<Mode> | null, workspace?: Changed<string> | null, title?: Changed<string> | null, budget_nanodollars?: Changed<number> | null, } | { "type": "input", id: string, actor: string, delivery: string, content: Array<InputContent>, reply_to?: ReplyTo | null, } | { "type": "system", id: string, sections: Array<Section>, tools?: Array<Tool>, } | { "type": "reply", id: string, request: string, response: Response, calls?: Array<CallKey>, cancelled?: boolean, } | { "type": "result", id: string, call: string, status: CallStatus, output: FunctionCallOutput, structured?: JsonValue | null, } | { "type": "turn-end", id: string, turn?: string | null, outcome: Outcome, reason?: string | null, failure?: Failure | null, } | { "type": "compaction", id: string, request: string, kept?: string | null, from: string, effort?: ReasoningEffort | null, response: Response, } | { "type": "discarded", id: string, request: string, response: Response, };
 
 /**
  * The environment's settings.
@@ -837,6 +843,13 @@ resuming_at?: number | null, };
  * output, text added to one, and one whole.
  */
 export type Streamed = { "type": "began", index: number, item: Item, } | { "type": "delta", index: number, part: Part, text: string, } | { "type": "ended", index: number, item: Item, };
+
+/**
+ * What a call of one of Siphon's own tools did, as a client reads it: a command that ran, and how it ended; a file a
+ * write or an edit changed, whether it made it, and the lines added and taken out; the lines of a file a read holds,
+ * and how many it has where the read reached its end.
+ */
+export type Structured = { "type": "ran", ended: CommandEnd, } | { "type": "changed", path: string, created: boolean, additions: number, deletions: number, } | { "type": "read", path: string, from: number, to: number, total?: number, };
 
 /**
  * A subscription made: its id, which its events carry.

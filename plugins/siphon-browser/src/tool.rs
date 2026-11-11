@@ -4,7 +4,7 @@
 
 use octoii_ai::vocabulary::InputContent;
 use siphon_machine::paths::Base;
-use siphon_tools::{Context, Effect, Refusal, Tool};
+use siphon_tools::{Context, Effect, Refusal, Told, Tool};
 
 use crate::{Action, Browser};
 
@@ -26,7 +26,7 @@ impl Tool for BrowserTool {
         }
     }
 
-    async fn exec(&self, context: &Context, action: Action) -> Result<Vec<InputContent>, Refusal> {
+    async fn exec(&self, context: &Context, action: Action) -> Result<Told, Refusal> {
         let outcome = self
             .browser
             .act(&context.thread, action)
@@ -43,6 +43,6 @@ impl Tool for BrowserTool {
         if let Some(image) = outcome.image {
             out.extend(context.show_image(&image, None).await?);
         }
-        Ok(out)
+        Ok(Told::from(out))
     }
 }

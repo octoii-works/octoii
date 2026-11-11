@@ -1,26 +1,34 @@
 /**
- * A call as its tool told it, read: the text its tool gave, and the notes its tools write after it in brackets — how a
- * command exited, the lines a read held, what an edit or a write added and took out, an edit's diff, what a search
- * found; and the arguments it was given, as fields.
+ * A call as its tool told it, read: what it did, as one of Siphon's own tools tells it typed — how a command ended, what
+ * a write or an edit changed, the lines a read held; the text its tool gave the model, and the notes after it in
+ * brackets, shown as they are; an edit's diff and what a search found, in the formats every diff and grep write; and
+ * the arguments it was given, as fields.
  */
+import type { CommandEnd, JsonValue, Structured } from "@octoii-works/octoii-client";
 import { matches } from "./schema.ts";
 import { Type } from "typebox";
-import { diffTones } from "./diff.ts";
 
 /** How a call stands: running, waiting for the person's approval, done, or not done — failed, stopped, or rejected. */
 export type CallState = "running" | "waiting" | "done" | "failed" | "stopped" | "rejected";
 
 /**
- * A call as its tool's readers take it: its tool, its arguments as they were written, what its tool told — none before
- * it ended — what it has printed so far while it runs, and how it stands.
+ * A call as its tool's readers take it: its tool, its arguments as they were written, what its tool told the model and
+ * what it told typed — none before it ended — and how it stands.
  */
 export type ToolCall = {
 	readonly tool: string;
 	readonly arguments: string;
 	readonly output: string | undefined;
-	readonly printed: string | undefined;
+	readonly structured: Structured | undefined;
 	readonly state: CallState;
 };
+
+/** What one of Siphon's own tools told typed of a call; none for an MCP server's, named `server.tool`, or where it told none. */
+export function structuredOf(tool: string, structured: JsonValue | null | undefined): Structured | undefined {
+	if (tool.includes(".") || structured === undefined || structured === null) return undefined;
+	// SAFETY: Siphon's own tools tell what a call did as `Structured`, as the protocol's types are made from theirs.
+	return structured as Structured;
+}
 
 /** What a tool told: its text, and the notes after it, each a line in brackets. */
 export type Told = { readonly text: string; readonly notes: readonly string[] };
@@ -45,36 +53,18 @@ export function commandToldOf(output: string): Told {
 	return { text: told.text, notes: told.notes.filter((note) => note !== "exit 0") };
 }
 
-/** How a command exited: with its code, ended by a signal, or killed as its time ran out. */
-export type Exit = { readonly kind: "code"; readonly code: number } | { readonly kind: "signal"; readonly signal: number } | { readonly kind: "timed-out" };
-
-/** How the command `call` ran exited, by its notes; none while it runs, or where its tool tells nothing. */
-export function exitOf(call: ToolCall): Exit | undefined {
-	if (call.output === undefined) return undefined;
-	for (const note of toldOf(call.output).notes) {
-		const code = /^exit (\d+)$/.exec(note);
-		if (code !== null) return { kind: "code", code: Number(code[1]) };
-		const signal = /^signal (\d+)$/.exec(note);
-		if (signal !== null) return { kind: "signal", signal: Number(signal[1]) };
-		if (note.startsWith("timed out")) return { kind: "timed-out" };
-	}
-	return undefined;
+/** How the command `call` ran ended, as its tool told; none while it runs, or where its tool tells nothing. */
+export function endOf(call: ToolCall): CommandEnd | undefined {
+	return call.structured?.type === "ran" ? call.structured.ended : undefined;
 }
 
 /** What an edit or a write added and took out, in lines. */
 export type Change = { readonly added: number; readonly removed: number };
 
-/** What the edit or the write `call` changed: counted from an edit's diff, read from a write's words; none for any other call, or one that did not go through. */
+/** What the edit or the write `call` changed, as its tool told; none for any other call, or one that did not go through. */
 export function changeOf(call: ToolCall): Change | undefined {
-	if (call.output === undefined || call.state !== "done") return undefined;
-	const { text } = toldOf(call.output);
-	if (call.tool === "write") {
-		const written = /^(?:created|wrote) .* \+(\d+)(?: -(\d+))?$/.exec(text.trim());
-		return written === null ? undefined : { added: Number(written[1]), removed: Number(written[2] ?? 0) };
-	}
-	if (call.tool !== "edit") return undefined;
-	const tones = diffTones(text.split("\n"));
-	return { added: tones.filter((tone) => tone === "added").length, removed: tones.filter((tone) => tone === "removed").length };
+	if (call.structured?.type !== "changed" || call.state !== "done") return undefined;
+	return { added: call.structured.additions, removed: call.structured.deletions };
 }
 
 /** The diff the edit `call` gave, from its first hunk on — its head, which names the file its line names, left out; none for any other call, or one that did not go through. */
@@ -91,14 +81,12 @@ export function hunksOf(call: ToolCall): string | undefined {
 		.join("\n");
 }
 
-/** The lines a read held, as its notes tell them, "lines 1–200"; none where it held a whole file. */
+/** The lines a read held, "lines 1–200"; none where it held a whole file. */
 export function spanOf(call: ToolCall): string | undefined {
-	if (call.output === undefined) return undefined;
-	for (const note of toldOf(call.output).notes) {
-		const lines = /^lines (\d+)-(\d+)/.exec(note);
-		if (lines !== null) return `lines ${lines[1] ?? ""}–${lines[2] ?? ""}`;
-	}
-	return undefined;
+	if (call.structured?.type !== "read") return undefined;
+	const { from, to, total } = call.structured;
+	if (total !== undefined && from <= 1) return undefined;
+	return `lines ${String(from)}–${String(to)}`;
 }
 
 /** A place a search found: a file's path, and the line and its words where it found a line in it. */

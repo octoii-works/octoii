@@ -388,7 +388,14 @@ fn calls_of(response: &Response, keys: &[CallKey]) -> (Vec<(CallKey, String, Str
 fn append_results(run: &mut Run<'_>, writer: &mut Writer, calls: &Calls, appended: usize) -> anyhow::Result<usize> {
     let mut at = appended;
     while let Some(call) = calls.0.get(at) {
-        let State::Ended { status, output } = &call.state else { break };
+        let State::Ended {
+            status,
+            output,
+            structured,
+        } = &call.state
+        else {
+            break;
+        };
         let entry = Entry::Result {
             id: run.new_id()?,
             call: call.key.clone(),
@@ -398,6 +405,7 @@ fn append_results(run: &mut Run<'_>, writer: &mut Writer, calls: &Calls, appende
                 output: output.clone(),
                 is_error: *status != CallStatus::Ok,
             },
+            structured: structured.clone(),
         };
         writer.append(&mut run.changes, &entry)?;
         at += 1;
@@ -416,6 +424,7 @@ fn append_unrun(run: &mut Run<'_>, writer: &mut Writer, call: &CallKey, why: &st
             output: vec![InputContent::text(why)],
             is_error: true,
         },
+        structured: None,
     };
     writer.append(&mut run.changes, &entry)?;
     Ok(())

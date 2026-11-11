@@ -22,6 +22,7 @@ use siphon_threads::CallStatus;
 use crate::calls::{Calls, Setting, State};
 use crate::declarations::declarations;
 use crate::effect::Effect;
+use crate::told::Told;
 use crate::tool::{Context, Refusal, Tool, Tools};
 
 /// The arguments of `execute`.
@@ -87,7 +88,7 @@ impl Tool for ExecuteTool {
         Effect::Calls
     }
 
-    fn exec(&self, _: &Context, _: ExecuteArgs) -> impl std::future::Future<Output = Result<Vec<InputContent>, Refusal>> + Send {
+    fn exec(&self, _: &Context, _: ExecuteArgs) -> impl std::future::Future<Output = Result<Told, Refusal>> + Send {
         std::future::ready(Err(Refusal::new("a script runs as a program of its own")))
     }
 
@@ -272,7 +273,9 @@ impl Program for ScriptProgram {
         }
         let ended = state.calls.take().map(|calls| calls.0).unwrap_or_default();
         for call in ended {
-            let State::Ended { status, output } = call.state else { continue };
+            let State::Ended { status, output, .. } = call.state else {
+                continue;
+            };
             state.settled.push(Settled {
                 id: call.id.parse().unwrap_or_default(),
                 ok: status == CallStatus::Ok,

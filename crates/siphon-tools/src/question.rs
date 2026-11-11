@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 use siphon_machine::paths::Base;
 
 use crate::effect::Effect;
+use crate::told::Told;
 use crate::tool::{Context, Refusal, Tool};
 
 /// An option a question offers.
@@ -56,7 +57,7 @@ impl Tool for QuestionTool {
         Effect::Reads
     }
 
-    fn exec(&self, _: &Context, _: QuestionArgs) -> impl std::future::Future<Output = Result<Vec<InputContent>, Refusal>> + Send {
+    fn exec(&self, _: &Context, _: QuestionArgs) -> impl std::future::Future<Output = Result<Told, Refusal>> + Send {
         std::future::ready(Err(Refusal::new("a question is answered by the person, not run")))
     }
 

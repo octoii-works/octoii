@@ -4,17 +4,21 @@
  * of named as it is — and a stretch of calls summed up as a person says it.
  */
 import { describe, expect, it } from "bun:test";
+import type { Structured } from "@octoii-works/octoii-client";
 import type { CallState } from "../src/core/calls.ts";
 import { callWords, detailOf, summaryOf, toolOf, verbOf } from "../src/core/tools.ts";
 
-/** A call of `tool` with `given`, standing as `state`, its tool having told `output`. */
-const called = (tool: string, given: object, state: CallState = "done", output?: string, printed?: string) => ({
+/** A call of `tool` with `given`, standing as `state`, its tool having told `output`, and `structured` typed. */
+const called = (tool: string, given: object, state: CallState = "done", output?: string, structured?: Structured) => ({
 	tool,
 	arguments: JSON.stringify(given),
 	output,
-	printed,
+	structured,
 	state,
 });
+
+/** A command that ended with `code`, as the shell tool tells it. */
+const exited = (code: number): Structured => ({ type: "ran", ended: { type: "exited", code } });
 
 describe("what the page knows of each tool", () => {
 	it("says a call by its verb as it stands and what it works on, a tool it knows nothing of by its name", () => {
@@ -34,13 +38,16 @@ describe("what the page knows of each tool", () => {
 	});
 
 	it("says beside a call what came of it, and at its end how a command went wrong though it ran", () => {
-		const read = called("read", { path: "a.md" }, "done", "…\n[lines 1-200; more from offset 201]");
+		const read = called("read", { path: "a.md" }, "done", "…\n[lines 1-200; more from offset 201]", { type: "read", path: "a.md", from: 1, to: 200 });
 		expect(toolOf("read").aside(read)).toEqual({ kind: "words", text: "lines 1–200" });
 		expect(toolOf("grep").aside(called("grep", { pattern: "x" }, "done", "[no match]"))).toEqual({ kind: "words", text: "no match" });
 		expect(toolOf("glob").aside(called("glob", { pattern: "*" }, "done", "a\nb"))).toEqual({ kind: "words", text: "2 files" });
-		expect(toolOf("edit").aside(called("edit", {}, "done", "@@ -1 +1 @@\n-a\n+b"))).toEqual({ kind: "change", added: 1, removed: 1 });
-		expect(toolOf("shell").trouble(called("shell", {}, "done", "oops\n[exit 2]"))).toBe("exit 2");
-		expect(toolOf("shell").trouble(called("shell", {}, "done", "fine\n[exit 0]"))).toBeUndefined();
+		const changed: Structured = { type: "changed", path: "a.md", created: false, additions: 1, deletions: 1 };
+		expect(toolOf("edit").aside(called("edit", {}, "done", "@@ -1 +1 @@\n-a\n+b", changed))).toEqual({ kind: "change", added: 1, removed: 1 });
+		expect(toolOf("shell").trouble(called("shell", {}, "done", "oops\n[exit 2]", exited(2)))).toBe("exit 2");
+		expect(toolOf("shell").trouble(called("shell", {}, "done", "fine\n[exit 0]", exited(0)))).toBeUndefined();
+		const timedOut: Structured = { type: "ran", ended: { type: "timed_out", seconds: 120 } };
+		expect(toolOf("shell").trouble(called("shell", {}, "done", "[its 120 s ran out; it was ended]", timedOut))).toBe("timed out");
 	});
 
 	it("opens a call by its tool's shape, and one that did not go through as what it was given and told", () => {
@@ -62,12 +69,8 @@ describe("what the page knows of each tool", () => {
 			told: { text: "hello" },
 		});
 		expect(detailOf(called("execute", { code: "return 1" }, "running"))).toEqual({ shape: "script", code: "return 1", told: undefined });
-		// A command that runs shows what it has printed so far.
-		expect(detailOf(called("shell", { command: "zig build" }, "running", undefined, "compiling\n"))).toEqual({
-			shape: "command",
-			command: "zig build",
-			told: { text: "compiling\n", notes: [] },
-		});
+		// A command that runs shows what it runs, its output once it ended.
+		expect(detailOf(called("shell", { command: "zig build" }, "running"))).toEqual({ shape: "command", command: "zig build", told: undefined });
 		expect(detailOf(called("edit", { path: "a.md" }, "failed", "not-found"))).toMatchObject({
 			shape: "fields",
 			fields: [{ name: "path", value: "a.md" }],

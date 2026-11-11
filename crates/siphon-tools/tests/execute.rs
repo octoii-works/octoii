@@ -64,7 +64,7 @@ impl Program for Caller {
             return Ok(Ending::Wait(calls, wait));
         }
         let call = calls.0.remove(0);
-        let siphon_tools::State::Ended { status, output } = call.state else {
+        let siphon_tools::State::Ended { status, output, .. } = call.state else {
             anyhow::bail!("not ended")
         };
         let text = output

@@ -2,12 +2,12 @@
 //! it. Each is durable — made with its caller's commit, answered once — so a call that waits on a person waits through
 //! the host's restarts.
 
-use octoii_ai::vocabulary::InputContent;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use siphon_runtime::{AskedOfPerson, Request};
 
 use crate::permissions::{Grants, Writes};
+use crate::told::Told;
 
 /// A call's tool exec'd for the thread `thread`: the tool by its name, the call's arguments, and where it may write as
 /// its weighing said; the call's own key names its outputs.
@@ -23,7 +23,7 @@ pub struct Exec {
 
 impl Request for Exec {
     const NAME: &'static str = "siphon.exec";
-    type Answer = Vec<InputContent>;
+    type Answer = Told;
 }
 
 /// What a call would do, as the person and a second model are shown it: the tool, the call's arguments, each thing it

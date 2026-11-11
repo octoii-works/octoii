@@ -70,7 +70,7 @@ impl Program for Caller {
 }
 
 fn said(call: siphon_tools::Call) -> (CallStatus, String) {
-    let siphon_tools::State::Ended { status, output } = call.state else {
+    let siphon_tools::State::Ended { status, output, .. } = call.state else {
         return (CallStatus::Interrupted, String::new());
     };
     let text = output

@@ -24,7 +24,7 @@ const callOf = (id: string): CallLine => ({
 	trouble: undefined,
 	arguments: "{}",
 	output: "",
-	printed: undefined,
+	structured: undefined,
 	began: 1_000,
 	ended: 2_000,
 	state: "done",

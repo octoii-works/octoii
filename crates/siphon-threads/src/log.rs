@@ -61,13 +61,16 @@ pub enum Entry {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         cancelled: bool,
     },
-    /// A call's result, as its turn appends it once the call ended: Siphon's key of the call, how it ended, and the
-    /// output the model is sent.
+    /// A call's result, as its turn appends it once the call ended: Siphon's key of the call, how it ended, the output
+    /// the model is sent, and what the call did as its tool told it beside that, typed by the tool, where it told it —
+    /// as an MCP tool's structured content is.
     Result {
         id: String,
         call: String,
         status: CallStatus,
         output: FunctionCallOutput,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        structured: Option<serde_json::Value>,
     },
     /// A turn's end: the turn, by its id — none for inputs that failed before a turn ran — how it ended, and why,
     /// unless it replied: the failure of its model that ended it, as the provider told it — a request that failed, or

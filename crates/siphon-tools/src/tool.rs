@@ -20,6 +20,7 @@ use tokio_util::sync::CancellationToken;
 use crate::calls::Setting;
 use crate::effect::Effect;
 use crate::permissions::Writes;
+use crate::told::Told;
 
 /// Why a tool did not do what it was asked, in words the model reads.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -109,7 +110,7 @@ pub trait Tool: Send + Sync + 'static {
     ///
     /// # Errors
     /// A `Refusal`, saying why, where it could not.
-    fn exec(&self, context: &Context, args: Self::Args) -> impl Future<Output = Result<Vec<InputContent>, Refusal>> + Send;
+    fn exec(&self, context: &Context, args: Self::Args) -> impl Future<Output = Result<Told, Refusal>> + Send;
 
     /// For a tool the person answers rather than execs: the JSON Schema their answer to a call with `args` fits.
     fn asks(&self, _: &Self::Args) -> Option<serde_json::Value> {
@@ -139,7 +140,7 @@ pub trait Tool: Send + Sync + 'static {
     }
 }
 
-type Execing = Pin<Box<dyn Future<Output = Result<Vec<InputContent>, Refusal>> + Send>>;
+type Execing = Pin<Box<dyn Future<Output = Result<Told, Refusal>> + Send>>;
 
 /// A tool of any kind, as a table holds it: its arguments as JSON.
 trait Erased: Send + Sync {
@@ -227,7 +228,7 @@ pub trait Toolset: Send + Sync + 'static {
         context: &'a Context,
         name: &'a str,
         arguments: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<InputContent>, Refusal>> + Send + 'a>>;
+    ) -> Pin<Box<dyn Future<Output = Result<Told, Refusal>> + Send + 'a>>;
 }
 
 /// The tools a thread's model may call, by name: its own, and those of its toolsets.
@@ -359,7 +360,7 @@ impl Tools {
     ///
     /// # Errors
     /// A `Refusal` naming no tool there is, or the tool's own.
-    pub async fn exec(&self, name: &str, context: Context, arguments: serde_json::Value) -> Result<Vec<InputContent>, Refusal> {
+    pub async fn exec(&self, name: &str, context: Context, arguments: serde_json::Value) -> Result<Told, Refusal> {
         if let Some(toolset) = self.served(name) {
             return toolset.call(&context, name, arguments).await;
         }

@@ -20,7 +20,7 @@ use siphon_machine::paths::Base;
 use siphon_runtime::{Changes, Ending, Program, Run, Wait};
 use siphon_threads::inbox::{self, Ended, Inbound, ReplyTo};
 use siphon_threads::{Config, NewThread, Parent, Threads, thread};
-use siphon_tools::{Context, Effect, Refusal, Setting, Tool};
+use siphon_tools::{Context, Effect, Refusal, Setting, Told, Tool};
 
 use crate::thread::ThreadProgram;
 
@@ -53,7 +53,7 @@ impl Tool for DelegateTool {
         Effect::Delegates
     }
 
-    fn exec(&self, _: &Context, _: DelegateArgs) -> impl Future<Output = Result<Vec<InputContent>, Refusal>> + Send {
+    fn exec(&self, _: &Context, _: DelegateArgs) -> impl Future<Output = Result<Told, Refusal>> + Send {
         std::future::ready(Err(Refusal::new("a delegation runs as a program of its own")))
     }
 
