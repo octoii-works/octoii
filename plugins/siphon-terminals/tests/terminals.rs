@@ -64,7 +64,7 @@ async fn a_terminal_runs_the_person_s_shell_in_its_folder_numbered_in_its_thread
         .expect("it wrote in time");
     let titled = terminals.of_thread("t1").await;
     assert_eq!(titled[0].title, "building");
-    assert!(!terminals.screen(&first).await.expect("drawn").is_empty());
+    assert!(!terminals.screen(&first).await.expect("drawn").sequences.is_empty());
     assert!(terminals.resize(&first, Size { rows: 20, cols: 70 }).await.expect("sized"));
     assert!(
         !terminals.resize(&first, Size { rows: 20, cols: 70 }).await.expect("sized"),

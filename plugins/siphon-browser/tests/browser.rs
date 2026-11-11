@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use beak::{Beak, Kernel, Options};
 use serde_json::json;
-use siphon_browser::{Action, Browser, BrowserEvent, BrowserHost, Outcome, Place, Refusal};
+use siphon_browser::{Action, Browser, BrowserHost, Change, Outcome, Place, Refusal};
 use siphon_machine::Host;
 
 /// A form: a field, a button that greets what was typed, a choice, a button a box covers, one that raises a dialog,
@@ -169,7 +169,7 @@ async fn the_agent_opens_reads_fills_and_submits_a_form_and_the_person_sees_it_p
     assert!(info.text.contains("its view 1280×800"), "{}", info.text);
     let waiting = async {
         loop {
-            if let BrowserEvent::Painted { page: painted, .. } = events.recv().await.expect("an event")
+            if let Change::Painted { page: painted, .. } = events.recv().await.expect("an event")
                 && painted == page.id
             {
                 return;

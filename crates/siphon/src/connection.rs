@@ -30,10 +30,13 @@ pub struct Access {
     pub scopes: Vec<Scope>,
 }
 
-/// A message to send a client: a text frame of the protocol's JSON.
+/// A message to send a client: a text frame of the protocol's JSON; or a binary frame of an event that carries bytes —
+/// a painted page, a terminal's output — its event's JSON first, after its length as four bytes, big-endian, then the
+/// bytes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Outgoing {
     Text(String),
+    Binary(bytes::Bytes),
 }
 
 /// Serves a client of `access`, which reached `machine`: each message of `incoming` taken as a call, what is sent it

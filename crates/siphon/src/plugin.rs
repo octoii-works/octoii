@@ -102,6 +102,23 @@ impl Sink {
             Err(TrySendError::Full(_) | TrySendError::Closed(_)) => Err(Full),
         }
     }
+
+    /// Sends `event` with the bytes `payload` it carries, as one binary frame, where the client's queue has room.
+    ///
+    /// # Errors
+    /// `Full` where it has none, or the client is gone.
+    pub fn offer_with(&self, event: &impl Serialize, payload: &[u8]) -> Result<(), Full> {
+        let header = serde_json::to_vec(event).unwrap_or_default();
+        let length = u32::try_from(header.len()).unwrap_or(u32::MAX);
+        let mut frame = bytes::BytesMut::with_capacity(4 + header.len() + payload.len());
+        frame.extend_from_slice(&length.to_be_bytes());
+        frame.extend_from_slice(&header);
+        frame.extend_from_slice(payload);
+        match self.outgoing.try_send(Outgoing::Binary(frame.freeze())) {
+            Ok(()) => Ok(()),
+            Err(TrySendError::Full(_) | TrySendError::Closed(_)) => Err(Full),
+        }
+    }
 }
 
 /// What Siphon is built of as its plugins add to it: the kernel opened and the machine, for what a plugin starts on

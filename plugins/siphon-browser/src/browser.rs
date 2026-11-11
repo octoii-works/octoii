@@ -122,7 +122,7 @@ pub struct Network {
 
 /// What the browser tells.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum BrowserEvent {
+pub enum Change {
     /// The thread's pages changed: one came, moved, took a title, held a dialog, or went.
     Pages { thread: String },
     /// The page was painted anew.
@@ -232,7 +232,7 @@ enum Ask {
 #[derive(Debug, Clone)]
 pub struct Browser {
     asks: mpsc::UnboundedSender<Ask>,
-    events: broadcast::Sender<BrowserEvent>,
+    events: broadcast::Sender<Change>,
 }
 
 impl Browser {
@@ -248,7 +248,7 @@ impl Browser {
 
     /// What the browser tells, from now on.
     #[must_use]
-    pub fn events(&self) -> broadcast::Receiver<BrowserEvent> {
+    pub fn events(&self) -> broadcast::Receiver<Change> {
         self.events.subscribe()
     }
 
@@ -424,11 +424,11 @@ struct Owner {
     pages: Vec<Page>,
     /// The page each thread's agent works, by the thread.
     current: HashMap<String, String>,
-    events: broadcast::Sender<BrowserEvent>,
+    events: broadcast::Sender<Change>,
 }
 
 impl Owner {
-    fn new(host: BrowserHost, events: broadcast::Sender<BrowserEvent>) -> Self {
+    fn new(host: BrowserHost, events: broadcast::Sender<Change>) -> Self {
         Self {
             host,
             running: None,
@@ -563,7 +563,7 @@ impl Owner {
     }
 
     fn told(&self, thread: &str) {
-        let _ = self.events.send(BrowserEvent::Pages { thread: thread.to_owned() });
+        let _ = self.events.send(Change::Pages { thread: thread.to_owned() });
     }
 
     /// The browser's pipe, the browser started where it is not running.
@@ -829,7 +829,7 @@ impl Owner {
                         .call(Some(session), "Page.screencastFrameAck", json!({ "sessionId": frame.session_id }))
                         .await;
                 }
-                let _ = self.events.send(BrowserEvent::Painted { page: id, number });
+                let _ = self.events.send(Change::Painted { page: id, number });
             }
             CdpEvent::PageJavascriptDialogOpening(dialog) => {
                 page.dialog = Some(Dialog {

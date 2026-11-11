@@ -59,6 +59,14 @@ pub struct Chunk {
     pub bytes: Bytes,
 }
 
+/// A terminal's screen drawn: the sequences that draw it again whole, and how many bytes of what the command wrote it
+/// shows — the offset in its output from which a reader drawn this screen goes on, nothing missed or played twice.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Screen {
+    pub sequences: Bytes,
+    pub through: u64,
+}
+
 /// A command to start.
 #[derive(Debug, Clone)]
 pub struct Spec {
@@ -286,13 +294,24 @@ impl Command {
         })
     }
 
-    /// The sequences that draw its terminal again whole.
+    /// Its terminal's screen drawn again whole, with the offset in its output it stands at.
     ///
     /// # Errors
     /// `Invalid` for a command with no terminal.
-    pub fn screen(&self) -> Result<Bytes> {
+    pub fn screen(&self) -> Result<Screen> {
+        let mut screen = sys::beak_screen {
+            sequences: crate::ffi::empty(),
+            through: 0,
+        };
+        // SAFETY: as above; the bytes are copied, then let go of once.
+        check(unsafe { sys::beak_command_screen(self.raw(), &raw mut screen) })?;
+        let sequences = copied(&screen.sequences);
         // SAFETY: as above.
-        buffer(|out| unsafe { sys::beak_command_screen(self.raw(), out) })
+        unsafe { sys::beak_buffer_free(&raw mut screen.sequences) };
+        Ok(Screen {
+            sequences,
+            through: screen.through,
+        })
     }
 
     /// What its terminal shows, as text.

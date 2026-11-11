@@ -3,7 +3,6 @@
 //! project's grants, a second model or the person deciding where they say; and gives what the model reads, as the
 //! model's vocabulary holds a call's output, or refuses, saying why.
 
-mod browser;
 mod calls;
 mod coding;
 mod declarations;
@@ -18,7 +17,6 @@ mod requests;
 mod shell;
 mod tool;
 
-pub use browser::BrowserTool;
 pub use calls::{Call, Calls, Setting, State};
 pub use coding::{EditTool, GlobTool, GrepTool, ReadTool, WriteTool};
 pub use declarations::declarations;

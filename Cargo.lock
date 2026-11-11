@@ -3020,12 +3020,10 @@ dependencies = [
  "serde",
  "serde_json",
  "siphon-agent",
- "siphon-browser",
  "siphon-machine",
  "siphon-protocol",
  "siphon-runtime",
  "siphon-settings",
- "siphon-terminals",
  "siphon-threads",
  "siphon-tools",
  "tokio",
@@ -3081,13 +3079,18 @@ dependencies = [
  "bytes",
  "chromiumoxide_cdp",
  "chromiumoxide_types",
+ "octoii-ai",
  "schemars 1.2.3",
  "serde",
  "serde_json",
+ "siphon",
  "siphon-machine",
+ "siphon-protocol",
+ "siphon-tools",
  "tempfile",
  "thiserror",
  "tokio",
+ "ts-rs",
 ]
 
 [[package]]
@@ -3189,10 +3192,15 @@ version = "0.1.0"
 dependencies = [
  "beak",
  "bytes",
+ "serde",
+ "serde_json",
+ "siphon",
  "siphon-machine",
+ "siphon-protocol",
  "tempfile",
  "thiserror",
  "tokio",
+ "ts-rs",
 ]
 
 [[package]]
@@ -3240,7 +3248,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.1",
- "siphon-browser",
  "siphon-image",
  "siphon-machine",
  "siphon-runtime",

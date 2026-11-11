@@ -217,6 +217,13 @@ typedef struct {
   beak_buffer bytes;
 } beak_output_chunk;
 
+// A terminal's screen drawn: the sequences that draw it again whole, and how many bytes of what the command wrote it
+// shows — the offset in its output from which a reader drawn this screen goes on, nothing missed or played twice.
+typedef struct {
+  beak_buffer sequences;
+  uint64_t through;
+} beak_screen;
+
 // How a kernel opens: the directory its volume is kept in — memory, gone with it, where it is empty — and the time.
 typedef struct {
   beak_bytes directory;
@@ -1029,12 +1036,13 @@ beak_status beak_command_read_output_at(const beak_command *command,
                                         uint64_t offset,
                                         beak_output_chunk *out);
 
-// The sequences that draw the command's terminal again whole. `Invalid` for a command with no terminal.
+// The command's terminal's screen drawn again whole, with the offset in its output it stands at. `Invalid` for a
+// command with no terminal.
 //
 // # Safety
 // `command` is valid; `out` is writable.
 beak_status beak_command_screen(const beak_command *command,
-                                beak_buffer *out);
+                                beak_screen *out);
 
 // What the command's terminal shows, as text. `Invalid` for a command with no terminal.
 //

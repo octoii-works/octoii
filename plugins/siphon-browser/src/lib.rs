@@ -10,8 +10,13 @@ mod cdp;
 mod input;
 mod keys;
 mod page;
+mod plugin;
 mod primitives;
+pub mod protocol;
 mod snapshot;
+mod tool;
 
 pub use action::{Action, MouseButton, Outcome, Place, Refusal, Shown};
-pub use browser::{Browser, BrowserError, BrowserEvent, BrowserHost, Frame, PageView, Size};
+pub use browser::{Browser, BrowserError, BrowserHost, Change, Frame, PageView, Size};
+pub use plugin::BrowserPlugin;
+pub use tool::BrowserTool;

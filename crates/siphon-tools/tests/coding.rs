@@ -191,28 +191,3 @@ fn the_tools_are_told_with_their_schemas_and_a_call_s_arguments_checked_against_
         Ok(Effect::Edits(vec![PathBuf::from("/work/a.txt")]))
     );
 }
-
-#[tokio::test(flavor = "multi_thread")]
-async fn the_browser_tool_reads_a_page_at_once_and_works_one_after_what_came_before() {
-    let beak = Beak::new().expect("Beak");
-    let kernel = beak::Kernel::open(&beak, &beak::Options::default()).expect("a kernel").0;
-    let browser = siphon_browser::Browser::start(siphon_browser::BrowserHost {
-        kernel,
-        machine: Host::default(),
-        program: None,
-        profile: None,
-        downloads: None,
-    });
-    let tools = Tools::new().with(siphon_tools::BrowserTool { browser });
-    let base = Base {
-        workspace: PathBuf::from("/work"),
-        home: None,
-    };
-    assert_eq!(tools.effect("browser", &json!({ "action": "read" }), &base), Ok(Effect::Reads));
-    assert_eq!(
-        tools.effect("browser", &json!({ "action": "click", "target": { "ref": "e3" } }), &base),
-        Ok(Effect::Browses)
-    );
-    let schema = &tools.declared()[0].parameters;
-    assert!(schema.to_string().contains("\"navigate\""), "its actions told");
-}

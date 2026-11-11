@@ -3,11 +3,10 @@
 //! before it, as every call that acts does.
 
 use octoii_ai::vocabulary::InputContent;
-use siphon_browser::{Action, Browser};
 use siphon_machine::paths::Base;
+use siphon_tools::{Context, Effect, Refusal, Tool};
 
-use crate::effect::Effect;
-use crate::tool::{Context, Refusal, Tool};
+use crate::{Action, Browser};
 
 /// `browser`, on the thread's browser.
 #[derive(Debug, Clone)]

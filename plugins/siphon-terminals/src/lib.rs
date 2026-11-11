@@ -5,6 +5,11 @@
 //! owns them all and does what it is asked in the order asked, telling whoever listens as a thread's terminals come,
 //! take titles and go, and as each writes.
 
+mod plugin;
+pub mod protocol;
+
+pub use plugin::TerminalsPlugin;
+
 use std::path::{Path, PathBuf};
 
 use beak::{Command, CommandEvent, Exec, Kernel, Spec, Stdio};
@@ -82,7 +87,7 @@ enum Message {
     },
     Screen {
         id: String,
-        reply: Reply<Bytes>,
+        reply: Reply<beak::Screen>,
     },
     ReadAt {
         id: String,
@@ -169,11 +174,11 @@ impl Terminals {
         self.ask(|reply| Message::Resize { id, size, reply }).await
     }
 
-    /// The sequences that draw the terminal's screen again whole.
+    /// The terminal's screen drawn again whole, with the offset in its output it stands at.
     ///
     /// # Errors
     /// `NoSuchTerminal`; Beak's failure.
-    pub async fn screen(&self, id: &str) -> Result<Bytes, Error> {
+    pub async fn screen(&self, id: &str) -> Result<beak::Screen, Error> {
         let id = id.to_owned();
         self.ask(|reply| Message::Screen { id, reply }).await
     }

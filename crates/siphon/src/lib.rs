@@ -4,6 +4,7 @@
 
 pub mod connection;
 mod plugin;
+pub mod testing;
 
 use std::sync::Arc;
 
@@ -37,10 +38,11 @@ pub struct Setup {
     pub options: Options,
 }
 
-/// Siphon, started: its runtime, its threads, the models they ask, the MCP servers, and the protocol's methods and
-/// topics as Siphon and its plugins brought them.
+/// Siphon, started: the machine its work is done on, its runtime, its threads, the models they ask, the MCP servers,
+/// and the protocol's methods and topics as Siphon and its plugins brought them.
 #[derive(Debug, Clone)]
 pub struct Siphon {
+    pub machine: Host,
     pub runtime: Runtime,
     pub threads: Threads<ThreadProgram>,
     pub models: Arc<Models>,
@@ -141,6 +143,7 @@ impl Building {
         let models = Arc::new(Models::new(network, providers, catalogue));
         let runtime = programs(runtime, &machine, &models, &servers, inner, outer).start_on((kernel, events), options)?;
         Ok(Siphon {
+            machine,
             threads: Threads::new(runtime.clone()),
             runtime,
             models,
