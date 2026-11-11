@@ -42,10 +42,19 @@ pub struct Node {
 
 /// The node's routes.
 pub fn router(node: Node) -> Router {
-    let app = node.app.clone();
+    let app = node.app.as_ref().map(|app| {
+        ServeDir::new(app)
+            .precompressed_br()
+            .fallback(ServeFile::new(app.join("index.html")))
+    });
+    // A pairing link opens the app at `/pair`, where it sends the link's credential back to the same path.
+    let pairing = match &app {
+        Some(app) => post(pair).fallback_service(app.clone()),
+        None => post(pair),
+    };
     let mut router = Router::new()
         .route("/ws", get(socket).merge(on(MethodFilter::CONNECT, tunnel_socket)))
-        .route("/pair", post(pair))
+        .route("/pair", pairing)
         .route(
             "/threads/{thread}/files",
             post(crate::files::sent).layer(axum::extract::DefaultBodyLimit::max(siphon_threads::files::BYTES_MAX)),
@@ -55,8 +64,7 @@ pub fn router(node: Node) -> Router {
         .route("/sign-in/{provider}/callback", get(signed_in))
         .with_state(node);
     if let Some(app) = app {
-        let page = ServeFile::new(app.join("index.html"));
-        router = router.fallback_service(ServeDir::new(app).precompressed_br().fallback(page));
+        router = router.fallback_service(app);
     }
     router
 }

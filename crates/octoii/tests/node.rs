@@ -49,13 +49,16 @@ async fn welcomed(address: &str, headers: &[(&str, &str)]) -> Result<Value, Sock
 #[tokio::test(flavor = "multi_thread")]
 async fn a_browser_and_a_program_reach_the_node_by_the_sessions_its_commands_make() {
     let folder = tempfile::tempdir().expect("a folder");
-    let home = Home::at(folder.path());
+    let home = Home::at(folder.path().join("home"));
+    let app = folder.path().join("app");
+    std::fs::create_dir(&app).expect("the app's folder");
+    std::fs::write(app.join("index.html"), "the app").expect("its page");
     let stop = tokio_util::sync::CancellationToken::new();
     let stopping = stop.clone();
     let served = Served {
         home: home.clone(),
         port: 0,
-        app: None,
+        app: Some(app),
         relays: Vec::new(),
     };
     let node = tokio::spawn(serve_until(served, async move { stopping.cancelled().await }));
@@ -79,6 +82,8 @@ async fn a_browser_and_a_program_reach_the_node_by_the_sessions_its_commands_mak
         .expect("a fragment")
         .1
         .to_owned();
+    let (opened, _, page) = request(&address, Method::GET, "/pair", &[], Value::Null).await;
+    assert_eq!((opened, &page[..]), (200, &b"the app"[..]), "a link opens the app");
     let own = [("origin", loopback.as_str()), ("content-type", "application/json")];
     let foreign = [("origin", "https://elsewhere.example"), ("content-type", "application/json")];
     let (refused, _, _) = request(&address, Method::POST, "/pair", &foreign, json!({ "credential": credential })).await;
