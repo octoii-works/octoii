@@ -7,7 +7,7 @@ use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher};
 use siphon_machine::{Is, Machine, Read, ReadOptions};
 use siphon_protocol::Error;
-use siphon_protocol::siphon::{FileKind, FilePage, FolderEntry, FolderPage, FoundPaths, ListFolder, ReadFile, SearchFiles};
+use siphon_protocol::siphon::{FileKind, FilePage, FolderEntry, FolderPage, FoundPath, FoundPaths, ListFolder, ReadFile, SearchFiles};
 
 use super::refusal;
 use crate::Siphon;
@@ -101,7 +101,12 @@ pub(super) fn search(siphon: &Siphon, asked: &SearchFiles) -> Result<FoundPaths,
     let walked = machine.walk(&start).map_err(|error| failed(&error))?;
     let prefix = if start.is_empty() { String::new() } else { format!("{start}/") };
     let files: Vec<&str> = walked.files.iter().map(|file| file.strip_prefix(&prefix).unwrap_or(file)).collect();
-    let paths = files.iter().map(|file| (*file).to_owned()).chain(folders_of(&files));
+    let found = |kind| move |path: String| FoundPath { path, kind };
+    let paths = files
+        .iter()
+        .map(|file| (*file).to_owned())
+        .map(found(FileKind::File))
+        .chain(folders_of(&files).into_iter().map(found(FileKind::Directory)));
     let pattern = Pattern::parse(&asked.query, CaseMatching::Smart, Normalization::Smart);
     let mut matcher = Matcher::new(Config::DEFAULT.match_paths());
     let best = pattern.match_list(paths, &mut matcher);
@@ -113,14 +118,14 @@ pub(super) fn search(siphon: &Siphon, asked: &SearchFiles) -> Result<FoundPaths,
     })
 }
 
-/// The folders `files` lie in, each once, by its path ending in `/`, as `ls -F` marks a folder.
+/// The folders `files` lie in, each once.
 fn folders_of(files: &[&str]) -> std::collections::BTreeSet<String> {
     let mut folders = std::collections::BTreeSet::new();
     for file in files {
         let mut rest = *file;
         while let Some(at) = rest.rfind('/') {
             rest = &rest[..at];
-            if !folders.insert(format!("{rest}/")) {
+            if !folders.insert(rest.to_owned()) {
                 break;
             }
         }

@@ -7,7 +7,6 @@ import type { ReactNode } from "react";
 import type { FolderEntry } from "@octoii-works/octoii-client";
 import { ChevronRight, Ellipsis } from "lucide-react";
 import { childPath, folderOf, nameOf, shownEntries } from "../../core/files.ts";
-import { foundPathsOf } from "../../core/mentions.ts";
 import { useDebounced } from "../effects/debounced.ts";
 import { useFolder } from "../effects/folder.ts";
 import { useOutcome } from "../effects/read.ts";
@@ -77,7 +76,7 @@ export function FoundRows(props: {
 	const outcome = useOutcome("files.search", { path: props.root, query, limit: 100 });
 	if (outcome === undefined) return <TreeNote depth={0}>Searching…</TreeNote>;
 	if ("failure" in outcome) return <TreeNote depth={0}>{outcome.failure}</TreeNote>;
-	const found = foundPathsOf(outcome.result.found);
+	const { found } = outcome.result;
 	if (found.length === 0) return <TreeNote depth={0}>No files found</TreeNote>;
 	return found.map((found) => {
 		const path = childPath(props.root, found.path);

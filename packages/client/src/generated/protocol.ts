@@ -271,10 +271,14 @@ export type FolderEntry = { name: string, kind: FileKind, ignored: boolean, };
 export type FolderPage = { path: string, entries: Array<FolderEntry>, more: boolean, };
 
 /**
- * The files and folders found under a folder, by their paths from it — a folder's ending in `/` — the best match
- * first; and whether more matched.
+ * A file or a folder found: its path from the folder searched, and what it is.
  */
-export type FoundPaths = { path: string, found: Array<string>, truncated: boolean, };
+export type FoundPath = { path: string, kind: FileKind, };
+
+/**
+ * The files and folders found under a folder, the best match first; and whether more matched.
+ */
+export type FoundPaths = { path: string, found: Array<FoundPath>, truncated: boolean, };
 
 /**
  * A model's call of a function by name, its arguments JSON text.

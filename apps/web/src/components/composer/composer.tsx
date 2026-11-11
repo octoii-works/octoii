@@ -8,7 +8,7 @@
  */
 import { type ReactNode, useId, useRef, useState, useTransition } from "react";
 import type { ReasoningEffort as Effort, Mode } from "@octoii-works/octoii-client";
-import type { FoundPath } from "../../core/mentions.ts";
+import type { FoundPath } from "@octoii-works/octoii-client";
 import { ArrowUp, Square } from "lucide-react";
 import type { Device } from "../../core/device.ts";
 import type { DraftPlace } from "../../core/drafts.ts";

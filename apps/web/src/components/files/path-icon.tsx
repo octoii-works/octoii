@@ -1,4 +1,5 @@
 /** The icon of a path of the machine's: a folder's, or a file's as its name says what it is, in its language's hue. */
+import type { FileKind } from "@octoii-works/octoii-client";
 import type { ReactNode } from "react";
 import { File, FileCode, FileImage, FileJson, FileText, Folder } from "lucide-react";
 import { type FileLook, lookOf } from "../../core/files.ts";
@@ -29,7 +30,7 @@ function hueOf(name: string): Hue | undefined {
 }
 
 /** The icon of `path`, by what it names. */
-export function PathIcon(props: { readonly path: string; readonly kind: "file" | "directory"; readonly className?: string }): ReactNode {
+export function PathIcon(props: { readonly path: string; readonly kind: FileKind; readonly className?: string }): ReactNode {
 	if (props.kind === "directory") return <Folder {...(props.className === undefined ? {} : { className: props.className })} />;
 	const Icon = ICONS[lookOf(props.path)];
 	const hue = hueOf(props.path);

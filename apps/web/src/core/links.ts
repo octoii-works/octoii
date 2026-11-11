@@ -3,6 +3,7 @@
  * machine, from the thread's folder or whole, a line after it let go, or a page of the web; the link a mention writes to
  * a path; and a line with each link by its words, as a title shows it.
  */
+import type { FileKind } from "@octoii-works/octoii-client";
 import { nameOf } from "./files.ts";
 
 /** What a link points at: a path of the machine — a folder's ending in a slash — or a page, by its address. */
@@ -43,7 +44,7 @@ function decoded(href: string): string {
  * The markdown link a mention writes to a path of the thread's folder: its last name, a folder's with its slash, and
  * its path, in angle brackets where a space or a bracket would end it.
  */
-export function linkTo(path: string, kind: "file" | "directory"): string {
+export function linkTo(path: string, kind: FileKind): string {
 	const slash = kind === "directory" ? "/" : "";
 	const words = `${nameOf(path)}${slash}`.replace(/[[\]\\]/g, "\\$&");
 	const written = `${path}${slash}`;

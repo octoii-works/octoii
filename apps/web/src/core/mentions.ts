@@ -3,15 +3,8 @@
  * the files and folders under the thread's folder are searched for; and the text with the one chosen in its place, as a
  * markdown link to it — which the message shows by its name and the model reads by its path.
  */
+import type { FoundPath } from "@octoii-works/octoii-client";
 import { linkTo } from "./links.ts";
-
-/** A file or a folder found under the thread's folder, by its path from it. */
-export type FoundPath = { readonly path: string; readonly kind: "file" | "directory" };
-
-/** What a search found, each path as the node gives it — a folder's ending in `/` — as a file or a folder. */
-export function foundPathsOf(found: readonly string[]): readonly FoundPath[] {
-	return found.map((path) => (path.endsWith("/") ? { path: path.slice(0, -1), kind: "directory" } : { path, kind: "file" }));
-}
 
 /** A mention being written: what is typed of it, and where its `@` stands in the text. */
 export type Mention = { readonly query: string; readonly start: number };

@@ -262,13 +262,26 @@ pub struct SearchFiles {
     pub limit: u32,
 }
 
-/// The files and folders found under a folder, by their paths from it — a folder's ending in `/` — the best match
-/// first; and whether more matched.
+/// The files and folders found under a folder, the best match first; and whether more matched.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct FoundPaths {
     pub path: String,
-    pub found: Vec<String>,
+    pub found: Vec<FoundPath>,
     pub truncated: bool,
+}
+
+/// A file or a folder found: its path from the folder searched, and what it is.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct FoundPath {
+    pub path: String,
+    pub kind: FileKind,
+}
+
+/// A path found is matched by its path.
+impl AsRef<str> for FoundPath {
+    fn as_ref(&self) -> &str {
+        &self.path
+    }
 }
 
 /// A folder of the machine's, as the person names it.

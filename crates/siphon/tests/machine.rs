@@ -71,7 +71,7 @@ async fn the_person_browses_the_machine_s_files_as_git_sees_them() {
     let found = client.answer(&id).await["result"].clone();
     assert_eq!(
         (found["found"].clone(), found["truncated"].as_bool()),
-        (json!(["src/main.rs"]), Some(true)),
+        (json!([{ "path": "src/main.rs", "kind": "file" }]), Some(true)),
         "the best first"
     );
     let id = client
@@ -79,8 +79,10 @@ async fn the_person_browses_the_machine_s_files_as_git_sees_them() {
         .await;
     let found = client.answer(&id).await["result"]["found"].clone();
     assert!(
-        found.as_array().is_some_and(|found| found.contains(&json!("src/"))),
-        "a folder the files lie in, marked as `ls -F` marks one: {found}"
+        found
+            .as_array()
+            .is_some_and(|found| found.contains(&json!({ "path": "src", "kind": "directory" }))),
+        "a folder the files lie in, found as a folder: {found}"
     );
 
     let mut reader = Client::connect(&siphon, vec![Scope::ThreadsRead], 64);
