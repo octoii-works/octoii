@@ -141,6 +141,17 @@ async fn a_client_is_welcomed_its_calls_checked_and_answered() {
         .to_owned();
     let told = client.event(&settings, |event| event["event"] == "settings").await.0;
     assert_eq!(told["settings"]["environment"]["thread_mode"], "default");
+    let id = client
+        .call("settings.set", json!({ "environment": { "thread_mode": "auto" } }))
+        .await;
+    client.answer(&id).await;
+    let changed = client.event(&settings, |event| event["event"] == "settings").await.0;
+    assert_eq!(changed["settings"]["environment"]["thread_mode"], "auto");
+
+    let id = client.call("threads.delete", json!({ "thread": thread })).await;
+    client.answer(&id).await;
+    let gone = client.event(&listed, |event| event["event"] == "thread_gone").await.0;
+    assert_eq!(gone["thread"].as_str(), Some(thread.as_str()));
     siphon.runtime.close().await;
 }
 

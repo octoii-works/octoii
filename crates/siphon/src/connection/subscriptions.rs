@@ -3,12 +3,15 @@
 //! as it comes, till the subscription is let go, or it falls behind: then the topic to subscribe to again from where it
 //! stood.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
+use bytes::Bytes;
 use serde_json::json;
 use siphon_protocol::siphon::{Settings, SiphonEvent, SiphonTopic};
-use siphon_threads::{Listed, Status, log};
+use siphon_threads::{Listed, Status, log, thread};
 
+use super::journal::{Followed, Since, is_at_or_under};
+use crate::Siphon;
 use crate::plugin::{Full, Lagged, Subscription};
 
 /// About how many bytes of a thread's log one event of entries carries.
@@ -32,11 +35,16 @@ pub(crate) async fn told(subscription: Subscription, topic: SiphonTopic) -> Resu
 }
 
 /// The thread `thread`: its entries past `cursor`, kept where the client stands, and its status as it changes, after
-/// each commit; what streams of its requests as it comes. A thread gone, or Siphon closing, ends it.
+/// each commit that changed anything of it; what streams of its requests as it comes. A thread gone, or Siphon
+/// closing, ends it.
 async fn thread_told(subscription: &Subscription, thread: &str, cursor: &mut Option<log::Cursor>) -> Result<(), Full> {
     let (siphon, sink) = (&subscription.context.siphon, &subscription.sink);
     let mut committed = siphon.runtime.committed();
     let mut streams = siphon.runtime.follow(thread).await;
+    let Ok(mut followed) = siphon.runtime.snapshot().map(|snapshot| Followed::at(&snapshot)) else {
+        return Ok(());
+    };
+    let own = thread::path(thread);
     let mut told: Option<Status> = None;
     loop {
         loop {
@@ -61,19 +69,42 @@ async fn thread_told(subscription: &Subscription, thread: &str, cursor: &mut Opt
                 break;
             }
         }
-        tokio::select! {
-            () = subscription.stop.cancelled() => return Ok(()),
-            changed = committed.changed() => if changed.is_err() { return Ok(()) },
-            published = streams.next() => {
-                let Some(published) = published else { return Ok(()) };
-                sink.offer(&SiphonEvent::Stream {
-                    subscription: sink.id().to_owned(),
-                    request: published.key.to_string(),
-                    offset: published.offset,
-                    data: serde_json::from_slice(&published.data).unwrap_or_default(),
-                })?;
+        loop {
+            tokio::select! {
+                () = subscription.stop.cancelled() => return Ok(()),
+                changed = committed.changed() => {
+                    if changed.is_err() {
+                        return Ok(());
+                    }
+                    if touched(siphon, &mut followed, |path| is_at_or_under(path, &own)) {
+                        break;
+                    }
+                }
+                published = streams.next() => {
+                    let Some(published) = published else { return Ok(()) };
+                    // What streamed goes on as it was written, never read again.
+                    let Ok(data) = serde_json::value::RawValue::from_string(String::from_utf8_lossy(&published.data).into_owned()) else {
+                        continue;
+                    };
+                    sink.offer(&SiphonEvent::Stream {
+                        subscription: sink.id().to_owned(),
+                        request: published.key.to_string(),
+                        offset: published.offset,
+                        data,
+                    })?;
+                }
             }
         }
+    }
+}
+
+/// Whether the commits since `followed` stood changed a path `of` takes — or may have, where the journal no longer
+/// holds them all, or cannot be read.
+fn touched(siphon: &Siphon, followed: &mut Followed, of: impl Fn(&[u8]) -> bool) -> bool {
+    let Ok(snapshot) = siphon.runtime.snapshot() else { return true };
+    match followed.since(&snapshot) {
+        Ok(Since::Paths(paths)) => paths.iter().any(|path| of(path)),
+        Ok(Since::Missed) | Err(_) => true,
     }
 }
 
@@ -99,41 +130,72 @@ fn entries_told(subscription: &Subscription, thread: &str, cursor: &mut Option<l
     Ok(Some(read.more))
 }
 
-/// The threads: each as it changed, and each gone, after each commit.
+/// The threads: each as it stands first; then, after each commit, each it changed as it now stands, and each it
+/// deleted gone — all of them read again where the journal no longer holds every commit since.
 async fn threads_told(subscription: &Subscription) -> Result<(), Full> {
     let (siphon, sink) = (&subscription.context.siphon, &subscription.sink);
     let mut committed = siphon.runtime.committed();
+    let Ok(mut followed) = siphon.runtime.snapshot().map(|snapshot| Followed::at(&snapshot)) else {
+        return Ok(());
+    };
     let mut shown: HashMap<String, Listed> = HashMap::new();
+    let Ok(all) = siphon.threads.list() else { return Ok(()) };
+    let mut ids: BTreeSet<String> = all.iter().map(|listed| listed.id.clone()).collect();
     loop {
-        let Ok(listed) = siphon.threads.list() else { return Ok(()) };
-        let mut now = HashMap::with_capacity(listed.len());
-        for thread in listed {
-            if shown.get(&thread.id) != Some(&thread) {
-                sink.offer(&SiphonEvent::Thread {
-                    subscription: sink.id().to_owned(),
-                    thread: Box::new(thread.clone()),
-                })?;
+        for id in &ids {
+            match siphon.threads.listed(id) {
+                Ok(listed) => {
+                    if shown.get(id) != Some(&listed) {
+                        sink.offer(&SiphonEvent::Thread {
+                            subscription: sink.id().to_owned(),
+                            thread: Box::new(listed.clone()),
+                        })?;
+                        shown.insert(id.clone(), listed);
+                    }
+                }
+                Err(_) if shown.remove(id).is_some() => {
+                    sink.offer(&SiphonEvent::ThreadGone {
+                        subscription: sink.id().to_owned(),
+                        thread: id.clone(),
+                    })?;
+                }
+                Err(_) => {}
             }
-            now.insert(thread.id.clone(), thread);
         }
-        for gone in shown.keys().filter(|id| !now.contains_key(*id)) {
-            sink.offer(&SiphonEvent::ThreadGone {
-                subscription: sink.id().to_owned(),
-                thread: gone.clone(),
-            })?;
-        }
-        shown = now;
-        tokio::select! {
-            () = subscription.stop.cancelled() => return Ok(()),
-            changed = committed.changed() => if changed.is_err() { return Ok(()) },
-        }
+        ids = loop {
+            tokio::select! {
+                () = subscription.stop.cancelled() => return Ok(()),
+                changed = committed.changed() => if changed.is_err() { return Ok(()) },
+            }
+            let Ok(snapshot) = siphon.runtime.snapshot() else { return Ok(()) };
+            match followed.since(&snapshot) {
+                Ok(Since::Paths(paths)) => {
+                    let changed: BTreeSet<String> = paths.iter().filter_map(|path| thread::id_of(path)).map(str::to_owned).collect();
+                    if !changed.is_empty() {
+                        break changed;
+                    }
+                }
+                Ok(Since::Missed) | Err(_) => {
+                    let Ok(all) = siphon.threads.list() else { return Ok(()) };
+                    break all.iter().map(|listed| listed.id.clone()).chain(shown.keys().cloned()).collect();
+                }
+            }
+        };
     }
 }
 
-/// The settings — the environment's, and the session's device's — as they change, after each commit.
+/// The settings — the environment's, and the session's device's — as they stand first, then after each commit that
+/// changed either.
 async fn settings_told(subscription: &Subscription) -> Result<(), Full> {
     let (context, sink) = (&subscription.context, &subscription.sink);
     let mut committed = context.siphon.runtime.committed();
+    let Ok(mut followed) = context.siphon.runtime.snapshot().map(|snapshot| Followed::at(&snapshot)) else {
+        return Ok(());
+    };
+    let Ok(device_file) = siphon_settings::device_file(&context.session) else {
+        return Ok(());
+    };
+    let directory = Bytes::from_static(siphon_settings::DIRECTORY.as_bytes());
     let mut told = None;
     loop {
         let Ok(snapshot) = context.siphon.runtime.snapshot() else {
@@ -153,9 +215,16 @@ async fn settings_told(subscription: &Subscription) -> Result<(), Full> {
             })?;
             told = Some(settings);
         }
-        tokio::select! {
-            () = subscription.stop.cancelled() => return Ok(()),
-            changed = committed.changed() => if changed.is_err() { return Ok(()) },
+        loop {
+            tokio::select! {
+                () = subscription.stop.cancelled() => return Ok(()),
+                changed = committed.changed() => if changed.is_err() { return Ok(()) },
+            }
+            if touched(&context.siphon, &mut followed, |path| {
+                *path == directory[..] || *path == device_file[..]
+            }) {
+                break;
+            }
         }
     }
 }

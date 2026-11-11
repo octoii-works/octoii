@@ -47,12 +47,7 @@ pub fn router(node: Node) -> Router {
     router
 }
 
-/// Why a request was refused: its status, and words for whoever reads it.
-fn refused(status: StatusCode, why: &str) -> Response {
-    (status, why.to_owned()).into_response()
-}
-
-/// A request refused before it was answered: its status, and why.
+/// A request refused: its status, and words for whoever reads it.
 struct Denied(StatusCode, String);
 
 impl IntoResponse for Denied {
@@ -107,10 +102,8 @@ async fn socket(State(node): State<Node>, headers: HeaderMap, upgrade: WebSocket
     };
     let upgrade = upgrade.protocols([SUBPROTOCOL]);
     if upgrade.selected_protocol().is_none() {
-        return refused(
-            StatusCode::BAD_REQUEST,
-            "the WebSocket asks for no protocol of this node's: octoii.1",
-        );
+        let why = "the WebSocket asks for no protocol of this node's: octoii.1";
+        return Denied(StatusCode::BAD_REQUEST, why.into()).into_response();
     }
     upgrade.on_upgrade(move |socket| carried(node, session, socket))
 }
@@ -161,14 +154,14 @@ struct Pairing {
 
 /// A browser paired by a link's credential: its session, held in an `HttpOnly` cookie its page cannot read, sent to this
 /// node's own pages alone.
-async fn pair(State(node): State<Node>, headers: HeaderMap, Json(pairing): Json<Pairing>) -> Response {
+async fn pair(State(node): State<Node>, headers: HeaderMap, Json(pairing): Json<Pairing>) -> Result<Response, Denied> {
     if foreign(&node, &headers) {
-        return refused(StatusCode::FORBIDDEN, "a page of another origin");
+        return Err(Denied(StatusCode::FORBIDDEN, "a page of another origin".into()));
     }
     let made = match node.access.redeem(&pairing.credential, Holder::Cookie, None).await {
         Ok(made) => made,
-        Err(access::Refused::NoSuchLink) => return refused(StatusCode::FORBIDDEN, "the link was used, or went"),
-        Err(error) => return refused(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+        Err(access::Refused::NoSuchLink) => return Err(Denied(StatusCode::FORBIDDEN, "the link was used, or went".into())),
+        Err(error) => return Err(Denied(StatusCode::INTERNAL_SERVER_ERROR, error.to_string())),
     };
     let cookie = format!(
         "{COOKIE}={}; HttpOnly; SameSite=Strict; Path=/; Max-Age={}",
@@ -176,5 +169,5 @@ async fn pair(State(node): State<Node>, headers: HeaderMap, Json(pairing): Json<
         access::SESSION_LASTS.as_secs()
     );
     let body = serde_json::json!({ "session": made.shown.id });
-    ([(header::SET_COOKIE, cookie)], Json(body)).into_response()
+    Ok(([(header::SET_COOKIE, cookie)], Json(body)).into_response())
 }

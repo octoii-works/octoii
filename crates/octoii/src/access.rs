@@ -20,6 +20,8 @@ const SESSION_KIND: &str = "octoii.session";
 const LINK_KIND: &str = "octoii.link";
 /// The annotation that holds what a session or a link is.
 const KEPT: &str = "octoii.access";
+/// The label of a device's session that holds the key its tunnel session shows, as the label index finds it by.
+const KEY_LABEL: &str = "octoii.key";
 
 /// How long a session lasts.
 pub const SESSION_LASTS: Duration = Duration::from_hours(365 * 24);
@@ -171,9 +173,14 @@ impl Access {
         kept.digest = digest(&secret);
         let path = path(kind, &id);
         let annotation = (Bytes::from_static(KEPT.as_bytes()), Some(Bytes::from(serde_json::to_vec(kept)?)));
+        let labels = kept
+            .key
+            .iter()
+            .map(|key| (Bytes::from_static(KEY_LABEL.as_bytes()), Some(Bytes::from(key.clone()))))
+            .collect();
         changes
             .mkdir(path.clone())
-            .meta(path.clone(), Vec::new(), vec![annotation])
+            .meta(path.clone(), labels, vec![annotation])
             .expire(path, Some(kept.expires_at));
         Ok((id.clone(), format!("{id}.{secret}")))
     }
@@ -280,12 +287,22 @@ impl Access {
     /// # Errors
     /// The volume's failure.
     pub fn held_by_key(&self, key: &str) -> Result<Option<Shown>, Refused> {
-        let now = self.runtime.now_ms();
-        let found = self
-            .all(SESSION_KIND)?
-            .into_iter()
-            .find(|(_, kept)| kept.key.as_deref() == Some(key) && kept.expires_at > now);
-        Ok(found.map(|(id, kept)| shown(&id, &kept)))
+        let snapshot = self.runtime.snapshot()?;
+        let query = beak::Query {
+            kind: SESSION_KIND.as_bytes(),
+            name: KEY_LABEL.as_bytes(),
+            value: Some(key.as_bytes()),
+            ..beak::Query::default()
+        };
+        let (now, prefix) = (self.runtime.now_ms(), format!("{SESSION_KIND}:"));
+        for found in snapshot.find(&query, usize::MAX)? {
+            let Some(kept) = kept(&snapshot, &found.path)? else { continue };
+            if kept.expires_at > now {
+                let id = String::from_utf8_lossy(&found.path[prefix.len()..]).into_owned();
+                return Ok(Some(shown(&id, &kept)));
+            }
+        }
+        Ok(None)
     }
 
     /// The sessions and the links, each in the order made.

@@ -114,7 +114,11 @@ pub fn environment(snapshot: &Snapshot) -> Result<Environment, Error> {
     })
 }
 
-fn device_file(session: &str) -> Result<Bytes, Error> {
+/// The file of the settings of the device that holds `session`.
+///
+/// # Errors
+/// `InvalidSession` for a session no file can be named by.
+pub fn device_file(session: &str) -> Result<Bytes, Error> {
     let valid = !session.is_empty()
         && session.len() <= 128
         && session

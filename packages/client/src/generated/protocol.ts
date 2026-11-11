@@ -350,6 +350,11 @@ export type PageOpened = { page: string, };
 export type Parent = { thread: string, call: string, };
 
 /**
+ * What text is added to: an answer's words, a refusal's, the reasoning, its summary, or a call's arguments.
+ */
+export type Part = "text" | "refusal" | "reasoning" | "summary" | "arguments";
+
+/**
  * A page of a thread's entries: at most `limit`, the latest before the entry `before`, or the latest of all.
  */
 export type ReadThread = { thread: string, before?: string, limit: number, };
@@ -424,7 +429,7 @@ export type SettingsChange = { environment?: EnvironmentChange | null, device?: 
  * reader then stands; its status as it changed; what streams of a request as its model answers, by its offset in the
  * request's stream; a thread of the list as it changed, or gone; the settings as they changed.
  */
-export type SiphonEvent = { "event": "entries", subscription: string, entries: Array<Entry>, cursor: Cursor, } | { "event": "status", subscription: string, status: Status, } | { "event": "stream", subscription: string, request: string, offset: number, data: JsonValue, } | { "event": "thread", subscription: string, thread: Listed, } | { "event": "thread_gone", subscription: string, thread: string, } | { "event": "settings", subscription: string, settings: Settings, };
+export type SiphonEvent = { "event": "entries", subscription: string, entries: Array<Entry>, cursor: Cursor, } | { "event": "status", subscription: string, status: Status, } | { "event": "stream", subscription: string, request: string, offset: number, data: Streamed, } | { "event": "thread", subscription: string, thread: Listed, } | { "event": "thread_gone", subscription: string, thread: string, } | { "event": "settings", subscription: string, settings: Settings, };
 
 /**
  * What a client subscribes to of Siphon's: a thread — its entries from where the client stood, none for from the start, then its
@@ -440,6 +445,12 @@ export type Status = { turn: Turn, began_at?: number | null, ended_at?: number |
  * What waits in its inbox, by its id, in the order it came.
  */
 inbox: Array<[string, Inbound]>, asks: Array<Ask>, };
+
+/**
+ * What streams of a reply as it is written, as the thread's followers are told it: an item begun at its place in the
+ * output, text added to one, and one whole.
+ */
+export type Streamed = { "type": "began", index: number, item: Item, } | { "type": "delta", index: number, part: Part, text: string, } | { "type": "ended", index: number, item: Item, };
 
 /**
  * A subscription made: its id, which its events carry.

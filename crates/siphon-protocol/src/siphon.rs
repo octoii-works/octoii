@@ -144,7 +144,7 @@ pub struct Settings {
 /// An event of a subscription to Siphon's, by the subscription's id: a thread's entries appended, with where its
 /// reader then stands; its status as it changed; what streams of a request as its model answers, by its offset in the
 /// request's stream; a thread of the list as it changed, or gone; the settings as they changed.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum SiphonEvent {
     Entries {
@@ -160,7 +160,8 @@ pub enum SiphonEvent {
         subscription: String,
         request: String,
         offset: u64,
-        data: serde_json::Value,
+        #[ts(as = "siphon_agent::Streamed<'static>")]
+        data: Box<serde_json::value::RawValue>,
     },
     Thread {
         subscription: String,

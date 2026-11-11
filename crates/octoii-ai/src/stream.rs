@@ -22,7 +22,8 @@ pub const START_TIMEOUT: Duration = Duration::from_mins(5);
 pub const IDLE_TIMEOUT: Duration = Duration::from_mins(15);
 
 /// What text is added to: an answer's words, a refusal's, the reasoning, its summary, or a call's arguments.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+#[serde(rename_all = "snake_case")]
 pub enum Part {
     Text,
     Refusal,

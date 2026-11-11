@@ -3493,6 +3493,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-util",
+ "ts-rs",
 ]
 
 [[package]]
@@ -3580,6 +3581,7 @@ dependencies = [
  "octoii-ai",
  "serde",
  "serde_json",
+ "siphon-agent",
  "siphon-settings",
  "siphon-threads",
  "ts-rs",

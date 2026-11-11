@@ -34,23 +34,12 @@ impl Request for ModelRequest {
 
 /// What streams of a reply as it is written, as the thread's followers are told it: an item begun at its place in the
 /// output, text added to one, and one whole.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, ts_rs::TS)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum Streamed<'a> {
     Began { index: u32, item: &'a Item },
-    Delta { index: u32, part: &'static str, text: &'a str },
+    Delta { index: u32, part: Part, text: &'a str },
     Ended { index: u32, item: &'a Item },
-}
-
-/// The name a part text is added to is told by.
-fn part_name(part: Part) -> &'static str {
-    match part {
-        Part::Text => "text",
-        Part::Refusal => "refusal",
-        Part::Reasoning => "reasoning",
-        Part::Summary => "summary",
-        Part::Arguments => "arguments",
-    }
 }
 
 /// Answers the model request `asked` through `models`: the response as it came, what streamed published on its
@@ -90,7 +79,7 @@ pub async fn answer_model(models: &Arc<Models>, asked: Asked<ModelRequest>) -> R
             Some(Event::Began { index, item }) => Streamed::Began { index: *index, item },
             Some(Event::Delta { index, part, text }) => Streamed::Delta {
                 index: *index,
-                part: part_name(*part),
+                part: *part,
                 text,
             },
             Some(Event::Ended { index, item }) => Streamed::Ended { index: *index, item },

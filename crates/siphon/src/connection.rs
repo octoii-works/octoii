@@ -5,6 +5,7 @@
 //! does not keep up with is let go, told it lagged and where it stood, for the client to make again from there.
 
 mod calls;
+mod journal;
 mod subscriptions;
 
 use std::collections::HashMap;
