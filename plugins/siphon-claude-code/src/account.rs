@@ -49,8 +49,12 @@ const ISOLATION: [(&str, &str); 10] = [
     ("CLAUDE_CODE_ENTRYPOINT", "sdk-ts"),
 ];
 
-/// How long a live session holding calls may stand unasked before it is closed.
-pub const IDLE: Duration = Duration::from_mins(10);
+/// How long a live session holding calls may stand once it settled before it is closed, as the thread may run them a
+/// while.
+pub const HOLDING: Duration = Duration::from_mins(10);
+/// How long a live session whose turn ended may stand once it settled before it is closed, for the person's next words
+/// to go on in it.
+pub const LINGER: Duration = Duration::from_mins(5);
 /// How long a call may be held before Claude Code gives up on it, in milliseconds.
 const HOLD_MS: u64 = 20 * 60 * 1000;
 /// What Claude is told of a tool's result past which it is cut; the thread bounds its own already.
@@ -368,12 +372,13 @@ impl Account {
         }
     }
 
-    /// Closes the live sessions that stood holding calls unasked past `IDLE`, and removes the sessions no conversation holds that
-    /// none used past `COLLECT_AFTER`.
+    /// Closes the live sessions that stood past their time — `HOLDING` while they hold calls, else `LINGER` — and
+    /// removes the sessions no conversation holds that none used past `COLLECT_AFTER`.
     pub fn sweep(&self) {
-        self.kept()
-            .live
-            .retain(|session| session.is_open() && session.used.elapsed() < IDLE);
+        self.kept().live.retain(|session| {
+            let time = if session.is_holding() { HOLDING } else { LINGER };
+            session.is_open() && session.used.elapsed() < time
+        });
         let Some(folder) = self.sessions() else { return };
         let Ok(entries) = std::fs::read_dir(folder) else { return };
         for entry in entries.flatten() {

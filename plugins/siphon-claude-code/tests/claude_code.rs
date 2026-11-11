@@ -1,7 +1,7 @@
 //! Claude through a Claude Code of the tests' own, which speaks `claude`'s stream-json control protocol: the models it
-//! offers listed with their windows; a conversation answered — words, its session closed as its turn ended and resumed
-//! in place for the next, then a call of the thread's tool held across requests till its result comes — resumed in
-//! place where the node started again, forked where the
+//! offers listed with their windows; a conversation answered in one session kept live a while after each turn — words,
+//! then a call of the thread's tool held across requests till its result comes — resumed in place where the node
+//! started again, forked where the
 //! conversation parted from the session behind its tip, and let go of as its thread is deleted; a computer without
 //! `claude` told how to install it.
 
@@ -206,11 +206,10 @@ async fn a_conversation_is_answered_in_a_live_session_resumed_in_place_forked_be
     let started = starts(&log);
     assert_eq!(
         started.len(),
-        3,
-        "the listing's; a session closed as its turn ended, resumed for the next; live while it held its call: {started:?}"
+        2,
+        "the listing's, then one session kept live a while after each turn for the whole conversation: {started:?}"
     );
     assert_eq!(flag(&started[1], "resume"), None);
-    assert!(flag(&started[2], "resume").is_some() && !started[2].contains(&"--fork-session".to_owned()));
     let holds = state.join(PROVIDER).join("holds.jsonl");
     let held = || std::fs::read_to_string(&holds).is_ok_and(|holds| holds.contains("thread-1"));
     assert!(settled(held).await, "the conversation holds its session");

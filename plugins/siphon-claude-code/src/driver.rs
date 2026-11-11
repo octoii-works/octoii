@@ -389,9 +389,9 @@ impl Answering {
         let _ = settled.send(true);
     }
 
-    /// Keeps where `session` settled and the conversation holding it; the session it held before let go of where no
-    /// conversation holds that now. A session that holds calls stays live for the request that brings their results;
-    /// one whose turn ended is closed, its `claude` let go of, to be resumed as the conversation goes on.
+    /// Keeps where `session` settled and the conversation holding it, and the session live a while for the request
+    /// that goes on from it — longer while it holds calls; the session the conversation held before let go of where no
+    /// conversation holds that now.
     fn keep(&self, session: Session, outcome: Settled, settling: &watch::Receiver<bool>) {
         let released = {
             let mut kept = self.account.kept();
@@ -409,9 +409,9 @@ impl Answering {
                 (Some(conversation), Some(id)) => kept.holds.hold(conversation, id).unwrap_or_default(),
                 _ => None,
             };
-            if session.is_holding() {
-                kept.live.push(session);
-            }
+            let mut session = session;
+            session.used = tokio::time::Instant::now();
+            kept.live.push(session);
             released
         };
         if let Some(released) = released {
@@ -444,7 +444,7 @@ fn source(told: mpsc::UnboundedReceiver<Result<octoii_ai::stream::Event, Failure
 
 /// Closes the account's sessions that stood idle, and removes those nothing holds, as long as the account is open.
 async fn sweep(account: std::sync::Weak<Account>) {
-    let mut ticks = tokio::time::interval(account::IDLE / 4);
+    let mut ticks = tokio::time::interval(account::LINGER / 10);
     loop {
         ticks.tick().await;
         let Some(account) = account.upgrade() else { return };
