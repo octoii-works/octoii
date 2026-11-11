@@ -1,7 +1,7 @@
 //! The node's Home, laid out as a system's folders are: `etc/` the person's own configuration, for every project —
 //! their instructions, `AGENTS.md`, their skills, `skills/`, their MCP servers, `mcp.json` — and the providers'
 //! credentials, `etc/credstore/`; `var/lib/` the node's state — the volume, the key its tunnel sessions show, the
-//! browser's profile; `var/cache/` what is fetched again at need; `var/log/` its logs; and `threads/`, where a thread's
+//! address its account gave the machine, the browser's profile; `var/cache/` what is fetched again at need; `var/log/` its logs; and `threads/`, where a thread's
 //! calls read the threads. The Home is the person's alone. Its control socket is kept in the person's runtime folder,
 //! as tmux keeps its sockets, since a socket's path is bounded and a Home may lie anywhere.
 
@@ -91,6 +91,12 @@ impl Home {
     #[must_use]
     pub fn key(&self) -> PathBuf {
         self.state().join("key")
+    }
+
+    /// The address the machine's account gave it, where it has one: the relay devices reach it through.
+    #[must_use]
+    pub fn address(&self) -> PathBuf {
+        self.state().join("address")
     }
 
     /// The browser's profile, and where its pages' downloads go.

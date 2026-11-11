@@ -11,6 +11,7 @@ use siphon_protocol::Scope;
 
 use crate::control::{self, Asked};
 use crate::home::Home;
+use crate::login;
 use crate::serve::{self, Served};
 use crate::service;
 
@@ -82,6 +83,18 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// This machine added to the person's Octoii account, by a code they confirm in their browser, and given its
+    /// address: the relay devices reach it through, which the node is at home on as it starts.
+    Login {
+        /// The accounts service.
+        #[arg(long, default_value = login::ACCOUNTS)]
+        accounts: String,
+        /// What the machine is called on the account; the computer's name, where none is given.
+        #[arg(long)]
+        name: Option<String>,
+    },
+    /// This machine no longer reached at the address its account gave it, once the node starts again.
+    Logout,
     /// The program's version.
     Version,
 }
@@ -190,6 +203,16 @@ async fn run(home: Home, command: Command) -> anyhow::Result<()> {
             Ok(())
         }
         Command::Access { command, json } => access(&socket, command, json).await,
+        Command::Login { accounts, name } => log_in(&home, &socket, &accounts, name).await,
+        Command::Logout => {
+            match login::forget_address(&home)? {
+                Some(address) => println!(
+                    "This machine is no longer reached at {address} once the node starts again; it stays on your account till you remove it there."
+                ),
+                None => println!("This machine is on no account."),
+            }
+            Ok(())
+        }
         Command::Version => {
             println!("octoii {}", env!("CARGO_PKG_VERSION"));
             Ok(())
@@ -251,6 +274,23 @@ async fn access(socket: &std::path::Path, command: Option<AccessCommand>, json: 
             let holder = item["holder"].as_str().unwrap_or("-");
             println!("{what:7}  {}  {holder:6}  {label}", item["id"].as_str().unwrap_or("?"));
         }
+    }
+    Ok(())
+}
+
+/// Adds this machine to the person's account at `accounts`, named `name` or as the computer is, and keeps the address
+/// it is given.
+async fn log_in(home: &Home, socket: &std::path::Path, accounts: &str, name: Option<String>) -> anyhow::Result<()> {
+    home.prepare()?;
+    let key = octoii_tunnel::key::load_or_make(&home.key())?;
+    let name = name.unwrap_or_else(|| gethostname::gethostname().to_string_lossy().into_owned());
+    let accounts = accounts.trim_end_matches('/');
+    let told = |confirm: login::Confirm| eprintln!("Confirm {} at {}", confirm.code, confirm.at);
+    let address = login::login(accounts, &key, &name, told).await?;
+    login::keep_address(home, &address)?;
+    println!("This machine is on your account now, reached at {address}");
+    if control::ask(socket, Method::GET, "/status", None).await.is_ok() {
+        eprintln!("The running node is reached there once it starts again.");
     }
     Ok(())
 }

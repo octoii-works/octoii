@@ -25,10 +25,11 @@ use crate::control::{self, Control};
 use crate::credentials::Credstore;
 use crate::home::Home;
 use crate::http::{self, Node};
+use crate::login;
 use crate::pairing::{AccessPlugin, Links};
 
 /// What the node is served with: its Home, the loopback port, the web app's folder, and the relays its tunnel is at
-/// home on — none, reached directly alone.
+/// home on — where none, the one at the address the machine's account gave it, or none, reached directly alone.
 #[derive(Debug, Clone)]
 pub struct Served {
     pub home: Home,
@@ -138,6 +139,11 @@ pub async fn serve_until(served: Served, stop: impl Future<Output = ()> + Send +
     let sign_in = SignInSetup {
         callback: format!("{loopback}/sign-in/{{provider}}/callback"),
         host_id: key.public().to_string(),
+    };
+    let relays = if relays.is_empty() {
+        login::address_of(&home).context("the machine's address")?.into_iter().collect()
+    } else {
+        relays
     };
     let relays = relays
         .into_iter()
