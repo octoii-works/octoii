@@ -212,9 +212,9 @@ async fn a_call_the_person_lets_go_ahead_for_good_is_granted_its_project_and_one
         ],
     };
     let path = caller(&runtime, "p1", &asking).await;
-    for (key, answer) in [
-        ("permission", json!({ "decision": "allow", "always": true })),
-        ("permission", json!({ "decision": "deny", "reason": "not there" })),
+    for (key, call_id, answer) in [
+        ("permission", "a", json!({ "decision": "allow", "always": true })),
+        ("permission", "b", json!({ "decision": "deny", "reason": "not there" })),
     ] {
         let waiting = async {
             loop {
@@ -233,13 +233,16 @@ async fn a_call_the_person_lets_go_ahead_for_good_is_granted_its_project_and_one
                     .expect("found");
                 if let Some(found) = asked.first() {
                     let name = String::from_utf8_lossy(&found.path).rsplit(':').next().expect("its key").to_owned();
-                    return name;
+                    let payload = snapshot.read(&layout::payload(&found.path), 0, u64::MAX).expect("read");
+                    let payload: serde_json::Value = serde_json::from_slice(&payload.unwrap_or_default()).expect("JSON");
+                    return (name, payload);
                 }
                 tokio::time::sleep(Duration::from_millis(20)).await;
             }
         };
-        let request = tokio::time::timeout(Duration::from_secs(10), waiting).await.expect("asked in time");
+        let (request, payload) = tokio::time::timeout(Duration::from_secs(10), waiting).await.expect("asked in time");
         assert!(request.ends_with(&format!(".{key}")));
+        assert_eq!(payload["call_id"], call_id, "the ask names its call by the model's id of it");
         runtime.answer(&path, request.as_bytes(), &answer).await.expect("answered");
     }
     let said = ended(&runtime, &path).await;

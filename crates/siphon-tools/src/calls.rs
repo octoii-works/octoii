@@ -336,6 +336,7 @@ impl Calls {
             .effect(&call.tool, &serde_json::from_str(&call.arguments)?, setting.base)?;
         let permission = Permission {
             thread: setting.thread.to_owned(),
+            call_id: call.id.clone(),
             call: shown(&call.tool, &call.arguments, &effect),
             always: patterns_of(&effect),
         };
@@ -357,6 +358,7 @@ impl Calls {
         if let Some(answer_schema) = setting.tools.asks(&call.tool, &arguments) {
             let asks = Asks {
                 thread: setting.thread.to_owned(),
+                call_id: call.id.clone(),
                 tool: call.tool.clone(),
                 arguments,
                 answer_schema,
