@@ -4,7 +4,7 @@
  * that ended the same object from one view to the next, and of the turn that runs, each part nothing is laid over.
  */
 import { describe, expect, test } from "bun:test";
-import { type Ask, conversationOf, type Entry, type Item, type Status, type Streamed, type ThreadView } from "../src/index.ts";
+import { type Ask, conversationOf, type Entry, type Item, type Status, type Streamed, type ThreadView } from "../../src/index.ts";
 
 const response = (output: Item[]) => ({ id: "r", model: "m", status: "completed" as const, output });
 const text = (value: string): Item => ({ type: "message", role: "assistant", content: [{ type: "output_text", text: value }] });

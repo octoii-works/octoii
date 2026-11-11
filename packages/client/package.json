@@ -19,7 +19,8 @@
 	},
 	"scripts": {
 		"typecheck": "bun check",
-		"test": "bun test --timeout=60000 --no-env-file --no-install ./test"
+		"test": "bun test --timeout=60000 --no-env-file --no-install ./test/unit",
+		"test:against-node": "bun test --timeout=60000 --no-env-file --no-install ./test/node"
 	},
 	"devDependencies": {
 		"@types/bun": "catalog:",

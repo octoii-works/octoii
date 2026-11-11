@@ -38,3 +38,17 @@ jobs:
           node-version: "26"
       - run: node --version
       - run: bun run test:node
+
+  rust:
+    # Siphon, its plugins and the node, on macOS, the platform whose Beak library the repository holds: formatted,
+    # linted and tested; then the client tested against the node itself, which needs the program built.
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: rustup toolchain install
+      - uses: ./.github/actions/setup-bun
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+      - run: bun run --filter ./packages/client test:against-node
