@@ -51,12 +51,11 @@ impl Provider {
     }
 }
 
-/// What the host gives the models: its credentials, the files a conversation names, where requests go, the ids it
-/// mints, and its clock, in milliseconds since 1970.
+/// What the host gives the models: its credentials, where requests go, the ids it mints, and its clock, in milliseconds
+/// since 1970. The files a conversation names are the conversation's, given with each request of it.
 #[derive(Clone)]
 pub struct Host {
     pub credentials: Arc<dyn Credentials>,
-    pub files: Arc<dyn Files>,
     pub transport: Arc<dyn Transport>,
     pub new_id: NewId,
     pub clock: Arc<dyn Fn() -> i64 + Send + Sync>,
@@ -174,7 +173,7 @@ impl Models {
         self.build(self.providers());
     }
 
-    /// A call of `provider`'s, made now.
+    /// A call of `provider`'s, made now, of no conversation's.
     #[must_use]
     pub fn call(&self, provider: &Provider) -> Call {
         Call {
@@ -182,14 +181,14 @@ impl Models {
             settings: provider.settings.clone(),
             credentials: Arc::clone(&self.host.credentials),
             transport: Arc::clone(&self.host.transport),
-            files: Arc::clone(&self.host.files),
+            files: None,
             now_ms: (self.host.clock)(),
         }
     }
 
     /// The stream of the answer to `request`: its model found, the request checked against it and prepared for it,
     /// sent by its driver and made whole; a request that fails before it is sent is a stream of that failure alone.
-    pub async fn text(&self, request: &Request) -> TextStream {
+    pub async fn text(&self, request: &Request, files: Option<Arc<dyn Files>>) -> TextStream {
         let directory = Arc::clone(&self.directory.read());
         let found = catalogue::split_reference(&request.model).and_then(|(provider, _)| {
             let provider = directory.providers.iter().find(|each| each.id == provider)?;
@@ -203,7 +202,10 @@ impl Models {
             );
             return self.failed(&unknown(&request.model), failure);
         };
-        let call = self.call(&provider);
+        let call = Call {
+            files,
+            ..self.call(&provider)
+        };
         let sent = match check(&model, request) {
             Ok(()) => provider.driver.stream(&call, &model, &prepared(&model, request)).await,
             Err(failure) => Err(failure),

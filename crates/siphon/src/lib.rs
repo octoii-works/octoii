@@ -10,7 +10,9 @@ use std::sync::Arc;
 
 use beak::{Beak, Events};
 use octoii_ai::catalogue::Model;
+use octoii_ai::host::Credentials;
 use octoii_ai::models::{Host as Network, Models, Provider};
+use octoii_ai::transport::Transport;
 use siphon_agent::{
     CompactProgram, DelegateProgram, DelegateTool, DelegatedProgram, Gather, ModelRequest, ResumeProgram, Sources, ThreadProgram,
     TitleProgram, TurnProgram, answer_gather, answer_model, answer_review,
@@ -27,14 +29,14 @@ use siphon_tools::{
 pub use plugin::{Builder, Context, Full, Lagged, Plugin, Sink, Subscription};
 
 /// What Siphon is built on: the machine its work is done on; the folder of the person's own configuration, for every
-/// project — their instructions, `AGENTS.md`, and their skills, `skills/` — where they keep one; the host's network,
-/// credentials and files the models are reached with, the host's providers and the catalogue of models; and the
-/// volume's options.
-#[derive(Debug)]
+/// project — their instructions, `AGENTS.md`, and their skills, `skills/` — where they keep one; the host's credentials
+/// and where the models' requests go, the host's providers and the catalogue of models; and the volume's options. The
+/// ids the models' answers are given are the volume's, and their clock the runtime's.
 pub struct Setup {
     pub machine: Host,
     pub config: Option<std::path::PathBuf>,
-    pub network: Network,
+    pub credentials: Arc<dyn Credentials>,
+    pub transport: Arc<dyn Transport>,
     pub providers: Vec<Provider>,
     pub catalogue: Vec<Model>,
     pub options: Options,
@@ -83,22 +85,44 @@ pub struct Building {
     options: Options,
 }
 
+impl std::fmt::Debug for Setup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Setup")
+            .field("machine", &self.machine)
+            .field("config", &self.config)
+            .finish_non_exhaustive()
+    }
+}
+
 impl Siphon {
     /// Siphon to be built on `beak` as `setup` says, its volume opened, with its own tools, programs, methods and
     /// topics; its plugins next.
     ///
     /// # Errors
     /// The volume's failure, as another holding its directory.
+    ///
+    /// # Panics
+    /// Never as an id is minted for a model's answer: Beak mints one at any time, going on into the next millisecond
+    /// past one's ids, till the year 10889.
     pub fn builder(beak: &Beak, setup: Setup) -> beak::Result<Building> {
         let Setup {
             machine,
             config,
-            network,
+            credentials,
+            transport,
             providers,
             catalogue,
             options,
         } = setup;
         let (kernel, events) = options.open(beak)?;
+        let (minting, minted_at, clock) = (kernel.clone(), Arc::clone(&options.clock), Arc::clone(&options.clock));
+        let network = Network {
+            credentials,
+            transport,
+            // Beak mints a UUIDv7 at any time: past a millisecond's ids it goes on in the next, till the year 10889.
+            new_id: Arc::new(move || minting.new_id(minted_at.now_ms()).expect("the volume mints an id")),
+            clock: Arc::new(move || clock.now_ms()),
+        };
         let mut builder = plugin::Builder {
             kernel,
             machine,

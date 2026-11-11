@@ -76,7 +76,11 @@ pub async fn answer_model(models: &Arc<Models>, asked: Asked<ModelRequest>) -> R
         &window,
         request.instruction.as_deref(),
     );
-    let mut stream = models.text(&rendered).await;
+    let files = siphon_threads::files::OfThread {
+        runtime: asked.runtime.clone(),
+        thread: request.thread.clone(),
+    };
+    let mut stream = models.text(&rendered, Some(Arc::new(files))).await;
     loop {
         let event = tokio::select! {
             event = stream.next() => event,

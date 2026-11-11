@@ -318,13 +318,8 @@ impl Builder<'_> {
     /// A part of a message as Google's block: text, an image, a text file as its text, any other file a document.
     fn block(&self, part: &InputContent) -> Result<Value, Failure> {
         use base64::Engine;
-        let inline = |reference: &str| {
-            self.call
-                .files
-                .read(reference)
-                .map(|bytes| base64::engine::general_purpose::STANDARD.encode(bytes))
-                .map_err(|missing| Failure::new(FailureKind::InvalidRequest, missing.to_string()))
-        };
+        let inline =
+            |reference: &str| super::file_bytes(self.call, reference).map(|bytes| base64::engine::general_purpose::STANDARD.encode(bytes));
         Ok(match part {
             InputContent::InputText { text } => json!({ "type": "text", "text": text }),
             InputContent::InputImage { file, .. } => {

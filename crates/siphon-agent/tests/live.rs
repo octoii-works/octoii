@@ -53,7 +53,6 @@ fn models() -> Arc<Models> {
     model.provider = "openrouter".into();
     let host = Host {
         credentials: Arc::new(Environment),
-        files: Arc::new(Environment),
         transport: Arc::new(octoii_ai::transport::Network::default()),
         new_id: Arc::new(new_id),
         clock: Arc::new(|| 0),

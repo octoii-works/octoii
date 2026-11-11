@@ -6,8 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::Bytes;
-use octoii_ai::host::{Credential, Credentials, Files, NoSuchFile, Unavailable};
-use octoii_ai::models::Host as Network;
+use octoii_ai::host::{Credential, Credentials, Unavailable};
 use serde_json::{Value, json};
 use siphon_protocol::{Machine, Scope};
 use siphon_runtime::Options;
@@ -16,7 +15,7 @@ use tokio::sync::mpsc;
 use crate::connection::{Access, Outgoing, serve};
 use crate::{Setup, Siphon};
 
-/// No credentials and no files: a test's threads ask no model.
+/// No credentials: a test's threads ask no model.
 struct Nothing;
 
 impl Credentials for Nothing {
@@ -33,26 +32,14 @@ impl Credentials for Nothing {
     }
 }
 
-impl Files for Nothing {
-    fn read(&self, reference: &str) -> Result<Bytes, NoSuchFile> {
-        Err(NoSuchFile(reference.into()))
-    }
-}
-
 /// Siphon's setup for a test: the machine as `machine` gives it, a volume in memory, no providers and no models.
 #[must_use]
 pub fn setup(machine: siphon_machine::Host) -> Setup {
-    let network = Network {
-        credentials: Arc::new(Nothing),
-        files: Arc::new(Nothing),
-        transport: Arc::new(octoii_ai::transport::Network::default()),
-        new_id: Arc::new(|| "id".to_owned()),
-        clock: Arc::new(|| 0),
-    };
     Setup {
         machine,
         config: None,
-        network,
+        credentials: Arc::new(Nothing),
+        transport: Arc::new(octoii_ai::transport::Network::default()),
         providers: Vec::new(),
         catalogue: Vec::new(),
         options: Options::default(),

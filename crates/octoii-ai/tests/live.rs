@@ -3,11 +3,10 @@
 
 use std::sync::Arc;
 
-use bytes::Bytes;
 use octoii_ai::catalogue;
 use octoii_ai::driver::{Call, Driver, Settings};
 use octoii_ai::drivers::OPENROUTER;
-use octoii_ai::host::{Credential, Credentials, Files, NoSuchFile, Unavailable};
+use octoii_ai::host::{Credential, Credentials, Unavailable};
 use octoii_ai::stream::{Event, TextStream};
 use octoii_ai::transport::Network;
 use octoii_ai::vocabulary::{
@@ -15,8 +14,6 @@ use octoii_ai::vocabulary::{
     Tool, ToolChoice,
 };
 use serde_json::json;
-
-struct NoFiles;
 
 /// The key in the environment, as the host's credentials.
 struct Environment;
@@ -37,19 +34,13 @@ impl Credentials for Environment {
     }
 }
 
-impl Files for NoFiles {
-    fn read(&self, reference: &str) -> Result<Bytes, NoSuchFile> {
-        Err(NoSuchFile(reference.into()))
-    }
-}
-
 fn call() -> Call {
     Call {
         provider: "openrouter".into(),
         settings: Settings::default(),
         credentials: Arc::new(Environment),
         transport: Arc::new(Network::default()),
-        files: Arc::new(NoFiles),
+        files: None,
         now_ms: 0,
     }
 }

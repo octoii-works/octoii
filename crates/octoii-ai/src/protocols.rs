@@ -10,15 +10,26 @@ use base64::Engine;
 use crate::driver::Call;
 use crate::vocabulary::{Failure, FailureKind, FileRef};
 
+/// The bytes of the file of `reference`, as the conversation the call is of holds them.
+///
+/// # Errors
+/// An `invalid_request` failure where it holds no such file, or the call is of no conversation.
+pub(crate) fn file_bytes(call: &Call, reference: &str) -> Result<bytes::Bytes, Failure> {
+    let files = call
+        .files
+        .as_ref()
+        .ok_or_else(|| Failure::new(FailureKind::InvalidRequest, format!("the file {reference} is of no conversation")))?;
+    files
+        .read(reference)
+        .map_err(|missing| Failure::new(FailureKind::InvalidRequest, missing.to_string()))
+}
+
 /// A file's bytes as a data URL, as a request carries a file inline.
 ///
 /// # Errors
 /// An `invalid_request` failure where the host has no such file.
 pub(crate) fn data_url(call: &Call, file: &FileRef) -> Result<String, Failure> {
-    let bytes = call
-        .files
-        .read(&file.reference)
-        .map_err(|missing| Failure::new(FailureKind::InvalidRequest, missing.to_string()))?;
+    let bytes = file_bytes(call, &file.reference)?;
     Ok(format!(
         "data:{};base64,{}",
         file.media_type,
@@ -37,10 +48,7 @@ pub fn is_text(media_type: &str) -> bool {
 /// # Errors
 /// An `invalid_request` failure where the host has no such file.
 pub(crate) fn file_as_text(call: &Call, file: &FileRef) -> Result<String, Failure> {
-    let bytes = call
-        .files
-        .read(&file.reference)
-        .map_err(|missing| Failure::new(FailureKind::InvalidRequest, missing.to_string()))?;
+    let bytes = file_bytes(call, &file.reference)?;
     Ok(file_text(&String::from_utf8_lossy(&bytes), file.filename.as_deref()))
 }
 

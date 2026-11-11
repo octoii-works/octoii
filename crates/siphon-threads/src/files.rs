@@ -56,3 +56,19 @@ pub fn read(snapshot: &Snapshot, id: &str, reference: &str) -> beak::Result<Opti
     let Some(at) = path(id, reference) else { return Ok(None) };
     snapshot.read(&at, 0, u64::MAX)
 }
+
+/// The files of the thread `thread`, as a model request of its conversation reads them: each by its reference, from
+/// the volume as it is.
+#[derive(Debug, Clone)]
+pub struct OfThread {
+    pub runtime: siphon_runtime::Runtime,
+    pub thread: String,
+}
+
+impl octoii_ai::host::Files for OfThread {
+    fn read(&self, reference: &str) -> Result<Bytes, octoii_ai::host::NoSuchFile> {
+        let missing = || octoii_ai::host::NoSuchFile(reference.to_owned());
+        let snapshot = self.runtime.snapshot().map_err(|_| missing())?;
+        read(&snapshot, &self.thread, reference).ok().flatten().ok_or_else(missing)
+    }
+}

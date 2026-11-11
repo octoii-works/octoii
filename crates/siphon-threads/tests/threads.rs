@@ -5,6 +5,7 @@
 use std::time::Duration;
 
 use beak::Beak;
+use bytes::Bytes;
 use octoii_ai::vocabulary::{InputContent, ReasoningEffort};
 use siphon_runtime::{Ending, Options, Program, Run, Runtime, Wait};
 use siphon_threads::log::{self, Entry, Writer};
@@ -353,4 +354,35 @@ async fn a_log_is_read_on_a_page_at_a_time_each_line_once() {
     );
     assert_eq!(back(None, 100), (ids.clone(), true), "all of it");
     threads.runtime().close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_thread_s_files_are_read_by_their_reference_as_its_conversation_names_them_and_by_no_other_thread() {
+    use octoii_ai::host::Files as _;
+    let beak = Beak::new().expect("Beak");
+    let threads = threads(&beak, Taker);
+    let id = threads.create(&person(Config::default()), "k1").await.expect("made");
+    let other = threads.create(&person(Config::default()), "k2").await.expect("made");
+    let runtime = threads.runtime();
+    let mut changes = siphon_runtime::Changes::new();
+    let reference = siphon_threads::files::keep(
+        &runtime.snapshot().expect("a snapshot"),
+        &mut changes,
+        &id,
+        Bytes::from_static(b"%PDF"),
+    )
+    .expect("kept");
+    runtime.commit(changes).await.expect("committed");
+    let files = siphon_threads::files::OfThread {
+        runtime: runtime.clone(),
+        thread: id,
+    };
+    assert_eq!(files.read(&reference).expect("read"), Bytes::from_static(b"%PDF"));
+    assert!(files.read("sha256:00").is_err(), "a reference of no file kept");
+    let elsewhere = siphon_threads::files::OfThread {
+        runtime: runtime.clone(),
+        thread: other,
+    };
+    assert!(elsewhere.read(&reference).is_err(), "another thread's files are not its own");
+    runtime.close().await;
 }

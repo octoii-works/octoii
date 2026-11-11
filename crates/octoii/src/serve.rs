@@ -9,8 +9,7 @@ use std::sync::Arc;
 
 use anyhow::Context as _;
 use octoii_ai::drivers;
-use octoii_ai::host::{Files, NoSuchFile};
-use octoii_ai::models::{Host as Network, Provider};
+use octoii_ai::models::Provider;
 use siphon::{Setup, Siphon};
 use siphon_browser::BrowserPlugin;
 use siphon_mcp::McpPlugin;
@@ -50,15 +49,6 @@ fn providers() -> Vec<Provider> {
     drivers.into_iter().map(Provider::of).collect()
 }
 
-/// The files a conversation names: none yet, till the node keeps the files its clients send.
-struct NoFiles;
-
-impl Files for NoFiles {
-    fn read(&self, reference: &str) -> Result<bytes::Bytes, NoSuchFile> {
-        Err(NoSuchFile(reference.into()))
-    }
-}
-
 /// The machine as the person's own: their home folder and shell, the system's temporary folder, the threads shown at
 /// the Home's `threads/`, and what the node keeps for itself — its credentials, its state, what lasts while it runs —
 /// hidden from what reaches the machine through Siphon.
@@ -80,33 +70,11 @@ fn machine(home: &Home) -> siphon_machine::Host {
 pub fn siphon(home: &Home) -> anyhow::Result<Siphon> {
     let beak = beak::Beak::new().context("Beak")?;
     let providers = providers();
-    let network = Network {
-        credentials: Arc::new(Credstore::new(home.credstore(), &providers)),
-        files: Arc::new(NoFiles),
-        transport: Arc::new(octoii_ai::transport::Network::default()),
-        new_id: Arc::new(|| {
-            format!(
-                "{:x}",
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_nanos()
-            )
-        }),
-        clock: Arc::new(|| {
-            i64::try_from(
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis(),
-            )
-            .unwrap_or(i64::MAX)
-        }),
-    };
     let setup = Setup {
         machine: machine(home),
         config: Some(home.config()),
-        network,
+        credentials: Arc::new(Credstore::new(home.credstore(), &providers)),
+        transport: Arc::new(octoii_ai::transport::Network::default()),
         providers,
         catalogue: octoii_ai::catalogue::bundled(),
         options: Options {

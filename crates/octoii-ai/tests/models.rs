@@ -26,7 +26,6 @@ fn host(transport: Arc<Answering>) -> Host {
         .insert("openai".into(), Credential::ApiKey { api_key: "sk".into() });
     Host {
         credentials: Arc::new(keys),
-        files: call.files,
         transport: call.transport,
         new_id: Arc::new(|| "minted".into()),
         clock: Arc::new(|| 1000),
@@ -50,7 +49,7 @@ fn request(model: &str) -> Request {
 }
 
 async fn failure_of(models: &Models, request: &Request) -> Option<FailureKind> {
-    let mut stream = models.text(request).await;
+    let mut stream = models.text(request, None).await;
     while let Some(event) = stream.next().await {
         if let Event::Finished(response) = event {
             assert_eq!(response.status, ResponseStatus::Failed);
@@ -138,7 +137,7 @@ async fn a_request_is_prepared_its_effort_fitted_to_the_model_and_its_calls_argu
         *listed = model;
     }
     models.set_catalogue(catalogue);
-    let _ = models.text(&asked).await;
+    let _ = models.text(&asked, None).await;
     let sent = answering.body();
     assert_eq!(
         sent["reasoning"]["effort"], "low",

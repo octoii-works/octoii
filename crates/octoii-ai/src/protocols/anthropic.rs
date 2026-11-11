@@ -357,10 +357,7 @@ fn input_blocks(call: &Call, content: &[InputContent]) -> Result<Vec<Value>, Fai
             }
             InputContent::InputFile { file } => {
                 let mut document = if super::is_text(&file.media_type) {
-                    let bytes = call
-                        .files
-                        .read(&file.reference)
-                        .map_err(|missing| Failure::new(FailureKind::InvalidRequest, missing.to_string()))?;
+                    let bytes = super::file_bytes(call, &file.reference)?;
                     json!({ "type": "document", "source": { "type": "text", "media_type": "text/plain", "data": String::from_utf8_lossy(&bytes) } })
                 } else {
                     json!({ "type": "document", "source": { "type": "base64", "media_type": file.media_type, "data": base64_of(call, &file.reference)? } })
@@ -377,10 +374,7 @@ fn input_blocks(call: &Call, content: &[InputContent]) -> Result<Vec<Value>, Fai
 
 fn base64_of(call: &Call, reference: &str) -> Result<String, Failure> {
     use base64::Engine;
-    let bytes = call
-        .files
-        .read(reference)
-        .map_err(|missing| Failure::new(FailureKind::InvalidRequest, missing.to_string()))?;
+    let bytes = super::file_bytes(call, reference)?;
     Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
 }
 

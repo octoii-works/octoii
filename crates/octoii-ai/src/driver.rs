@@ -39,7 +39,7 @@ pub struct Call {
     pub settings: Settings,
     pub credentials: Arc<dyn Credentials>,
     pub transport: Arc<dyn Transport>,
-    pub files: Arc<dyn Files>,
+    pub files: Option<Arc<dyn Files>>,
     pub now_ms: i64,
 }
 

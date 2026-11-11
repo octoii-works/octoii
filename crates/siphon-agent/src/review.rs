@@ -100,7 +100,8 @@ pub async fn answer_review(models: &Arc<Models>, asked: Asked<Review>) -> Result
         max_output_tokens: None,
         prompt_cache_key: None,
     };
-    let mut stream = models.text(&request).await;
+    // What is judged is told in words: the review names no file of the thread's.
+    let mut stream = models.text(&request, None).await;
     let response = loop {
         let event = tokio::select! {
             event = stream.next() => event,

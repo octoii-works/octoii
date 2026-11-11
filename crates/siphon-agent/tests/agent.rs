@@ -152,7 +152,6 @@ fn models(script: &Arc<Script>) -> Arc<Models> {
     let driver: &'static Scripted = Box::leak(Box::new(Scripted(Arc::clone(script))));
     let host = Host {
         credentials: Arc::new(Nothing),
-        files: Arc::new(Nothing),
         transport: Arc::new(octoii_ai::transport::Network::default()),
         new_id: Arc::new(|| "minted".into()),
         clock: Arc::new(|| 0),
