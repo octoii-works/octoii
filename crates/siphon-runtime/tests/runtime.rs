@@ -461,7 +461,7 @@ async fn a_process_waiting_for_its_children_runs_once_every_one_ended() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_volume_grown_past_its_base_is_collected() {
+async fn a_volume_that_grows_past_its_base_is_collected() {
     let beak = beak();
     let options = Options {
         collection: Collection {
@@ -471,18 +471,26 @@ async fn a_volume_grown_past_its_base_is_collected() {
         ..Options::default()
     };
     let runtime = Runtime::builder().start(&beak, options).expect("started");
-    // A file written again and again leaves what it held before for a collection to give back.
-    let written = 64;
-    for round in 0..written {
+    // A file written again and again leaves what it held before for a collection to give back. What is written while a
+    // collection runs counts toward the base it leaves, as a collector's pacer counts what is made during a cycle live:
+    // the volume is collected again once it has grown past that base — as the writing goes on.
+    let written: u64 = 64;
+    let mut round = 0;
+    let mut write = async || {
         let mut changes = Changes::new();
         changes.write(Bytes::from_static(b"notes"), format!("{round:0>1024}").into_bytes());
         runtime.commit(changes).await.expect("written");
+        round += 1;
+    };
+    for _ in 0..written {
+        write().await;
     }
     let collected = async {
         loop {
             if runtime.kernel().usage().expect("usage") < written * 1024 / 2 {
                 return;
             }
+            write().await;
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
     };
