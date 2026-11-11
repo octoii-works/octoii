@@ -210,7 +210,7 @@ impl Calls {
                 run.take_mail(&key);
                 if let Answer::Given(Judgment { usage: Some(used), .. }) = &answer {
                     let process = bytes::Bytes::copy_from_slice(run.path());
-                    run.changes.charge(process, siphon_threads::Usage::counters_of(used));
+                    run.changes.charge(process, siphon_threads::ThreadUsage::counters_of(used));
                 }
                 match answer {
                     Answer::Given(judgment) if judgment.allow => self.exec(at, run, setting, Writes::Anywhere)?,

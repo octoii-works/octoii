@@ -14,7 +14,7 @@ use crate::log::{Address, Entry, Error, Writer};
 use crate::thread;
 
 /// What is delivered to a thread.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum Inbound {
     /// An input: whose it is — the person's, or a thread's — what it says, and who is told how the turn that takes it
@@ -35,7 +35,7 @@ pub enum Inbound {
 
 /// Who is told how the turn that takes an input ends, by mail of `key`: the process at `process`, by its path, as the
 /// commit `started` started it — whichever lives there, where none — as `wait(2)` tells a parent its child's status.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct ReplyTo {
     pub process: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -45,7 +45,7 @@ pub struct ReplyTo {
 
 /// How the turn that took an input ended, as who waits on it is told: replied, with what it said last; failed, and
 /// why; stopped; or the input taken back before a turn took it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(tag = "ended", rename_all = "kebab-case")]
 pub enum Ended {
     Replied { said: String },

@@ -13,7 +13,7 @@ use crate::marks::{Marks, SNOOZE_NAME};
 use crate::thread::{self, PARENT_CALL_ANNOTATION, PARENT_LABEL, PROJECT_LABEL};
 
 /// How a thread's turns stand: none run yet, one running, or how the last ended.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(rename_all = "kebab-case")]
 pub enum Turn {
     #[default]
@@ -55,8 +55,8 @@ fn named(name: &'static str, value: Option<Vec<u8>>) -> Named {
 
 /// What a thread's model requests used, as Beak counts it on its main process for every process under it, as cgroup v2
 /// charges a group and its ancestors.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Usage {
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+pub struct ThreadUsage {
     pub input_tokens: u64,
     pub cached_tokens: u64,
     pub output_tokens: u64,
@@ -64,7 +64,7 @@ pub struct Usage {
     pub cost_nanodollars: u64,
 }
 
-impl Usage {
+impl ThreadUsage {
     /// The counters Beak keeps it as, by name.
     pub const COUNTERS: [&'static str; 5] = [
         "input-tokens",
@@ -116,7 +116,7 @@ impl Usage {
 
 /// A request a process of the thread waits on a person's answer to: the process, by its path, the request's key and
 /// name, what it asks, and the JSON Schema the answer fits.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
 pub struct Ask {
     pub process: String,
     pub key: String,
@@ -126,7 +126,7 @@ pub struct Ask {
 }
 
 /// How a thread stands.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
 pub struct Status {
     pub turn: Turn,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -134,14 +134,14 @@ pub struct Status {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ended_at: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub usage: Option<Usage>,
+    pub usage: Option<ThreadUsage>,
     /// What waits in its inbox, by its id, in the order it came.
     pub inbox: Vec<(String, inbox::Inbound)>,
     pub asks: Vec<Ask>,
 }
 
 /// Where a sub-thread came from: the thread that delegated it, and its call that did.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct Parent {
     pub thread: String,
     pub call: String,
@@ -149,7 +149,7 @@ pub struct Parent {
 
 /// A thread as a list of them shows it: its id, its project and parent, how it runs, how the person keeps it, and how
 /// it stands.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
 pub struct Listed {
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -199,7 +199,9 @@ fn status(runtime: &Runtime, snapshot: &Snapshot, id: &str, directory: &Director
         .map(|value| serde_json::from_slice(value))
         .transpose()?
         .unwrap_or_default();
-    let usage = snapshot.record(&thread::main(id))?.and_then(|record| Usage::of(&record.usage));
+    let usage = snapshot
+        .record(&thread::main(id))?
+        .and_then(|record| ThreadUsage::of(&record.usage));
     let inbox = inbox::waiting(snapshot, id)?
         .into_iter()
         .map(|Waiting { id, inbound }| (id, inbound))

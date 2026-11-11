@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use super::content::{InputContent, OutputContent};
 
 /// Where an item a model writes stands: still being written, written whole, or cut off.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(rename_all = "snake_case")]
 pub enum ItemStatus {
     InProgress,
@@ -17,7 +17,7 @@ pub enum ItemStatus {
 /// Which model wrote an item, by its reference, and what its provider attached to it that no field holds — a
 /// signature on a call, say — an object of objects, each under its provider's id, which goes back to that provider
 /// alone.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct Origin {
     pub model: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -26,7 +26,7 @@ pub struct Origin {
 
 /// A message: the person's, a developer's or the system's, which update the instructions from where they stand; or
 /// the model's.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(tag = "role", rename_all = "snake_case")]
 pub enum Message {
     User {
@@ -50,7 +50,7 @@ pub enum Message {
 }
 
 /// A model's call of a function by name, its arguments JSON text.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct FunctionCall {
     /// The item's id: its provider's, carried as it came, as every id a provider gives is its data.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -69,7 +69,7 @@ pub struct FunctionCall {
 }
 
 /// What a function call gave back to the model, and whether it failed.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct FunctionCallOutput {
     pub call_id: String,
     pub output: Vec<InputContent>,
@@ -79,7 +79,7 @@ pub struct FunctionCallOutput {
 
 /// What a model thought before it answered, as far as its provider shows it, with what it needs to go on from it —
 /// which only the model that wrote it reads.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct Reasoning {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
@@ -99,7 +99,7 @@ pub struct Reasoning {
 }
 
 /// Where a web search a provider runs stands.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(rename_all = "snake_case")]
 pub enum WebSearchStatus {
     InProgress,
@@ -109,7 +109,7 @@ pub enum WebSearchStatus {
 }
 
 /// What a web search did: searched, opened a page, or looked for a pattern in one.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum WebSearchAction {
     Search {
@@ -128,7 +128,7 @@ pub enum WebSearchAction {
 }
 
 /// A web search the provider ran, whichever provider ran it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct WebSearchCall {
     pub id: String,
     pub status: WebSearchStatus,
@@ -139,7 +139,7 @@ pub struct WebSearchCall {
 }
 
 /// How hard a model reasons, from `none` to `max`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, ts_rs::TS)]
 #[serde(rename_all = "snake_case")]
 pub enum ReasoningEffort {
     None,
@@ -152,13 +152,13 @@ pub enum ReasoningEffort {
 }
 
 /// A change of the reasoning effort from where it stands, so what a window began with is never changed within it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct ConfigurationUpdate {
     pub effort: ReasoningEffort,
 }
 
 /// An item of a conversation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Item {
     Message(Message),

@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use siphon_machine::paths::Base;
 use siphon_runtime::{Answer, Ending, Program, Retries, Run, Wait};
 use siphon_threads::log::Writer;
-use siphon_threads::{CallStatus, Config, Entry, Usage, Window, inbox, thread};
+use siphon_threads::{CallStatus, Config, Entry, ThreadUsage, Window, inbox, thread};
 use siphon_tools::mcp::Place;
 use siphon_tools::{Calls, Setting, State, Tools};
 
@@ -402,7 +402,7 @@ fn append_unrun(run: &mut Run<'_>, writer: &mut Writer, call_id: &str, why: &str
 /// charges its ancestors.
 pub(crate) fn charge(run: &mut Run<'_>, response: &Response) {
     let Some(used) = &response.usage else { return };
-    let counters = Usage::counters_of(used);
+    let counters = ThreadUsage::counters_of(used);
     if !counters.is_empty() {
         let process = bytes::Bytes::copy_from_slice(run.path());
         run.changes.charge(process, counters);

@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use siphon_runtime::{Answer, Ending, Program, Retries, Run, Wait};
 use siphon_threads::inbox::{self, Ended, Inbound};
 use siphon_threads::log::Writer;
-use siphon_threads::{CallStatus, Config, Entry, MainInput, Outcome as TurnOutcome, Turn, Usage, Window, thread};
+use siphon_threads::{CallStatus, Config, Entry, MainInput, Outcome as TurnOutcome, ThreadUsage, Turn, Window, thread};
 use siphon_tools::mcp::TrustProgram;
 
 use crate::gather::Gather;
@@ -192,7 +192,7 @@ fn budget_left(run: &Run<'_>, id: &str, config: &Config) -> anyhow::Result<Optio
     let used = run
         .snapshot()
         .record(&thread::main(id))?
-        .and_then(|record| Usage::of(&record.usage))
+        .and_then(|record| ThreadUsage::of(&record.usage))
         .map_or(0, |usage| usage.cost_nanodollars);
     Ok(Some(budget.saturating_sub(used)))
 }

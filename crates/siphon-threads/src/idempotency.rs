@@ -19,7 +19,7 @@ pub const RETENTION_MS: i64 = 24 * 60 * 60 * 1000;
 pub const KEY_BYTES_MAX: usize = 128;
 
 /// What a request done under a key did.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct Done {
     pub method: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]

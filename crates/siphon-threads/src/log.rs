@@ -22,7 +22,7 @@ pub const SEGMENT_BYTES_MAX: u64 = 32 << 20;
 const SEGMENT_EXTENSION: &str = ".jsonl";
 
 /// An entry of a thread's log.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum Entry {
     /// How the thread runs changed, from here on: by whom, and each field from what it was to what it is.
@@ -113,14 +113,14 @@ impl Entry {
 }
 
 /// A section of what the model is told, by its name, with its text as it is sent; none for a section no longer told.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct Section {
     pub name: String,
     pub text: Option<String>,
 }
 
 /// How a call ended.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(rename_all = "kebab-case")]
 pub enum CallStatus {
     Ok,
@@ -136,7 +136,7 @@ pub enum CallStatus {
 }
 
 /// How a turn ended.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(rename_all = "kebab-case")]
 pub enum Outcome {
     Replied,
@@ -146,7 +146,7 @@ pub enum Outcome {
 
 /// Where an entry is: its segment, and its line's offset and length there, newline and all, so it is read again as
 /// `pread` reads, in place.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct Address {
     pub segment: String,
     pub offset: u64,
@@ -154,7 +154,7 @@ pub struct Address {
 }
 
 /// Where a reader of a log stands: the segment it read, and how far.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct Cursor {
     pub segment: String,
     pub offset: u64,

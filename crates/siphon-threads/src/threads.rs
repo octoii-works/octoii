@@ -18,13 +18,13 @@ use crate::status::{self, Listed, Parent, TURN_ANNOTATION, Turn};
 use crate::thread::{self, ARCHIVED_LABEL, KIND, MAIN_KEY, PARENT_CALL_ANNOTATION, PARENT_LABEL, PINNED_LABEL, PROJECT_LABEL};
 
 /// What a thread's main process is started with: the thread it runs.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct MainInput {
     pub thread: String,
 }
 
 /// A thread to make: who makes it, how it runs, its project and the thread that delegates it, where it has them.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct NewThread {
     pub actor: String,
     pub config: Config,

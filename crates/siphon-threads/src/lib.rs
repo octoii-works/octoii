@@ -17,6 +17,6 @@ pub mod window;
 pub use config::{Changed, Config, ConfigChange, ConfigChanged, Mode};
 pub use log::{CallStatus, Entry, Outcome, Section};
 pub use marks::{Marks, MarksChange};
-pub use status::{Ask, BEGAN_AT_ANNOTATION, ENDED_AT_ANNOTATION, Listed, Parent, Status, TURN_ANNOTATION, Turn, Usage, began, ended};
+pub use status::{Ask, BEGAN_AT_ANNOTATION, ENDED_AT_ANNOTATION, Listed, Parent, Status, TURN_ANNOTATION, ThreadUsage, Turn, began, ended};
 pub use threads::{Error, MainInput, NewThread, Threads};
 pub use window::Window;

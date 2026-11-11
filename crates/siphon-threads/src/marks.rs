@@ -18,7 +18,7 @@ const SETTLED_AT: &str = "siphon.settled_at";
 const UNSETTLED_AT: &str = "siphon.unsettled_at";
 
 /// How the person keeps a thread; times in milliseconds since the epoch.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct Marks {
     pub pinned: bool,
     pub archived: bool,
@@ -38,7 +38,7 @@ pub struct Marks {
 
 /// A change of how the person keeps a thread: each mark given in place of the one it had, each left out kept; a snooze
 /// till a time past ends it.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct MarksChange {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pinned: Option<bool>,

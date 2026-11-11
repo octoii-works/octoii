@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 /// A file the host keeps, by the reference its content gives it, `sha256:` and the hash: what it is, and its name
 /// where it has one.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct FileRef {
     #[serde(rename = "ref")]
     pub reference: String,
@@ -15,7 +15,7 @@ pub struct FileRef {
 }
 
 /// How closely a model looks at an image.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(rename_all = "snake_case")]
 pub enum ImageDetail {
     #[default]
@@ -25,7 +25,7 @@ pub enum ImageDetail {
 }
 
 /// What user, developer and system messages and calls' outputs hold.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum InputContent {
     InputText {
@@ -49,7 +49,7 @@ impl InputContent {
 }
 
 /// A web page an answer cites, by the characters of the text that cite it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct UrlCitation {
     pub url: String,
     pub title: String,
@@ -58,7 +58,7 @@ pub struct UrlCitation {
 }
 
 /// What an assistant message holds: text the model wrote, with the pages it cites, or its refusal in its words.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum OutputContent {
     OutputText {

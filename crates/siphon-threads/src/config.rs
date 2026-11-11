@@ -11,7 +11,7 @@ use siphon_runtime::Named;
 
 /// How a thread's calls go ahead: in `default`, what goes beyond the workspace and the sandbox asks the person; in
 /// `auto`, what would ask is judged by a second model, the person asked where it doubts; in `full-access`, everything.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(rename_all = "kebab-case")]
 pub enum Mode {
     #[default]
@@ -21,7 +21,7 @@ pub enum Mode {
 }
 
 /// A field changed: what it was, and what it is; `None` for not set.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct Changed<T> {
     pub from: Option<T>,
     pub to: Option<T>,
@@ -43,19 +43,23 @@ macro_rules! settings {
     ($($(#[$doc:meta])* $field:ident: $ty:ty => $annotation:literal;)*) => {
         /// How a thread runs: each setting, or none where it has none.
         #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+        #[derive(ts_rs::TS)]
         pub struct Config {
             $($(#[$doc])* #[serde(default, skip_serializing_if = "Option::is_none")] pub $field: Option<$ty>,)*
         }
 
         /// A change of how a thread runs: each setting given, `Some(None)` to let it go; each left out kept.
         #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+        #[derive(ts_rs::TS)]
         pub struct ConfigChange {
             $(#[serde(default, skip_serializing_if = "Option::is_none", with = "::serde_with::rust::double_option")]
+            #[ts(as = "_", optional = nullable)]
             pub $field: Option<Option<$ty>>,)*
         }
 
         /// What a change changed, as the log holds it: each field changed, from what it was to what it is.
         #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+        #[derive(ts_rs::TS)]
         pub struct ConfigChanged {
             $(#[serde(default, skip_serializing_if = "Option::is_none")] pub $field: Option<Changed<$ty>>,)*
         }

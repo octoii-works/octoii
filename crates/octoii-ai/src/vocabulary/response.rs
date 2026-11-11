@@ -7,7 +7,7 @@ use super::content::OutputContent;
 use super::items::{Item, Message};
 
 /// Where a response stands: under way, or ended `completed`, `incomplete` or `failed`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(rename_all = "snake_case")]
 pub enum ResponseStatus {
     InProgress,
@@ -18,7 +18,7 @@ pub enum ResponseStatus {
 
 /// Why a response ended `incomplete`: at its output limit, filtered by the provider's policy, or cut off by its caller,
 /// with what had come of it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(rename_all = "snake_case")]
 pub enum Incomplete {
     MaxOutputTokens,
@@ -29,7 +29,7 @@ pub enum Incomplete {
 /// What a request used, in tokens — the input's counting those read from the cache and those written to it — and the
 /// web searches its provider ran for it, and what it cost, in billionths of a US dollar — the provider's figure where it
 /// gives one, else the catalogue's prices'.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct Usage {
     pub input_tokens: u64,
     /// Of `input_tokens`, those read from the prompt cache.
@@ -49,7 +49,7 @@ pub struct Usage {
 }
 
 /// What kind of failure ended a request, which decides whether trying again may help.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(rename_all = "snake_case")]
 pub enum FailureKind {
     ContextOverflow,
@@ -69,7 +69,7 @@ pub enum FailureKind {
 /// Why a request failed: its kind; the provider's code and words; the HTTP status it answered with; how long to wait
 /// before trying again, where it says; and, for a quota used up, when it is given again and over what window it is
 /// counted, where it says.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct Failure {
     pub kind: FailureKind,
     pub message: String,
@@ -113,7 +113,7 @@ impl Failure {
 
 /// What a request came to: its provider's id of it, the model that answered by its reference, its status, what the
 /// model wrote, what it used, why it failed or why it stopped short, and the tokens its context took.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct Response {
     pub id: String,
     pub model: String,

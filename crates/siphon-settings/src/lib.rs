@@ -25,7 +25,7 @@ const REVIEW_MODEL: &str = "siphon.review_model";
 const HISTORY_RETENTION: &str = "siphon.history_retention_days";
 
 /// The environment's settings.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct Environment {
     /// The mode a thread starts in where it is made with none.
     pub thread_mode: Mode,
@@ -50,20 +50,22 @@ impl Default for Environment {
 
 /// A change of the environment's settings: each given in place of the one it had, each left out kept;
 /// `Some(None)` lets an optional one go.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct EnvironmentChange {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thread_mode: Option<Mode>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub favorite_models: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none", with = "::serde_with::rust::double_option")]
+    #[ts(as = "_", optional = nullable)]
     pub review_model: Option<Option<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none", with = "::serde_with::rust::double_option")]
+    #[ts(as = "_", optional = nullable)]
     pub history_retention_days: Option<Option<u32>>,
 }
 
 /// A change of the settings: the environment's, and the device's, as a merge patch of its document.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ts_rs::TS)]
 pub struct SettingsChange {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub environment: Option<EnvironmentChange>,

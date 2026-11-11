@@ -6,7 +6,7 @@ use super::items::{Item, ReasoningEffort};
 
 /// A tool a model may call: a function of the caller's, its arguments' JSON Schema given; or the provider's own web
 /// search, which the provider runs.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Tool {
     Function {
@@ -18,7 +18,7 @@ pub enum Tool {
 }
 
 /// Which tools the model may call: as it sees fit, none, at least one, or the function named.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ToolChoice {
     Auto,
@@ -28,13 +28,13 @@ pub enum ToolChoice {
 }
 
 /// How hard the model reasons.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct ReasoningConfig {
     pub effort: ReasoningEffort,
 }
 
 /// An answer in JSON of a schema, by the schema's name.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct Format {
     pub name: String,
     pub schema: serde_json::Value,
@@ -43,7 +43,7 @@ pub struct Format {
 /// A request: the model by its reference, such as `anthropic/claude-opus-5-5`; the instructions at the start; the
 /// conversation; the tools it may call and which; how hard it reasons; the JSON its answer is, where it is; the most it
 /// writes; and the name of the conversation, by which a provider sends its requests to the same cache.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct Request {
     pub model: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
