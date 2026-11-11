@@ -3,7 +3,9 @@
 //! `/threads/<thread>/files`, kept in the thread by its content — an image as every model reads one — and answered with
 //! what names it, its reference; a kept file's bytes given back at `/threads/<thread>/files/<sha256>` — or, where the
 //! query asks with `width_max` and `height_max`, an image fitted to that box, its shape kept and never enlarged, as a
-//! picture of it is drawn small — each kept by a browser for good, as what a reference names never changes.
+//! picture of it is drawn small — each kept by a browser for good, as what a reference names never changes. Beside
+//! them, an image or a PDF of the machine's at `/machine?path=<path>`, as the person browses the machine's files, its
+//! bytes read anew each time.
 
 use axum::body::Bytes;
 use axum::extract::{Extension, Path, Query, State};
@@ -103,9 +105,17 @@ pub(crate) async fn kept(
     let bytes = files::read(&snapshot, &thread, &format!("sha256:{hash}"))
         .map_err(|error| Denied(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?
         .ok_or_else(|| Denied(StatusCode::NOT_FOUND, "no such file".into()))?;
-    let mut media_type = siphon_machine::media_type(&bytes).unwrap_or("application/octet-stream");
-    let mut body = bytes.clone();
-    if let (Some(width_max), Some(height_max), true) = (asked.width_max, asked.height_max, media_type.starts_with("image/")) {
+    let media_type = siphon_machine::media_type(&bytes).unwrap_or("application/octet-stream");
+    let picture = asked.width_max.zip(asked.height_max);
+    // What a reference names never changes.
+    pictured(media_type, &bytes, picture, "private, max-age=31536000, immutable")
+}
+
+/// `bytes` of `media_type` as a response — an image fitted to `picture`, its widest and its tallest, where one is
+/// asked for — kept by a browser as `caching` says.
+fn pictured(media_type: &'static str, bytes: &Bytes, picture: Option<(u32, u32)>, caching: &'static str) -> Result<Response, Denied> {
+    let (mut media_type, mut body) = (media_type, bytes.clone());
+    if let (Some((width_max, height_max)), true) = (picture, media_type.starts_with("image/")) {
         let bounds = siphon_image::Bounds {
             width_max,
             height_max,
@@ -113,13 +123,56 @@ pub(crate) async fn kept(
             bytes_max: files::BYTES_MAX,
             formats: siphon_image::UNIVERSAL_FORMATS,
         };
-        let fitted = siphon_image::fit(&bytes, &bounds).map_err(|error| Denied(StatusCode::UNPROCESSABLE_ENTITY, error.to_string()))?;
+        let fitted = siphon_image::fit(bytes, &bounds).map_err(|error| Denied(StatusCode::UNPROCESSABLE_ENTITY, error.to_string()))?;
         media_type = fitted.format.media_type();
         body = Bytes::from(fitted.bytes.into_owned());
     }
-    let headers = [
-        (header::CONTENT_TYPE, media_type),
-        (header::CACHE_CONTROL, "private, max-age=31536000, immutable"),
-    ];
+    let headers = [(header::CONTENT_TYPE, media_type), (header::CACHE_CONTROL, caching)];
     Ok((headers, body).into_response())
+}
+
+/// Where a file of the machine's is: as the person names it, whole.
+#[derive(Debug, Deserialize)]
+pub(crate) struct OnMachine {
+    path: String,
+    width_max: Option<u32>,
+    height_max: Option<u32>,
+}
+
+/// The bytes of an image or a PDF of the machine's, as the person reads it — fitted to the box asked for, where it is
+/// an image and one is — to a session that may read files.
+pub(crate) async fn machined(
+    State(node): State<Node>,
+    Query(asked): Query<OnMachine>,
+    headers: HeaderMap,
+    remote: Option<Extension<Remote>>,
+) -> Result<Response, Denied> {
+    let session = session(&node, &headers, remote.as_ref().map(|Extension(remote)| remote))?;
+    if !session.scopes.contains(&Scope::FilesRead) {
+        return Err(Denied(StatusCode::FORBIDDEN, "the session may not read files".into()));
+    }
+    let machine = node
+        .siphon
+        .person_machine()
+        .map_err(|error| Denied(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
+    let options = siphon_machine::ReadOptions {
+        media_bytes_max: files::BYTES_MAX as u64,
+        ..siphon_machine::ReadOptions::default()
+    };
+    let read = machine.read(&machine.path(&asked.path), &options);
+    let (media_type, bytes) = match read {
+        Ok(siphon_machine::Read::Media { media_type, bytes, .. }) => (media_type, bytes),
+        Ok(siphon_machine::Read::TooLarge { limit, .. }) => {
+            return Err(Denied(StatusCode::PAYLOAD_TOO_LARGE, format!("past {limit} bytes")));
+        }
+        Ok(_) => {
+            return Err(Denied(
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                "no image or PDF; read it as text".into(),
+            ));
+        }
+        Err(siphon_machine::Error::NotFound) => return Err(Denied(StatusCode::NOT_FOUND, "no such file".into())),
+        Err(error) => return Err(Denied(StatusCode::INTERNAL_SERVER_ERROR, error.to_string())),
+    };
+    pictured(media_type, &bytes, asked.width_max.zip(asked.height_max), "private, no-cache")
 }

@@ -79,6 +79,9 @@ pub(crate) async fn answered(context: Context, method: Method) -> Result<serde_j
             json(&Nothing {})
         }
         Method::ReadThread(read) => json(&read_thread(siphon, &read.thread, read.before.as_deref(), read.limit)?),
+        Method::ListFolder(asked) => json(&super::machine::list(siphon, &asked)?),
+        Method::ReadFile(asked) => json(&super::machine::read(siphon, &asked)?),
+        Method::SearchFiles(asked) => json(&super::machine::search(siphon, &asked)?),
         Method::SetSettings(change) => {
             siphon_settings::set(&siphon.runtime, session, &change)
                 .await

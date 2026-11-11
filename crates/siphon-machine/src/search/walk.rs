@@ -37,6 +37,14 @@ fn rules(folder: &str, contents: &[u8]) -> Option<Arc<Gitignore>> {
     builder.build().ok().filter(|rules| !rules.is_empty()).map(Arc::new)
 }
 
+/// An entry of a folder, as a listing of it shows it: its name, what it is, and whether git leaves it out.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Listed {
+    pub name: String,
+    pub kind: FileKind,
+    pub ignored: bool,
+}
+
 /// Whether `rules`, the nearest last, leave out the name at the namespace's `path`.
 fn ignored(rules: &[Arc<Gitignore>], path: &str, is_dir: bool) -> bool {
     let place = absolute(path);
@@ -137,6 +145,29 @@ impl Machine {
             folder = join(&folder, name);
         }
         out
+    }
+
+    /// The entries of the folder at the namespace's `folder`, in order by name, each with whether git leaves it out
+    /// as the folder's repository's ignore rules say — the person's own, the repository's, each folder's down to it.
+    ///
+    /// # Errors
+    /// `NotFound` where nothing lists there; the namespace's failure.
+    pub fn listed(&self, folder: &str) -> Result<Vec<Listed>, Error> {
+        let mut rules = self.rules_above(folder);
+        rules.extend(self.rules_in(folder));
+        Ok(self
+            .entries(folder)?
+            .into_iter()
+            .map(|entry| {
+                let name = String::from_utf8_lossy(&entry.name).into_owned();
+                let ignored = ignored(&rules, &join(folder, &name), entry.kind == FileKind::Directory);
+                Listed {
+                    name,
+                    kind: entry.kind,
+                    ignored,
+                }
+            })
+            .collect())
     }
 
     /// Walks the tree at the namespace's `start` — or takes the one file it names — as git sees what it holds.

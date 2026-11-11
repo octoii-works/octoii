@@ -7,7 +7,7 @@ mod walk;
 use globset::GlobBuilder;
 
 pub use grep::{GrepError, GrepFile, GrepLine, GrepOptions, Grepped};
-pub use walk::Walked;
+pub use walk::{Listed, Walked};
 
 use crate::machine::Machine;
 

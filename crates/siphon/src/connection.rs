@@ -6,6 +6,7 @@
 
 mod calls;
 mod journal;
+mod machine;
 mod subscriptions;
 
 use std::collections::HashMap;

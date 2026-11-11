@@ -60,6 +60,25 @@ impl Siphon {
         &self.registry.sets
     }
 
+    /// The machine as the person reads it, beside the threads: their paths taken whole, from the root, read alone, what
+    /// the node keeps for itself hidden from it as from every thread.
+    ///
+    /// # Errors
+    /// Beak's failure to make its namespace.
+    pub fn person_machine(&self) -> beak::Result<siphon_machine::Machine> {
+        let base = siphon_machine::paths::Base {
+            workspace: std::path::PathBuf::from("/"),
+            home: self.machine.home.clone(),
+        };
+        siphon_machine::Machine::open(
+            self.runtime.kernel(),
+            &self.machine,
+            base,
+            &siphon_machine::Writes::Within(Vec::new()),
+            None,
+        )
+    }
+
     /// Deletes the thread `id` and every thread under it, each plugin letting go of what it held for each.
     ///
     /// # Errors

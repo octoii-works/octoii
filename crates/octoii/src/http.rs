@@ -51,6 +51,7 @@ pub fn router(node: Node) -> Router {
             post(crate::files::sent).layer(axum::extract::DefaultBodyLimit::max(siphon_threads::files::BYTES_MAX)),
         )
         .route("/threads/{thread}/files/{hash}", get(crate::files::kept))
+        .route("/machine", get(crate::files::machined))
         .with_state(node);
     if let Some(app) = app {
         let page = ServeFile::new(app.join("index.html"));

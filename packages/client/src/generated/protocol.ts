@@ -147,10 +147,36 @@ export type Failure = { kind: FailureKind, message: string, code?: string | null
 export type FailureKind = "context_overflow" | "payload_too_large" | "rate_limit" | "quota" | "auth" | "forbidden" | "content_filter" | "invalid_request" | "server" | "transport" | "invalid_response" | "timeout";
 
 /**
+ * What a name in a folder is.
+ */
+export type FileKind = "directory" | "file" | "link";
+
+/**
+ * What a file holds, with the file, whole and clean, and its length in bytes: lines of text from the first given, and
+ * whether more follow; an image or a PDF, by its media type, its bytes at the node's HTTP; or that it is no text.
+ */
+export type FilePage = { "type": "text", path: string, size: number, from: number, lines: Array<string>, more: boolean, } | { "type": "media", path: string, size: number, media_type: string, } | { "type": "binary", path: string, size: number, };
+
+/**
  * A file the host keeps, by the reference its content gives it, `sha256:` and the hash: what it is, and its name
  * where it has one.
  */
 export type FileRef = { ref: string, media_type: string, filename?: string | null, };
+
+/**
+ * A name in a folder: what it names, and whether its repository's ignore rules leave it out.
+ */
+export type FolderEntry = { name: string, kind: FileKind, ignored: boolean, };
+
+/**
+ * A page of a folder's names: the folder, whole and clean; its names in order; whether more follow the last.
+ */
+export type FolderPage = { path: string, entries: Array<FolderEntry>, more: boolean, };
+
+/**
+ * The files found under a folder, by their paths from it, the best match first; and whether more matched.
+ */
+export type FoundPaths = { path: string, found: Array<string>, truncated: boolean, };
 
 /**
  * A model's call of a function by name, its arguments JSON text.
@@ -208,6 +234,12 @@ export type Item = { "type": "message" } & Message | { "type": "function_call" }
 export type ItemStatus = "in_progress" | "completed" | "incomplete";
 
 export type JsonValue = number | string | boolean | Array<JsonValue> | { [key in string]: JsonValue } | null;
+
+/**
+ * A page of a folder's entries: the folder, as the person names it, those after the entry `after` — from its first,
+ * where none — `limit` at most.
+ */
+export type ListFolder = { path: string, after?: string, limit: number, };
 
 /**
  * A thread as a list of them shows it: its id, its project and parent, how it runs, how the person keeps it, and how
@@ -355,6 +387,11 @@ export type Parent = { thread: string, call: string, };
 export type Part = "text" | "refusal" | "reasoning" | "summary" | "arguments";
 
 /**
+ * A file to read: as the person names it, its lines from `offset` — from 1, where none — `limit` at most.
+ */
+export type ReadFile = { path: string, offset?: number, limit?: number, };
+
+/**
  * A page of a thread's entries: at most `limit`, the latest before the entry `before`, or the latest of all.
  */
 export type ReadThread = { thread: string, before?: string, limit: number, };
@@ -407,6 +444,11 @@ export type ResponseStatus = "in_progress" | "completed" | "incomplete" | "faile
  * What a session lets its client do: each scope opens some of the methods.
  */
 export type Scope = "threads.read" | "threads.operate" | "files.read" | "terminals.operate" | "browser.operate" | "providers.manage" | "access.read" | "access.write";
+
+/**
+ * Files to find: under the folder `path`, as the person names it, whose paths match `query`, `limit` at most.
+ */
+export type SearchFiles = { path: string, query: string, limit: number, };
 
 /**
  * A section of what the model is told, by its name, with its text as it is sent; none for a section no longer told.
@@ -580,6 +622,9 @@ export type Methods = {
   'threads.delete': { params: OfThread; result: Nothing };
   'threads.answer': { params: AnswerThread; result: Nothing };
   'threads.read': { params: ReadThread; result: ThreadRead };
+  'files.list': { params: ListFolder; result: FolderPage };
+  'files.read': { params: ReadFile; result: FilePage };
+  'files.search': { params: SearchFiles; result: FoundPaths };
   'settings.set': { params: SettingsChange; result: Nothing };
   'browser.open': { params: OpenPage; result: PageOpened };
   'browser.navigate': { params: Navigate; result: Nothing };

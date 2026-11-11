@@ -32,6 +32,15 @@ crate::methods! {
     "threads.answer" AnswerThread(AnswerThread) -> Nothing, Some(Scope::ThreadsOperate);
     /// A page of a thread's entries, the latest before an entry, or the latest of all.
     "threads.read" ReadThread(ReadThread) -> ThreadRead, Some(Scope::ThreadsRead);
+    /// A page of a folder of the machine's: its entries in order by name, after the one named, each with whether git
+    /// leaves it out.
+    "files.list" ListFolder(ListFolder) -> FolderPage, Some(Scope::FilesRead);
+    /// A file of the machine's: a page of its lines, where it is text; else what it is — an image or a PDF, whose
+    /// bytes its HTTP gives, or any other.
+    "files.read" ReadFile(ReadFile) -> FilePage, Some(Scope::FilesRead);
+    /// The files under a folder of the machine's whose paths match a query, as a fuzzy finder matches them, the best
+    /// first.
+    "files.search" SearchFiles(SearchFiles) -> FoundPaths, Some(Scope::FilesRead);
     /// The settings changed: the environment's each given, the device's merged.
     "settings.set" SetSettings(SettingsChange) -> Nothing, Some(Scope::ThreadsOperate);
 }
@@ -116,6 +125,93 @@ pub struct ReadThread {
 pub struct ThreadRead {
     pub entries: Vec<Entry>,
     pub complete: bool,
+}
+
+/// A page of a folder's entries: the folder, as the person names it, those after the entry `after` — from its first,
+/// where none — `limit` at most.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct ListFolder {
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub after: Option<String>,
+    pub limit: u32,
+}
+
+/// What a name in a folder is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum FileKind {
+    Directory,
+    File,
+    Link,
+}
+
+/// A name in a folder: what it names, and whether its repository's ignore rules leave it out.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct FolderEntry {
+    pub name: String,
+    pub kind: FileKind,
+    pub ignored: bool,
+}
+
+/// A page of a folder's names: the folder, whole and clean; its names in order; whether more follow the last.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct FolderPage {
+    pub path: String,
+    pub entries: Vec<FolderEntry>,
+    pub more: bool,
+}
+
+/// A file to read: as the person names it, its lines from `offset` — from 1, where none — `limit` at most.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct ReadFile {
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub offset: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub limit: Option<u32>,
+}
+
+/// What a file holds, with the file, whole and clean, and its length in bytes: lines of text from the first given, and
+/// whether more follow; an image or a PDF, by its media type, its bytes at the node's HTTP; or that it is no text.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum FilePage {
+    Text {
+        path: String,
+        size: u64,
+        from: u32,
+        lines: Vec<String>,
+        more: bool,
+    },
+    Media {
+        path: String,
+        size: u64,
+        media_type: String,
+    },
+    Binary {
+        path: String,
+        size: u64,
+    },
+}
+
+/// Files to find: under the folder `path`, as the person names it, whose paths match `query`, `limit` at most.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct SearchFiles {
+    pub path: String,
+    pub query: String,
+    pub limit: u32,
+}
+
+/// The files found under a folder, by their paths from it, the best match first; and whether more matched.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct FoundPaths {
+    pub path: String,
+    pub found: Vec<String>,
+    pub truncated: bool,
 }
 
 /// What a client subscribes to of Siphon's: a thread — its entries from where the client stood, none for from the start, then its

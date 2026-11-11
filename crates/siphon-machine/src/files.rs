@@ -32,6 +32,22 @@ impl Default for ReadOptions {
     }
 }
 
+/// What is at a path: the namespace's path of it, its size, and what it is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Stat {
+    pub path: String,
+    pub size: u64,
+    pub is: Is,
+}
+
+/// What a name is: a folder, an image or a PDF of its media type, or any other file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Is {
+    Folder,
+    Media(&'static str),
+    File,
+}
+
 /// What a read gives, each by the namespace's path read.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Read {
@@ -172,6 +188,21 @@ impl Machine {
             }
         }
         Ok(None)
+    }
+
+    /// What is at the namespace's `path`, as `file(1)` tells it: its path, its size, and whether it is a folder, an
+    /// image or a PDF — by its first bytes — or any other file.
+    ///
+    /// # Errors
+    /// `NotFound` where neither it nor its canonical form is there; the namespace's failure.
+    pub fn stat(&self, path: &str) -> Result<Stat, Error> {
+        let (path, stat) = self.found(path)?.ok_or(Error::NotFound)?;
+        let is = if stat.kind == FileKind::Directory {
+            Is::Folder
+        } else {
+            media_type(&self.namespace.read(&path, 0, 16)?).map_or(Is::File, Is::Media)
+        };
+        Ok(Stat { path, size: stat.size, is })
     }
 
     /// The file or folder at the namespace's `path`, read as `options` say.
