@@ -53,7 +53,7 @@ fn providers() -> Vec<Provider> {
 }
 
 /// The machine as the person's own: their home folder and shell, the system's temporary folder, the threads shown at
-/// the Home's `threads/`, and what the node keeps for itself — its credentials, its state, what lasts while it runs —
+/// the Home's `threads/`, and what the node keeps for itself — its credentials and its state —
 /// hidden from what reaches the machine through Siphon.
 fn machine(home: &Home) -> siphon_machine::Host {
     siphon_machine::Host {
@@ -61,7 +61,7 @@ fn machine(home: &Home) -> siphon_machine::Host {
         shell: std::env::var_os("SHELL").map(PathBuf::from),
         excludes: None,
         temporary: vec![std::env::temp_dir()],
-        hidden: vec![home.credstore(), home.state(), home.run()],
+        hidden: vec![home.credstore(), home.state()],
         threads: Some(home.threads()),
     }
 }
@@ -142,7 +142,7 @@ pub async fn serve_until(served: Served, stop: impl Future<Output = ()> + Send +
         origins: vec![loopback.clone(), format!("http://localhost:{port}")],
         app,
     };
-    let socket = home.socket();
+    let socket = home.socket().context("the control socket's folder")?;
     let _ = std::fs::remove_file(&socket);
     let controls = tokio::net::UnixListener::bind(&socket).context("the control socket")?;
     #[cfg(unix)]

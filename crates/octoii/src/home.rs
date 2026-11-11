@@ -1,10 +1,13 @@
 //! The node's Home, laid out as a system's folders are: `etc/` the person's own configuration, for every project —
 //! their instructions, `AGENTS.md`, their skills, `skills/`, their MCP servers, `mcp.json` — and the providers'
 //! credentials, `etc/credstore/`; `var/lib/` the node's state — the volume, the key its tunnel sessions show, the
-//! browser's profile; `var/cache/` what is fetched again at need; `var/log/` its logs; `run/` what lasts while it runs,
-//! its control socket; and `threads/`, where a thread's calls read the threads. The Home is the person's alone.
+//! browser's profile; `var/cache/` what is fetched again at need; `var/log/` its logs; and `threads/`, where a thread's
+//! calls read the threads. The Home is the person's alone. Its control socket is kept in the person's runtime folder,
+//! as tmux keeps its sockets, since a socket's path is bounded and a Home may lie anywhere.
 
 use std::path::{Path, PathBuf};
+
+use sha2::Digest as _;
 
 /// The node's Home, by its folder.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,7 +40,6 @@ impl Home {
             self.browser(),
             self.cache(),
             self.log(),
-            self.run(),
             self.threads(),
         ] {
             std::fs::create_dir_all(folder)?;
@@ -107,16 +109,36 @@ impl Home {
         self.root.join("var/log")
     }
 
-    /// What lasts while the node runs.
-    #[must_use]
-    pub fn run(&self) -> PathBuf {
-        self.root.join("run")
-    }
-
-    /// The control socket the node's commands reach it by.
-    #[must_use]
-    pub fn socket(&self) -> PathBuf {
-        self.run().join("octoii.sock")
+    /// The control socket the node's commands reach it by: in the person's runtime folder — `$XDG_RUNTIME_DIR/octoii`,
+    /// else `octoii-<uid>` in the system's temporary folder — named by the Home it serves.
+    ///
+    /// # Errors
+    /// Where the folder cannot be made, or is not the person's alone — another may have made it to listen in their
+    /// place.
+    pub fn socket(&self) -> std::io::Result<PathBuf> {
+        let uid = rustix::process::getuid().as_raw();
+        let folder = std::env::var_os("XDG_RUNTIME_DIR").map_or_else(
+            || std::env::temp_dir().join(format!("octoii-{uid}")),
+            |runtime| PathBuf::from(runtime).join("octoii"),
+        );
+        let mut builder = std::fs::DirBuilder::new();
+        builder.recursive(true);
+        #[cfg(unix)]
+        std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+        builder.create(&folder)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt as _;
+            let found = std::fs::symlink_metadata(&folder)?;
+            if !found.is_dir() || found.uid() != uid || found.mode() & 0o077 != 0 {
+                let why = format!("{} is not a folder of this person's alone", folder.display());
+                return Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, why));
+            }
+        }
+        let root = std::fs::canonicalize(&self.root).unwrap_or_else(|_| self.root.clone());
+        let digest = sha2::Sha256::digest(root.as_os_str().as_encoded_bytes());
+        let name = u64::from_be_bytes(digest[..8].try_into().unwrap_or_default());
+        Ok(folder.join(format!("{name:016x}.sock")))
     }
 
     /// Where a thread's calls read the threads.

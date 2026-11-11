@@ -8,4 +8,6 @@ pub mod control;
 pub mod credentials;
 pub mod home;
 pub mod http;
+pub mod qr;
 pub mod serve;
+pub mod service;

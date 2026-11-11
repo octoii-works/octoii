@@ -56,14 +56,23 @@ fn failed(error: &Refused) -> Response {
     (status, Json(json!({ "error": error.to_string() }))).into_response()
 }
 
-/// A link that pairs one browser, and the address that opens it, its credential in the fragment a page reads and no
-/// request sends.
+/// Where the web app is served to a device that reaches the node through the tunnel.
+pub const APP: &str = "https://app.octoii.com";
+
+/// A link that pairs one client, and the addresses that open it, its credential in the fragment a page reads and no
+/// request sends: on this computer, at the loopback; on another device, at the web app, where the node has a home relay
+/// — with the node's key and its relay, by which the page dials it.
 async fn link(State(control): State<Control>, Json(asked): Json<Asked>) -> Response {
     let scopes = asked.scopes.unwrap_or_else(|| access::ALL.to_vec());
     match control.node.access.link(asked.label, scopes, access::LINK_LASTS).await {
         Ok(made) => {
             let url = format!("{}/pair#{}", control.loopback, made.credential);
-            Json(json!({ "link": made.shown, "url": url })).into_response()
+            let addr = control.tunnel.addr();
+            let device = addr
+                .relay_urls()
+                .next()
+                .map(|relay| format!("{APP}/pair#key={}&relay={relay}&link={}", control.tunnel.key(), made.credential));
+            Json(json!({ "link": made.shown, "url": url, "device": device })).into_response()
         }
         Err(error) => failed(&error),
     }

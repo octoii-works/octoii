@@ -59,7 +59,7 @@ async fn a_browser_and_a_program_reach_the_node_by_the_sessions_its_commands_mak
         relays: Vec::new(),
     };
     let node = tokio::spawn(serve_until(served, async move { stopping.cancelled().await }));
-    let socket = home.socket();
+    let socket = home.socket().expect("its socket");
     let status = loop {
         if let Ok(status) = control::ask(&socket, Method::GET, "/status", None).await {
             break status;
