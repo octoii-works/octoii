@@ -9,11 +9,16 @@ mod subscriptions;
 
 use std::collections::HashMap;
 
-use siphon_protocol::{Answer, Call, Error, Event, Machine, Method, Scope, Subscribed};
+use serde::Deserialize;
+use siphon_protocol::{Answer, Call, ConnectionEvent, Error, Machine, Scope, Subscribed, Unsubscribe};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+pub(crate) use calls::answered;
+pub(crate) use subscriptions::told;
+
 use crate::Siphon;
+use crate::plugin::{Context, Lagged, Sink, Subscription};
 
 /// How many messages wait to go out to a client before a subscription's next event lets the subscription go.
 pub const OUTGOING_AHEAD: usize = 256;
@@ -41,7 +46,7 @@ pub async fn serve(
     mut incoming: mpsc::Receiver<String>,
     outgoing: mpsc::Sender<Outgoing>,
 ) {
-    let welcome = Event::Welcome {
+    let welcome = ConnectionEvent::Welcome {
         session: access.session.clone(),
         scopes: access.scopes.clone(),
         machine,
@@ -49,6 +54,10 @@ pub async fn serve(
     if outgoing.send(text(&welcome)).await.is_err() {
         return;
     }
+    let context = Context {
+        siphon,
+        session: access.session.clone(),
+    };
     let mut subscriptions = Subscriptions::default();
     while let Some(message) = incoming.recv().await {
         let call = match serde_json::from_str::<Call>(&message) {
@@ -62,45 +71,47 @@ pub async fn serve(
                 continue;
             }
         };
-        let needed = match &call.method {
-            Method::Subscribe(subscribe) => Some(subscriptions::scope_of(&subscribe.topic)),
-            method => method.scope(),
-        };
-        if let Some(scope) = needed.filter(|scope| !access.scopes.contains(scope)) {
-            let error = refusal("forbidden", &format!("the session may not {}", scope_name(scope)));
-            let _ = outgoing.send(text(&Answer::Error { id: Some(call.id), error })).await;
-            continue;
-        }
-        match call.method {
-            Method::Subscribe(subscribe) => {
-                let id = subscriptions.made_id();
-                let result = serde_json::to_value(Subscribed { subscription: id.clone() }).unwrap_or_default();
-                // Its answer goes out before any of its events.
-                if outgoing.send(text(&answer(call.id, Ok(result)))).await.is_err() {
-                    break;
-                }
-                let task = subscriptions::Task {
-                    siphon: siphon.clone(),
-                    session: access.session.clone(),
-                    id: id.clone(),
-                    outgoing: outgoing.clone(),
-                    stop: subscriptions.hold(id),
+        let answered = match call.method.as_str() {
+            "subscribe" => subscriptions.subscribe(&context, &access, call.params, &outgoing),
+            "unsubscribe" => subscriptions.unsubscribe(call.params),
+            name => {
+                let Some((scope, handle)) = context.siphon.registry.methods.get(name) else {
+                    let refused = refusal("no_such_method", &format!("there is no method {name}"));
+                    let _ = outgoing.send(text(&answer(call.id, Err(refused)))).await;
+                    continue;
                 };
-                tokio::spawn(task.run(subscribe.topic));
-            }
-            Method::Unsubscribe(unsubscribe) => {
-                subscriptions.let_go(&unsubscribe.subscription);
-                let _ = outgoing.send(text(&answer(call.id, Ok(serde_json::json!({}))))).await;
-            }
-            method => {
-                let (siphon, session, outgoing) = (siphon.clone(), access.session.clone(), outgoing.clone());
+                if let Some(scope) = scope.filter(|scope| !access.scopes.contains(scope)) {
+                    let _ = outgoing.send(text(&answer(call.id, Err(forbidden(scope))))).await;
+                    continue;
+                }
+                let (doing, outgoing) = (handle(context.clone(), name, call.params), outgoing.clone());
                 tokio::spawn(async move {
-                    let result = calls::answered(&siphon, &session, method).await;
-                    let _ = outgoing.send(text(&answer(call.id, result))).await;
+                    let _ = outgoing.send(text(&answer(call.id, doing.await))).await;
                 });
+                continue;
             }
+        };
+        // A subscription's answer goes out before any of its events, which wait for it.
+        let (result, started) = match answered {
+            Ok((result, started)) => (Ok(result), started),
+            Err(error) => (Err(error), None),
+        };
+        if outgoing.send(text(&answer(call.id, result))).await.is_err() {
+            break;
+        }
+        if let Some(started) = started {
+            tokio::spawn(started);
         }
     }
+}
+
+/// What subscribing or letting go answers: its result, and the subscription to start once the answer is sent.
+type Subscribing = Result<(serde_json::Value, Option<crate::plugin::Boxed<()>>), Error>;
+
+/// The params of `subscribe`.
+#[derive(Deserialize)]
+struct Subscribe {
+    topic: serde_json::Value,
 }
 
 /// The subscriptions a connection holds, each by its id, with what ends it; all of them ended as the connection is.
@@ -112,24 +123,61 @@ struct Subscriptions {
 }
 
 impl Subscriptions {
-    /// The id of a subscription to be made, the connection's next.
-    fn made_id(&mut self) -> String {
+    /// A subscription to the topic `params` names, for the client of `access`: its id, and the task that tells it,
+    /// held till it is let go.
+    fn subscribe(
+        &mut self,
+        context: &Context,
+        access: &Access,
+        params: serde_json::Value,
+        outgoing: &mpsc::Sender<Outgoing>,
+    ) -> Subscribing {
+        let subscribe: Subscribe = serde_json::from_value(params).map_err(|error| refusal("bad_params", &error.to_string()))?;
+        let Some((scope, telling)) = context
+            .siphon
+            .registry
+            .topics
+            .iter()
+            .find_map(|(scope, teller)| teller(&subscribe.topic).map(|telling| (*scope, telling)))
+        else {
+            return Err(refusal("no_such_topic", &format!("there is no topic {}", subscribe.topic)));
+        };
+        if !access.scopes.contains(&scope) {
+            return Err(forbidden(scope));
+        }
         self.made += 1;
-        format!("s{}", self.made)
-    }
-
-    /// Holds the subscription `id`: what ends it.
-    fn hold(&mut self, id: String) -> CancellationToken {
+        let id = format!("s{}", self.made);
         let stop = self.ended.child_token();
-        self.held.insert(id, stop.clone());
-        stop
+        self.held.insert(id.clone(), stop.clone());
+        let sink = Sink {
+            id: id.clone(),
+            outgoing: outgoing.clone(),
+        };
+        let subscription = Subscription {
+            context: context.clone(),
+            sink: sink.clone(),
+            stop,
+        };
+        let started: crate::plugin::Boxed<()> = Box::pin(async move {
+            if let Err(Lagged(topic)) = telling(subscription).await {
+                let lagged = ConnectionEvent::Lagged {
+                    subscription: sink.id.clone(),
+                    topic,
+                };
+                let _ = sink.outgoing.send(text(&lagged)).await;
+            }
+        });
+        let result = serde_json::to_value(Subscribed { subscription: id }).unwrap_or_default();
+        Ok((result, Some(started)))
     }
 
-    /// Ends the subscription `id`, where it is held.
-    fn let_go(&mut self, id: &str) {
-        if let Some(stop) = self.held.remove(id) {
+    /// Lets go of the subscription `params` names, where it is held.
+    fn unsubscribe(&mut self, params: serde_json::Value) -> Subscribing {
+        let unsubscribe: Unsubscribe = serde_json::from_value(params).map_err(|error| refusal("bad_params", &error.to_string()))?;
+        if let Some(stop) = self.held.remove(&unsubscribe.subscription) {
             stop.cancel();
         }
+        Ok((serde_json::json!({}), None))
     }
 }
 
@@ -153,6 +201,11 @@ pub(crate) fn refusal(code: &str, message: &str) -> Error {
         code: code.to_owned(),
         message: message.to_owned(),
     }
+}
+
+/// The refusal of what a session needs `scope` for and lacks.
+fn forbidden(scope: Scope) -> Error {
+    refusal("forbidden", &format!("the session may not {}", scope_name(scope)))
 }
 
 /// The name a scope has on the wire.

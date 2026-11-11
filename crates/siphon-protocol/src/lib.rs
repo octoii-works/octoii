@@ -1,31 +1,35 @@
 //! Siphon's protocol, as a client speaks it over its WebSocket — the version agreed as the socket opens, by its
-//! subprotocol `octoii.1`: Siphon's welcome first; then each call the client makes, by its id, its method and the
-//! method's params, answered once by that id with its result or the error it was refused with; and the events of each
-//! subscription the client holds, as what it follows changes — a thread's entries and status as they come, the list of
-//! threads, the settings. A subscription that falls behind what its client reads is told it lagged, where it stood,
-//! and is to be made again from there. Its types are the threads', the settings' and the vocabulary's own, so what is
-//! sent is what Siphon keeps; `typescript` describes them all for the client.
+//! subprotocol `octoii.1`: the welcome first; then each call the client makes, by its id, its method and the method's
+//! params, answered once by that id with its result or the error it was refused with; and the events of each
+//! subscription the client holds, as what it follows changes. A subscription that falls behind what its client reads
+//! is let go and told it lagged, with the topic to subscribe to again from where it stood.
+//!
+//! The methods come in sets — Siphon's own, `siphon`, and each plugin's, declared by `methods!` — which a host
+//! assembles; `typescript` describes the protocol the sets make together, its types each set's own, so what is sent is
+//! what Siphon and its plugins keep.
 
-mod events;
-mod methods;
+mod set;
+pub mod siphon;
 mod typescript;
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub use events::{Event, Settings, Topic};
-pub use methods::*;
-pub use typescript::typescript;
+pub use set::Set;
+pub use typescript::{Declarations, typescript};
+#[doc(hidden)]
+pub use {serde, serde_json, ts_rs};
 
 /// The subprotocol a client's WebSocket asks for, which names the protocol's version.
 pub const SUBPROTOCOL: &str = "octoii.1";
 
-/// A call a client makes: its id, by which its answer comes, and its method with that method's params.
+/// A call a client makes: its id, by which its answer comes, its method's name and the method's params.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Call {
     pub id: String,
-    #[serde(flatten)]
-    pub method: Method,
+    pub method: String,
+    #[serde(default)]
+    pub params: serde_json::Value,
 }
 
 /// Why a call was refused, or what it asked could not be done: a code a client may act on, and words for the person.
@@ -69,4 +73,38 @@ pub enum Scope {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct Machine {
     pub name: String,
+}
+
+/// Nothing: what a method takes or answers where it takes or answers nothing.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct Nothing {}
+
+/// A subscription made: its id, which its events carry.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct Subscribed {
+    pub subscription: String,
+}
+
+/// A subscription to let go of.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct Unsubscribe {
+    pub subscription: String,
+}
+
+/// An event of the connection's own: the welcome a client is sent first — its session, what it may do, the machine
+/// it reached — or that a subscription fell behind and was let go, with the topic to subscribe to again from where it
+/// stood.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(tag = "event", rename_all = "snake_case")]
+pub enum ConnectionEvent {
+    Welcome {
+        session: String,
+        scopes: Vec<Scope>,
+        machine: Machine,
+    },
+    Lagged {
+        subscription: String,
+        #[ts(type = "Topic")]
+        topic: serde_json::Value,
+    },
 }

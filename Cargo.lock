@@ -3030,6 +3030,7 @@ dependencies = [
  "siphon-tools",
  "tokio",
  "tokio-util",
+ "ts-rs",
 ]
 
 [[package]]

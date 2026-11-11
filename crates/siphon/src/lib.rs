@@ -1,118 +1,165 @@
-//! Siphon whole: the runtime on Beak with every program of a thread's and every handler of its requests, the tools its
-//! model calls, the MCP servers they reach, and the terminals and the browser the person and the model share — started
-//! as one on a volume, for a node to serve.
+//! Siphon whole: the runtime on Beak with the programs of a thread's and the handlers of its requests, the tools its
+//! model calls and the MCP servers they reach, the models it asks, and the protocol a client speaks to it — built with
+//! the plugins a host picks, which bring the rest: their providers, tools, programs and methods.
 
 pub mod connection;
+mod plugin;
 
-use std::path::PathBuf;
 use std::sync::Arc;
 
-use beak::Beak;
-use octoii_ai::models::Models;
+use beak::{Beak, Events};
+use octoii_ai::catalogue::Model;
+use octoii_ai::models::{Host as Network, Models, Provider};
 use siphon_agent::{
     CompactProgram, DelegateProgram, DelegateTool, DelegatedProgram, Gather, ModelRequest, ResumeProgram, Sources, ThreadProgram,
     TitleProgram, TurnProgram, answer_gather, answer_model, answer_review,
 };
-use siphon_browser::{Browser, BrowserHost};
 use siphon_machine::Host;
+use siphon_protocol::Scope;
 use siphon_runtime::{Asked, Options, Runtime};
-use siphon_terminals::Terminals;
 use siphon_threads::Threads;
 use siphon_tools::mcp::{Servers, Trust, TrustProgram};
 use siphon_tools::{
-    Asks, BrowserTool, EditTool, Exec, ExecuteTool, GlobTool, GrepTool, Permission, QuestionTool, ReadTool, Review, ScriptProgram,
-    ShellTool, Tools, WriteTool, answer_exec,
+    Asks, EditTool, Exec, ExecuteTool, GlobTool, GrepTool, Permission, QuestionTool, ReadTool, Review, ScriptProgram, ShellTool, Tools,
+    WriteTool, answer_exec,
 };
 
-/// What Siphon is started with: the machine its work is done on, the models its threads ask, the browser's program
-/// and folders, and the volume's options.
+pub use plugin::{Builder, Context, Full, Lagged, Plugin, Sink, Subscription};
+
+/// What Siphon is built on: the machine its work is done on; the host's network, credentials and files the models are
+/// reached with, the host's providers and the catalogue of models; and the volume's options.
 #[derive(Debug)]
 pub struct Setup {
     pub machine: Host,
-    pub models: Arc<Models>,
-    pub browser: BrowserSetup,
+    pub network: Network,
+    pub providers: Vec<Provider>,
+    pub catalogue: Vec<Model>,
     pub options: Options,
 }
 
-/// The browser's program — one found on the machine, where none — the folder of its profile, and the folder what a
-/// page downloads goes to — nothing downloaded, where none.
-#[derive(Debug, Clone, Default)]
-pub struct BrowserSetup {
-    pub program: Option<PathBuf>,
-    pub profile: Option<PathBuf>,
-    pub downloads: Option<PathBuf>,
-}
-
-/// Siphon, started: its runtime, its threads, the models they ask, the MCP servers, the terminals and the browser.
+/// Siphon, started: its runtime, its threads, the models they ask, the MCP servers, and the protocol's methods and
+/// topics as Siphon and its plugins brought them.
 #[derive(Debug, Clone)]
 pub struct Siphon {
     pub runtime: Runtime,
     pub threads: Threads<ThreadProgram>,
     pub models: Arc<Models>,
     pub servers: Servers,
-    pub terminals: Terminals,
-    pub browser: Browser,
+    pub(crate) registry: Arc<plugin::Registry>,
+}
+
+/// Siphon being built: what its plugins add to, and what it is started with.
+#[derive(Debug)]
+pub struct Building {
+    pub builder: Builder,
+    events: Events,
+    network: Network,
+    catalogue: Vec<Model>,
+    options: Options,
 }
 
 impl Siphon {
-    /// Siphon on `beak`, as `setup` says, its tasks on the current Tokio runtime.
+    /// Siphon to be built on `beak` as `setup` says, its volume opened, with its own tools, programs, methods and
+    /// topics; its plugins next.
     ///
     /// # Errors
     /// The volume's failure, as another holding its directory.
-    pub fn start(beak: &Beak, setup: Setup) -> beak::Result<Self> {
+    pub fn builder(beak: &Beak, setup: Setup) -> beak::Result<Building> {
         let Setup {
             machine,
-            models,
-            browser,
+            network,
+            providers,
+            catalogue,
             options,
         } = setup;
-        let opened = options.open(beak)?;
-        let kernel = opened.0.clone();
-        let terminals = Terminals::start(kernel.clone(), machine.clone());
-        let browser = Browser::start(BrowserHost {
+        let (kernel, events) = options.open(beak)?;
+        let mut builder = plugin::Builder {
             kernel,
-            machine: machine.clone(),
-            program: browser.program,
-            profile: browser.profile,
-            downloads: browser.downloads,
-        });
-        let servers = Servers::start(machine.clone(), machine.home.as_deref());
-        let (inner, tools) = tools(&servers, &browser);
-        let runtime = programs(&machine, &models, &servers, inner, tools).start_on(opened, options)?;
-        Ok(Self {
-            threads: Threads::new(runtime.clone()),
-            runtime,
-            models,
-            servers,
-            terminals,
-            browser,
+            machine,
+            runtime: Runtime::builder(),
+            tools: Tools::new()
+                .with(ReadTool)
+                .with(WriteTool)
+                .with(EditTool)
+                .with(GlobTool)
+                .with(GrepTool)
+                .with(ShellTool),
+            providers,
+            registry: plugin::Registry::default(),
+        };
+        builder.methods(
+            siphon_protocol::siphon::set(),
+            siphon_protocol::siphon::Method::read,
+            connection::answered,
+        );
+        builder.topics(Scope::ThreadsRead, connection::told);
+        Ok(Building {
+            builder,
+            events,
+            network,
+            catalogue,
+            options,
         })
     }
 }
 
-/// The tools a script calls, and those a turn's model calls: a script's, and running a script, asking the person and
-/// delegating to a sub-thread besides.
-fn tools(servers: &Servers, browser: &Browser) -> (Tools, Tools) {
-    let inner = Tools::new()
-        .with(ReadTool)
-        .with(WriteTool)
-        .with(EditTool)
-        .with(GlobTool)
-        .with(GrepTool)
-        .with(ShellTool)
-        .with(BrowserTool { browser: browser.clone() })
-        .with_servers(servers.clone());
-    let outer = inner
-        .clone()
-        .with(ExecuteTool { tools: inner.clone() })
-        .with(QuestionTool)
-        .with(DelegateTool);
-    (inner, outer)
+impl Building {
+    /// Adds what `plugin` brings.
+    #[must_use]
+    pub fn plugin(mut self, plugin: impl Plugin + 'static) -> Self {
+        self.builder.plugin(plugin);
+        self
+    }
+
+    /// Siphon, started on the current Tokio runtime.
+    ///
+    /// # Errors
+    /// The volume's failure.
+    pub fn start(self) -> beak::Result<Siphon> {
+        let Building {
+            builder,
+            events,
+            network,
+            catalogue,
+            options,
+        } = self;
+        let plugin::Builder {
+            kernel,
+            machine,
+            runtime,
+            tools,
+            providers,
+            registry,
+        } = builder;
+        let servers = Servers::start(machine.clone(), machine.home.as_deref());
+        let inner = tools.with_servers(servers.clone());
+        let outer = inner
+            .clone()
+            .with(ExecuteTool { tools: inner.clone() })
+            .with(QuestionTool)
+            .with(DelegateTool);
+        let models = Arc::new(Models::new(network, providers, catalogue));
+        let runtime = programs(runtime, &machine, &models, &servers, inner, outer).start_on((kernel, events), options)?;
+        Ok(Siphon {
+            threads: Threads::new(runtime.clone()),
+            runtime,
+            models,
+            servers,
+            registry: Arc::new(registry),
+        })
+    }
 }
 
-/// The runtime's programs and handlers: the thread's processes, the requests answered by the machine and the models,
-/// and those the person answers.
-fn programs(machine: &Host, models: &Arc<Models>, servers: &Servers, inner: Tools, tools: Tools) -> siphon_runtime::Builder {
+/// The runtime's own programs and handlers beside the plugins' in `runtime`: the thread's processes, the requests
+/// answered by the machine and the models, and those the person answers.
+fn programs(
+    runtime: siphon_runtime::Builder,
+    machine: &Host,
+    models: &Arc<Models>,
+    servers: &Servers,
+    inner: Tools,
+    tools: Tools,
+) -> siphon_runtime::Builder {
     let sources = Sources {
         tools: tools.clone(),
         servers: servers.clone(),
@@ -122,7 +169,7 @@ fn programs(machine: &Host, models: &Arc<Models>, servers: &Servers, inner: Tool
     };
     let (gathering, asking, reviewing) = (sources, Arc::clone(models), Arc::clone(models));
     let (execs, host) = (tools.clone(), machine.clone());
-    Runtime::builder()
+    runtime
         .program(ThreadProgram)
         .program(TurnProgram {
             tools,

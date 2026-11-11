@@ -1,4 +1,4 @@
-// Siphon's protocol, generated from its Rust types by `siphon-protocol`'s test — not to be edited by hand.
+// Siphon's protocol, generated from its Rust types — not to be edited by hand.
 
 /**
  * What a thread asks the person, by its request's key, answered with `answer`, which fits the schema the ask gives.
@@ -58,6 +58,13 @@ export type ConfigurationUpdate = { effort: ReasoningEffort, };
 
 export type ConfigureThread = { thread: string, change: ConfigChange, };
 
+/**
+ * An event of the connection's own: the welcome a client is sent first — its session, what it may do, the machine
+ * it reached — or that a subscription fell behind and was let go, with the topic to subscribe to again from where it
+ * stood.
+ */
+export type ConnectionEvent = { "event": "welcome", session: string, scopes: Array<Scope>, machine: Machine, } | { "event": "lagged", subscription: string, topic: Topic, };
+
 export type CreateThread = { config: Config, key: string, };
 
 export type Created = { thread: string, };
@@ -107,15 +114,6 @@ export type EnvironmentChange = { thread_mode?: Mode | null, favorite_models?: A
  * Why a call was refused, or what it asked could not be done: a code a client may act on, and words for the person.
  */
 export type Error = { code: string, message: string, };
-
-/**
- * An event: the welcome a client is sent first — its session, what it may do, the machine it reached — or one of a
- * subscription's, by the subscription's id: a thread's entries appended, with where its reader then stands; its
- * status as it changed; what streams of a request as its model answers, by its offset in the request's stream; a
- * thread of the list as it changed, or gone; the settings as they changed; or that the subscription fell behind and
- * was let go — where it stood in a thread's log, for it to be made again from there.
- */
-export type Event = { "event": "welcome", session: string, scopes: Array<Scope>, machine: Machine, } | { "event": "entries", subscription: string, entries: Array<Entry>, cursor: Cursor, } | { "event": "status", subscription: string, status: Status, } | { "event": "stream", subscription: string, request: string, offset: number, data: JsonValue, } | { "event": "thread", subscription: string, thread: Listed, } | { "event": "thread_gone", subscription: string, thread: string, } | { "event": "settings", subscription: string, settings: Settings, } | { "event": "lagged", subscription: string, cursor?: Cursor, };
 
 /**
  * Why a request failed: its kind; the provider's code and words; the HTTP status it answered with; how long to wait
@@ -343,6 +341,19 @@ export type Settings = { environment: Environment, device: JsonValue, };
 export type SettingsChange = { environment?: EnvironmentChange | null, device?: JsonValue | null, };
 
 /**
+ * An event of a subscription to Siphon's, by the subscription's id: a thread's entries appended, with where its
+ * reader then stands; its status as it changed; what streams of a request as its model answers, by its offset in the
+ * request's stream; a thread of the list as it changed, or gone; the settings as they changed.
+ */
+export type SiphonEvent = { "event": "entries", subscription: string, entries: Array<Entry>, cursor: Cursor, } | { "event": "status", subscription: string, status: Status, } | { "event": "stream", subscription: string, request: string, offset: number, data: JsonValue, } | { "event": "thread", subscription: string, thread: Listed, } | { "event": "thread_gone", subscription: string, thread: string, } | { "event": "settings", subscription: string, settings: Settings, };
+
+/**
+ * What a client subscribes to of Siphon's: a thread — its entries from where the client stood, none for from the start, then its
+ * status and what streams of its requests — the list of threads, or the settings.
+ */
+export type SiphonTopic = { "type": "thread", thread: string, from?: Cursor, } | { "type": "threads" } | { "type": "settings" };
+
+/**
  * How a thread stands.
  */
 export type Status = { turn: Turn, began_at?: number | null, ended_at?: number | null, usage?: ThreadUsage | null, 
@@ -351,8 +362,9 @@ export type Status = { turn: Turn, began_at?: number | null, ended_at?: number |
  */
 inbox: Array<[string, Inbound]>, asks: Array<Ask>, };
 
-export type Subscribe = { topic: Topic, };
-
+/**
+ * A subscription made: its id, which its events carry.
+ */
 export type Subscribed = { subscription: string, };
 
 /**
@@ -375,16 +387,13 @@ export type ThreadsListed = { threads: Array<Listed>, };
 export type Tool = { "type": "function", name: string, description: string, parameters: JsonValue, } | { "type": "web_search" };
 
 /**
- * What a client subscribes to: a thread — its entries from where the client stood, none for from the start, then its
- * status and what streams of its requests — the list of threads, or the settings.
- */
-export type Topic = { "type": "thread", thread: string, from?: Cursor, } | { "type": "threads" } | { "type": "settings" };
-
-/**
  * How a thread's turns stand: none run yet, one running, or how the last ended.
  */
 export type Turn = "created" | "running" | "replied" | "failed" | "stopped";
 
+/**
+ * A subscription to let go of.
+ */
 export type Unsubscribe = { subscription: string, };
 
 /**
@@ -434,6 +443,12 @@ export type Withdraw = { thread: string, delivery: string, };
 
 export type Withdrawn = { withdrawn: boolean, };
 
+/** What a client subscribes to. */
+export type Topic = SiphonTopic;
+
+/** An event: the connection's, or a subscription's. */
+export type Event = ConnectionEvent | SiphonEvent;
+
 /** The methods, each by its name: the params it takes and the result it answers with. */
 export type Methods = {
   'threads.list': { params: Nothing; result: ThreadsListed };
@@ -447,7 +462,7 @@ export type Methods = {
   'threads.answer': { params: AnswerThread; result: Nothing };
   'threads.read': { params: ReadThread; result: ThreadRead };
   'settings.set': { params: SettingsChange; result: Nothing };
-  'subscribe': { params: Subscribe; result: Subscribed };
+  'subscribe': { params: { topic: Topic }; result: Subscribed };
   'unsubscribe': { params: Unsubscribe; result: Nothing };
 };
 

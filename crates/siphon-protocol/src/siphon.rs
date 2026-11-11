@@ -1,59 +1,17 @@
-//! The methods a client calls, each by its name: the params it takes and the result it answers with — declared once,
-//! as a call reads them in Rust and as the client's TypeScript names them.
+//! Siphon's own methods, events and topics: the threads — each made, changed, delivered to, stopped, deleted, answered
+//! and read — and the settings; a subscription to a thread, to the list of threads, or to the settings.
 
 use octoii_ai::vocabulary::InputContent;
 use serde::{Deserialize, Serialize};
-use siphon_settings::SettingsChange;
-use siphon_threads::{Config, ConfigChange, Entry, Listed, MarksChange};
+use siphon_settings::{Environment, SettingsChange};
+use siphon_threads::log::Cursor;
+use siphon_threads::{Config, ConfigChange, Entry, Listed, MarksChange, Status};
 use ts_rs::TS;
 
-use crate::Scope;
-use crate::events::Topic;
+use crate::{Nothing, Scope};
 
-/// The methods: each its name, the variant of `Method` it is read as, its params, its result and the scope a session
-/// needs to call it — none where its params decide, as a subscription's topic does.
-macro_rules! methods {
-    ($($(#[$doc:meta])* $name:literal $variant:ident($params:ty) -> $result:ty, $scope:expr;)*) => {
-        /// A call's method, with its params.
-        #[derive(Debug, Clone, PartialEq, Deserialize)]
-        #[serde(tag = "method", content = "params")]
-        pub enum Method {
-            $($(#[$doc])* #[serde(rename = $name)] $variant($params),)*
-        }
-
-        impl Method {
-            /// Its name, as a call names it.
-            #[must_use]
-            pub fn name(&self) -> &'static str {
-                match self {
-                    $(Self::$variant(_) => $name,)*
-                }
-            }
-        }
-
-        impl Method {
-            /// The scope a session needs to call it; none where its params decide.
-            #[must_use]
-            pub fn scope(&self) -> Option<Scope> {
-                match self {
-                    $(Self::$variant(_) => $scope,)*
-                }
-            }
-        }
-
-        /// Each method's name, and the TypeScript names of its params and of its result.
-        pub(crate) fn signatures(cfg: &ts_rs::Config) -> Vec<(&'static str, String, String)> {
-            vec![$(($name, <$params as TS>::name(cfg), <$result as TS>::name(cfg)),)*]
-        }
-
-        /// Visits each type the methods' params and results name.
-        pub(crate) fn visit(visitor: &mut impl ts_rs::TypeVisitor) {
-            $(visitor.visit::<$params>(); visitor.visit::<$result>();)*
-        }
-    };
-}
-
-methods! {
+crate::methods! {
+    events: SiphonEvent, topics: SiphonTopic;
     /// The threads, each as a list shows it.
     "threads.list" ListThreads(Nothing) -> ThreadsListed, Some(Scope::ThreadsRead);
     /// A thread made as `config` says, once for its idempotency key `key`: the id it has.
@@ -76,15 +34,7 @@ methods! {
     "threads.read" ReadThread(ReadThread) -> ThreadRead, Some(Scope::ThreadsRead);
     /// The settings changed: the environment's each given, the device's merged.
     "settings.set" SetSettings(SettingsChange) -> Nothing, Some(Scope::ThreadsOperate);
-    /// A subscription to a topic: its id, which its events carry.
-    "subscribe" Subscribe(Subscribe) -> Subscribed, None;
-    /// A subscription let go.
-    "unsubscribe" Unsubscribe(Unsubscribe) -> Nothing, None;
 }
-
-/// Nothing: what a method takes or answers where it takes or answers nothing.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct Nothing {}
 
 /// A thread, by its id.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -168,17 +118,60 @@ pub struct ThreadRead {
     pub complete: bool,
 }
 
+/// What a client subscribes to of Siphon's: a thread — its entries from where the client stood, none for from the start, then its
+/// status and what streams of its requests — the list of threads, or the settings.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct Subscribe {
-    pub topic: Topic,
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum SiphonTopic {
+    Thread {
+        thread: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        from: Option<Cursor>,
+    },
+    Threads,
+    Settings,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct Subscribed {
-    pub subscription: String,
+/// The settings, as a client is told of them: the environment's, which every client shares, and its device's own,
+/// which Siphon keeps for it and reads none of.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct Settings {
+    pub environment: Environment,
+    pub device: serde_json::Value,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct Unsubscribe {
-    pub subscription: String,
+/// An event of a subscription to Siphon's, by the subscription's id: a thread's entries appended, with where its
+/// reader then stands; its status as it changed; what streams of a request as its model answers, by its offset in the
+/// request's stream; a thread of the list as it changed, or gone; the settings as they changed.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(tag = "event", rename_all = "snake_case")]
+pub enum SiphonEvent {
+    Entries {
+        subscription: String,
+        entries: Vec<Entry>,
+        cursor: Cursor,
+    },
+    Status {
+        subscription: String,
+        status: Status,
+    },
+    Stream {
+        subscription: String,
+        request: String,
+        offset: u64,
+        data: serde_json::Value,
+    },
+    Thread {
+        subscription: String,
+        thread: Box<Listed>,
+    },
+    ThreadGone {
+        subscription: String,
+        thread: String,
+    },
+    Settings {
+        subscription: String,
+        settings: Settings,
+    },
 }

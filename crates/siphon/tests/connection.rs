@@ -8,10 +8,10 @@ use std::time::Duration;
 use beak::Beak;
 use bytes::Bytes;
 use octoii_ai::host::{Credential, Credentials, Files, NoSuchFile, Unavailable};
-use octoii_ai::models::{Host, Models};
+use octoii_ai::models::Host;
 use serde_json::{Value, json};
 use siphon::connection::{Access, Outgoing, serve};
-use siphon::{BrowserSetup, Setup, Siphon};
+use siphon::{Builder, Context, Lagged, Plugin, Setup, Siphon, Subscription};
 use siphon_protocol::{Machine, Scope};
 use siphon_runtime::Options;
 use tokio::sync::mpsc;
@@ -40,7 +40,7 @@ impl Files for Nothing {
 }
 
 fn siphon(beak: &Beak) -> Siphon {
-    let host = Host {
+    let network = Host {
         credentials: Arc::new(Nothing),
         files: Arc::new(Nothing),
         transport: Arc::new(octoii_ai::transport::Network::default()),
@@ -49,11 +49,74 @@ fn siphon(beak: &Beak) -> Siphon {
     };
     let setup = Setup {
         machine: siphon_machine::Host::default(),
-        models: Arc::new(Models::new(host, Vec::new(), Vec::new())),
-        browser: BrowserSetup::default(),
+        network,
+        providers: Vec::new(),
+        catalogue: Vec::new(),
         options: Options::default(),
     };
-    Siphon::start(beak, setup).expect("started")
+    Siphon::builder(beak, setup).expect("built").plugin(Echo).start().expect("started")
+}
+
+/// A plugin of the test's: a method that says back what it is given, and a topic that tells it thrice.
+mod echo {
+    use serde::{Deserialize, Serialize};
+    use siphon_protocol::Scope;
+    use ts_rs::TS;
+
+    siphon_protocol::methods! {
+        events: EchoEvent, topics: EchoTopic;
+        /// What it is given, said back.
+        "echo.say" Say(Said) -> Said, Some(Scope::ThreadsRead);
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+    pub struct Said {
+        pub words: String,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+    #[serde(tag = "type", rename_all = "snake_case")]
+    pub enum EchoTopic {
+        Echo { words: String },
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+    #[serde(tag = "event", rename_all = "snake_case")]
+    pub enum EchoEvent {
+        Echoed { subscription: String, words: String },
+    }
+}
+
+struct Echo;
+
+impl Plugin for Echo {
+    fn name(&self) -> &'static str {
+        "echo"
+    }
+
+    fn build(self: Box<Self>, builder: &mut Builder) {
+        builder.methods(echo::set(), echo::Method::read, |_: Context, method| async move {
+            let echo::Method::Say(said) = method;
+            Ok(serde_json::to_value(said).unwrap_or_default())
+        });
+        builder.topics(
+            Scope::TerminalsOperate,
+            |subscription: Subscription, topic: echo::EchoTopic| async move {
+                let echo::EchoTopic::Echo { words } = topic;
+                for _ in 0..3 {
+                    let echoed = echo::EchoEvent::Echoed {
+                        subscription: subscription.sink.id().to_owned(),
+                        words: words.clone(),
+                    };
+                    subscription
+                        .sink
+                        .offer(&echoed)
+                        .map_err(|_| Lagged(json!({ "type": "echo", "words": words })))?;
+                }
+                Ok(())
+            },
+        );
+    }
 }
 
 /// A client: what it sends, and what it is sent.
@@ -235,5 +298,49 @@ async fn a_subscription_its_client_does_not_keep_up_with_lags_and_is_made_again_
     let titles: Vec<&str> = seen.iter().filter_map(|entry| entry["title"]["to"].as_str()).collect();
     let wanted: Vec<String> = (0..12).map(|round| format!("t{round}")).collect();
     assert_eq!(titles, wanted, "each entry once, in order, across the lag");
+    siphon.runtime.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_plugin_s_methods_and_topics_are_the_protocol_s_beside_siphon_s() {
+    let beak = Beak::new().expect("Beak");
+    let siphon = siphon(&beak);
+    let mut client = Client::connect(&siphon, ALL.to_vec(), 64);
+    client.message().await;
+    let id = client.call("echo.say", json!({ "words": "hi" })).await;
+    assert_eq!(client.answer(&id).await["result"], json!({ "words": "hi" }));
+    let id = client.call("echo.say", json!({ "words": 3 })).await;
+    assert_eq!(client.answer(&id).await["error"]["code"], "bad_params");
+    let id = client.call("echo.shout", json!({})).await;
+    assert_eq!(client.answer(&id).await["error"]["code"], "no_such_method");
+    let id = client
+        .call("subscribe", json!({ "topic": { "type": "echo", "words": "hi" } }))
+        .await;
+    assert_eq!(
+        client.answer(&id).await["error"]["code"],
+        "forbidden",
+        "its topic needs a scope the session lacks"
+    );
+
+    let mut operator = Client::connect(&siphon, vec![Scope::ThreadsRead, Scope::TerminalsOperate], 64);
+    operator.message().await;
+    let id = operator
+        .call("subscribe", json!({ "topic": { "type": "echo", "words": "hi" } }))
+        .await;
+    let subscription = operator.answer(&id).await["result"]["subscription"]
+        .as_str()
+        .expect("an id")
+        .to_owned();
+    for _ in 0..3 {
+        let echoed = operator.event(&subscription, |event| event["event"] == "echoed").await;
+        assert_eq!(echoed["words"], "hi");
+    }
+    let id = operator.call("subscribe", json!({ "topic": { "type": "nowhere" } })).await;
+    assert_eq!(operator.answer(&id).await["error"]["code"], "no_such_topic");
+
+    let typescript = siphon_protocol::typescript(&[siphon_protocol::siphon::set(), echo::set()]);
+    assert!(typescript.contains("export type Topic = SiphonTopic | EchoTopic;"));
+    assert!(typescript.contains("export type Event = ConnectionEvent | SiphonEvent | EchoEvent;"));
+    assert!(typescript.contains("'echo.say': { params: Said; result: Said };"));
     siphon.runtime.close().await;
 }

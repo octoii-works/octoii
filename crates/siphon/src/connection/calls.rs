@@ -4,17 +4,20 @@
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
-use siphon_protocol::{Created, Delivered, Error, Method, Nothing, ThreadRead, ThreadsListed, Withdrawn};
+use siphon_protocol::siphon::{Created, Delivered, Method, ThreadRead, ThreadsListed, Withdrawn};
+use siphon_protocol::{Error, Nothing};
 use siphon_threads::{NewThread, log};
 
 use super::refusal;
 use crate::Siphon;
+use crate::plugin::Context;
 
 /// Who a person's calls are made as, as the threads' logs name them.
 const PERSON: &str = "person";
 
-/// Does `method` for the session `session`.
-pub(super) async fn answered(siphon: &Siphon, session: &str, method: Method) -> Result<serde_json::Value, Error> {
+/// Does `method` for the client of `context`.
+pub(crate) async fn answered(context: Context, method: Method) -> Result<serde_json::Value, Error> {
+    let Context { siphon, session } = &context;
     let threads = &siphon.threads;
     match method {
         Method::ListThreads(Nothing {}) => json(&ThreadsListed {
@@ -77,7 +80,6 @@ pub(super) async fn answered(siphon: &Siphon, session: &str, method: Method) -> 
                 .map_err(|error| refusal("bad_settings", &error.to_string()))?;
             json(&Nothing {})
         }
-        Method::Subscribe(_) | Method::Unsubscribe(_) => Err(refusal("bad_call", "a subscription is the connection's")),
     }
 }
 

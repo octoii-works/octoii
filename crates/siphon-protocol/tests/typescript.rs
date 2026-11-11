@@ -5,7 +5,7 @@ const MODULE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packages/client
 
 #[test]
 fn the_client_s_typescript_is_what_the_rust_types_make() {
-    let made = siphon_protocol::typescript();
+    let made = siphon_protocol::typescript(&[siphon_protocol::siphon::set()]);
     if std::env::var_os("UPDATE_EXPECT").is_some() {
         std::fs::write(MODULE, &made).expect("written");
         return;

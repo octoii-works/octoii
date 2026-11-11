@@ -1,22 +1,22 @@
-//! Messages as they go over the socket: a call read by its method's name and params, an answer and an event written
-//! as the client's TypeScript reads them.
+//! Messages as they go over the socket: a call read as its set's method by its name and params, an answer and an
+//! event written as the client's TypeScript reads them.
 
 use serde_json::json;
-use siphon_protocol::{Answer, Call, Error, Event, Method, OfThread, Subscribe, Topic};
+use siphon_protocol::siphon::{Method, OfThread};
+use siphon_protocol::{Answer, Call, ConnectionEvent, Error};
 
 #[test]
-fn a_call_is_read_by_its_method_s_name_and_params() {
+fn a_call_is_read_as_its_set_s_method_by_its_name_and_params() {
     let call: Call = serde_json::from_value(json!({ "id": "7", "method": "threads.stop", "params": { "thread": "t1" } })).expect("a call");
     assert_eq!(call.id, "7");
-    assert_eq!(call.method, Method::StopThread(OfThread { thread: "t1".into() }));
-    assert_eq!(call.method.name(), "threads.stop");
-    let subscribe: Call = serde_json::from_value(json!({
-        "id": "8", "method": "subscribe", "params": { "topic": { "type": "threads" } }
-    }))
-    .expect("a call");
-    assert_eq!(subscribe.method, Method::Subscribe(Subscribe { topic: Topic::Threads }));
-    let unknown = serde_json::from_value::<Call>(json!({ "id": "9", "method": "threads.fly", "params": {} }));
-    assert!(unknown.is_err(), "no such method");
+    let method = Method::read(&call.method, call.params).expect("a method of Siphon's");
+    assert_eq!(method, Method::StopThread(OfThread { thread: "t1".into() }));
+    assert_eq!(method.name(), "threads.stop");
+    assert!(Method::read("threads.fly", json!({})).is_err(), "no such method");
+    assert!(
+        Method::read("threads.stop", json!({ "thread": 3 })).is_err(),
+        "params not the method's"
+    );
 }
 
 #[test]
@@ -37,12 +37,12 @@ fn an_answer_and_an_event_are_written_as_the_client_reads_them() {
         serde_json::to_value(&refused).expect("JSON"),
         json!({ "id": null, "error": { "code": "bad_call", "message": "not JSON" } })
     );
-    let lagged = Event::Lagged {
+    let lagged = ConnectionEvent::Lagged {
         subscription: "s1".into(),
-        cursor: None,
+        topic: json!({ "type": "threads" }),
     };
     assert_eq!(
         serde_json::to_value(&lagged).expect("JSON"),
-        json!({ "event": "lagged", "subscription": "s1" })
+        json!({ "event": "lagged", "subscription": "s1", "topic": { "type": "threads" } })
     );
 }
