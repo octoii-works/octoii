@@ -86,7 +86,7 @@ fn runtime(beak: &Beak, models: &Arc<Models>) -> Runtime {
         tellers: Vec::new(),
         models: Arc::clone(models),
         host: Machine::default(),
-        home: None,
+        config: None,
     };
     let execs = tools.clone();
     let answering = Arc::clone(models);

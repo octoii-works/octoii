@@ -51,6 +51,7 @@ pub fn setup(machine: siphon_machine::Host) -> Setup {
     };
     Setup {
         machine,
+        config: None,
         network,
         providers: Vec::new(),
         catalogue: Vec::new(),

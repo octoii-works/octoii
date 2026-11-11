@@ -17,9 +17,12 @@ use siphon_tools::{Context, Refusal, Toolset};
 use crate::trust::{Trust, TrustProgram};
 use crate::{Catalog, Servers};
 
-/// The MCP servers, as a host adds them.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct McpPlugin;
+/// The MCP servers, as a host adds them: the folder of the person's own configuration, whose `mcp.json` names their
+/// servers for every project, where they keep one.
+#[derive(Debug, Clone, Default)]
+pub struct McpPlugin {
+    pub config: Option<std::path::PathBuf>,
+}
 
 impl Plugin for McpPlugin {
     fn name(&self) -> &'static str {
@@ -27,7 +30,7 @@ impl Plugin for McpPlugin {
     }
 
     fn build(self: Box<Self>, builder: &mut Builder) {
-        let servers = Servers::start(builder.machine.clone(), builder.machine.home.as_deref());
+        let servers = Servers::start(builder.machine.clone(), self.config.as_deref());
         let toolset: Arc<dyn Toolset> = Arc::new(servers.clone());
         builder.tools(|tools| tools.with_toolset(toolset));
         builder.runtime(|runtime| runtime.program(TrustProgram).ask_person::<Trust>());

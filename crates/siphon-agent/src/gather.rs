@@ -55,14 +55,15 @@ pub struct Telling {
 }
 
 /// Where what the model is told comes from: the tools it may call, what the plugins tell, the models' facts, the
-/// machine, and the Octoii Home, where the person's own instructions and skills are.
+/// machine, and the folder of the person's own configuration, for every project — their instructions, `AGENTS.md`, and
+/// their skills, `skills/`.
 #[derive(Clone)]
 pub struct Sources {
     pub tools: Tools,
     pub tellers: Vec<Arc<dyn Teller>>,
     pub models: Arc<Models>,
     pub host: Host,
-    pub home: Option<PathBuf>,
+    pub config: Option<PathBuf>,
 }
 
 impl std::fmt::Debug for Sources {
@@ -122,10 +123,10 @@ pub async fn gathered(sources: &Sources, runtime: &Runtime, id: &str) -> anyhow:
     add("base", BASE.to_owned());
     if let Some(workspace) = &workspace {
         let place = Place::of(workspace);
-        if let Some(text) = instructions(sources.home.as_deref(), workspace) {
+        if let Some(text) = instructions(sources.config.as_deref(), workspace) {
             add("instructions", text);
         }
-        let found = skills::find(&skill_places(sources.home.as_deref(), &place));
+        let found = skills::find(&skill_places(sources.config.as_deref(), &place));
         if !found.is_empty() {
             add("skills", skills::told(&found));
         }
@@ -182,11 +183,11 @@ fn folders_down(workspace: &Path) -> Vec<&Path> {
     folders
 }
 
-/// The instructions the model follows, each file whole: the person's own, in the Octoii Home `home`; then the
+/// The instructions the model follows, each file whole: the person's own, in the folder of their configuration `config`; then the
 /// `AGENTS.md` of each folder from the machine's root down to `workspace`, as each folder's applies within it — the
 /// nearest last. None where there are none.
-fn instructions(home: Option<&Path>, workspace: &Path) -> Option<String> {
-    let mut files: Vec<PathBuf> = home.map(|home| home.join(INSTRUCTIONS_FILE)).into_iter().collect();
+fn instructions(config: Option<&Path>, workspace: &Path) -> Option<String> {
+    let mut files: Vec<PathBuf> = config.map(|config| config.join(INSTRUCTIONS_FILE)).into_iter().collect();
     for folder in folders_down(workspace) {
         let file = folder.join(INSTRUCTIONS_FILE);
         if !files.contains(&file) {
@@ -221,8 +222,8 @@ fn read_text(path: &Path, bytes_max: u64) -> Option<String> {
 
 /// The folders of skills a thread working at `place` finds, the farthest first: the person's own, then each project
 /// folder's from its root down to the workspace.
-fn skill_places(home: Option<&Path>, place: &Place) -> Vec<PathBuf> {
-    let mut places: Vec<PathBuf> = home.map(|home| home.join("skills")).into_iter().collect();
+fn skill_places(config: Option<&Path>, place: &Place) -> Vec<PathBuf> {
+    let mut places: Vec<PathBuf> = config.map(|config| config.join("skills")).into_iter().collect();
     places.extend(
         folders_down(&place.workspace)
             .into_iter()

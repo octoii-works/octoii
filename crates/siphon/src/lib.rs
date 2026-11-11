@@ -26,11 +26,14 @@ use siphon_tools::{
 
 pub use plugin::{Builder, Context, Full, Lagged, Plugin, Sink, Subscription};
 
-/// What Siphon is built on: the machine its work is done on; the host's network, credentials and files the models are
-/// reached with, the host's providers and the catalogue of models; and the volume's options.
+/// What Siphon is built on: the machine its work is done on; the folder of the person's own configuration, for every
+/// project — their instructions, `AGENTS.md`, and their skills, `skills/` — where they keep one; the host's network,
+/// credentials and files the models are reached with, the host's providers and the catalogue of models; and the
+/// volume's options.
 #[derive(Debug)]
 pub struct Setup {
     pub machine: Host,
+    pub config: Option<std::path::PathBuf>,
     pub network: Network,
     pub providers: Vec<Provider>,
     pub catalogue: Vec<Model>,
@@ -67,6 +70,7 @@ impl Siphon {
 #[derive(Debug)]
 pub struct Building {
     pub builder: Builder,
+    config: Option<std::path::PathBuf>,
     events: Events,
     network: Network,
     catalogue: Vec<Model>,
@@ -82,6 +86,7 @@ impl Siphon {
     pub fn builder(beak: &Beak, setup: Setup) -> beak::Result<Building> {
         let Setup {
             machine,
+            config,
             network,
             providers,
             catalogue,
@@ -111,6 +116,7 @@ impl Siphon {
         builder.topics(Scope::ThreadsRead, connection::told);
         Ok(Building {
             builder,
+            config,
             events,
             network,
             catalogue,
@@ -134,6 +140,7 @@ impl Building {
     pub fn start(self) -> beak::Result<Siphon> {
         let Building {
             builder,
+            config,
             events,
             network,
             catalogue,
@@ -154,7 +161,7 @@ impl Building {
             .with(QuestionTool)
             .with(DelegateTool);
         let models = Arc::new(Models::new(network, providers, catalogue));
-        let runtime = programs(runtime, &machine, &models, tellers, inner, outer).start_on((kernel, events), options)?;
+        let runtime = programs(runtime, &machine, config, &models, tellers, inner, outer).start_on((kernel, events), options)?;
         Ok(Siphon {
             machine,
             threads: Threads::new(runtime.clone()),
@@ -170,6 +177,7 @@ impl Building {
 fn programs(
     runtime: siphon_runtime::Builder,
     machine: &Host,
+    config: Option<std::path::PathBuf>,
     models: &Arc<Models>,
     tellers: Vec<Arc<dyn siphon_agent::Teller>>,
     inner: Tools,
@@ -180,7 +188,7 @@ fn programs(
         tellers,
         models: Arc::clone(models),
         host: machine.clone(),
-        home: machine.home.clone(),
+        config,
     };
     let (gathering, asking, reviewing) = (sources, Arc::clone(models), Arc::clone(models));
     let (execs, host) = (tools.clone(), machine.clone());

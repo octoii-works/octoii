@@ -192,7 +192,7 @@ fn runtime(beak: &Beak, script: &Arc<Script>) -> Runtime {
         tellers: Vec::new(),
         models: Arc::clone(&models),
         host: Machine::default(),
-        home: None,
+        config: None,
     };
     let execs = tools.clone();
     Runtime::builder()
