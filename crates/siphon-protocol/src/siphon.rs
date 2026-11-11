@@ -262,7 +262,8 @@ pub struct SearchFiles {
     pub limit: u32,
 }
 
-/// The files found under a folder, by their paths from it, the best match first; and whether more matched.
+/// The files and folders found under a folder, by their paths from it — a folder's ending in `/` — the best match
+/// first; and whether more matched.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct FoundPaths {
     pub path: String,

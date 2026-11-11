@@ -265,7 +265,8 @@ export type FolderEntry = { name: string, kind: FileKind, ignored: boolean, };
 export type FolderPage = { path: string, entries: Array<FolderEntry>, more: boolean, };
 
 /**
- * The files found under a folder, by their paths from it, the best match first; and whether more matched.
+ * The files and folders found under a folder, by their paths from it — a folder's ending in `/` — the best match
+ * first; and whether more matched.
  */
 export type FoundPaths = { path: string, found: Array<string>, truncated: boolean, };
 

@@ -93,13 +93,15 @@ pub(super) fn read(siphon: &Siphon, asked: &ReadFile) -> Result<FilePage, Error>
     }
 }
 
-/// The files under the folder `asked` names whose paths from it match its query, the best first.
+/// The files under the folder `asked` names, and the folders they lie in, whose paths from it match its query, the
+/// best first.
 pub(super) fn search(siphon: &Siphon, asked: &SearchFiles) -> Result<FoundPaths, Error> {
     let machine = machine(siphon)?;
     let start = machine.path(&asked.path);
     let walked = machine.walk(&start).map_err(|error| failed(&error))?;
     let prefix = if start.is_empty() { String::new() } else { format!("{start}/") };
-    let paths = walked.files.iter().map(|file| file.strip_prefix(&prefix).unwrap_or(file));
+    let files: Vec<&str> = walked.files.iter().map(|file| file.strip_prefix(&prefix).unwrap_or(file)).collect();
+    let paths = files.iter().map(|file| (*file).to_owned()).chain(folders_of(&files));
     let pattern = Pattern::parse(&asked.query, CaseMatching::Smart, Normalization::Smart);
     let mut matcher = Matcher::new(Config::DEFAULT.match_paths());
     let best = pattern.match_list(paths, &mut matcher);
@@ -107,6 +109,21 @@ pub(super) fn search(siphon: &Siphon, asked: &SearchFiles) -> Result<FoundPaths,
     Ok(FoundPaths {
         path: absolute(&start),
         truncated: best.len() > limit,
-        found: best.into_iter().take(limit).map(|(path, _)| path.to_owned()).collect(),
+        found: best.into_iter().take(limit).map(|(path, _)| path).collect(),
     })
+}
+
+/// The folders `files` lie in, each once, by its path ending in `/`, as `ls -F` marks a folder.
+fn folders_of(files: &[&str]) -> std::collections::BTreeSet<String> {
+    let mut folders = std::collections::BTreeSet::new();
+    for file in files {
+        let mut rest = *file;
+        while let Some(at) = rest.rfind('/') {
+            rest = &rest[..at];
+            if !folders.insert(format!("{rest}/")) {
+                break;
+            }
+        }
+    }
+    folders
 }

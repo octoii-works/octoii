@@ -74,6 +74,14 @@ async fn the_person_browses_the_machine_s_files_as_git_sees_them() {
         (json!(["src/main.rs"]), Some(true)),
         "the best first"
     );
+    let id = client
+        .call("files.search", json!({ "path": root, "query": "src", "limit": 5 }))
+        .await;
+    let found = client.answer(&id).await["result"]["found"].clone();
+    assert!(
+        found.as_array().is_some_and(|found| found.contains(&json!("src/"))),
+        "a folder the files lie in, marked as `ls -F` marks one: {found}"
+    );
 
     let mut reader = Client::connect(&siphon, vec![Scope::ThreadsRead], 64);
     reader.message().await;

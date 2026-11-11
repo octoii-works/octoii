@@ -27,7 +27,7 @@ const ask = (call: string): Ask => ({
 });
 
 function viewOf(entries: Entry[], asks: Ask[] = [], streaming: [string, Streamed[]][] = []): ThreadView {
-	const status: Status = { turn: "running", inbox: [["9", { type: "input", actor: "person", content: [{ type: "input_text", text: "and then?" }] }]], asks };
+	const status: Status = { turn: "running", compacting: false, inbox: [["9", { type: "input", actor: "person", content: [{ type: "input_text", text: "and then?" }] }]], asks };
 	return { entries, read: true, complete: true, status, streaming: new Map(streaming), gone: false };
 }
 

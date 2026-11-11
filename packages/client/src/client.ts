@@ -15,6 +15,7 @@ import type { Clock, ClientOptions } from "./options.ts";
 import { followPage, type PageHandlers, type PageView } from "./pages.ts";
 import type {
 	Cells,
+	Composition,
 	Config,
 	ConfigChange,
 	FileRef,
@@ -67,6 +68,12 @@ export type Client = {
 	stop(thread: string): Promise<void>;
 	/** Gives the person's answer to what the thread asks them, by the ask's key. */
 	answer(thread: string, key: string, answer: JsonValue): Promise<void>;
+	/** What fills the thread's window: the tokens its next request takes, and each part's share of them. */
+	context(thread: string): Promise<Composition>;
+	/** Compacts the thread's window now, where it is not compacting already. */
+	compact(thread: string): Promise<void>;
+	/** Has the thread go on at `at`, in milliseconds since the epoch, unless the person goes on first; at no time, where `at` is none. */
+	resume(thread: string, at: number | undefined): Promise<void>;
 	/** Follows the thread: one followed for all who read it, its latest entries first, let go after the last. */
 	follow(thread: string): Followable<ThreadView>;
 	/** Reads a page further back of a thread followed, before the entries it holds: it keeps them too. */
@@ -157,6 +164,9 @@ export function createClient(options: ClientOptions): Client {
 		delete: (thread) => done(connection.call("threads.delete", { thread })),
 		stop: (thread) => done(connection.call("threads.stop", { thread })),
 		answer: (thread, key, answer) => done(connection.call("threads.answer", { thread, key, answer })),
+		context: (thread) => connection.call("threads.context", { thread }),
+		compact: (thread) => done(connection.call("threads.compact", { thread })),
+		resume: (thread, at) => done(connection.call("threads.resume", at === undefined ? { thread } : { thread, at })),
 		follow: (id) => follows.follow(id),
 		readOlder: (id) => follows.readOlder(id),
 		watchThreads: () =>
