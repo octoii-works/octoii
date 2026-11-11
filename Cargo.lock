@@ -5628,6 +5628,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tokio-util",
+ "ts-rs",
 ]
 
 [[package]]
@@ -5664,6 +5665,7 @@ dependencies = [
  "serde",
  "serde_json",
  "siphon-agent",
+ "siphon-machine",
  "siphon-settings",
  "siphon-threads",
  "ts-rs",

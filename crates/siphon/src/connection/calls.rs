@@ -82,6 +82,11 @@ pub(crate) async fn answered(context: Context, method: Method) -> Result<serde_j
         Method::ListFolder(asked) => json(&super::machine::list(siphon, &asked)?),
         Method::ReadFile(asked) => json(&super::machine::read(siphon, &asked)?),
         Method::SearchFiles(asked) => json(&super::machine::search(siphon, &asked)?),
+        method @ (Method::GitRepository(_)
+        | Method::GitChanges(_)
+        | Method::GitPatch(_)
+        | Method::GitVersions(_)
+        | Method::GitCommits(_)) => super::git::answered(siphon, method).await,
         Method::SetSettings(change) => {
             siphon_settings::set(&siphon.runtime, session, &change)
                 .await

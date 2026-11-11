@@ -36,9 +36,48 @@ export type CallStatus = "ok" | "unavailable" | "invalid-arguments" | "tool-erro
 export type Cells = { rows: number, cols: number, };
 
 /**
+ * What became of a file between two trees; untracked, one in the working tree git does not keep.
+ */
+export type ChangeStatus = "added" | "deleted" | "modified" | "renamed" | "copied" | "type-changed" | "untracked";
+
+/**
  * A field changed: what it was, and what it is; `None` for not set.
  */
 export type Changed<T> = { from: T | null, to: T | null, };
+
+/**
+ * A file changed: its path from the repository's root, the one it had, what became of it, the lines it gained and
+ * lost — none where they were not counted — and whether it is binary.
+ */
+export type ChangedFile = { path: string, old_path?: string, status: ChangeStatus, additions?: number, deletions?: number, binary: boolean, };
+
+/**
+ * The changes asked for: the repository's root, the trees they are between, the branch they are told against, and
+ * the files changed.
+ */
+export type Changes = { root: string, comparison: Comparison, base?: string, files: Array<ChangedFile>, };
+
+/**
+ * Which changes are asked for: those not yet committed; a branch's against where it parted from its base — the
+ * repository's, where none is named — the working tree's own included; or one commit's.
+ */
+export type ChangesScope = { "type": "uncommitted" } | { "type": "branch", base?: string, } | { "type": "commit", commit: string, };
+
+/**
+ * A commit of a branch: its id, when it was committed, in seconds since the epoch, and its subject.
+ */
+export type Commit = { commit: string, time: number, subject: string, };
+
+/**
+ * A branch's commits, the newest first, and whether more were left out.
+ */
+export type Commits = { commits: Array<Commit>, truncated: boolean, };
+
+/**
+ * The two trees changes are told between: the older, by its object's id; the newer, a commit's, or the working
+ * tree's where none.
+ */
+export type Comparison = { old: string, new?: string, };
 
 /**
  * How a thread runs: each setting, or none where it has none.
@@ -202,10 +241,36 @@ status?: ItemStatus | null, origin?: Origin | null, };
  */
 export type FunctionCallOutput = { call_id: string, output: Array<InputContent>, is_error?: boolean, };
 
+export type GitChanges = { path: string, scope: ChangesScope, };
+
+/**
+ * The commits to list: of the branch the folder `path` is on, since it parted from `base` — the repository's, where
+ * none.
+ */
+export type GitCommits = { path: string, base?: string, };
+
+/**
+ * A file's patch to read: of the repository `path` is in, between `comparison`'s trees, with `context` lines about each
+ * change — git's own number, where none.
+ */
+export type GitPatch = { path: string, comparison: Comparison, file: ChangedFile, context?: number, };
+
+export type GitVersions = { path: string, comparison: Comparison, file: ChangedFile, };
+
 /**
  * How closely a model looks at an image.
  */
 export type ImageDetail = "auto" | "high" | "low";
+
+/**
+ * A folder of the machine's, as the person names it.
+ */
+export type InFolder = { path: string, };
+
+/**
+ * The repository a folder is in; none where it is in none.
+ */
+export type InRepository = { repository?: Repository, };
 
 /**
  * What is delivered to a thread.
@@ -386,6 +451,8 @@ export type Parent = { thread: string, call: string, };
  */
 export type Part = "text" | "refusal" | "reasoning" | "summary" | "arguments";
 
+export type Patch = { patch: string, };
+
 /**
  * A file to read: as the person names it, its lines from `offset` — from 1, where none — `limit` at most.
  */
@@ -420,6 +487,13 @@ export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "
  * commit `started` started it — whichever lives there, where none — as `wait(2)` tells a parent its child's status.
  */
 export type ReplyTo = { process: string, started?: number | null, key: string, };
+
+/**
+ * A repository, as a folder in it is: where its work tree begins, its branch — none where its head is detached — its
+ * head's commit — none before the first — its upstream, how far ahead of it and behind, and the branch its work was
+ * taken from, as its changes are told against unless one is asked for.
+ */
+export type Repository = { root: string, branch?: string, head?: string, upstream?: string, ahead: number, behind: number, base?: string, };
 
 export type ResizePage = { page: string, view: View, };
 
@@ -579,6 +653,11 @@ reasoning_tokens: number,
 web_searches: number, cost_nanodollars?: number | null, };
 
 /**
+ * A file's two versions: the older, none where it came; the newer, none where it went.
+ */
+export type Versions = { old?: string, new?: string, };
+
+/**
  * A page's view: CSS pixels across and down, and device pixels to each — one, where none is given.
  */
 export type View = { width: number, height: number, scale?: number, };
@@ -625,6 +704,11 @@ export type Methods = {
   'files.list': { params: ListFolder; result: FolderPage };
   'files.read': { params: ReadFile; result: FilePage };
   'files.search': { params: SearchFiles; result: FoundPaths };
+  'git.repository': { params: InFolder; result: InRepository };
+  'git.changes': { params: GitChanges; result: Changes };
+  'git.patch': { params: GitPatch; result: Patch };
+  'git.versions': { params: GitVersions; result: Versions };
+  'git.commits': { params: GitCommits; result: Commits };
   'settings.set': { params: SettingsChange; result: Nothing };
   'browser.open': { params: OpenPage; result: PageOpened };
   'browser.navigate': { params: Navigate; result: Nothing };

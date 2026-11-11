@@ -3,6 +3,7 @@
 //! the namespace reaches.
 
 mod files;
+pub mod git;
 mod machine;
 pub mod paths;
 mod search;
