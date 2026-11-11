@@ -15,7 +15,7 @@ mod typescript;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub use set::Set;
+pub use set::{Set, Subscriptions};
 pub use typescript::{Declarations, typescript};
 #[doc(hidden)]
 pub use {serde, serde_json, ts_rs};

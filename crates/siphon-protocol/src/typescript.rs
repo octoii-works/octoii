@@ -82,8 +82,10 @@ pub fn typescript(sets: &[Set]) -> String {
         for (name, params, result) in (set.signatures)(&cfg) {
             let _ = writeln!(methods, "  '{name}': {{ params: {params}; result: {result} }};");
         }
-        topics.push((set.topic)(&cfg));
-        events.push((set.event)(&cfg));
+        if let Some(subscriptions) = &set.subscriptions {
+            topics.push((subscriptions.topic)(&cfg));
+            events.push((subscriptions.event)(&cfg));
+        }
     }
     let _ = writeln!(methods, "  'subscribe': {{ params: {{ topic: Topic }}; result: Subscribed }};");
     let _ = writeln!(methods, "  'unsubscribe': {{ params: Unsubscribe; result: Nothing }};");

@@ -54,8 +54,12 @@ pub struct Servers {
     own: Option<PathBuf>,
 }
 
-/// A server's peer asked of the task that holds the servers, by work on the runtime given, which records it.
-struct Order(Server, Runtime, oneshot::Sender<Result<Peer<RoleClient>, String>>);
+/// What the task that holds the servers is asked: a server's peer, connected where it is not, by work on the runtime
+/// given, which records it; or the peers of those of `servers` it holds connected now, connecting none.
+enum Order {
+    Peer(Server, Runtime, oneshot::Sender<Result<Peer<RoleClient>, String>>),
+    Held(Vec<Server>, oneshot::Sender<Vec<Option<Peer<RoleClient>>>>),
+}
 
 impl Servers {
     /// The servers run on the machine `host` gives, recorded in the volume of the runtime that first needs each; the
@@ -188,14 +192,140 @@ impl Servers {
         given(context, result).await
     }
 
+    /// The person's own configuration's servers, for every project.
+    fn own_configured(&self) -> Configured {
+        let mut configured = Configured::default();
+        if let Some(path) = &self.own
+            && let Some(text) = read(path, &mut configured.problems)
+        {
+            let folder = path.parent().unwrap_or(path);
+            configured.extend(parse(path, &text, folder, &host_variable));
+        }
+        configured
+    }
+
+    /// What the project at `place` names in its configuration, with the person's decision on it as it is; none where
+    /// it names no server.
+    fn project(snapshot: &Snapshot, place: &Place) -> beak::Result<Option<ProjectServers>> {
+        let path = place.project.join(PROJECT_FILE);
+        let Some(text) = read(&path, &mut Vec::new()) else {
+            return Ok(None);
+        };
+        let project = parse(&path, &text, &place.project, &host_variable);
+        if project.servers.is_empty() {
+            return Ok(None);
+        }
+        let folder = place.project.to_string_lossy().into_owned();
+        let digest = trust::digest(text.as_bytes());
+        let trusted = trust::decided(snapshot, &folder, &digest)?;
+        let servers = project
+            .servers
+            .iter()
+            .map(|server| ShownServer {
+                name: server.name.clone(),
+                runs: server.runs(),
+            })
+            .collect();
+        let named = Trust {
+            folder,
+            path: path.to_string_lossy().into_owned(),
+            digest,
+            servers,
+        };
+        Ok(Some(ProjectServers { named, trusted }))
+    }
+
+    /// Each server of the person's and the project's at `place` as it stands: connected or not, and the tools of each
+    /// connected — none connected to tell — what of the configurations could not be taken, the person's own
+    /// configuration, and what the project's names with the person's decision on it as it is.
+    ///
+    /// # Errors
+    /// The volume's failure.
+    pub async fn listed(&self, runtime: &Runtime, place: Option<&Place>) -> beak::Result<ServersListed> {
+        let snapshot = runtime.snapshot()?;
+        let found = match place {
+            Some(place) => self.configured(&snapshot, place, &host_variable)?,
+            None => Found {
+                configured: self.own_configured(),
+                asks: None,
+            },
+        };
+        let (reply, held) = oneshot::channel();
+        let _ = self.orders.send(Order::Held(found.configured.servers.clone(), reply));
+        let held = held.await.unwrap_or_default();
+        let mut servers = Vec::new();
+        for (server, peer) in found.configured.servers.iter().zip(held) {
+            let tools = match &peer {
+                Some(peer) => peer
+                    .list_all_tools()
+                    .await
+                    .map(|tools| tools.into_iter().map(|tool| tool.name.to_string()).collect())
+                    .unwrap_or_default(),
+                None => Vec::new(),
+            };
+            servers.push(ServerListed {
+                name: server.name.clone(),
+                source: server.source.to_string_lossy().into_owned(),
+                runs: server.runs(),
+                connected: peer.is_some(),
+                tools,
+            });
+        }
+        let project = match place {
+            Some(place) => Self::project(&snapshot, place)?,
+            None => None,
+        };
+        Ok(ServersListed {
+            servers,
+            problems: found.configured.problems,
+            person: self.own.as_ref().map(|own| own.to_string_lossy().into_owned()),
+            project,
+        })
+    }
+
     /// The peer of `server`, connected now where it is not, recorded in `runtime`'s volume.
     async fn peer(&self, server: &Server, runtime: &Runtime) -> Result<Peer<RoleClient>, String> {
         let (reply, peer) = oneshot::channel();
         self.orders
-            .send(Order(server.clone(), runtime.clone(), reply))
+            .send(Order::Peer(server.clone(), runtime.clone(), reply))
             .map_err(|_| "the servers are stopped".to_owned())?;
         peer.await.map_err(|_| "the servers are stopped".to_owned())?
     }
+}
+
+/// A server as the person is shown it: its name, the configuration it comes from by its path, what it runs or where it
+/// is reached, whether it is connected now, and its tools' names where it is.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+pub struct ServerListed {
+    pub name: String,
+    pub source: String,
+    pub runs: String,
+    pub connected: bool,
+    pub tools: Vec<String>,
+}
+
+/// A project's configuration of servers as the person decides on it: what it names, and whether they trust it — none
+/// where they decided nothing on it as it is.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+pub struct ProjectServers {
+    pub named: Trust,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub trusted: Option<bool>,
+}
+
+/// The servers a thread working at a place would use: each as it stands, what of their configurations could not be
+/// taken, the person's own configuration by its path, and the project's, with what the person decided on it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+pub struct ServersListed {
+    pub servers: Vec<ServerListed>,
+    pub problems: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub person: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub project: Option<ProjectServers>,
 }
 
 /// The servers a thread reaches, and what the person is asked to trust of them.
@@ -252,7 +382,23 @@ async fn hold(host: Host, mut orders: mpsc::UnboundedReceiver<Order>) {
     loop {
         tokio::select! {
             order = orders.recv() => {
-                let Some(Order(server, runtime, reply)) = order else { break };
+                let (server, runtime, reply) = match order {
+                    None => break,
+                    Some(Order::Held(servers, reply)) => {
+                        let held = servers
+                            .iter()
+                            .map(|server| match slots.get(server) {
+                                Some(Slot::Running(running)) if !running.service.peer().is_transport_closed() => {
+                                    Some(running.service.peer().clone())
+                                }
+                                _ => None,
+                            })
+                            .collect();
+                        let _ = reply.send(held);
+                        continue;
+                    }
+                    Some(Order::Peer(server, runtime, reply)) => (server, runtime, reply),
+                };
                 match slots.get_mut(&server) {
                     Some(Slot::Running(running)) if !running.service.peer().is_transport_closed() => {
                         running.used = Instant::now();

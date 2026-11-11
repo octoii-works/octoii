@@ -8,13 +8,15 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use siphon::{Builder, Plugin};
+use siphon::{Builder, Caller, Plugin};
 use siphon_agent::{Teller, Telling};
+use siphon_protocol::Error;
 use siphon_runtime::{Changes, Runtime};
 use siphon_tools::projects::Place;
 use siphon_tools::{Context, Refusal, Toolset};
 
-use crate::trust::{Trust, TrustProgram};
+use crate::protocol;
+use crate::trust::{self, Trust, TrustProgram};
 use crate::{Catalog, Servers};
 
 /// The MCP servers, as a host adds them: the folder of the person's own configuration, whose `mcp.json` names their
@@ -34,6 +36,11 @@ impl Plugin for McpPlugin {
         let toolset: Arc<dyn Toolset> = Arc::new(servers.clone());
         builder.tools(|tools| tools.with_toolset(toolset));
         builder.runtime(|runtime| runtime.program(TrustProgram).ask_person::<Trust>());
+        let listing = servers.clone();
+        builder.methods(protocol::set(), protocol::Method::read, move |caller: Caller, method| {
+            let servers = listing.clone();
+            async move { answered(&servers, &caller, method).await }
+        });
         builder.teller(Arc::new(servers));
     }
 }
@@ -73,6 +80,31 @@ impl Teller for Servers {
             telling.tools = catalog.tools.iter().map(|tool| tool.name.clone()).collect();
             Ok(telling)
         })
+    }
+}
+
+/// Does `method` on the servers, for the client of `caller`.
+async fn answered(servers: &Servers, caller: &Caller, method: protocol::Method) -> Result<serde_json::Value, Error> {
+    let runtime = &caller.siphon.runtime;
+    let failed = |error: &dyn std::fmt::Display| Error {
+        code: "failed".into(),
+        message: error.to_string(),
+    };
+    match method {
+        protocol::Method::ListServers(asked) => {
+            let place = asked
+                .workspace
+                .as_deref()
+                .map(|workspace| Place::of(std::path::Path::new(workspace)));
+            let listed = servers.listed(runtime, place.as_ref()).await.map_err(|error| failed(&error))?;
+            serde_json::to_value(listed).map_err(|error| failed(&error))
+        }
+        protocol::Method::DecideTrust(decided) => {
+            let snapshot = runtime.snapshot().map_err(|error| failed(&error))?;
+            let changes = trust::decide(&snapshot, &decided.folder, &decided.digest, decided.trusted).map_err(|error| failed(&error))?;
+            runtime.commit(changes).await.map_err(|error| failed(&error))?;
+            Ok(serde_json::json!({}))
+        }
     }
 }
 

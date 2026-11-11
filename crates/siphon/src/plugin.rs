@@ -29,7 +29,7 @@ pub trait Plugin {
 
 /// Who a call or a subscription is for: Siphon, and the session of the client that made it.
 #[derive(Debug, Clone)]
-pub struct Context {
+pub struct Caller {
     pub siphon: Siphon,
     pub session: String,
 }
@@ -38,7 +38,7 @@ pub struct Context {
 pub(crate) type Boxed<T> = Pin<Box<dyn Future<Output = T> + Send>>;
 
 /// How a method is done: from its name and params, as its set reads them.
-type Handler = Arc<dyn Fn(Context, &str, serde_json::Value) -> Boxed<Result<serde_json::Value, Error>> + Send + Sync>;
+type Handler = Arc<dyn Fn(Caller, &str, serde_json::Value) -> Boxed<Result<serde_json::Value, Error>> + Send + Sync>;
 
 /// How a subscription to a topic is told, once the topic is read.
 pub(crate) type Telling = Box<dyn FnOnce(Subscription) -> Boxed<Result<(), Lagged>> + Send>;
@@ -70,7 +70,7 @@ impl std::fmt::Debug for Registry {
 /// A subscription as its teller holds it: who it is for, its id, where its events go, and what ends it.
 #[derive(Debug, Clone)]
 pub struct Subscription {
-    pub context: Context,
+    pub caller: Caller,
     pub sink: Sink,
     pub stop: CancellationToken,
 }
@@ -176,14 +176,14 @@ impl Builder {
     pub fn methods<M, F, Done>(&mut self, set: Set, read: fn(&str, serde_json::Value) -> serde_json::Result<M>, handle: F)
     where
         M: Send + 'static,
-        F: Fn(Context, M) -> Done + Send + Sync + 'static,
+        F: Fn(Caller, M) -> Done + Send + Sync + 'static,
         Done: Future<Output = Result<serde_json::Value, Error>> + Send + 'static,
     {
         let handle = Arc::new(handle);
         for (name, scope) in &set.methods {
             let handle = Arc::clone(&handle);
-            let handler: Handler = Arc::new(move |context, name, params| match read(name, params) {
-                Ok(method) => Box::pin(handle(context, method)),
+            let handler: Handler = Arc::new(move |caller, name, params| match read(name, params) {
+                Ok(method) => Box::pin(handle(caller, method)),
                 Err(error) => {
                     let refused = crate::connection::refusal("bad_params", &error.to_string());
                     Box::pin(std::future::ready(Err(refused)))

@@ -38,7 +38,7 @@ pub(crate) async fn told(subscription: Subscription, topic: SiphonTopic) -> Resu
 /// each commit that changed anything of it; what streams of its requests as it comes. A thread gone, or Siphon
 /// closing, ends it.
 async fn thread_told(subscription: &Subscription, thread: &str, cursor: &mut Option<log::Cursor>) -> Result<(), Full> {
-    let (siphon, sink) = (&subscription.context.siphon, &subscription.sink);
+    let (siphon, sink) = (&subscription.caller.siphon, &subscription.sink);
     let mut committed = siphon.runtime.committed();
     let mut streams = siphon.runtime.follow(thread).await;
     let Ok(mut followed) = siphon.runtime.snapshot().map(|snapshot| Followed::at(&snapshot)) else {
@@ -111,7 +111,7 @@ fn touched(siphon: &Siphon, followed: &mut Followed, of: impl Fn(&[u8]) -> bool)
 /// The entries of the thread `thread` past `cursor`, told, `cursor` moved past them once they are: whether more are
 /// left; none where the volume cannot be read.
 fn entries_told(subscription: &Subscription, thread: &str, cursor: &mut Option<log::Cursor>) -> Result<Option<bool>, Full> {
-    let (siphon, sink) = (&subscription.context.siphon, &subscription.sink);
+    let (siphon, sink) = (&subscription.caller.siphon, &subscription.sink);
     let Ok(snapshot) = siphon.runtime.snapshot() else { return Ok(None) };
     let Ok(read) = log::read_after(&snapshot, thread, cursor.as_ref(), ENTRIES_BYTES) else {
         return Ok(None);
@@ -133,7 +133,7 @@ fn entries_told(subscription: &Subscription, thread: &str, cursor: &mut Option<l
 /// The threads: each as it stands first; then, after each commit, each it changed as it now stands, and each it
 /// deleted gone — all of them read again where the journal no longer holds every commit since.
 async fn threads_told(subscription: &Subscription) -> Result<(), Full> {
-    let (siphon, sink) = (&subscription.context.siphon, &subscription.sink);
+    let (siphon, sink) = (&subscription.caller.siphon, &subscription.sink);
     let mut committed = siphon.runtime.committed();
     let Ok(mut followed) = siphon.runtime.snapshot().map(|snapshot| Followed::at(&snapshot)) else {
         return Ok(());
@@ -187,7 +187,7 @@ async fn threads_told(subscription: &Subscription) -> Result<(), Full> {
 /// The settings — the environment's, and the session's device's — as they stand first, then after each commit that
 /// changed either.
 async fn settings_told(subscription: &Subscription) -> Result<(), Full> {
-    let (context, sink) = (&subscription.context, &subscription.sink);
+    let (context, sink) = (&subscription.caller, &subscription.sink);
     let mut committed = context.siphon.runtime.committed();
     let Ok(mut followed) = context.siphon.runtime.snapshot().map(|snapshot| Followed::at(&snapshot)) else {
         return Ok(());

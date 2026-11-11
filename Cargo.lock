@@ -5652,12 +5652,14 @@ dependencies = [
  "siphon",
  "siphon-agent",
  "siphon-machine",
+ "siphon-protocol",
  "siphon-runtime",
  "siphon-threads",
  "siphon-tools",
  "tempfile",
  "tokio",
  "tokio-util",
+ "ts-rs",
 ]
 
 [[package]]

@@ -3,7 +3,7 @@
 //! change, and a terminal as it writes, each piece once.
 
 use serde_json::{Value, json};
-use siphon::{Builder, Context, Full, Lagged, Plugin, Subscription};
+use siphon::{Builder, Caller, Full, Lagged, Plugin, Subscription};
 use siphon_protocol::{Error, Nothing, Scope};
 use tokio::sync::broadcast::error::RecvError;
 
@@ -24,7 +24,7 @@ impl Plugin for TerminalsPlugin {
         let closing = terminals.clone();
         builder.on_thread_deleted(move |thread| closing.close_thread(thread));
         let doing = terminals.clone();
-        builder.methods(protocol::set(), Method::read, move |context: Context, method| {
+        builder.methods(protocol::set(), Method::read, move |context: Caller, method| {
             let terminals = doing.clone();
             async move { answered(&terminals, &context, method).await }
         });
@@ -43,7 +43,7 @@ fn size(cells: Cells) -> Size {
 }
 
 /// Does `method` on `terminals`, for the client of `context`.
-async fn answered(terminals: &Terminals, context: &Context, method: Method) -> Result<Value, Error> {
+async fn answered(terminals: &Terminals, context: &Caller, method: Method) -> Result<Value, Error> {
     match method {
         Method::Open(open) => {
             let listed = context

@@ -5,11 +5,12 @@
 
 mod config;
 mod plugin;
+pub mod protocol;
 mod servers;
 mod stdio;
 pub mod trust;
 
 pub use config::{Configured, Launch, OWN_FILE, PROJECT_FILE, Server, parse};
 pub use plugin::McpPlugin;
-pub use servers::{Catalog, Found, IDLE, Servers};
+pub use servers::{Catalog, Found, IDLE, ProjectServers, ServerListed, Servers, ServersListed};
 pub use trust::{ShownServer, Trust, TrustProgram, Trusted};

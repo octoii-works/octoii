@@ -7,7 +7,7 @@ use std::time::Duration;
 use beak::Beak;
 use serde_json::{Value, json};
 use siphon::testing::{self, Client};
-use siphon::{Builder, Context, Lagged, Plugin, Siphon, Subscription};
+use siphon::{Builder, Caller, Lagged, Plugin, Siphon, Subscription};
 use siphon_protocol::Scope;
 
 fn siphon(beak: &Beak) -> Siphon {
@@ -53,7 +53,7 @@ impl Plugin for Echo {
     }
 
     fn build(self: Box<Self>, builder: &mut Builder) {
-        builder.methods(echo::set(), echo::Method::read, |_: Context, method| async move {
+        builder.methods(echo::set(), echo::Method::read, |_: Caller, method| async move {
             let echo::Method::Say(said) = method;
             Ok(serde_json::to_value(said).unwrap_or_default())
         });

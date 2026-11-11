@@ -155,6 +155,8 @@ export type CredentialKind = "api_key" | "o_auth" | "none";
  */
 export type Cursor = { segment: string, offset: number, };
 
+export type DecideTrust = { folder: string, digest: string, trusted: boolean, };
+
 export type Deliver = { thread: string, content: Array<InputContent>, key: string, };
 
 export type Delivered = { delivery: string, };
@@ -342,6 +344,8 @@ export type JsonValue = number | string | boolean | Array<JsonValue> | { [key in
  * where none — `limit` at most.
  */
 export type ListFolder = { path: string, after?: string, limit: number, };
+
+export type ListServers = { workspace?: string, };
 
 /**
  * A thread as a list of them shows it: its id, its project and parent, how it runs, how the person keeps it, and how
@@ -566,6 +570,12 @@ export type Prices = { prompt: Rate | null, completion: Rate | null, cache_read:
 export type Pricing = { base: Prices, overrides: Array<Override>, discount_millionths: number, };
 
 /**
+ * A project's configuration of servers as the person decides on it: what it names, and whether they trust it — none
+ * where they decided nothing on it as it is.
+ */
+export type ProjectServers = { named: Trust, trusted?: boolean, };
+
+/**
  * A provider, as the person is shown it: its id and name, how it is connected and the agent it is reached through,
  * the kind of credential kept for it — none where none is — the account it is, where the person added it, and its
  * quota, where it is used up.
@@ -657,6 +667,18 @@ export type SearchFiles = { path: string, query: string, limit: number, };
  */
 export type Section = { name: string, text: string | null, };
 
+/**
+ * A server as the person is shown it: its name, the configuration it comes from by its path, what it runs or where it
+ * is reached, whether it is connected now, and its tools' names where it is.
+ */
+export type ServerListed = { name: string, source: string, runs: string, connected: boolean, tools: Array<string>, };
+
+/**
+ * The servers a thread working at a place would use: each as it stands, what of their configurations could not be
+ * taken, the person's own configuration by its path, and the project's, with what the person decided on it.
+ */
+export type ServersListed = { servers: Array<ServerListed>, problems: Array<string>, person?: string, project?: ProjectServers, };
+
 export type SetCredential = { provider: string, api_key: string, };
 
 /**
@@ -669,6 +691,11 @@ export type Settings = { environment: Environment, device: JsonValue, };
  * A change of the settings: the environment's, and the device's, as a merge patch of its document.
  */
 export type SettingsChange = { environment?: EnvironmentChange | null, device?: JsonValue | null, };
+
+/**
+ * A server as the person is shown it: its name, and what it runs, or where it is reached.
+ */
+export type ShownServer = { name: string, runs: string, };
 
 export type SignInBegun = { url: string, };
 
@@ -743,6 +770,12 @@ export type ThreadsListed = { threads: Array<Listed>, };
  * search, which the provider runs.
  */
 export type Tool = { "type": "function", name: string, description: string, parameters: JsonValue, } | { "type": "web_search" };
+
+/**
+ * What the person is asked: whether what the project of `folder` names in its configuration — the file at `path`, of
+ * the digest `digest` — may run: the servers it names, each as it would run.
+ */
+export type Trust = { folder: string, path: string, digest: string, servers: Array<ShownServer>, };
 
 /**
  * How a thread's turns stand: none run yet, one running, or how the last ended.
@@ -873,6 +906,8 @@ export type Methods = {
   'terminals.write': { params: WriteTerminal; result: Nothing };
   'terminals.resize': { params: ResizeTerminal; result: Nothing };
   'terminals.close': { params: OfTerminal; result: Nothing };
+  'servers.list': { params: ListServers; result: ServersListed };
+  'trust.decide': { params: DecideTrust; result: Nothing };
   'subscribe': { params: { topic: Topic }; result: Subscribed };
   'unsubscribe': { params: Unsubscribe; result: Nothing };
 };

@@ -27,7 +27,7 @@ use siphon_tools::{
     WriteTool, answer_exec,
 };
 
-pub use plugin::{Builder, Context, Full, Lagged, Plugin, Sink, Subscription};
+pub use plugin::{Builder, Caller, Full, Lagged, Plugin, Sink, Subscription};
 
 /// What Siphon is built on: the machine its work is done on; the folder of the person's own configuration, for every
 /// project — their instructions, `AGENTS.md`, and their skills, `skills/` — where they keep one; the host's credentials

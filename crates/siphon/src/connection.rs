@@ -22,7 +22,7 @@ pub(crate) use calls::answered;
 pub(crate) use subscriptions::told;
 
 use crate::Siphon;
-use crate::plugin::{Context, Lagged, Sink, Subscription};
+use crate::plugin::{Caller, Lagged, Sink, Subscription};
 
 /// How many messages wait to go out to a client before a subscription's next event lets the subscription go.
 pub const OUTGOING_AHEAD: usize = 256;
@@ -61,7 +61,7 @@ pub async fn serve(
     if outgoing.send(text(&welcome)).await.is_err() {
         return;
     }
-    let context = Context {
+    let caller = Caller {
         siphon,
         session: access.session.clone(),
     };
@@ -79,10 +79,10 @@ pub async fn serve(
             }
         };
         let answered = match call.method.as_str() {
-            "subscribe" => subscriptions.subscribe(&context, &access, call.params, &outgoing),
+            "subscribe" => subscriptions.subscribe(&caller, &access, call.params, &outgoing),
             "unsubscribe" => subscriptions.unsubscribe(call.params),
             name => {
-                let Some((scope, handle)) = context.siphon.registry.methods.get(name) else {
+                let Some((scope, handle)) = caller.siphon.registry.methods.get(name) else {
                     let refused = refusal("no_such_method", &format!("there is no method {name}"));
                     let _ = outgoing.send(text(&answer(call.id, Err(refused)))).await;
                     continue;
@@ -91,7 +91,7 @@ pub async fn serve(
                     let _ = outgoing.send(text(&answer(call.id, Err(forbidden(scope))))).await;
                     continue;
                 }
-                let (doing, outgoing) = (handle(context.clone(), name, call.params), outgoing.clone());
+                let (doing, outgoing) = (handle(caller.clone(), name, call.params), outgoing.clone());
                 tokio::spawn(async move {
                     let _ = outgoing.send(text(&answer(call.id, doing.await))).await;
                 });
@@ -132,15 +132,9 @@ struct Subscriptions {
 impl Subscriptions {
     /// A subscription to the topic `params` names, for the client of `access`: its id, and the task that tells it,
     /// held till it is let go.
-    fn subscribe(
-        &mut self,
-        context: &Context,
-        access: &Access,
-        params: serde_json::Value,
-        outgoing: &mpsc::Sender<Outgoing>,
-    ) -> Subscribing {
+    fn subscribe(&mut self, caller: &Caller, access: &Access, params: serde_json::Value, outgoing: &mpsc::Sender<Outgoing>) -> Subscribing {
         let subscribe: Subscribe = serde_json::from_value(params).map_err(|error| refusal("bad_params", &error.to_string()))?;
-        let Some((scope, telling)) = context
+        let Some((scope, telling)) = caller
             .siphon
             .registry
             .topics
@@ -161,7 +155,7 @@ impl Subscriptions {
             outgoing: outgoing.clone(),
         };
         let subscription = Subscription {
-            context: context.clone(),
+            caller: caller.clone(),
             sink: sink.clone(),
             stop,
         };

@@ -9,12 +9,18 @@ use crate::typescript::Declarations;
 
 /// A set of methods as a host assembles it: each method's name and the scope a session needs to call it; the
 /// TypeScript names of each one's params and result; a visit of every type the set names; and the TypeScript names of
-/// its subscriptions' events and topics.
+/// its subscriptions' events and topics, where it has subscriptions.
 #[derive(Debug, Clone)]
 pub struct Set {
     pub methods: Vec<(&'static str, Option<Scope>)>,
     pub signatures: fn(&Config) -> Vec<(&'static str, String, String)>,
     pub visit: fn(&mut Declarations<'_>),
+    pub subscriptions: Option<Subscriptions>,
+}
+
+/// The TypeScript names of a set's subscriptions' events and topics.
+#[derive(Debug, Clone, Copy)]
+pub struct Subscriptions {
     pub event: fn(&Config) -> String,
     pub topic: fn(&Config) -> String,
 }
@@ -27,6 +33,27 @@ pub struct Set {
 macro_rules! methods {
     (
         events: $event:ty, topics: $topic:ty;
+        $($(#[$doc:meta])* $name:literal $variant:ident($params:ty) -> $result:ty, $scope:expr;)*
+    ) => {
+        $crate::methods! { @set
+            (Some($crate::Subscriptions {
+                event: |cfg| <$event as $crate::ts_rs::TS>::name(cfg),
+                topic: |cfg| <$topic as $crate::ts_rs::TS>::name(cfg),
+            }))
+            (|declarations| {
+                $crate::ts_rs::TypeVisitor::visit::<$event>(declarations);
+                $crate::ts_rs::TypeVisitor::visit::<$topic>(declarations);
+            });
+            $($(#[$doc])* $name $variant($params) -> $result, $scope;)*
+        }
+    };
+    (
+        $($(#[$doc:meta])* $name:literal $variant:ident($params:ty) -> $result:ty, $scope:expr;)*
+    ) => {
+        $crate::methods! { @set (None) (|_| {}); $($(#[$doc])* $name $variant($params) -> $result, $scope;)* }
+    };
+    (
+        @set ($subscriptions:expr) ($visit_subscriptions:expr);
         $($(#[$doc:meta])* $name:literal $variant:ident($params:ty) -> $result:ty, $scope:expr;)*
     ) => {
         /// A call's method, with its params.
@@ -65,11 +92,10 @@ macro_rules! methods {
                         $crate::ts_rs::TypeVisitor::visit::<$params>(declarations);
                         $crate::ts_rs::TypeVisitor::visit::<$result>(declarations);
                     )*
-                    $crate::ts_rs::TypeVisitor::visit::<$event>(declarations);
-                    $crate::ts_rs::TypeVisitor::visit::<$topic>(declarations);
+                    let visit_subscriptions: fn(&mut $crate::Declarations<'_>) = $visit_subscriptions;
+                    visit_subscriptions(declarations);
                 },
-                event: |cfg| <$event as $crate::ts_rs::TS>::name(cfg),
-                topic: |cfg| <$topic as $crate::ts_rs::TS>::name(cfg),
+                subscriptions: $subscriptions,
             }
         }
     };

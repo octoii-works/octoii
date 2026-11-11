@@ -11,14 +11,14 @@ use siphon_tools::projects::Place;
 
 use super::refusal;
 use crate::Siphon;
-use crate::plugin::Context;
+use crate::plugin::Caller;
 
 /// Who a person's calls are made as, as the threads' logs name them.
 const PERSON: &str = "person";
 
-/// Does `method` for the client of `context`.
-pub(crate) async fn answered(context: Context, method: Method) -> Result<serde_json::Value, Error> {
-    let Context { siphon, session } = &context;
+/// Does `method` for the client of `caller`.
+pub(crate) async fn answered(caller: Caller, method: Method) -> Result<serde_json::Value, Error> {
+    let Caller { siphon, session } = &caller;
     let threads = &siphon.threads;
     match method {
         Method::ListThreads(Nothing {}) => json(&ThreadsListed {

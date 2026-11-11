@@ -3,7 +3,7 @@
 //! person's mouse, keys and text on it, a thread's pages as they change and a page as it is painted.
 
 use serde_json::{Value, json};
-use siphon::{Builder, Context, Lagged, Plugin, Subscription};
+use siphon::{Builder, Caller, Lagged, Plugin, Subscription};
 use siphon_protocol::{Error, Nothing, Scope};
 use tokio::sync::broadcast::error::RecvError;
 
@@ -37,7 +37,7 @@ impl Plugin for BrowserPlugin {
         let tool = BrowserTool { browser: browser.clone() };
         builder.tools(|tools| tools.with(tool));
         let doing = browser.clone();
-        builder.methods(protocol::set(), Method::read, move |_: Context, method| {
+        builder.methods(protocol::set(), Method::read, move |_: Caller, method| {
             let browser = doing.clone();
             async move { answered(&browser, method).await }
         });

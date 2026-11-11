@@ -19,7 +19,7 @@ const ANNOTATION: &str = "siphon.trust";
 
 /// What the person is asked: whether what the project of `folder` names in its configuration — the file at `path`, of
 /// the digest `digest` — may run: the servers it names, each as it would run.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, ts_rs::TS)]
 pub struct Trust {
     pub folder: String,
     pub path: String,
@@ -28,7 +28,7 @@ pub struct Trust {
 }
 
 /// A server as the person is shown it: its name, and what it runs, or where it is reached.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, ts_rs::TS)]
 pub struct ShownServer {
     pub name: String,
     pub runs: String,
