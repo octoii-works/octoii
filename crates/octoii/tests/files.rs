@@ -40,6 +40,22 @@ async fn request(address: &str, method: Method, path: &str, headers: &[(&str, &s
     (parts.status.as_u16(), parts.headers, body.collect().await.expect("read").to_bytes())
 }
 
+/// The node's HTTP of `siphon` and `access`, served on a loopback port: its address.
+async fn served(siphon: &siphon::Siphon, access: &Access) -> String {
+    let node = Node {
+        siphon: siphon.clone(),
+        access: access.clone(),
+        machine: Machine { name: "here".into() },
+        origins: Vec::new(),
+        cookie: http::cookie_of(7600),
+        app: None,
+    };
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bound");
+    let address = listener.local_addr().expect("its address").to_string();
+    tokio::spawn(async move { axum::serve(listener, http::router(node)).await });
+    address
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_thread_s_files_are_sent_kept_and_given_back_to_a_session_that_may() {
     let folder = tempfile::tempdir().expect("a folder");
@@ -49,16 +65,7 @@ async fn a_thread_s_files_are_sent_kept_and_given_back_to_a_session_that_may() {
     let access = Access::new(siphon.runtime.clone());
     let thread = siphon.threads.create(&NewThread::default(), "k1").await.expect("a thread");
     let other = siphon.threads.create(&NewThread::default(), "k2").await.expect("a thread");
-    let node = Node {
-        siphon: siphon.clone(),
-        access: access.clone(),
-        machine: Machine { name: "here".into() },
-        origins: Vec::new(),
-        app: None,
-    };
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bound");
-    let address = listener.local_addr().expect("its address").to_string();
-    tokio::spawn(async move { axum::serve(listener, http::router(node)).await });
+    let address = served(&siphon, &access).await;
     let writer = format!(
         "Bearer {}",
         access

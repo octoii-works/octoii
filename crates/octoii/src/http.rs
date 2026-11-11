@@ -26,17 +26,22 @@ use tower_http::services::{ServeDir, ServeFile};
 
 use crate::access::{self, Access, AccessEntry, Holder};
 
-/// The cookie a browser holds its session in.
-pub const COOKIE: &str = "octoii_session";
+/// The cookie a browser holds its session at the node of the loopback port `port` in: a browser keeps one set of
+/// cookies for a host whatever its port, so each node on the machine names its own.
+#[must_use]
+pub fn cookie_of(port: u16) -> String {
+    format!("octoii_session_{port}")
+}
 
-/// What the node's HTTP serves with: Siphon, the access, the machine's name, the origins its own pages come from, and
-/// the web app's folder, where it has one.
+/// What the node's HTTP serves with: Siphon, the access, the machine's name, the origins its own pages come from, the
+/// cookie its browsers hold their sessions in, and the web app's folder, where it has one.
 #[derive(Debug, Clone)]
 pub struct Node {
     pub siphon: Siphon,
     pub access: Access,
     pub machine: Machine,
     pub origins: Vec<String>,
+    pub cookie: String,
     pub app: Option<PathBuf>,
 }
 
@@ -86,8 +91,8 @@ fn foreign(node: &Node, headers: &HeaderMap) -> bool {
         .is_some_and(|origin| !node.origins.iter().any(|own| own == origin))
 }
 
-/// The credential a request of `headers` presents: a bearer token, else a browser's cookie.
-fn credential(headers: &HeaderMap) -> Option<String> {
+/// The credential a request of `headers` presents: a bearer token, else a browser's cookie `cookie`.
+fn credential(cookie: &str, headers: &HeaderMap) -> Option<String> {
     let bearer = headers
         .get(header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
@@ -99,7 +104,7 @@ fn credential(headers: &HeaderMap) -> Option<String> {
     cookies
         .flat_map(|cookies| cookies.split(';'))
         .filter_map(|cookie| cookie.trim().split_once('='))
-        .find(|(name, _)| *name == COOKIE)
+        .find(|(name, _)| *name == cookie)
         .map(|(_, value)| value.to_owned())
 }
 
@@ -109,7 +114,7 @@ pub(crate) fn session(node: &Node, headers: &HeaderMap, remote: Option<&Remote>)
     if remote.is_none() && foreign(node, headers) {
         return Err(Denied(StatusCode::FORBIDDEN, "a page of another origin".into()));
     }
-    let Some(credential) = credential(headers) else {
+    let Some(credential) = credential(&node.cookie, headers) else {
         return Err(Denied(StatusCode::UNAUTHORIZED, "no session".into()));
     };
     match node.access.held(&credential) {
@@ -309,7 +314,8 @@ async fn pair(
         return Ok(Json(serde_json::json!({ "session": made.shown.id, "credential": made.credential })).into_response());
     }
     let cookie = format!(
-        "{COOKIE}={}; HttpOnly; SameSite=Strict; Path=/; Max-Age={}",
+        "{}={}; HttpOnly; SameSite=Strict; Path=/; Max-Age={}",
+        node.cookie,
         made.credential,
         access::SESSION_LASTS.as_secs()
     );

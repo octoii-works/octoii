@@ -171,6 +171,7 @@ pub async fn serve_until(served: Served, stop: impl Future<Output = ()> + Send +
             name: gethostname::gethostname().to_string_lossy().into_owned(),
         },
         origins: vec![loopback.clone(), format!("http://localhost:{port}")],
+        cookie: http::cookie_of(port),
         app,
     };
     let socket = home.socket().context("the control socket's folder")?;

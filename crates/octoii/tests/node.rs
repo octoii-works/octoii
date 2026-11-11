@@ -92,6 +92,11 @@ async fn a_browser_and_a_program_reach_the_node_by_the_sessions_its_commands_mak
     assert_eq!(paired, 200);
     let cookie = headers["set-cookie"].to_str().expect("a cookie").to_owned();
     assert!(cookie.contains("HttpOnly") && cookie.contains("SameSite=Strict"), "{cookie}");
+    let port: u16 = address.rsplit(':').next().and_then(|port| port.parse().ok()).expect("its port");
+    assert!(
+        cookie.starts_with(&format!("{}=", octoii::http::cookie_of(port))),
+        "named by its own port, as another node's on the machine is by its: {cookie}"
+    );
     let (again, _, _) = request(&address, Method::POST, "/pair", &own, json!({ "credential": credential })).await;
     assert_eq!(again, 403, "a link pairs once");
 
