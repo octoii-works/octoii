@@ -141,8 +141,7 @@ impl Home {
                 return Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, why));
             }
         }
-        let root = std::fs::canonicalize(&self.root).unwrap_or_else(|_| self.root.clone());
-        let digest = sha2::Sha256::digest(root.as_os_str().as_encoded_bytes());
+        let digest = sha2::Sha256::digest(real_path(&self.root).as_os_str().as_encoded_bytes());
         let name = u64::from_be_bytes(digest[..8].try_into().unwrap_or_default());
         Ok(folder.join(format!("{name:016x}.sock")))
     }
@@ -151,5 +150,24 @@ impl Home {
     #[must_use]
     pub fn threads(&self) -> PathBuf {
         self.root.join("threads")
+    }
+}
+
+/// `path` with its links followed, as far as it is there, the rest as given: one Home names one socket whether or not
+/// its folder was made yet, and however its path is spelled.
+fn real_path(path: &Path) -> PathBuf {
+    let mut rest = Vec::new();
+    let mut there = path;
+    loop {
+        if let Ok(real) = std::fs::canonicalize(there) {
+            return rest.into_iter().rev().fold(real, |path, name| path.join(name));
+        }
+        match (there.parent(), there.file_name()) {
+            (Some(parent), Some(name)) => {
+                rest.push(name.to_owned());
+                there = parent;
+            }
+            _ => return path.to_owned(),
+        }
     }
 }
