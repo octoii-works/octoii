@@ -115,6 +115,61 @@ pub trait Driver: Send + Sync {
         let _ = call;
         Box::pin(async { Ok(None) })
     }
+
+    /// How the provider's account stands, where the driver tells more of it than its credential does.
+    fn status<'a>(&'a self, call: &'a Call) -> BoxFuture<'a, Result<Option<Standing>, Failure>> {
+        let _ = call;
+        Box::pin(async { Ok(None) })
+    }
+
+    /// Lets go of what the driver keeps of the account the call is made for, as the person removes it.
+    fn forget<'a>(&'a self, call: &'a Call) -> BoxFuture<'a, Result<(), Failure>> {
+        let _ = call;
+        Box::pin(async { Ok(()) })
+    }
+}
+
+/// How a provider's account stands, as its driver tells it: who it is signed in as and their plan, how much of each of
+/// the plan's limits is used, and what the person does to reach it, where they must do something.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+pub struct Standing {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub account: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub plan: Option<String>,
+    #[serde(default)]
+    pub limits: Vec<Limit>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub guidance: Option<Guidance>,
+}
+
+/// One of a plan's limits as its usage tells: the minutes its window lasts — five hours, or a week — the models it is
+/// of, where it is of some alone, how much of it is used, in percent, and when it is given again, each where it is
+/// known.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+pub struct Limit {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub window_minutes: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub scope: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub used_percent: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub resets_at_ms: Option<i64>,
+}
+
+/// What the person does to reach a provider, in words, and the commands they run for it, in order.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+pub struct Guidance {
+    pub words: String,
+    pub commands: Vec<String>,
 }
 
 /// What a sign-in in a browser is begun with: the address the person's browser is sent back to, the name the app is

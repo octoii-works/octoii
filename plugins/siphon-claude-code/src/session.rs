@@ -65,6 +65,12 @@ impl Session {
         }
     }
 
+    /// Whether it holds calls of the thread's tools, its turn going on once their results come.
+    #[must_use]
+    pub fn is_holding(&self) -> bool {
+        !self.held.is_empty()
+    }
+
     /// Whether it may be asked again: it ended no other way.
     #[must_use]
     pub fn is_open(&self) -> bool {

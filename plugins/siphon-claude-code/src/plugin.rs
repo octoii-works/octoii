@@ -35,7 +35,7 @@ impl Plugin for ClaudeCodePlugin {
         let _ = std::fs::create_dir_all(place.work());
         let claude = Arc::new(ClaudeCode::new(place));
         let forgetting = Arc::clone(&claude);
-        builder.on_thread_deleted(move |thread| forgetting.forget(thread));
+        builder.on_thread_deleted(move |thread| forgetting.forget_conversation(thread));
         builder.provider(Provider::of(claude));
     }
 }

@@ -54,6 +54,8 @@ crate::methods! {
     "git.commits" GitCommits(GitCommits) -> Commits, Some(Scope::FilesRead);
     /// The providers, each as the person manages it.
     "providers.list" ListProviders(Nothing) -> ProvidersListed, Some(Scope::ProvidersManage);
+    /// How a provider's account stands, as its driver tells it.
+    "providers.status" StatusOfProvider(OfProvider) -> ProviderStatus, Some(Scope::ProvidersManage);
     /// A sign-in of a provider begun in a browser: where the person signs in.
     "providers.sign-in" SignIn(OfProvider) -> SignInBegun, Some(Scope::ProvidersManage);
     /// A sign-in finished from the address the person's browser was sent back to, as they paste it.
@@ -65,7 +67,7 @@ crate::methods! {
     /// An account added of a provider, once for its idempotency key: its id, by which it is a provider.
     "accounts.add" AddAccount(AddAccount) -> AccountAdded, Some(Scope::ProvidersManage);
     "accounts.rename" RenameAccount(RenameAccount) -> Nothing, Some(Scope::ProvidersManage);
-    /// An account removed, its credential with it.
+    /// An account removed, its credential with it, and what its provider's driver kept of it.
     "accounts.remove" RemoveAccount(OfAccount) -> Nothing, Some(Scope::ProvidersManage);
     /// The models a thread may run with, as the catalogue and the providers' listings describe them.
     "models.list" ListModels(Nothing) -> ModelsListed, Some(Scope::ThreadsRead);
@@ -365,6 +367,14 @@ pub struct ProviderShown {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct ProvidersListed {
     pub providers: Vec<ProviderShown>,
+}
+
+/// How a provider's account stands, where its driver tells more of it than its credential does.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct ProviderStatus {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub standing: Option<octoii_ai::driver::Standing>,
 }
 
 /// A provider, by its id.

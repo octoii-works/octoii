@@ -308,13 +308,11 @@ impl Holds {
     }
 }
 
-/// The windows Claude Code gives its models, by each model's name as it takes it, and the version of Claude Code that
-/// told them.
+/// The windows Claude Code gives its models, by the model each name of its stands for: kept as they were told, a model
+/// asked once, each turn's measure keeping them right as the plan changes.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Windows {
-    pub version: String,
-    pub windows: HashMap<String, u64>,
-}
+#[serde(transparent)]
+pub struct Windows(pub HashMap<String, u64>);
 
 impl Windows {
     /// The windows the file at `path` keeps; none where it keeps none it can read.

@@ -10,7 +10,7 @@ pub mod process;
 mod session;
 pub mod store;
 
-pub use account::{Account, Asked, Begin, Place, listed_tool};
+pub use account::{Account, Asked, Begin, Place, found, listed_tool};
 pub use driver::{ClaudeCode, ID};
 pub use plugin::ClaudeCodePlugin;
 pub use session::{Session, Settled};

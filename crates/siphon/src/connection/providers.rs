@@ -4,7 +4,7 @@
 
 use octoii_ai::host::Credential;
 use serde::Serialize;
-use siphon_protocol::siphon::{AccountAdded, Method, ModelsListed, ProvidersListed, SignInBegun};
+use siphon_protocol::siphon::{AccountAdded, Method, ModelsListed, ProviderStatus, ProvidersListed, SignInBegun};
 use siphon_protocol::{Error, Nothing};
 
 use super::refusal;
@@ -38,6 +38,19 @@ pub(super) async fn answered(siphon: &Siphon, method: Method) -> Result<serde_js
         Method::ListProviders(Nothing {}) => json(&ProvidersListed {
             providers: providers::shown(&siphon.runtime, models, siphon.credentials.as_ref()).map_err(|error| told(&error))?,
         }),
+        Method::StatusOfProvider(of) => {
+            let provider = models
+                .providers()
+                .into_iter()
+                .find(|provider| provider.id == of.provider)
+                .ok_or_else(|| told(&Refused::NoSuchProvider(of.provider.clone())))?;
+            let standing = provider
+                .driver
+                .status(&models.call(&provider))
+                .await
+                .map_err(|failure| refusal("refused_by_provider", &failure.message))?;
+            json(&ProviderStatus { standing })
+        }
         Method::SignIn(of) => json(&SignInBegun {
             url: providers::sign_in(models, &siphon.sign_ins, &siphon.sign_in, &of.provider)
                 .await
@@ -76,6 +89,13 @@ pub(super) async fn answered(siphon: &Siphon, method: Method) -> Result<serde_js
             json(&Nothing {})
         }
         Method::RemoveAccount(of) => {
+            if let Some(provider) = models.providers().into_iter().find(|provider| provider.id == of.account) {
+                provider
+                    .driver
+                    .forget(&models.call(&provider))
+                    .await
+                    .map_err(|failure| refusal("refused_by_provider", &failure.message))?;
+            }
             siphon_accounts::remove(&siphon.runtime, &of.account)
                 .await
                 .map_err(|error| told(&Refused::Accounts(error)))?;

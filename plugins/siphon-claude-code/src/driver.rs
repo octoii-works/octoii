@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 
 use futures::future::BoxFuture;
 use octoii_ai::catalogue::{Features, InputLimits, Model, ModelReasoning};
-use octoii_ai::driver::{Call, Connection, Driver};
+use octoii_ai::driver::{Call, Connection, Driver, Guidance, Limit, Standing};
 use octoii_ai::protocols::anthropic;
 use octoii_ai::stream::Source;
 use octoii_ai::vocabulary::{Failure, FailureKind, ReasoningEffort, Request, Tool, ToolChoice};
@@ -32,8 +32,6 @@ pub const ID: &str = "claude";
 pub struct ClaudeCode {
     place: Arc<Place>,
     accounts: Mutex<HashMap<String, Arc<Account>>>,
-    /// The models each account's Claude Code offers, by Claude Code's name for each and the model it stands for.
-    rows: Mutex<HashMap<String, Vec<(String, String)>>>,
 }
 
 impl ClaudeCode {
@@ -43,7 +41,6 @@ impl ClaudeCode {
         Self {
             place: Arc::new(place),
             accounts: Mutex::new(HashMap::new()),
-            rows: Mutex::new(HashMap::new()),
         }
     }
 
@@ -71,7 +68,7 @@ impl ClaudeCode {
     }
 
     /// Lets go of what the conversation `conversation` holds in each account, as it ended.
-    pub fn forget(&self, conversation: &str) {
+    pub fn forget_conversation(&self, conversation: &str) {
         let Ok(folders) = std::fs::read_dir(&self.place.folder) else {
             return;
         };
@@ -83,18 +80,9 @@ impl ClaudeCode {
                 continue;
             }
             if let Ok(account) = self.account(&provider) {
-                account.forget(conversation);
+                account.forget_conversation(conversation);
             }
         }
-    }
-
-    fn rows(&self, provider: &str) -> Vec<(String, String)> {
-        self.rows
-            .lock()
-            .expect("no holder of the rows panics")
-            .get(provider)
-            .cloned()
-            .unwrap_or_default()
     }
 
     /// The answer to `request` of `model`, as a stream.
@@ -137,10 +125,9 @@ impl ClaudeCode {
             messages,
         };
         let (events, told) = mpsc::unbounded_channel();
-        let rows = self.rows(&call.provider);
         if aside {
             let (session, told) = start_at_known(&account, call.now_ms, &asked, &plan, true).await?;
-            tokio::spawn(answer_aside(account, session, told, asked.schema.is_some(), events, rows));
+            tokio::spawn(answer_aside(account, session, told, asked.schema.is_some(), events));
         } else {
             let prefix = plan.last.map_or_else(|| plan.root.clone(), |at| plan.chain[at].clone());
             let (session, told) = match account.take_live(&prefix, &asked.settings).await {
@@ -152,61 +139,117 @@ impl ClaudeCode {
                 account,
                 end,
                 conversation: request.prompt_cache_key.clone(),
-                rows,
             };
             tokio::spawn(answering.run(session, told, events));
         }
         Ok(source(told))
     }
 
-    /// The models the account of `call` offers, each with the window Claude Code gives it, the account's plan's.
+    /// The models the account of `call` offers, each with the window Claude Code gives it, the account's plan's: the
+    /// window of a model never asked of before asked of the one `claude` that tells the models, in turn.
     async fn listed(&self, call: &Call) -> Result<Vec<Model>, Failure> {
         let account = self.account(&call.provider)?;
         let (process, answer) = account.asked(call.now_ms).await?;
-        let version = answer["claude_code_version"].as_str().unwrap_or_default().to_owned();
         let rows: Vec<Value> = answer["models"].as_array().cloned().unwrap_or_default();
-        let windows = {
-            let kept = account.kept();
-            if kept.windows.version == version {
-                kept.windows.windows.clone()
-            } else {
-                HashMap::new()
-            }
-        };
-        let mut found = windows.clone();
+        let kept = account.kept().windows.0.clone();
+        let mut told = HashMap::new();
         for row in &rows {
-            let Some(value) = row["value"].as_str() else { continue };
-            if found.contains_key(value) {
+            let (Some(value), model) = (row["value"].as_str(), stands_for(row)) else {
+                continue;
+            };
+            if kept.contains_key(&model) || told.contains_key(&model) {
                 continue;
             }
             if let Some(window) = window_of(&process, value).await {
-                found.insert(value.to_owned(), window);
+                told.insert(model, window);
             }
         }
         drop(process);
-        if found != windows {
-            let mut kept = account.kept();
-            kept.windows.version = version;
-            kept.windows.windows.clone_from(&found);
-            if let Err(error) = kept.windows.write(&account.folder.join("windows.json")) {
-                tracing::warn!(%error, "the windows of Claude's models could not be kept");
-            }
-        }
-        let names = rows
-            .iter()
-            .filter_map(|row| {
-                Some((
-                    row["value"].as_str()?.to_owned(),
-                    row["resolvedModel"].as_str().unwrap_or_default().to_owned(),
-                ))
-            })
-            .collect();
-        self.rows
-            .lock()
-            .expect("no holder of the rows panics")
-            .insert(call.provider.clone(), names);
-        Ok(rows.iter().filter_map(|row| model_of(&call.provider, row, &found)).collect())
+        account.keep_windows(&told);
+        let windows = account.kept().windows.0.clone();
+        Ok(rows.iter().filter_map(|row| model_of(&call.provider, row, &windows)).collect())
     }
+}
+
+impl ClaudeCode {
+    /// Who the account of `call` is signed in as, its plan, and how much of each of its limits is used; or what the
+    /// person does to reach it.
+    async fn standing(&self, call: &Call) -> Result<Standing, Failure> {
+        let account = self.account(&call.provider)?;
+        if !account.installed() {
+            return Ok(Standing {
+                guidance: Some(account.install_guidance()),
+                ..Standing::default()
+            });
+        }
+        let (process, answer) = account.asked(call.now_ms).await?;
+        let Some(email) = answer["account"]["email"].as_str() else {
+            return Ok(Standing {
+                guidance: Some(Guidance {
+                    words: "Claude Code is not signed in on this computer.".to_owned(),
+                    commands: vec![account.sign_in()],
+                }),
+                ..Standing::default()
+            });
+        };
+        let usage = process
+            .ask(json!({ "subtype": "get_usage", "skip_behaviors": true }))
+            .await
+            .unwrap_or_default();
+        Ok(Standing {
+            account: Some(email.to_owned()),
+            plan: answer["account"]["subscriptionType"].as_str().map(str::to_owned),
+            limits: limits_of(&usage),
+            guidance: None,
+        })
+    }
+
+    /// Lets go of the account of `call`, as the person removes it: its Claude Code signed out of the login its own
+    /// configuration keeps, and its files removed; nothing of the person's own.
+    async fn forget_account(&self, call: &Call) -> Result<(), Failure> {
+        if call.provider == ID {
+            return Ok(());
+        }
+        let account = self.account(&call.provider)?;
+        account.sign_out(call.now_ms).await?;
+        self.accounts
+            .lock()
+            .expect("no holder of the accounts panics")
+            .remove(&call.provider);
+        account.kept().live.clear();
+        std::fs::remove_dir_all(&account.folder)
+            .or_else(|error| {
+                if error.kind() == std::io::ErrorKind::NotFound {
+                    Ok(())
+                } else {
+                    Err(error)
+                }
+            })
+            .map_err(|error| Failure::new(FailureKind::Server, format!("Claude Code's files of the account: {error}")))
+    }
+}
+
+/// The plan's limits as Claude Code's usage tells them: each by its window, the models it is of, how much is used and
+/// when it is given again; none where it tells none.
+fn limits_of(usage: &Value) -> Vec<Limit> {
+    usage["rate_limits"]["limits"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|limit| Limit {
+            window_minutes: match limit["group"].as_str() {
+                Some("weekly") => Some(10_080),
+                Some("session" | "five_hour") => Some(300),
+                _ => None,
+            },
+            scope: limit["scope"]["model"]["display_name"].as_str().map(str::to_owned),
+            used_percent: limit["percent"].as_f64(),
+            resets_at_ms: limit["resets_at"]
+                .as_str()
+                .and_then(|at| at.parse::<jiff::Timestamp>().ok())
+                .map(jiff::Timestamp::as_millisecond),
+        })
+        .collect()
 }
 
 impl Driver for ClaudeCode {
@@ -228,6 +271,14 @@ impl Driver for ClaudeCode {
 
     fn list<'a>(&'a self, call: &'a Call) -> BoxFuture<'a, Result<Option<Vec<Model>>, Failure>> {
         Box::pin(async move { self.listed(call).await.map(Some) })
+    }
+
+    fn status<'a>(&'a self, call: &'a Call) -> BoxFuture<'a, Result<Option<Standing>, Failure>> {
+        Box::pin(async move { self.standing(call).await.map(Some) })
+    }
+
+    fn forget<'a>(&'a self, call: &'a Call) -> BoxFuture<'a, Result<(), Failure>> {
+        Box::pin(self.forget_account(call))
     }
 }
 
@@ -308,12 +359,11 @@ fn longest_present(account: &Account, plan: &Plan) -> Option<(usize, Position)> 
 }
 
 /// An answer in the conversation, as it runs: the account, the conversation's hash with what the session is given,
-/// the conversation it is of, and the models the account offers.
+/// and the conversation it is of.
 struct Answering {
     account: Arc<Account>,
     end: String,
     conversation: Option<String>,
-    rows: Vec<(String, String)>,
 }
 
 impl Answering {
@@ -334,13 +384,14 @@ impl Answering {
         // The answer's stream ends only once a request that goes on from it would find the session settling.
         drop(events);
         let outcome = session.settle(answer, &mut measured).await;
-        self.account.measured(&measured, &self.rows);
+        self.account.keep_windows(&measured);
         self.keep(session, outcome, &settling);
         let _ = settled.send(true);
     }
 
-    /// Keeps where `session` settled, the conversation holding it, and it live for the next request; the session it
-    /// held before let go of where no conversation holds that now.
+    /// Keeps where `session` settled and the conversation holding it; the session it held before let go of where no
+    /// conversation holds that now. A session that holds calls stays live for the request that brings their results;
+    /// one whose turn ended is closed, its `claude` let go of, to be resumed as the conversation goes on.
     fn keep(&self, session: Session, outcome: Settled, settling: &watch::Receiver<bool>) {
         let released = {
             let mut kept = self.account.kept();
@@ -358,7 +409,9 @@ impl Answering {
                 (Some(conversation), Some(id)) => kept.holds.hold(conversation, id).unwrap_or_default(),
                 _ => None,
             };
-            kept.live.push(session);
+            if session.is_holding() {
+                kept.live.push(session);
+            }
             released
         };
         if let Some(released) = released {
@@ -369,14 +422,7 @@ impl Answering {
 
 /// Answers aside in `session`, given `told`: the stream as it comes, or the JSON its turn ends with; the session
 /// closed after.
-async fn answer_aside(
-    account: Arc<Account>,
-    mut session: Session,
-    told: Told,
-    structured: bool,
-    events: crate::session::Events,
-    rows: Vec<(String, String)>,
-) {
+async fn answer_aside(account: Arc<Account>, mut session: Session, told: Told, structured: bool, events: crate::session::Events) {
     session.give(told);
     let mut measured = HashMap::new();
     if structured {
@@ -385,7 +431,7 @@ async fn answer_aside(
         drop(events);
         session.settle(answer, &mut measured).await;
     }
-    account.measured(&measured, &rows);
+    account.keep_windows(&measured);
     session.close();
 }
 
@@ -413,6 +459,16 @@ async fn window_of(process: &crate::process::Process, value: &str) -> Option<u64
     usage["rawMaxTokens"].as_u64().filter(|window| *window > 0)
 }
 
+/// The model a row of Claude Code's stands for: the one its name resolves to, else its name.
+fn stands_for(row: &Value) -> String {
+    row["resolvedModel"]
+        .as_str()
+        .filter(|model| !model.is_empty())
+        .or_else(|| row["value"].as_str())
+        .unwrap_or_default()
+        .to_owned()
+}
+
 /// A model Claude Code offers, as the directory lists it: its own name, the name a person reads, its window, how it
 /// thinks; no price, as the person's plan pays for it.
 fn model_of(provider: &str, row: &Value, windows: &HashMap<String, u64>) -> Option<Model> {
@@ -432,7 +488,7 @@ fn model_of(provider: &str, row: &Value, windows: &HashMap<String, u64>) -> Opti
     Some(Model {
         provider: provider.to_owned(),
         name: row["displayName"].as_str().unwrap_or(&id).to_owned(),
-        context_length: windows.get(&id).copied(),
+        context_length: windows.get(&stands_for(row)).copied(),
         max_output_tokens: None,
         reads_images: true,
         reads_files: true,

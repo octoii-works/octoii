@@ -1,6 +1,7 @@
 //! Claude through a Claude Code of the tests' own, which speaks `claude`'s stream-json control protocol: the models it
-//! offers listed with their windows; a conversation answered in one live session — words, then a call of the thread's
-//! tool held across requests till its result comes — resumed in place where the node started again, forked where the
+//! offers listed with their windows; a conversation answered — words, its session closed as its turn ended and resumed
+//! in place for the next, then a call of the thread's tool held across requests till its result comes — resumed in
+//! place where the node started again, forked where the
 //! conversation parted from the session behind its tip, and let go of as its thread is deleted; a computer without
 //! `claude` told how to install it.
 
@@ -46,7 +47,7 @@ fn call() -> Call {
     }
 }
 
-/// Claude Code on `kernel` with its files under `state`, its `claude` the tests' own, logging each start to `log`.
+/// Claude Code on `kernel` with its files under `state`, its `claude` the tests' own, which logs each start there.
 fn claude_code(kernel: &beak::Kernel, state: &Path, program: Option<PathBuf>) -> ClaudeCode {
     let place = Place {
         kernel: kernel.clone(),
@@ -170,8 +171,6 @@ async fn a_conversation_is_answered_in_a_live_session_resumed_in_place_forked_be
     let folder = tempfile::tempdir().expect("a folder");
     let state = folder.path().canonicalize().expect("its real path");
     let log = state.join("starts.jsonl");
-    // SAFETY: the tests of this file set the log alone, to the same value of each one's own; nothing reads it here.
-    unsafe { std::env::set_var("FAKE_CLAUDE_LOG", &log) };
     let beak = beak::Beak::new().expect("Beak");
     let kernel = beak::Kernel::open(&beak, &beak::Options::default()).expect("a kernel").0;
     let claude = claude_code(&kernel, &state, Some(fake()));
@@ -207,10 +206,11 @@ async fn a_conversation_is_answered_in_a_live_session_resumed_in_place_forked_be
     let started = starts(&log);
     assert_eq!(
         started.len(),
-        2,
-        "the listing's, then one live session for the whole conversation: {started:?}"
+        3,
+        "the listing's; a session closed as its turn ended, resumed for the next; live while it held its call: {started:?}"
     );
     assert_eq!(flag(&started[1], "resume"), None);
+    assert!(flag(&started[2], "resume").is_some() && !started[2].contains(&"--fork-session".to_owned()));
     let holds = state.join(PROVIDER).join("holds.jsonl");
     let held = || std::fs::read_to_string(&holds).is_ok_and(|holds| holds.contains("thread-1"));
     assert!(settled(held).await, "the conversation holds its session");
@@ -239,8 +239,37 @@ async fn a_conversation_is_answered_in_a_live_session_resumed_in_place_forked_be
     assert!(forked.contains(&"--fork-session".to_owned()), "{forked:?}");
     assert!(settled(|| sessions(&state) == 1).await, "the session no conversation holds removed");
 
-    claude.forget("thread-1");
+    claude.forget_conversation("thread-1");
     assert_eq!(sessions(&state), 0, "its thread deleted, the conversation's session goes");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_account_stands_as_its_claude_code_tells_and_goes_signed_out_with_its_files() {
+    let folder = tempfile::tempdir().expect("a folder");
+    let state = folder.path().canonicalize().expect("its real path");
+    let beak = beak::Beak::new().expect("Beak");
+    let kernel = beak::Kernel::open(&beak, &beak::Options::default()).expect("a kernel").0;
+    let claude = claude_code(&kernel, &state, Some(fake()));
+    let standing = claude.status(&call()).await.expect("told").expect("a standing");
+    assert_eq!(
+        (standing.account.as_deref(), standing.plan.as_deref(), standing.guidance),
+        (Some("person@example.com"), Some("Claude Test"), None)
+    );
+    let limits: Vec<_> = standing
+        .limits
+        .iter()
+        .map(|limit| (limit.window_minutes, limit.scope.as_deref(), limit.used_percent, limit.resets_at_ms))
+        .collect();
+    assert_eq!(
+        limits,
+        [
+            (Some(10_080), None, Some(8.0), Some(1_794_927_600_000)),
+            (Some(10_080), Some("Fable"), Some(0.0), None),
+        ]
+    );
+    assert!(state.join(PROVIDER).is_dir());
+    claude.forget(&call()).await.expect("forgotten");
+    assert!(!state.join(PROVIDER).exists(), "the account's files go with it");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -249,6 +278,9 @@ async fn a_computer_without_claude_is_told_how_to_install_it_and_sign_in() {
     let beak = beak::Beak::new().expect("Beak");
     let kernel = beak::Kernel::open(&beak, &beak::Options::default()).expect("a kernel").0;
     let claude = claude_code(&kernel, folder.path(), None);
+    let guidance = claude.status(&call()).await.expect("told").and_then(|standing| standing.guidance);
+    let commands = guidance.map(|guidance| guidance.commands).unwrap_or_default();
+    assert!(commands.len() == 2 && commands[1].ends_with("claude auth login"), "{commands:?}");
     let failure = claude.list(&call()).await.expect_err("no listing");
     assert_eq!(failure.kind, FailureKind::Auth);
     assert!(

@@ -49,12 +49,16 @@ const ISOLATION: [(&str, &str); 10] = [
     ("CLAUDE_CODE_ENTRYPOINT", "sdk-ts"),
 ];
 
-/// How long a live session may stand unasked before it is closed.
+/// How long a live session holding calls may stand unasked before it is closed.
 pub const IDLE: Duration = Duration::from_mins(10);
 /// How long a call may be held before Claude Code gives up on it, in milliseconds.
 const HOLD_MS: u64 = 20 * 60 * 1000;
 /// What Claude is told of a tool's result past which it is cut; the thread bounds its own already.
 const RESULT_CHARS_MAX: u64 = 500_000;
+/// How Claude Code is installed, as its own documentation gives it.
+const INSTALL: &str = "curl -fsSL https://claude.ai/install.sh | bash";
+/// How long signing Claude Code out may take.
+const SIGN_OUT: Duration = Duration::from_mins(1);
 /// How long a session no conversation holds may stand unused before it is removed.
 const COLLECT_AFTER: Duration = Duration::from_hours(24);
 /// The longest a folder's name may be in Claude Code's projects before it is cut and hashed.
@@ -220,13 +224,7 @@ impl Account {
         let Some(program) = &self.place.program else {
             return Err(self.not_installed());
         };
-        let base = Base {
-            workspace: self.place.work(),
-            home: self.place.machine.home.clone(),
-        };
-        let opened = Machine::open(&self.place.kernel, &self.place.machine, base, &Writes::Anywhere, None)
-            .and_then(|machine| machine.bind(&self.place.folder).map(|()| machine));
-        let machine = opened.map_err(|error| Failure::new(FailureKind::Server, error.to_string()))?;
+        let machine = self.machine()?;
         let launch = Launch {
             program: program.to_string_lossy().into_owned(),
             arguments,
@@ -241,11 +239,67 @@ impl Account {
             })
     }
 
+    /// The machine `claude` runs on, the plugin's own folder reached.
+    fn machine(&self) -> Result<Machine, Failure> {
+        let base = Base {
+            workspace: self.place.work(),
+            home: self.place.machine.home.clone(),
+        };
+        Machine::open(&self.place.kernel, &self.place.machine, base, &Writes::Anywhere, None)
+            .and_then(|machine| machine.bind(&self.place.folder).map(|()| machine))
+            .map_err(|error| Failure::new(FailureKind::Server, error.to_string()))
+    }
+
+    /// Signs this account's Claude Code out of the login its configuration keeps, at `time` — one the person added,
+    /// whose keychain entry Claude Code names by its configuration's folder — never the person's own.
+    ///
+    /// # Errors
+    /// Where `claude auth logout` failed.
+    pub async fn sign_out(&self, time: i64) -> Result<(), Failure> {
+        let (Some(program), Some(config)) = (&self.place.program, &self.config) else {
+            return Ok(());
+        };
+        let argv = vec![program.to_string_lossy().into_owned(), "auth".into(), "logout".into()];
+        let signing_out = siphon_machine::Program {
+            set: vec![("CLAUDE_CONFIG_DIR".into(), config.to_string_lossy().into_owned())],
+            timeout: SIGN_OUT,
+            ..siphon_machine::Program::new(argv, self.place.work())
+        };
+        let ran = self
+            .machine()?
+            .run(time, b"", &signing_out, &tokio_util::sync::CancellationToken::new())
+            .await
+            .map_err(|error| Failure::new(FailureKind::Server, format!("`claude auth logout` failed: {error}")))?;
+        if ran.exit != beak::Exit::Code(0) {
+            let errors = String::from_utf8_lossy(&ran.errors);
+            return Err(Failure::new(
+                FailureKind::Server,
+                format!("`claude auth logout` failed: {}", errors.trim()),
+            ));
+        }
+        Ok(())
+    }
+
+    /// What the person does to reach this account where `claude` is not installed: install it, then sign in.
+    #[must_use]
+    pub fn install_guidance(&self) -> octoii_ai::driver::Guidance {
+        octoii_ai::driver::Guidance {
+            words: "Claude Code is not installed on this computer.".to_owned(),
+            commands: vec![INSTALL.to_owned(), self.sign_in()],
+        }
+    }
+
+    /// Whether `claude` is installed where the plugin reaches it.
+    #[must_use]
+    pub fn installed(&self) -> bool {
+        self.place.program.is_some()
+    }
+
     fn not_installed(&self) -> Failure {
         Failure::new(
             FailureKind::Auth,
             format!(
-                "Claude Code is not installed on this computer: install it with `curl -fsSL https://claude.ai/install.sh | bash`, then sign in with `{}`",
+                "Claude Code is not installed on this computer: install it with `{INSTALL}`, then sign in with `{}`",
                 self.sign_in()
             ),
         )
@@ -305,7 +359,7 @@ impl Account {
     }
 
     /// Lets go of what `conversation` holds, as it ended: its session, where no other conversation holds it.
-    pub fn forget(&self, conversation: &str) {
+    pub fn forget_conversation(&self, conversation: &str) {
         let released = self.kept().holds.release(conversation);
         match released {
             Ok(Some(session)) => self.let_go(&session),
@@ -314,7 +368,7 @@ impl Account {
         }
     }
 
-    /// Closes the live sessions that stood unasked past `IDLE`, and removes the sessions no conversation holds that
+    /// Closes the live sessions that stood holding calls unasked past `IDLE`, and removes the sessions no conversation holds that
     /// none used past `COLLECT_AFTER`.
     pub fn sweep(&self) {
         self.kept()
@@ -362,20 +416,12 @@ impl Account {
         }
     }
 
-    /// Keeps the windows Claude Code measured its models against, by the names it gave them, where they differ.
-    pub fn measured(&self, measured: &HashMap<String, u64>, rows: &[(String, String)]) {
-        if measured.is_empty() {
-            return;
-        }
+    /// Keeps the windows `told` of the models they are of, where they differ from those kept.
+    pub fn keep_windows(&self, told: &HashMap<String, u64>) {
         let mut kept = self.kept();
         let mut changed = false;
-        for (name, window) in measured {
-            for (value, resolved) in rows {
-                if (value == name || resolved == name) && kept.windows.windows.get(value) != Some(window) {
-                    kept.windows.windows.insert(value.clone(), *window);
-                    changed = true;
-                }
-            }
+        for (model, window) in told {
+            changed |= kept.windows.0.insert(model.clone(), *window) != Some(*window);
         }
         if changed && let Err(error) = kept.windows.write(&self.folder.join("windows.json")) {
             tracing::warn!(%error, "the windows of Claude's models could not be kept");

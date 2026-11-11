@@ -5612,6 +5612,7 @@ version = "0.1.0"
 dependencies = [
  "beak",
  "futures",
+ "jiff",
  "octoii-ai",
  "serde",
  "serde_json",

@@ -313,6 +313,11 @@ export type Grants = { commands: Array<string>, paths: Array<string>, tools: Arr
 export type GrantsListed = { projects: Array<Granted>, };
 
 /**
+ * What the person does to reach a provider, in words, and the commands they run for it, in order.
+ */
+export type Guidance = { words: string, commands: Array<string>, };
+
+/**
  * How a client holds its session: a browser's cookie, a program's bearer token, or the key its tunnel session shows.
  */
 export type Holder = "cookie" | "bearer" | "key";
@@ -364,6 +369,13 @@ export type Item = { "type": "message" } & Message | { "type": "function_call" }
 export type ItemStatus = "in_progress" | "completed" | "incomplete";
 
 export type JsonValue = number | string | boolean | Array<JsonValue> | { [key in string]: JsonValue } | null;
+
+/**
+ * One of a plan's limits as its usage tells: the minutes its window lasts — five hours, or a week — the models it is
+ * of, where it is of some alone, how much of it is used, in percent, and when it is given again, each where it is
+ * known.
+ */
+export type Limit = { window_minutes?: number, scope?: string, used_percent?: number, resets_at_ms?: number, };
 
 /**
  * A link made: what it grants, its credential — shown this once — and the addresses that open it: on this computer,
@@ -624,6 +636,11 @@ export type ProjectServers = { named: Trust, trusted?: boolean, };
  */
 export type ProviderShown = { id: string, name: string, connects: Connects, through?: string, credential?: CredentialKind, account?: Account, used_up?: UsedUp, };
 
+/**
+ * How a provider's account stands, where its driver tells more of it than its credential does.
+ */
+export type ProviderStatus = { standing?: Standing, };
+
 export type ProvidersListed = { providers: Array<ProviderShown>, };
 
 /**
@@ -758,6 +775,12 @@ export type SiphonEvent = { "event": "entries", subscription: string, entries: A
  * status and what streams of its requests — the list of threads, or the settings.
  */
 export type SiphonTopic = { "type": "thread", thread: string, from?: Cursor, } | { "type": "threads" } | { "type": "settings" };
+
+/**
+ * How a provider's account stands, as its driver tells it: who it is signed in as and their plan, how much of each of
+ * the plan's limits is used, and what the person does to reach it, where they must do something.
+ */
+export type Standing = { account?: string, plan?: string, limits: Array<Limit>, guidance?: Guidance, };
 
 /**
  * How a thread stands.
@@ -928,6 +951,7 @@ export type Methods = {
   'git.versions': { params: GitVersions; result: Versions };
   'git.commits': { params: GitCommits; result: Commits };
   'providers.list': { params: Nothing; result: ProvidersListed };
+  'providers.status': { params: OfProvider; result: ProviderStatus };
   'providers.sign-in': { params: OfProvider; result: SignInBegun };
   'providers.finish-sign-in': { params: FinishSignIn; result: Nothing };
   'credentials.set': { params: SetCredential; result: Nothing };

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """A Claude Code of the tests' own: speaks `claude`'s stream-json control protocol as far as the plugin uses it.
 
-Each start appends its arguments, as JSON, to the file `FAKE_CLAUDE_LOG` names. A session is a file under the
+Each start appends its arguments, as JSON, to `starts.jsonl` beside the accounts' folders; `auth logout` signs out at once. A session is a file under the
 configuration's projects, its id carried on resume, a new one on a fork. To words that ask to "call echo <text>" it
 answers with a call of the thread's tool `echo`, made through the MCP server it was told of, then answers with what the
 call gave; to any other words it answers "heard: <words>".
@@ -13,8 +13,13 @@ import sys
 import uuid
 
 arguments = sys.argv[1:]
-with open(os.environ["FAKE_CLAUDE_LOG"], "a") as log:
+config = os.environ["CLAUDE_CONFIG_DIR"]
+with open(os.path.join(os.path.dirname(os.path.dirname(config)), "starts.jsonl"), "a") as log:
     log.write(json.dumps(arguments) + "\n")
+
+
+if arguments[:2] == ["auth", "logout"]:
+    sys.exit(0)
 
 
 def flag(name):
@@ -24,7 +29,6 @@ def flag(name):
     return None
 
 
-config = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.environ["HOME"], ".claude")
 folder = os.path.join(config, "projects", "".join(c if c.isalnum() else "-" for c in os.getcwd()))
 resumed = flag("resume")
 session = resumed if resumed and "--fork-session" not in arguments else str(uuid.uuid4())
@@ -101,6 +105,11 @@ while True:
             }
         elif request["subtype"] == "get_context_usage":
             answer = {"rawMaxTokens": 200000}
+        elif request["subtype"] == "get_usage":
+            answer = {"rate_limits": {"limits": [
+                {"kind": "weekly_all", "group": "weekly", "percent": 8, "resets_at": "2026-11-17T15:00:00+00:00", "scope": None},
+                {"kind": "weekly_scoped", "group": "weekly", "percent": 0, "resets_at": None, "scope": {"model": {"display_name": "Fable"}}},
+            ]}}
         else:
             answer = {}
         send({"type": "control_response", "response": {"subtype": "success", "request_id": value["request_id"], "response": answer}})
