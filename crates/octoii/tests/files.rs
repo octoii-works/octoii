@@ -125,5 +125,25 @@ async fn a_thread_s_files_are_sent_kept_and_given_back_to_a_session_that_may() {
         401,
         "no session, no file"
     );
+
+    let on_machine = folder.path().canonicalize().expect("its real path").join("shot.png");
+    std::fs::write(&on_machine, png(400, 200)).expect("written");
+    let browser = format!(
+        "Bearer {}",
+        access.issue(None, vec![Scope::FilesRead]).await.expect("a token").credential
+    );
+    let asked = format!("/machine?path={}&width_max=100&height_max=100", on_machine.display());
+    let (status, headers, bytes) = request(&address, Method::GET, &asked, &[("authorization", browser.as_str())], Vec::new()).await;
+    assert_eq!((status, headers["content-type"].to_str().ok()), (200, Some("image/png")));
+    let picture = image::load_from_memory(&bytes).expect("an image");
+    assert_eq!(
+        (picture.width(), picture.height()),
+        (100, 50),
+        "a file of the machine's, fitted to the box"
+    );
+    let refused = request(&address, Method::GET, &asked, &[("authorization", reader.as_str())], Vec::new())
+        .await
+        .0;
+    assert_eq!(refused, 403, "a session that may not read files reads none of the machine's");
     siphon.runtime.close().await;
 }
