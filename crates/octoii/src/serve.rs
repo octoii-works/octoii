@@ -160,6 +160,10 @@ pub async fn serve_until(served: Served, stop: impl Future<Output = ()> + Send +
     };
     let access_plugin = AccessPlugin { links: links.clone() };
     let siphon = building(&home, sign_in)?.plugin(access_plugin).start().context("Siphon")?;
+    // The models of each provider that lists its own — Claude Code's — asked for as the node starts, as a thread finds
+    // its model, and the person picks one, in the directory alone.
+    let models = std::sync::Arc::clone(&siphon.models);
+    tokio::spawn(async move { models.refresh().await });
     let node = Node {
         siphon: siphon.clone(),
         access: Access::new(siphon.runtime.clone()),
