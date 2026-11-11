@@ -324,3 +324,31 @@ async fn work_held_to_its_workspace_writes_there_and_reads_everywhere_else() {
         assert!(workspace.join("made-too.txt").exists());
     }
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_coprocess_reads_what_it_is_given_answers_on_its_output_keeps_its_errors_and_ends_as_its_input_closes() {
+    use tokio::io::{AsyncBufReadExt as _, AsyncReadExt as _, AsyncWriteExt as _, BufReader};
+
+    let beak = Beak::new().expect("Beak");
+    let kernel = kernel(&beak);
+    let (machine, _folder, workspace) = machine(&kernel, &Host::default());
+    let argv = vec![
+        "sh".into(),
+        "-c".into(),
+        "printf started >&2; while read line; do echo \"$WORD $line\"; done".into(),
+    ];
+    let set = vec![("WORD".into(), "heard".into())];
+    let siphon_machine::Coprocess { mut stdin, stdout, stderr } = machine.coprocess(1_000, b"", argv, &workspace, set).expect("started");
+    let mut stdout = BufReader::new(stdout);
+    stdin.write_all(b"one\n").await.expect("written");
+    let mut line = String::new();
+    stdout.read_line(&mut line).await.expect("read");
+    assert_eq!(line, "heard one\n");
+    assert_eq!(&stderr.kept().expect("kept")[..], b"started");
+    stdin.shutdown().await.expect("closed");
+    let mut rest = String::new();
+    stdout.read_to_string(&mut rest).await.expect("read to its end");
+    assert_eq!(rest, "", "its output ends as it does");
+    let missing = machine.coprocess(1_000, b"", vec!["no-such-program-anywhere".into()], &workspace, Vec::new());
+    assert!(matches!(missing, Err(RunError::MissingProgram(_))));
+}

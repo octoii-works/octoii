@@ -7,7 +7,6 @@ mod config;
 mod plugin;
 pub mod protocol;
 mod servers;
-mod stdio;
 pub mod trust;
 
 pub use config::{Configured, Launch, OWN_FILE, PROJECT_FILE, Server, parse};

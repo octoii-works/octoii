@@ -5620,6 +5620,7 @@ version = "0.1.0"
 dependencies = [
  "beak",
  "bytes",
+ "futures",
  "globset",
  "grep-matcher",
  "grep-regex",

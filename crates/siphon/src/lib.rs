@@ -3,6 +3,7 @@
 //! bring the rest: their providers, tools, programs, what they tell the model, and their methods.
 
 pub mod connection;
+mod kept;
 mod plugin;
 pub mod providers;
 pub mod testing;
@@ -27,6 +28,7 @@ use siphon_tools::{
     WriteTool, answer_exec,
 };
 
+pub use kept::{Ends, Kept};
 pub use plugin::{Builder, Caller, Full, Lagged, Plugin, Sink, Subscription};
 
 /// What Siphon is built on: the machine its work is done on; the folder of the person's own configuration, for every

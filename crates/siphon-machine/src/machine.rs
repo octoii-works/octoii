@@ -178,13 +178,7 @@ impl Machine {
             },
             ..Spec::new(Exec::Argv(program.argv.clone()), program.cwd.to_string_lossy())
         };
-        let (command, mut events) = self.kernel.spawn(time, under, &self.namespace, &spec).map_err(|error| {
-            if error.status == beak::Status::MissingProgram {
-                RunError::MissingProgram(program.argv.first().cloned().unwrap_or_default())
-            } else {
-                RunError::Beak(error)
-            }
-        })?;
+        let (command, mut events) = self.spawn(time, under, &spec)?;
         command.close_input()?;
         let mut output = BytesMut::new();
         let deadline = tokio::time::sleep(program.timeout);
@@ -221,6 +215,23 @@ impl Machine {
             exit,
             output: output.freeze(),
             errors,
+        })
+    }
+}
+
+impl Machine {
+    /// Starts the command `spec` describes at `time`, held to what the namespace reaches, recorded under `under`.
+    pub(crate) fn spawn(&self, time: i64, under: &[u8], spec: &Spec) -> Result<(beak::Command, beak::CommandEvents), RunError> {
+        self.kernel.spawn(time, under, &self.namespace, spec).map_err(|error| {
+            if error.status == beak::Status::MissingProgram {
+                let program = match &spec.exec {
+                    Exec::Argv(argv) => argv.first().cloned().unwrap_or_default(),
+                    Exec::Shell(line) => line.clone(),
+                };
+                RunError::MissingProgram(program)
+            } else {
+                RunError::Beak(error)
+            }
         })
     }
 }

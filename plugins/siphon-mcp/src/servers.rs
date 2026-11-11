@@ -2,29 +2,27 @@
 //! project's `.mcp.json` names, once the person trusts them as they are — one of a name the person's has standing for
 //! theirs, as the nearer setting holds. A server is connected as it is first needed, then kept and shared by every
 //! thread, and stopped once nothing used it for `IDLE`, to be connected again as something next does; one that ended
-//! is connected anew. A command's server runs on the machine, through the namespace, as the person's own programs do
-//! but for what the host keeps for itself, recorded in the volume under `siphon.servers`, its record removed as it
-//! stops. A tool of one is named `<server>.<tool>`, as a mount table names what is under a mount point.
+//! is connected anew. A command's server runs on the machine as a coprocess, through the namespace, as the person's
+//! own programs do but for what the host keeps for itself. A tool of one is named `<server>.<tool>`, as a mount table
+//! names what is under a mount point.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use base64::Engine as _;
-use beak::{Exec, Snapshot, Spec, Stdio};
-use bytes::Bytes;
+use beak::Snapshot;
 use octoii_ai::vocabulary::InputContent;
 use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, ResourceContents};
 use rmcp::service::{Peer, RoleClient, RunningService, ServiceExt};
 use rmcp::transport::{StreamableHttpClientTransport, streamable_http_client::StreamableHttpClientTransportConfig};
+use siphon::{Ends, Kept};
 use siphon_machine::paths::Base;
 use siphon_machine::{Host, Machine, Writes};
-use siphon_runtime::{Changes, Runtime};
-use tokio::sync::{mpsc, oneshot};
+use siphon_runtime::Runtime;
 
 use crate::config::{Configured, Launch, OWN_FILE, PROJECT_FILE, Server, parse};
-use crate::stdio;
 use crate::trust::{self, ShownServer, Trust};
 use siphon_tools::projects::Place;
 use siphon_tools::{Context, Declared, Refusal};
@@ -33,8 +31,6 @@ use siphon_tools::{Context, Declared, Refusal};
 pub const IDLE: Duration = Duration::from_secs(600);
 /// How long a server may take to be connected.
 const CONNECTING_MAX: Duration = Duration::from_secs(30);
-/// The directory the servers run as commands are recorded under.
-const RECORDS: &[u8] = b"siphon.servers";
 /// The most of a configuration read.
 const CONFIGURATION_BYTES_MAX: u64 = 1 << 20;
 
@@ -47,30 +43,32 @@ pub struct Catalog {
     pub asks: Option<Trust>,
 }
 
-/// The servers, as a handle to the task that holds them.
+/// The servers, kept connected as they are used.
 #[derive(Debug, Clone)]
 pub struct Servers {
-    orders: mpsc::UnboundedSender<Order>,
+    kept: Kept<Server, Connection, String>,
+    host: Host,
     own: Option<PathBuf>,
 }
 
-/// What the task that holds the servers is asked: a server's peer, connected where it is not, by work on the runtime
-/// given, which records it; or the peers of those of `servers` it holds connected now, connecting none.
-enum Order {
-    Peer(Server, Runtime, oneshot::Sender<Result<Peer<RoleClient>, String>>),
-    Held(Vec<Server>, oneshot::Sender<Vec<Option<Peer<RoleClient>>>>),
+/// A server connected, its service shared by all that use it, which ends as the last of them goes.
+#[derive(Debug, Clone)]
+struct Connection(Arc<RunningService<RoleClient, ()>>);
+
+impl Ends for Connection {
+    fn ended(&self) -> bool {
+        self.0.peer().is_transport_closed()
+    }
 }
 
 impl Servers {
-    /// The servers run on the machine `host` gives, recorded in the volume of the runtime that first needs each; the
-    /// person's own named in the Octoii Home `home`, where there is one. The task that holds them ends as the last
-    /// handle goes, stopping them.
+    /// The servers run on the machine `host` gives; the person's own named in the Octoii Home `home`, where there is
+    /// one. They are stopped as the last handle goes.
     #[must_use]
     pub fn start(host: Host, home: Option<&Path>) -> Self {
-        let (orders, taken) = mpsc::unbounded_channel();
-        tokio::spawn(hold(host, taken));
         Self {
-            orders,
+            kept: Kept::new(IDLE),
+            host,
             own: home.map(|home| home.join(OWN_FILE)),
         }
     }
@@ -250,13 +248,12 @@ impl Servers {
                 asks: None,
             },
         };
-        let (reply, held) = oneshot::channel();
-        let _ = self.orders.send(Order::Held(found.configured.servers.clone(), reply));
-        let held = held.await.unwrap_or_default();
+        let held = self.kept.held(found.configured.servers.clone()).await;
         let mut servers = Vec::new();
-        for (server, peer) in found.configured.servers.iter().zip(held) {
-            let tools = match &peer {
-                Some(peer) => peer
+        for (server, connection) in found.configured.servers.iter().zip(held) {
+            let tools = match &connection {
+                Some(connection) => connection
+                    .0
                     .list_all_tools()
                     .await
                     .map(|tools| tools.into_iter().map(|tool| tool.name.to_string()).collect())
@@ -267,7 +264,7 @@ impl Servers {
                 name: server.name.clone(),
                 source: server.source.to_string_lossy().into_owned(),
                 runs: server.runs(),
-                connected: peer.is_some(),
+                connected: connection.is_some(),
                 tools,
             });
         }
@@ -283,13 +280,11 @@ impl Servers {
         })
     }
 
-    /// The peer of `server`, connected now where it is not, recorded in `runtime`'s volume.
+    /// The peer of `server`, connected now where it is not, its command started by `runtime`'s kernel.
     async fn peer(&self, server: &Server, runtime: &Runtime) -> Result<Peer<RoleClient>, String> {
-        let (reply, peer) = oneshot::channel();
-        self.orders
-            .send(Order::Peer(server.clone(), runtime.clone(), reply))
-            .map_err(|_| "the servers are stopped".to_owned())?;
-        peer.await.map_err(|_| "the servers are stopped".to_owned())?
+        let connecting = connect(runtime.clone(), self.host.clone(), server.clone());
+        let connection = self.kept.get(server.clone(), connecting).await?;
+        Ok(connection.0.peer().clone())
     }
 }
 
@@ -358,165 +353,29 @@ fn read(path: &Path, problems: &mut Vec<String>) -> Option<String> {
         .ok()
 }
 
-/// A server connected: its service, its record where it runs as a command, in the runtime's volume, and when it was
-/// last used.
-struct Running {
-    service: RunningService<RoleClient, ()>,
-    record: Option<(Runtime, Bytes)>,
-    used: Instant,
-}
-
-enum Slot {
-    Connecting(Vec<oneshot::Sender<Result<Peer<RoleClient>, String>>>),
-    Running(Running),
-}
-
-type Connected = (Server, Result<(RunningService<RoleClient, ()>, Option<(Runtime, Bytes)>), String>);
-
-/// Holds the servers: connects each as it is first asked for, its askers waiting; gives its peer to each that asks
-/// after; stops each nothing used for `IDLE`.
-async fn hold(host: Host, mut orders: mpsc::UnboundedReceiver<Order>) {
-    let mut slots: HashMap<Server, Slot> = HashMap::new();
-    let (done, mut connected) = mpsc::unbounded_channel::<Connected>();
-    let mut ticks = tokio::time::interval(IDLE / 10);
-    loop {
-        tokio::select! {
-            order = orders.recv() => {
-                let (server, runtime, reply) = match order {
-                    None => break,
-                    Some(Order::Held(servers, reply)) => {
-                        let held = servers
-                            .iter()
-                            .map(|server| match slots.get(server) {
-                                Some(Slot::Running(running)) if !running.service.peer().is_transport_closed() => {
-                                    Some(running.service.peer().clone())
-                                }
-                                _ => None,
-                            })
-                            .collect();
-                        let _ = reply.send(held);
-                        continue;
-                    }
-                    Some(Order::Peer(server, runtime, reply)) => (server, runtime, reply),
-                };
-                match slots.get_mut(&server) {
-                    Some(Slot::Running(running)) if !running.service.peer().is_transport_closed() => {
-                        running.used = Instant::now();
-                        let _ = reply.send(Ok(running.service.peer().clone()));
-                    }
-                    Some(Slot::Connecting(waiting)) => waiting.push(reply),
-                    _ => {
-                        if let Some(Slot::Running(ended)) = slots.insert(server.clone(), Slot::Connecting(vec![reply])) {
-                            stop(ended);
-                        }
-                        let (host, done) = (host.clone(), done.clone());
-                        tokio::spawn(async move {
-                            let result = connect(&runtime, &host, &server).await;
-                            let _ = done.send((server, result));
-                        });
-                    }
-                }
-            }
-            Some((server, result)) = connected.recv() => {
-                let Some(Slot::Connecting(waiting)) = slots.remove(&server) else { continue };
-                match result {
-                    Ok((service, record)) => {
-                        for reply in waiting {
-                            let _ = reply.send(Ok(service.peer().clone()));
-                        }
-                        slots.insert(server, Slot::Running(Running { service, record, used: Instant::now() }));
-                    }
-                    Err(why) => {
-                        for reply in waiting {
-                            let _ = reply.send(Err(why.clone()));
-                        }
-                    }
-                }
-            }
-            _ = ticks.tick() => {
-                let idle: Vec<Server> = slots
-                    .iter()
-                    .filter(|(_, slot)| matches!(slot, Slot::Running(running) if running.used.elapsed() >= IDLE))
-                    .map(|(server, _)| server.clone())
-                    .collect();
-                for server in idle {
-                    if let Some(Slot::Running(running)) = slots.remove(&server) {
-                        stop(running);
-                    }
-                }
-            }
-        }
-    }
-    for (_, slot) in slots.drain() {
-        if let Slot::Running(running) = slot {
-            stop(running);
-        }
-    }
-}
-
-/// Stops `running`: its service ended, and its command's record removed, which kills what of it is left.
-fn stop(running: Running) {
-    drop(running.service);
-    if let Some((runtime, record)) = running.record {
-        tokio::spawn(remove(runtime, record));
-    }
-}
-
-/// `server` connected: its service, and its record where it runs as a command; else why it could not be.
-async fn connect(
-    runtime: &Runtime,
-    host: &Host,
-    server: &Server,
-) -> Result<(RunningService<RoleClient, ()>, Option<(Runtime, Bytes)>), String> {
+/// `server` connected, its command started by `runtime`'s kernel on the machine `host` gives; else why it could not be.
+async fn connect(runtime: Runtime, host: Host, server: Server) -> Result<Connection, String> {
     match &server.launch {
         Launch::Command { command, args, env, cwd } => {
-            let record = beak::layout::child(
-                RECORDS,
-                b"server",
-                runtime
-                    .kernel()
-                    .new_id(runtime.now_ms())
-                    .map_err(|error| error.to_string())?
-                    .as_bytes(),
-            );
-            let mut changes = Changes::new();
-            changes.mkdir(Bytes::from_static(RECORDS)).mkdir(record.clone());
-            runtime.commit(changes).await.map_err(|error| error.to_string())?;
             let base = Base {
                 workspace: cwd.clone(),
                 home: host.home.clone(),
             };
-            let machine = Machine::open(runtime.kernel(), host, base, &Writes::Anywhere, None).map_err(|error| error.to_string())?;
+            let machine = Machine::open(runtime.kernel(), &host, base, &Writes::Anywhere, None).map_err(|error| error.to_string())?;
             let mut argv = vec![command.clone()];
             argv.extend(args.iter().cloned());
-            let spec = Spec {
-                set: env.clone(),
-                stdio: Stdio::Coprocess,
-                ..Spec::new(Exec::Argv(argv), cwd.to_string_lossy())
-            };
-            let started = runtime.kernel().spawn(runtime.now_ms(), &record, machine.namespace(), &spec);
-            let (process, events) = match started {
-                Ok(started) => started,
-                Err(error) => {
-                    remove(runtime.clone(), record).await;
-                    return Err(if error.status == beak::Status::MissingProgram {
-                        format!("no program {command} on the machine")
-                    } else {
-                        error.to_string()
-                    });
-                }
-            };
-            let process = Arc::new(process);
-            let serving = ().serve((stdio::output(events), stdio::Input(process.clone())));
+            let coprocess = machine
+                .coprocess(runtime.now_ms(), b"", argv, cwd, env.clone())
+                .map_err(|error| error.to_string())?;
+            let serving = ().serve((coprocess.stdout, coprocess.stdin));
             match tokio::time::timeout(CONNECTING_MAX, serving).await {
-                Ok(Ok(service)) => Ok((service, Some((runtime.clone(), record)))),
+                Ok(Ok(service)) => Ok(Connection(Arc::new(service))),
                 failed => {
                     let why = match failed {
                         Ok(Err(error)) => error.to_string(),
                         _ => format!("it did not answer within {CONNECTING_MAX:?}"),
                     };
-                    let errors = process.output().unwrap_or_default();
-                    remove(runtime.clone(), record).await;
+                    let errors = coprocess.stderr.kept().unwrap_or_default();
                     let errors = String::from_utf8_lossy(&errors);
                     Err(if errors.trim().is_empty() {
                         why
@@ -536,19 +395,12 @@ async fn connect(
             let config = StreamableHttpClientTransportConfig::with_uri(url.as_str()).custom_headers(sent);
             let serving = ().serve(StreamableHttpClientTransport::from_config(config));
             match tokio::time::timeout(CONNECTING_MAX, serving).await {
-                Ok(Ok(service)) => Ok((service, None)),
+                Ok(Ok(service)) => Ok(Connection(Arc::new(service))),
                 Ok(Err(error)) => Err(error.to_string()),
                 Err(_) => Err(format!("it did not answer within {CONNECTING_MAX:?}")),
             }
         }
     }
-}
-
-/// Removes the record of a server's command, which kills what of it is left.
-async fn remove(runtime: Runtime, record: Bytes) {
-    let mut changes = Changes::new();
-    changes.force_remove(record, None);
-    let _ = runtime.commit(changes).await;
 }
 
 /// What a server's tool gave, as the model reads it: its text, each block on a line of its own; of what is no text, an
