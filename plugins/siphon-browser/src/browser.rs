@@ -1139,11 +1139,15 @@ fn launch(host: &BrowserHost) -> Result<Running, BrowserError> {
         workspace: home.clone(),
         home: Some(home.clone()),
     };
-    let machine = Machine::open(&host.kernel, &host.machine, base, &Writes::Anywhere, None)?;
-    // The browser's own folders, among what the host keeps for itself, are its own to reach.
+    // The browser keeps the pages it runs in a sandbox of its own, a process for each site, which cannot start inside
+    // another — macOS lets no sandbox nest — so it runs on the machine as it is, nothing of the host's hidden from it.
+    let open = Host {
+        hidden: Vec::new(),
+        ..host.machine.clone()
+    };
+    let machine = Machine::open(&host.kernel, &open, base, &Writes::Anywhere, None)?;
     for own in host.profile.iter().chain(&host.downloads) {
         std::fs::create_dir_all(own).map_err(|error| BrowserError::Folders(error.to_string()))?;
-        machine.bind(own)?;
     }
     let spec = Spec {
         stdio: Stdio::Channel,

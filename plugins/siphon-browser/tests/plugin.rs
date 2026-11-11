@@ -25,13 +25,16 @@ async fn a_page_is_opened_listed_painted_and_worked_by_the_person() {
         return;
     }
     let beak = Beak::new().expect("Beak");
-    let profile = tempfile::tempdir().expect("a profile");
+    // The profile within what the host keeps hidden, as a node keeps it in its Home.
+    let folder = tempfile::tempdir().expect("the host's own folder");
+    let kept = std::fs::canonicalize(folder.path()).expect("its real path");
     let machine = siphon_machine::Host {
         home: std::env::var_os("HOME").map(Into::into),
+        hidden: vec![kept.clone()],
         ..siphon_machine::Host::default()
     };
     let plugin = BrowserPlugin {
-        profile: Some(profile.path().to_owned()),
+        profile: Some(kept.join("browser/profile")),
         ..BrowserPlugin::default()
     };
     let siphon = Siphon::builder(&beak, testing::setup(machine))
