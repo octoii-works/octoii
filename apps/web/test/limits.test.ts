@@ -17,18 +17,18 @@ const DIRECTORY: Directory = {
 		model("claude", "claude-opus-5-5"),
 	],
 	providers: [
-		{ id: "chatgpt", name: "ChatGPT", connects: "sign_in", credential: "o_auth" },
-		{ id: "work", name: "ChatGPT · Work", connects: "sign_in", credential: "o_auth", account: { id: "work", provider: "chatgpt", name: "Work" } },
+		{ id: "chatgpt", name: "ChatGPT", connects: "sign_in", credential: "oauth" },
+		{ id: "work", name: "ChatGPT · Work", connects: "sign_in", credential: "oauth", account: { id: "work", provider: "chatgpt", name: "Work" } },
 		{
 			id: "spent",
 			name: "ChatGPT · Spent",
 			connects: "sign_in",
-			credential: "o_auth",
+			credential: "oauth",
 			account: { id: "spent", provider: "chatgpt", name: "Spent" },
 			used_up: { reset_at_ms: 9 },
 		},
 		{ id: "signed-out", name: "ChatGPT · Out", connects: "sign_in", account: { id: "signed-out", provider: "chatgpt", name: "Out" } },
-		{ id: "other", name: "ChatGPT · Other", connects: "sign_in", credential: "o_auth", account: { id: "other", provider: "chatgpt", name: "Other" } },
+		{ id: "other", name: "ChatGPT · Other", connects: "sign_in", credential: "oauth", account: { id: "other", provider: "chatgpt", name: "Other" } },
 		{ id: "claude", name: "Claude", connects: "server" },
 	],
 };

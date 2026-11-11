@@ -7,7 +7,7 @@ import { answersAs, troubled } from "./fixtures.ts";
 const PROVIDERS: readonly Provider[] = [
 	{ id: "anthropic", name: "Anthropic", connects: "api_key" },
 	{ id: "claude", name: "Claude", connects: "agent", through: "Claude Code" },
-	{ id: "chatgpt", name: "ChatGPT", connects: "sign_in", credential: "o_auth" },
+	{ id: "chatgpt", name: "ChatGPT", connects: "sign_in", credential: "oauth" },
 	{ id: "openrouter", name: "OpenRouter", connects: "api_key", credential: "api_key" },
 	{ id: "ollama", name: "Ollama", connects: "server" },
 	{ id: "work", name: "Claude · Work", connects: "agent", through: "Claude Code", account: { id: "work", provider: "claude", name: "Work" } },

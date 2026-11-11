@@ -372,6 +372,7 @@ pub enum Connects {
 #[serde(rename_all = "snake_case")]
 pub enum CredentialKind {
     ApiKey,
+    #[serde(rename = "oauth")]
     OAuth,
     None,
 }

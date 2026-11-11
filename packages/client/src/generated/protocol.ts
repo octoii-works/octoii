@@ -178,7 +178,7 @@ export type Created = { thread: string, };
 /**
  * The kind of credential kept for a provider.
  */
-export type CredentialKind = "api_key" | "o_auth" | "none";
+export type CredentialKind = "api_key" | "oauth" | "none";
 
 /**
  * Where a reader of a log stands: the segment it read, and how far.
