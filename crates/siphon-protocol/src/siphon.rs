@@ -156,11 +156,15 @@ pub struct ReadThread {
     pub limit: u32,
 }
 
-/// The entries read, oldest first, and whether they reach the thread's first.
+/// The entries read, oldest first; whether they reach the thread's first; and where its log ended as they were read —
+/// what a subscription to the thread goes on from, none for a log not begun.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 pub struct ThreadRead {
     pub entries: Vec<Entry>,
     pub complete: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub end: Option<Cursor>,
 }
 
 /// A page of a folder's entries: the folder, as the person names it, those after the entry `after` — from its first,

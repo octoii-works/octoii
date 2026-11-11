@@ -305,6 +305,15 @@ pub fn read_after(snapshot: &Snapshot, id: &str, from: Option<&Cursor>, bytes_ma
     })
 }
 
+/// Where the log of the thread `id` ends as `snapshot` left it: past its last line, where a reader that goes on from
+/// it reads what is appended after; none for a log not begun.
+///
+/// # Errors
+/// The volume's failure.
+pub fn end(snapshot: &Snapshot, id: &str) -> beak::Result<Option<Cursor>> {
+    Ok(segments(snapshot, id)?.pop().map(|(segment, offset)| Cursor { segment, offset }))
+}
+
 /// The latest `limit` lines of the log of the thread `id` before the entry `before` — the latest of all, where none —
 /// oldest first, as `snapshot` left it, and whether they reach the log's first. Entries' ids grow as they are made, and
 /// each segment is named by its first's, so a segment begun after `before` is passed over unread.

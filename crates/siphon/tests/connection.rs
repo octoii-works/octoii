@@ -134,6 +134,31 @@ async fn a_client_is_welcomed_its_calls_checked_and_answered() {
     let changed = client.event(&followed, |event| event["event"] == "entries").await.0;
     assert_eq!(changed["entries"][0]["title"], json!({ "from": "first", "to": "second" }));
 
+    // A reader that takes the latest entries alone goes on from where the log ended as they were read.
+    let id = client.call("threads.read", json!({ "thread": thread, "limit": 1 })).await;
+    let read = client.answer(&id).await["result"].clone();
+    assert_eq!(
+        (read["entries"].as_array().map(Vec::len), read["complete"].as_bool()),
+        (Some(1), Some(false))
+    );
+    let id = client
+        .call(
+            "subscribe",
+            json!({ "topic": { "type": "thread", "thread": thread, "from": read["end"] } }),
+        )
+        .await;
+    let latest = client.answer(&id).await["result"]["subscription"]
+        .as_str()
+        .expect("an id")
+        .to_owned();
+    let id = client
+        .call("threads.configure", json!({ "thread": thread, "change": { "title": "third" } }))
+        .await;
+    client.answer(&id).await;
+    let after = client.event(&latest, |event| event["event"] == "entries").await.0;
+    assert_eq!(after["entries"].as_array().map(Vec::len), Some(1), "what came after the read alone");
+    assert_eq!(after["entries"][0]["title"], json!({ "from": "second", "to": "third" }));
+
     let id = client.call("subscribe", json!({ "topic": { "type": "settings" } })).await;
     let settings = client.answer(&id).await["result"]["subscription"]
         .as_str()

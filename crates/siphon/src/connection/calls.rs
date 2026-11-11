@@ -130,7 +130,7 @@ async fn threads_answered(siphon: &Siphon, method: Method) -> Result<serde_json:
     }
 }
 
-/// A page of the thread `thread`'s entries, the latest `limit` before the entry `before`.
+/// A page of the thread `thread`'s entries, the latest `limit` before the entry `before`, and where its log ends.
 fn read_thread(siphon: &Siphon, thread: &str, before: Option<&str>, limit: u32) -> Result<ThreadRead, Error> {
     let snapshot = siphon.runtime.snapshot().map_err(|error| refusal("failed", &error.to_string()))?;
     siphon.threads.listed(thread).map_err(|error| failed(&error))?;
@@ -141,7 +141,8 @@ fn read_thread(siphon: &Siphon, thread: &str, before: Option<&str>, limit: u32) 
         .map(|line| log::entry_of(line))
         .collect::<Result<_, _>>()
         .map_err(|error| refusal("failed", &error.to_string()))?;
-    Ok(ThreadRead { entries, complete })
+    let end = log::end(&snapshot, thread).map_err(|error| refusal("failed", &error.to_string()))?;
+    Ok(ThreadRead { entries, complete, end })
 }
 
 /// Why an operation on threads was not done, as a client is told.

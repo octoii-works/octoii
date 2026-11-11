@@ -823,9 +823,10 @@ export type TerminalsEvent = { "event": "terminals", subscription: string, termi
 export type TerminalsTopic = { "type": "terminals", thread: string, } | { "type": "terminal", terminal: string, from?: number, };
 
 /**
- * The entries read, oldest first, and whether they reach the thread's first.
+ * The entries read, oldest first; whether they reach the thread's first; and where its log ended as they were read —
+ * what a subscription to the thread goes on from, none for a log not begun.
  */
-export type ThreadRead = { entries: Array<Entry>, complete: boolean, };
+export type ThreadRead = { entries: Array<Entry>, complete: boolean, end?: Cursor, };
 
 /**
  * What a thread's model requests used, as Beak counts it on its main process for every process under it, as cgroup v2
