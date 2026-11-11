@@ -5,8 +5,8 @@
 import type { ReactNode } from "react";
 import wordmark from "../../../../../brand/wordmark.svg";
 
-/** How large the wordmark stands: one pixel a cell, its capitals 14 pixels high, or two. */
-const SIZES = { sm: "h-[14px] w-[49px]", lg: "h-[28px] w-[98px]" } as const;
+/** How large the wordmark stands: one pixel a cell, its capitals 18 pixels high, or two. */
+const SIZES = { sm: "h-[18px] w-[49px]", lg: "h-[36px] w-[98px]" } as const;
 
 /** The wordmark, "Octoii". */
 export function Wordmark(props: { readonly size?: keyof typeof SIZES }): ReactNode {

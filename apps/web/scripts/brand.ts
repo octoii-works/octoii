@@ -1,10 +1,9 @@
 /**
- * Draws Octoii's mark and wordmark into `brand/` at the repository's root. The mark is Oii — a capital O and two i's —
- * drawn as pixel type on grids of 16, 32 and 64 cells, each grid for the sizes that are whole multiples of it: the O a
- * rounded rectangle whose corners are clean pixel arcs, its strokes a little heavier than the i's stems, as a curve must
- * be to look as heavy as a straight; the i's flat stems under their dots, the O closer to them than they are to each
- * other. The wordmark is "Octoii" in bold letters built the same way. The app's icons are the wordmark, white on
- * #141414; the favicon, too small for the word, the mark on its grid of 16.
+ * Draws Octoii's wordmark and mark into `brand/` at the repository's root. The wordmark is "Octoii" as bold, condensed
+ * pixel type: tall narrow letters, the O and o rounded rectangles whose corners are short, clean pixel arcs, flat stems
+ * of one stroke. The app's icons are the wordmark, white on #141414, filling 90% of their width, but for the one a mask
+ * may cut to a circle. The mark, for the favicon, too small for the word, is Oii — the wordmark's first letter and its
+ * last two — on a grid of 16.
  *
  *   bun scripts/brand.ts
  */
@@ -74,76 +73,59 @@ function ring(outer: Box, stroke: Stroke, r: number): Cells {
 
 const union = (...sets: Cells[]): Cells => new Set(sets.flatMap((set) => [...set]));
 
-/** An i on one grid: its stem's width, the x-height, its dot's height and the gap over the stem, and the radii of the
- * stem's and the dot's corners. */
-type LetterI = { readonly stem: number; readonly xHeight: number; readonly dot: number; readonly gap: number; readonly corners: { stem: number; dot: number } };
+/** An O: its width, height and outer radius, its side and top strokes, and its counter's radius. */
+type LetterO = { readonly w: number; readonly h: number; readonly r: number; readonly side: number; readonly top: number; readonly counter: number };
+
+/** An i: its stem's width, the x-height, and its square dot's side and the gap over the stem. */
+type LetterI = { readonly stem: number; readonly xHeight: number; readonly dot: number; readonly gap: number };
 
 /** An i at `left`, standing on `base`. */
-function letterI(left: number, base: number, { stem, xHeight, dot, gap, corners }: LetterI): Cells {
+function letterI(left: number, base: number, { stem, xHeight, dot, gap }: LetterI): Cells {
 	const stemTop = base - xHeight + 1;
-	return union(block({ left, top: stemTop, w: stem, h: xHeight, r: corners.stem }), block({ left, top: stemTop - gap - dot, w: stem, h: dot, r: corners.dot }));
+	return union(block({ left, top: stemTop, w: stem, h: xHeight, r: 0 }), block({ left, top: stemTop - gap - dot, w: stem, h: dot, r: 0 }));
 }
 
-/** The mark on one grid: the O's width, height, outer radius, side and top strokes and counter radius; the i's; the
- * O's gap to the first i and the gap between the i's; and how far the O reaches below the i's baseline. */
-type Tier = {
-	readonly o: { readonly w: number; readonly h: number; readonly r: number; readonly side: number; readonly top: number; readonly counter: number };
-	readonly i: LetterI;
-	readonly gaps: { readonly oi: number; readonly ii: number };
-	readonly overshoot: number;
-};
+/** The mark, Oii, on the grid of 16: its O, its i's, and the gaps from the O to the first i and between the i's. */
+const MARK = {
+	o: { w: 7, h: 12, r: 2, side: 2, top: 2, counter: 1 },
+	i: { stem: 2, xHeight: 8, dot: 2, gap: 1 },
+	gaps: { oi: 1, ii: 1 },
+} as const satisfies { o: LetterO; i: LetterI; gaps: { oi: number; ii: number } };
 
-const TIERS: Record<16 | 32 | 64, Tier> = {
-	16: {
-		o: { w: 9, h: 10, r: 4, side: 2, top: 2, counter: 2 },
-		i: { stem: 2, xHeight: 6, dot: 2, gap: 1, corners: { stem: 0, dot: 0 } },
-		gaps: { oi: 1, ii: 1 },
-		overshoot: 0,
-	},
-	32: {
-		o: { w: 16, h: 18, r: 6, side: 3, top: 3, counter: 4 },
-		i: { stem: 3, xHeight: 12, dot: 3, gap: 2, corners: { stem: 0, dot: 0 } },
-		gaps: { oi: 2, ii: 2 },
-		overshoot: 0,
-	},
-	64: {
-		o: { w: 32, h: 37, r: 11, side: 6, top: 5, counter: 8 },
-		i: { stem: 6, xHeight: 25, dot: 6, gap: 3, corners: { stem: 1, dot: 3 } },
-		gaps: { oi: 4, ii: 5 },
-		overshoot: 1,
-	},
-};
+/** The grid the mark is drawn on. */
+const GRID = 16;
 
-/** The mark on its grid of `n`, centred in it. */
-function mark(n: number, { o, i, gaps, overshoot }: Tier): Cells {
-	const left = Math.floor((n - (o.w + gaps.oi + i.stem + gaps.ii + i.stem)) / 2);
-	const top = Math.floor((n - o.h) / 2);
-	const base = top + o.h - 1 - overshoot;
+/** The mark, centred on its grid. */
+function mark(): Cells {
+	const { o, i, gaps } = MARK;
+	const left = Math.floor((GRID - (o.w + gaps.oi + i.stem + gaps.ii + i.stem)) / 2);
+	const top = Math.floor((GRID - o.h) / 2);
+	const base = top + o.h - 1;
 	const first = left + o.w + gaps.oi;
 	return union(ring({ left, top, w: o.w, h: o.h, r: o.r }, o, o.counter), letterI(first, base, i), letterI(first + i.stem + gaps.ii, base, i));
 }
 
-/** The wordmark's letters: its O and i's, built as the mark's; its lowercase o's width, radius and counter's radius, the
- * c an o opened; its t's rise above the x-height, bar and foot; and the space after each letter but the last, O to i. */
+/** The wordmark's letters: its O and i's; its lowercase o's width, radius and counter's radius, the c an o opened; its
+ * t's rise above the x-height, bar and foot; and the space after each letter but the last, O to i. */
 type Word = {
-	readonly o: Tier["o"];
+	readonly o: LetterO;
 	readonly i: LetterI;
 	readonly small: { readonly w: number; readonly r: number; readonly counter: number };
 	readonly t: { readonly rise: number; readonly bar: number; readonly foot: number };
 	readonly tracks: readonly [number, number, number, number, number];
 };
 
-/** The wordmark's letters: capitals 14 cells high, bold — stems of 3 — the c and the t, open at their sides, set closer,
- * so that three pixels a cell fill a small icon. */
+/** The wordmark's letters: capitals 18 cells high and narrow, the x-height 13, bold — stems of 3 — so the word stands
+ * near square; the t, open at its sides, set close to the o. */
 const WORD: Word = {
-	o: { w: 12, h: 14, r: 5, side: 3, top: 3, counter: 3 },
-	i: { stem: 3, xHeight: 10, dot: 3, gap: 1, corners: { stem: 0, dot: 0 } },
-	small: { w: 9, r: 4, counter: 1 },
-	t: { rise: 3, bar: 6, foot: 2 },
-	tracks: [2, 1, 1, 2, 2],
+	o: { w: 11, h: 18, r: 4, side: 3, top: 3, counter: 2 },
+	i: { stem: 3, xHeight: 13, dot: 3, gap: 1 },
+	small: { w: 9, r: 3, counter: 1 },
+	t: { rise: 4, bar: 6, foot: 2 },
+	tracks: [2, 2, 1, 2, 2],
 };
 
-/** The wordmark, "Octoii": its O and i's built as the mark's, its o, c and t of the same strokes. */
+/** The wordmark, "Octoii": its o, c and t of the same strokes as its O and i's. */
 function wordmark(): Cells {
 	const { o, i, small, t, tracks } = WORD;
 	const [oc, ct, to, oi, ii] = tracks;
@@ -231,64 +213,81 @@ function chunk(kind: string, body: Uint8Array): Buffer {
 	return Buffer.concat([head, body, tail]);
 }
 
-/** The wordmark as a square 1-bit icon of `size`: at the most whole pixels a cell that keep every cell within the
- * circle of `reach` of the size, centred — 40% for an icon a mask may cut to that circle, 50% for one only its corners
- * are rounded off. */
-function icon(size: number, reach: number): Buffer {
+/** How much of the span from `a` to `b` lies within that from `c` to `d`. */
+const overlap = (a: number, b: number, c: number, d: number): number => Math.max(0, Math.min(b, d) - Math.max(a, c));
+
+/** How much of the pixel at `x`, `y` the figure's cells cover, each cell `k` pixels a side, the figure's corner at
+ * `left`, `top`: 0 to 1, a whole pixel inked or bare wherever its edges fall on whole pixels. */
+function coverage(cells: Cells, k: number, [left, top]: [number, number], [x, y]: [number, number]): number {
+	let covered = 0;
+	for (let cx = Math.floor((x - left) / k); cx * k + left < x + 1; cx++) {
+		for (let cy = Math.floor((y - top) / k); cy * k + top < y + 1; cy++) {
+			if (cells.has(cell(cx, cy))) covered += overlap(x, x + 1, left + cx * k, left + (cx + 1) * k) * overlap(y, y + 1, top + cy * k, top + (cy + 1) * k);
+		}
+	}
+	return covered;
+}
+
+/** The wordmark as a square grey icon of `size`, white on #141414, at `k` pixels a cell, centred. */
+function icon(size: number, k: number): Buffer {
 	const figure = trimmed(wordmark());
-	const points = [...figure.cells].map(point);
-	const extent = (k: number): number =>
-		Math.max(
-			...points.map(([x, y]) =>
-				Math.hypot(
-					Math.max(Math.abs(x - figure.w / 2), Math.abs(x + 1 - figure.w / 2)) * k,
-					Math.max(Math.abs(y - figure.h / 2), Math.abs(y + 1 - figure.h / 2)) * k,
-				),
-			),
-		);
-	let k = 1;
-	while (extent(k + 1) <= size * reach) k++;
-	const [left, top] = [Math.floor((size - figure.w * k) / 2), Math.floor((size - figure.h * k) / 2)];
-	const stride = Math.ceil(size / 8) + 1;
+	const corner: [number, number] = [Math.floor((size - figure.w * k) / 2), Math.floor((size - figure.h * k) / 2)];
+	const [ink, ground] = [Number.parseInt(INK.slice(0, 2), 16), Number.parseInt(GROUND.slice(0, 2), 16)];
+	const stride = size + 1;
 	const pixels = Buffer.alloc(stride * size);
 	for (let y = 0; y < size; y++) {
-		for (let x = 0; x < size; x++) {
-			const [u, v] = [x - left, y - top];
-			const inked = u >= 0 && v >= 0 && figure.cells.has(cell(Math.floor(u / k), Math.floor(v / k)));
-			// Palette index 0 the ink, 1 the ground; each row led by its filter byte, 0.
-			const at = y * stride + 1 + (x >> 3);
-			if (!inked) pixels[at] = (pixels[at] ?? 0) | (0x80 >> (x & 7));
-		}
+		// Each row led by its filter byte, 0.
+		for (let x = 0; x < size; x++) pixels[y * stride + 1 + x] = Math.round(ground + (ink - ground) * coverage(figure.cells, k, corner, [x, y]));
 	}
 	const header = Buffer.alloc(13);
 	header.writeUInt32BE(size, 0);
 	header.writeUInt32BE(size, 4);
-	header.set([1, 3, 0, 0, 0], 8);
+	header.set([8, 0, 0, 0, 0], 8);
 	return Buffer.concat([
 		Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
 		chunk("IHDR", header),
-		chunk("PLTE", Buffer.from(INK + GROUND, "hex")),
 		chunk("IDAT", deflateSync(pixels, { level: 9 })),
 		chunk("IEND", new Uint8Array()),
 	]);
 }
 
-/** The favicon: the mark on the grid of 16, on its tile. */
+/** The pixels a cell at which the wordmark fills `share` of an icon's width: an icon nothing cuts but its corners. */
+function filling(size: number, share: number): number {
+	return (size * share) / trimmed(wordmark()).w;
+}
+
+/** The pixels a cell at which the wordmark's farthest corner meets the circle a mask may cut an icon of `size` to, of
+ * radius 40%. */
+function maskable(size: number): number {
+	const figure = trimmed(wordmark());
+	const farthest = Math.max(
+		...[...figure.cells]
+			.map(point)
+			.map(([x, y]) =>
+				Math.hypot(Math.max(Math.abs(x - figure.w / 2), Math.abs(x + 1 - figure.w / 2)), Math.max(Math.abs(y - figure.h / 2), Math.abs(y + 1 - figure.h / 2))),
+			),
+	);
+	return (size * 0.4) / farthest;
+}
+
+/** How much of an icon's width the wordmark fills where only the icon's corners are cut. */
+const FILL = 0.9;
+
+/** The favicon: the mark on its tile of 16. */
 function favicon(): string {
-	return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" shape-rendering="crispEdges"><rect width="16" height="16" fill="#${GROUND}"/><path fill="#${INK}" d="${path(mark(16, TIERS[16]))}"/></svg>\n`;
+	return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" shape-rendering="crispEdges"><rect width="16" height="16" fill="#${GROUND}"/><path fill="#${INK}" d="${path(mark())}"/></svg>\n`;
 }
 
 if (import.meta.main) {
 	await mkdir(BRAND, { recursive: true });
 	const files: [string, string | Buffer][] = [
-		["mark-16.svg", figureSvg(mark(16, TIERS[16]))],
-		["mark-32.svg", figureSvg(mark(32, TIERS[32]))],
-		["mark-64.svg", figureSvg(mark(64, TIERS[64]))],
+		["mark.svg", figureSvg(mark())],
 		["wordmark.svg", figureSvg(wordmark())],
 		["favicon.svg", favicon()],
-		["icon-512.png", icon(512, 0.4)],
-		["icon-192.png", icon(192, 0.4)],
-		["apple-touch-icon.png", icon(180, 0.5)],
+		["icon-512.png", icon(512, filling(512, FILL))],
+		["icon-192.png", icon(192, filling(192, FILL))],
+		["apple-touch-icon.png", icon(180, filling(180, FILL))],
+		["icon-maskable-512.png", icon(512, maskable(512))],
 	];
 	for (const [name, data] of files) await writeFile(`${BRAND}${name}`, data);
 	console.log(`Drew ${files.map(([name]) => name).join(", ")} into ${BRAND}`);

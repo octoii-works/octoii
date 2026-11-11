@@ -14,7 +14,7 @@ const root = new URL("..", import.meta.url).pathname;
 const INSTALL_LINKS = '<link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" href="/apple-touch-icon.png">';
 
 /** The icons a browser installing the app takes, as `scripts/brand.ts` draws them. */
-const ICONS = ["icon-512.png", "icon-192.png", "apple-touch-icon.png"];
+const ICONS = ["icon-512.png", "icon-192.png", "apple-touch-icon.png", "icon-maskable-512.png"];
 
 /** Builds the page at `entry` into `outdir`, which it empties first. */
 async function buildPage(entry: string, outdir: string): Promise<void> {
