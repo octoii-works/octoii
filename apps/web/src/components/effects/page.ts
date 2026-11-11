@@ -73,10 +73,12 @@ type Surface = {
 	remove(): void;
 };
 
-/** A canvas and a field put in `element`: frames drawn on the canvas, the newest where they come faster than they are decoded. */
+/** A canvas and a field put in `element`: the canvas blank over all of it till a frame comes, then each frame drawn on it, the
+ * newest where they come faster than they are decoded. */
 function mountSurface(element: HTMLElement): Surface {
 	const canvas = document.createElement("canvas");
-	canvas.className = "absolute top-0 left-0 bg-white";
+	// The room filled, as a blank page fills it, till the first frame gives the page's own size.
+	canvas.className = "absolute top-0 left-0 size-full bg-white";
 	const field = document.createElement("textarea");
 	field.className = "absolute top-0 left-0 size-px resize-none opacity-0";
 	field.setAttribute("aria-label", "The page");

@@ -1,6 +1,6 @@
 /**
- * The Files surface: the thread's folder as a tree on the right — its folders opening as they are clicked — with a
- * search over its paths above it and a button that reads the folder again; and on the left the file chosen, under the
+ * The Files surface: the thread's folder as a tree on the left — its folders opening as they are clicked — with a
+ * search over its paths above it and a button that reads the folder again; and on the right the file chosen, under the
  * names on the way to it, beside them what wraps its long lines and what hides the tree, as the device keeps them, the
  * tree always shown while no file is. Where the surface is narrow, as on a phone, the tree and the file take its whole
  * width in turn: the tree till a file is chosen, then the file, with a button back to the tree. What it shows is the
@@ -41,6 +41,38 @@ function FolderSurface(props: { readonly thread: string; readonly folder: string
 	const reading = place.file !== undefined;
 	return (
 		<div className="@container/files flex min-h-0 flex-1">
+			<div
+				className={cn(
+					"flex w-64 shrink-0 flex-col border-r border-border @max-xl/files:w-full @max-xl/files:border-r-0",
+					!treeShown && "hidden",
+					reading && "@max-xl/files:hidden",
+				)}
+			>
+				<div className="m-2 flex items-center gap-1">
+					<IconButton label="Read the folder again" onClick={() => setGeneration(generation + 1)}>
+						<RefreshCw className="size-3.5" />
+					</IconButton>
+					<label className="flex h-control-sm min-w-0 flex-1 items-center gap-1.5 rounded-md border border-border px-2 focus-within:border-ring">
+						<Search className="size-3.5 text-muted-foreground" />
+						<Input
+							type="search"
+							variant="bare"
+							aria-label="Search files"
+							placeholder="Search files"
+							value={search}
+							onValueChange={setSearch}
+							className="text-xs"
+						/>
+					</label>
+				</div>
+				<div key={generation} className="min-h-0 flex-1 overflow-y-auto px-1 pb-2 text-ui">
+					{search.trim() === "" ? (
+						<FolderRows thread={thread} place={place} path={folder} depth={0} />
+					) : (
+						<FoundRows thread={thread} root={folder} query={search.trim()} chosen={place.file} onReveal={reveal} />
+					)}
+				</div>
+			</div>
 			<div className={cn("flex min-w-0 flex-1 flex-col", !reading && "@max-xl/files:hidden")}>
 				{place.file === undefined ? (
 					<p className="px-6 py-10 text-center text-xs text-faint-foreground">Choose a file in the tree to read it.</p>
@@ -70,38 +102,6 @@ function FolderSurface(props: { readonly thread: string; readonly folder: string
 						}
 					/>
 				)}
-			</div>
-			<div
-				className={cn(
-					"flex w-64 shrink-0 flex-col border-l border-border @max-xl/files:w-full @max-xl/files:border-l-0",
-					!treeShown && "hidden",
-					reading && "@max-xl/files:hidden",
-				)}
-			>
-				<div className="m-2 flex items-center gap-1">
-					<IconButton label="Read the folder again" onClick={() => setGeneration(generation + 1)}>
-						<RefreshCw className="size-3.5" />
-					</IconButton>
-					<label className="flex h-control-sm min-w-0 flex-1 items-center gap-1.5 rounded-md border border-border px-2 focus-within:border-ring">
-						<Search className="size-3.5 text-muted-foreground" />
-						<Input
-							type="search"
-							variant="bare"
-							aria-label="Search files"
-							placeholder="Search files"
-							value={search}
-							onValueChange={setSearch}
-							className="text-xs"
-						/>
-					</label>
-				</div>
-				<div key={generation} className="min-h-0 flex-1 overflow-y-auto px-1 pb-2 text-ui">
-					{search.trim() === "" ? (
-						<FolderRows thread={thread} place={place} path={folder} depth={0} />
-					) : (
-						<FoundRows thread={thread} root={folder} query={search.trim()} chosen={place.file} onReveal={reveal} />
-					)}
-				</div>
 			</div>
 		</div>
 	);
