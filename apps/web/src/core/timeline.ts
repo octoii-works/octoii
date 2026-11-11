@@ -294,7 +294,8 @@ function saidOf(input: Input): Said | undefined {
 	const known = saids.get(input);
 	if (known !== undefined) return known ?? undefined;
 	const from = threadOfActor(input.actor);
-	const text = from === undefined ? inputText(input.content) : threadText(input.content);
+	// A task a thread gave is answered to it, and read whole; what came of one given in the background follows Siphon's note.
+	const text = from === undefined || (input.reply_to !== undefined && input.reply_to !== null) ? inputText(input.content) : threadText(input.content);
 	const attachments = attachmentsOf(input.content);
 	// What a sub-thread told is shown though it holds no words: how its work ended.
 	const shown = text !== "" || attachments.length > 0 || from !== undefined;

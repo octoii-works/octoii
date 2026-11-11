@@ -3,7 +3,7 @@
  * changed and an edit's diff, the lines a read held, what a search found, and its arguments as fields.
  */
 import { describe, expect, it } from "bun:test";
-import { changeOf, exitOf, fieldsOf, foundOf, hunksOf, prettyArguments, printedOf, spanOf, type ToolCall, toldOf } from "../src/core/calls.ts";
+import { changeOf, exitOf, fieldsOf, foundOf, hunksOf, prettyArguments, spanOf, type ToolCall, toldOf } from "../src/core/calls.ts";
 
 /** A call of `tool` that ran, its tool having told `output`. */
 const ran = (tool: string, output: string): ToolCall => ({ tool, arguments: "{}", output, printed: undefined, state: "done" });
@@ -51,11 +51,5 @@ describe("a call as its tool told it", () => {
 		expect(fieldsOf("{not json")).toBeUndefined();
 		expect(prettyArguments('{"path":"a.md","limit":2}')).toBe('{\n  "path": "a.md",\n  "limit": 2\n}');
 		expect(prettyArguments("{not json")).toBe("{not json");
-	});
-	it("reads what a running command printed from what streamed of its tool's request — its latest part", () => {
-		expect(printedOf([{ text: "one\n" }, { other: true }, { text: "two" }])).toBe("one\ntwo");
-		expect(printedOf([])).toBeUndefined();
-		const long = printedOf([{ text: "x".repeat(70_000) }, { text: "end" }]) ?? "";
-		expect([long.length, long.endsWith("xend")]).toEqual([64 * 1024, true]);
 	});
 });

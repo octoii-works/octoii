@@ -35,6 +35,6 @@ describe("a picture", () => {
 	});
 
 	it("kept, is read drawn small from the node, fitted to a box of twice a tile's pixels", () => {
-		expect(pictureAddress("sha256:a")).toBe("/files/sha256:a?width_max=768&height_max=256");
+		expect(pictureAddress("t1", "sha256:a")).toBe("/threads/t1/files/a?width_max=768&height_max=256");
 	});
 });

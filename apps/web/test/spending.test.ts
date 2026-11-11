@@ -1,10 +1,7 @@
 /** Where a thread's money and tokens went: its requests as its log tells them, and the waterfall they are laid as. */
 import { describe, expect, it } from "bun:test";
-import { conversationOf, type Entry, type ThreadView } from "@octoii-works/octoii-client";
+import { conversationOf, type Entry, type Item, type ThreadView, type Usage } from "@octoii-works/octoii-client";
 import { barsOf, mostOf, spentOf } from "../src/core/spending.ts";
-
-/** A JSON value, as the log holds what a model said. */
-type Json = string | number | boolean | null | readonly Json[] | { readonly [key: string]: Json };
 
 /** An id minted at `ms`, as a UUIDv7 holds its time in its first 48 bits. */
 function idAt(ms: number, serial: number): string {
@@ -14,18 +11,20 @@ function idAt(ms: number, serial: number): string {
 
 const START = 1_700_000_000_000;
 const id = (seconds: number, serial: number): string => idAt(START + seconds * 1000, serial);
-const said = (at: string, text: string): Entry => ({ id: at, type: "input", delivery_id: `d${at}`, actor: "person", message: { role: "user", content: text } });
-const call = (callId: string, name: string, args: Json): Json => ({ type: "function_call", call_id: callId, name, arguments: JSON.stringify(args) });
-const words = (text: string): Json => ({ type: "message", id: "m", role: "assistant", content: [{ type: "output_text", text, annotations: [] }] });
-const usage = (input: number, cached: number, output: number, cost: number): Json => ({
+const said = (at: string, text: string): Entry => ({ id: at, type: "input", delivery: `d${at}`, actor: "person", content: [{ type: "input_text", text }] });
+const call = (callId: string, name: string, args: unknown): Item => ({ type: "function_call", call_id: callId, name, arguments: JSON.stringify(args) });
+const words = (text: string): Item => ({ type: "message", role: "assistant", content: [{ type: "output_text", text }] });
+const usage = (input: number, cached: number, output: number, dollars: number): Usage => ({
 	input_tokens: input,
-	input_tokens_details: { cached_tokens: cached },
+	cached_tokens: cached,
+	cache_write_tokens: 0,
 	output_tokens: output,
-	output_tokens_details: { reasoning_tokens: 0 },
-	total_tokens: input + output,
-	cost,
+	reasoning_tokens: 0,
+	web_searches: 0,
+	cost_nanodollars: Math.round(dollars * 1e9),
 });
-const reply = (at: string, request: string, output: Json[], used: Json): Entry => ({
+const result = (at: string, callId: string): Entry => ({ id: at, type: "result", call: `k${callId}`, status: "ok", output: { call_id: callId, output: [] } });
+const reply = (at: string, request: string, output: Item[], used: Usage): Entry => ({
 	id: at,
 	type: "reply",
 	request,
@@ -37,11 +36,9 @@ function viewOf(entries: Entry[]): ThreadView {
 		entries,
 		read: true,
 		complete: true,
-		state: { status: "replied", inbox: [], processes: [] },
+		status: { turn: "replied", inbox: [], asks: [], compacting: false },
 		streaming: new Map(),
-		failure: undefined,
-		terminals: [],
-		pages: [],
+		gone: false,
 	};
 }
 
@@ -51,8 +48,8 @@ describe("a thread's spending", () => {
 			viewOf([
 				said(id(0, 1), "Fix the build"),
 				reply(id(3, 3), id(1, 2), [call("c1", "read", { path: "build.zig" }), call("c2", "shell", { command: "zig build" })], usage(1000, 800, 50, 0.002)),
-				{ id: id(4, 4), type: "result", status: "ok", call_output: { call_id: "c1", output: "…" } },
-				{ id: id(5, 5), type: "result", status: "ok", call_output: { call_id: "c2", output: "…" } },
+				result(id(4, 4), "c1"),
+				result(id(5, 5), "c2"),
 				reply(id(7, 7), id(6, 6), [words("Fixed it.")], usage(1200, 1000, 20, 0.001)),
 				{ id: id(8, 8), type: "turn-end", turn: "t1", outcome: "replied" },
 			]),
@@ -78,7 +75,7 @@ describe("a thread's spending", () => {
 			id: at,
 			type: "compaction",
 			request,
-			response: { model: "openrouter/m", usage: usage(500, 0, 30, 0.0005) },
+			response: { id: "r", model: "openrouter/m", status: "completed", output: [], usage: usage(500, 0, 30, 0.0005) },
 			kept: at,
 			from: at,
 		});

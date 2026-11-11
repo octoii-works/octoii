@@ -1,6 +1,6 @@
 /** Whose mark a model or a provider is drawn with: its maker's, the service it is, or none the page knows. */
 import { describe, expect, it } from "bun:test";
-import type { Provider } from "@octoii-works/octoii-client";
+import type { ProviderShown as Provider } from "@octoii-works/octoii-client";
 import { vendorOfModel, vendorOfProvider, vendorOfReference } from "../src/core/vendors.ts";
 
 describe("a model's vendor", () => {
@@ -29,7 +29,7 @@ describe("a model's vendor", () => {
 	it("is read through an account the person added, as the provider it is another of", () => {
 		const providers: readonly Provider[] = [
 			{ id: "claude", name: "Claude", connects: "agent" },
-			{ id: "work", name: "Claude · Work", connects: "agent", account: { of: "claude", name: "Work" } },
+			{ id: "work", name: "Claude · Work", connects: "agent", account: { id: "work", provider: "claude", name: "Work" } },
 		];
 		expect(vendorOfReference({ models: [], providers }, "work/opus")).toBe("claude");
 		expect(vendorOfReference(undefined, "openrouter/deepseek/deepseek-v4.1-flash")).toBe("deepseek");
@@ -39,7 +39,9 @@ describe("a model's vendor", () => {
 describe("a provider's vendor", () => {
 	it("is the service it is, or the one an account is another of; none for one the page has no mark for", () => {
 		expect(vendorOfProvider({ id: "openrouter", name: "OpenRouter", connects: "api_key" })).toBe("openrouter");
-		expect(vendorOfProvider({ id: "work", name: "Claude · Work", connects: "agent", account: { of: "claude", name: "Work" } })).toBe("claude");
+		expect(vendorOfProvider({ id: "work", name: "Claude · Work", connects: "agent", account: { id: "work", provider: "claude", name: "Work" } })).toBe(
+			"claude",
+		);
 		expect(vendorOfProvider({ id: "deepgram", name: "Deepgram", connects: "api_key" })).toBeUndefined();
 	});
 });

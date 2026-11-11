@@ -129,9 +129,10 @@ function permissionOf(asked: Static<typeof PermissionAskedSchema>): AskForm {
 }
 
 /** A call's arguments as the model wrote them, read as JSON where they are; else as they were written. */
-function argumentsOf(written: string): unknown {
+function argumentsOf(written: string): Json {
 	try {
-		return JSON.parse(written);
+		// SAFETY: what JSON.parse gives is JSON.
+		return JSON.parse(written) as Json;
 	} catch {
 		return written;
 	}

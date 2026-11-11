@@ -6,8 +6,9 @@ import { isCompacting, PARTS, sharesOf } from "../src/core/context.ts";
 /** A thread at rest, compacting or not, as its row stands. */
 const row = (compacting: boolean): Listed => ({
 	id: "t1",
-	manifest: { mode: "default" },
-	standing: { status: "replied", inbox: [], asks: [], compacting },
+	config: { mode: "default" },
+	marks: { pinned: false, archived: false },
+	status: { turn: "replied", inbox: [], asks: [], compacting },
 });
 
 describe("the context", () => {

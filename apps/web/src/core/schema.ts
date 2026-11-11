@@ -20,32 +20,9 @@ export function compiled<Schema extends TSchema>(schema: Schema): Validator<{}, 
 	return validator;
 }
 
-/** A value that fails its schema: what it was meant to be, and each problem with its place. */
-export class InvalidValueError extends Error {
-	readonly problems: readonly string[];
-
-	constructor(what: string, problems: readonly string[]) {
-		super(`Invalid ${what}: ${problems.join("; ")}`);
-		this.name = "InvalidValueError";
-		this.problems = problems;
-	}
-}
-
 /** Whether `value` is of the type of `schema`. */
 export function matches<Schema extends TSchema>(schema: Schema, value: unknown): value is Static<Schema> {
 	return compiled(schema).Check(value);
-}
-
-/** `value` as the type of `schema`; throws `InvalidValueError` naming `what` and each problem where it fails. */
-export function parsed<Schema extends TSchema>(schema: Schema, value: unknown, what: string): Static<Schema> {
-	const validator = compiled(schema);
-	if (validator.Check(value)) return value;
-	throw new InvalidValueError(what, validationProblems(validator, value));
-}
-
-/** Why `value` fails `validator`, one line per problem: where, and what is wrong. */
-export function validationProblems(validator: Validator, value: unknown): string[] {
-	return [...validator.Errors(value)].map((error) => `${error.instancePath || "/"} ${error.message}`);
 }
 
 /**

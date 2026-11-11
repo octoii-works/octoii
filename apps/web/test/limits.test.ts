@@ -3,8 +3,9 @@ import { describe, expect, it } from "bun:test";
 import type { Model } from "@octoii-works/octoii-client";
 import { onwardOf, windowWords } from "../src/core/limits.ts";
 import type { Directory } from "../src/core/models.ts";
+import { catalogued } from "./fixtures.ts";
 
-const model = (provider: string, id: string): Model => ({ id, name: id, octoii: { provider } });
+const model = (provider: string, id: string): Model => catalogued(provider, id);
 
 const DIRECTORY: Directory = {
 	models: [
@@ -16,11 +17,18 @@ const DIRECTORY: Directory = {
 		model("claude", "claude-opus-5-5"),
 	],
 	providers: [
-		{ id: "chatgpt", name: "ChatGPT", connects: "sign_in", credential: "oauth" },
-		{ id: "work", name: "ChatGPT · Work", connects: "sign_in", credential: "oauth", account: { of: "chatgpt", name: "Work" } },
-		{ id: "spent", name: "ChatGPT · Spent", connects: "sign_in", credential: "oauth", account: { of: "chatgpt", name: "Spent" }, used_up: { reset_at_ms: 9 } },
-		{ id: "signed-out", name: "ChatGPT · Out", connects: "sign_in", account: { of: "chatgpt", name: "Out" } },
-		{ id: "other", name: "ChatGPT · Other", connects: "sign_in", credential: "oauth", account: { of: "chatgpt", name: "Other" } },
+		{ id: "chatgpt", name: "ChatGPT", connects: "sign_in", credential: "o_auth" },
+		{ id: "work", name: "ChatGPT · Work", connects: "sign_in", credential: "o_auth", account: { id: "work", provider: "chatgpt", name: "Work" } },
+		{
+			id: "spent",
+			name: "ChatGPT · Spent",
+			connects: "sign_in",
+			credential: "o_auth",
+			account: { id: "spent", provider: "chatgpt", name: "Spent" },
+			used_up: { reset_at_ms: 9 },
+		},
+		{ id: "signed-out", name: "ChatGPT · Out", connects: "sign_in", account: { id: "signed-out", provider: "chatgpt", name: "Out" } },
+		{ id: "other", name: "ChatGPT · Other", connects: "sign_in", credential: "o_auth", account: { id: "other", provider: "chatgpt", name: "Other" } },
 		{ id: "claude", name: "Claude", connects: "server" },
 	],
 };

@@ -1,6 +1,6 @@
 /** A thread's details as its card tells them: how full its window is, what its requests cost and how much was cached. */
 import { describe, expect, it } from "bun:test";
-import type { Turn, Usage } from "@octoii-works/octoii-client";
+import type { ThreadUsage as Usage, Turn } from "@octoii-works/octoii-client";
 import { cachedShare, contextOf, fullnessOf } from "../src/core/details.ts";
 
 type Step = Turn["steps"][number];
@@ -8,12 +8,22 @@ type Step = Turn["steps"][number];
 const step = (usage?: { readonly input_tokens: number; readonly output_tokens: number }): Step => ({
 	request: "q",
 	streaming: [],
-	reply: { id: "e", type: "reply", request: "q", response: { id: "r", status: "completed", output: [], ...(usage === undefined ? {} : { usage }) } },
-	failure: undefined,
+	reply: {
+		id: "e",
+		type: "reply",
+		request: "q",
+		response: {
+			id: "r",
+			model: "m",
+			status: "completed",
+			output: [],
+			...(usage === undefined ? {} : { usage: { ...usage, cached_tokens: 0, cache_write_tokens: 0, reasoning_tokens: 0, web_searches: 0 } }),
+		},
+	},
 	calls: [],
 });
 
-const turn = (...steps: Step[]): Turn => ({ id: "t", told: [], inputs: [], steps, end: undefined });
+const turn = (...steps: Step[]): Turn => ({ told: [], inputs: [], steps, end: undefined });
 
 const usage = (given: Partial<Usage>): Usage => ({ input_tokens: 0, cached_tokens: 0, output_tokens: 0, reasoning_tokens: 0, cost_nanodollars: 0, ...given });
 

@@ -20,20 +20,20 @@ describe("a file attached", () => {
 
 describe("a message with files", () => {
 	it("is sent as its words, then each file by its reference; read back, its files are those it names", () => {
-		expect(contentOf("hi", [])).toBe("hi");
+		expect(contentOf("hi", [])).toEqual([{ type: "input_text", text: "hi" }]);
 		const content = contentOf("look", [image, pdf]);
 		expect(content).toEqual([
 			{ type: "input_text", text: "look" },
-			{ type: "input_image", detail: "auto", octoii: { ref: "sha256:aa", media_type: "image/png", filename: "shot.png" } },
-			{ type: "input_file", filename: "spec.pdf", octoii: { ref: "sha256:bb", media_type: "application/pdf", filename: "spec.pdf" } },
+			{ type: "input_image", file: { ref: "sha256:aa", media_type: "image/png", filename: "shot.png" }, detail: "auto" },
+			{ type: "input_file", file: { ref: "sha256:bb", media_type: "application/pdf", filename: "spec.pdf" } },
 		]);
 		expect(contentOf("", [image])).toEqual([
-			{ type: "input_image", detail: "auto", octoii: { ref: "sha256:aa", media_type: "image/png", filename: "shot.png" } },
+			{ type: "input_image", file: { ref: "sha256:aa", media_type: "image/png", filename: "shot.png" }, detail: "auto" },
 		]);
-		expect(attachmentsOf({ role: "user", content }).map((each) => [each.ref, each.media_type, each.name])).toEqual([
+		expect(attachmentsOf(content).map((each) => [each.ref, each.media_type, each.name])).toEqual([
 			["sha256:aa", "image/png", "shot.png"],
 			["sha256:bb", "application/pdf", "spec.pdf"],
 		]);
-		expect(attachmentsOf({ role: "user", content: "words alone" })).toEqual([]);
+		expect(attachmentsOf([{ type: "input_text", text: "words alone" }])).toEqual([]);
 	});
 });

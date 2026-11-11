@@ -3,9 +3,10 @@
  * they spend it, what its next reset gives back, and a column for each account in the order they were added.
  */
 import { describe, expect, it } from "bun:test";
-import type { Provider, ProviderStatus } from "@octoii-works/octoii-client";
+import type { ProviderShown as Provider, ProviderStatus } from "@octoii-works/octoii-client";
 import { monogramHue } from "../src/core/monogram.ts";
 import { countdown, paceOf, usageOf } from "../src/core/usage.ts";
+import { answersAs, troubled } from "./fixtures.ts";
 
 const HOUR = 60 * 60_000;
 
@@ -14,8 +15,8 @@ const CLAUDE: Provider = { id: "claude", name: "Claude", connects: "agent" };
 const PROVIDERS: readonly Provider[] = [
 	CLAUDE,
 	{ id: "openai", name: "OpenAI", connects: "api_key", credential: "api_key" },
-	{ id: "work", name: "Claude · Work", connects: "agent", account: { of: "claude", name: "Work" } },
-	{ id: "spare", name: "Claude · Spare", connects: "agent", account: { of: "claude", name: "Spare" } },
+	{ id: "work", name: "Claude · Work", connects: "agent", account: { id: "work", provider: "claude", name: "Work" } },
+	{ id: "spare", name: "Claude · Spare", connects: "agent", account: { id: "spare", provider: "claude", name: "Spare" } },
 ];
 
 describe("the usage page", () => {
@@ -23,17 +24,14 @@ describe("the usage page", () => {
 		const statuses = new Map<string, ProviderStatus>([
 			[
 				"claude",
-				{
-					connected: true,
-					limits: [
-						{ window_minutes: 300, used_percent: 40, resets_at_ms: 3 * HOUR },
-						{ window_minutes: 10_080, scope: "Opus", used_percent: 10 },
-					],
-				},
+				answersAs(undefined, [
+					{ window_minutes: 300, used_percent: 40, resets_at_ms: 3 * HOUR },
+					{ window_minutes: 10_080, scope: "Opus", used_percent: 10 },
+				]),
 			],
-			["work", { connected: true, limits: [{ window_minutes: 300, used_percent: 90, resets_at_ms: HOUR }] }],
-			["spare", { connected: false }],
-			["openai", { connected: true }],
+			["work", answersAs(undefined, [{ window_minutes: 300, used_percent: 90, resets_at_ms: HOUR }])],
+			["spare", troubled()],
+			["openai", answersAs()],
 		]);
 		expect(usageOf(PROVIDERS, statuses, 0)).toEqual([
 			{
@@ -69,9 +67,7 @@ describe("the usage page", () => {
 	});
 
 	it("gives back nothing at a reset where the pool is one account", () => {
-		const statuses = new Map<string, ProviderStatus>([
-			["claude", { connected: true, limits: [{ window_minutes: 300, used_percent: 40, resets_at_ms: HOUR }] }],
-		]);
+		const statuses = new Map<string, ProviderStatus>([["claude", answersAs(undefined, [{ window_minutes: 300, used_percent: 40, resets_at_ms: HOUR }])]]);
 		expect(usageOf(PROVIDERS, statuses, 0)[0]?.windows[0]?.next).toBeUndefined();
 	});
 

@@ -1,6 +1,6 @@
 /** What waits on the person, read from each request's name, what it was made with, and its answer's schema. */
 import { describe, expect, it } from "bun:test";
-import type { Ask } from "@octoii-works/octoii-client";
+import type { Ask, JsonValue } from "@octoii-works/octoii-client";
 import {
 	alwaysText,
 	askTitle,
@@ -19,31 +19,41 @@ import {
 	write,
 } from "../src/core/asks.ts";
 
-const ask = (name: string, answer: unknown, payload?: unknown): Ask => ({
-	fiber: "f1",
-	call: undefined,
-	request: { key: "a1", name, answer, ...(payload === undefined ? {} : { payload }) },
-});
+const ask = (name: string, answer: JsonValue, payload: JsonValue = null): Ask => ({ process: "p", key: "a1", name, payload, answer_schema: answer });
+
+/** A call's permission as Siphon asks it: the call by the model's id, what it would do, and what an always grants. */
+const permission = (tool: string, args: JsonValue, does: string[], always: { commands?: string[]; paths?: string[] } = {}): Ask =>
+	ask(
+		"siphon.permission",
+		{ type: "object" },
+		{
+			call_id: "c1",
+			call: { tool, arguments: JSON.stringify(args), does },
+			always: { commands: always.commands ?? [], paths: always.paths ?? [], tools: [] },
+		},
+	);
+
+/** A model's questions as Siphon asks them: a call of the `question` tool, answered by the person. */
+const questions = (asked: JsonValue): Ask => ask("siphon.asks", { type: "object" }, { call_id: "c1", tool: "question", arguments: { questions: asked } });
 
 /** The answer Siphon's trust request takes. */
 const TRUSTED = { type: "object", properties: { trusted: { type: "boolean" } }, required: ["trusted"] };
 
 describe("what a request asks", () => {
 	it("asks trust in a folder's configuration with the servers it would run", () => {
-		const trust = ask("trust", TRUSTED, {
+		const trust = ask("siphon.trust", TRUSTED, {
 			folder: "/w/app",
 			path: "/w/app/.mcp.json",
 			digest: "d",
-			servers: [{ name: "docs", command: "node", args: ["s.js"] }],
+			servers: [{ name: "docs", runs: "node s.js" }],
 		});
-		expect(formOf(trust)).toEqual({ kind: "trust", folder: "/w/app", servers: [{ name: "docs", command: "node", args: ["s.js"] }] });
+		expect(formOf(trust)).toEqual({ kind: "trust", folder: "/w/app", servers: [{ name: "docs", runs: "node s.js" }] });
 		expect(askTitle(trust)).toBe("Trust what app runs?");
 	});
 
 	it("is told in a line by what it asks: a permission's title, a question's heading, else the request's name", () => {
-		const access = { action: "command" as const, resources: ["ls"], save: [] };
-		expect(askTitle(ask("permission", { type: "object" }, { tool: "shell", arguments: { command: "ls" }, access }))).toBe("Run this command?");
-		expect(askTitle(ask("question", { type: "object" }, { questions: [{ question: "Which one?", header: "Target" }] }))).toBe("Target");
+		expect(askTitle(permission("shell", { command: "ls" }, ["runs ls"]))).toBe("Run this command?");
+		expect(askTitle(questions([{ question: "Which one?", header: "Target" }]))).toBe("Target");
 		expect(askTitle(ask("decide", { type: "object", properties: { note: { type: "string" } } }))).toBe("decide");
 	});
 
@@ -88,19 +98,19 @@ describe("what a request asks", () => {
 		if (form.kind !== "fields") throw new Error("not fields");
 		expect(fieldsAnswer(form.fields, { trusted: false, "content.email": "a@b.c" })).toEqual({ trusted: false, content: { email: "a@b.c" } });
 		expect(formOf(ask("odd", { type: "string" }))).toEqual({ kind: "shown" });
-		expect(formOf(ask("trust", TRUSTED, { not: "a folder" }))).toMatchObject({ kind: "fields" });
+		expect(formOf(ask("siphon.trust", TRUSTED, { not: "a folder" }))).toMatchObject({ kind: "fields" });
 	});
 });
 
 describe("a call's permission", () => {
-	const command = { action: "command" as const, resources: ["npm install lodash"], save: ["npm install *"] };
+	const command = { action: "command" as const, resources: ["npm install lodash"], save: ["npm install *"], escalate: false, justification: undefined };
 
 	it("is asked with what the call does, and what an always grants", () => {
-		const form = formOf(ask("permission", { type: "object" }, { tool: "shell", arguments: { command: "npm install lodash" }, access: command }));
-		expect(form).toEqual({ kind: "permission", tool: "shell", arguments: { command: "npm install lodash" }, access: command, doubt: undefined });
-		// Asked after the model that judged it would not let it go ahead, it says why.
-		const doubted = formOf(ask("permission", { type: "object" }, { tool: "shell", arguments: {}, access: command, doubt: "it installs a package" }));
-		expect(doubted).toMatchObject({ kind: "permission", doubt: "it installs a package" });
+		const form = formOf(permission("shell", { command: "npm install lodash" }, ["runs npm install lodash"], { commands: ["npm install *"] }));
+		expect(form).toEqual({ kind: "permission", tool: "shell", arguments: { command: "npm install lodash" }, access: command });
+		// One that asks to run beyond the sandbox says so, and why.
+		const beyond = formOf(permission("shell", { command: "ls", escalate: true }, ["runs ls"]));
+		expect(beyond).toMatchObject({ kind: "permission", access: { escalate: true } });
 		expect(permissionTitle("shell", command)).toBe("Run this command?");
 		expect(permissionTitle("shell", { ...command, escalate: true })).toBe("Run this beyond the sandbox?");
 		expect(alwaysText(command, "/w/app")).toBe("Always allow npm install * in app");
@@ -110,7 +120,7 @@ describe("a call's permission", () => {
 	});
 
 	it("shows an edit's file, then what it takes out and puts in, each line numbered", () => {
-		const edit = { action: "edit" as const, resources: ["/w/app/a.zig"], save: ["*"] };
+		const edit = { action: "edit" as const, resources: ["/w/app/a.zig"], save: ["*"], escalate: false, justification: undefined };
 		expect(permissionDetail("edit", { path: "a.zig", old: "one", new: "two\nthree" }, edit, "/w/app")).toEqual([
 			{ number: 0, kind: "text", text: "a.zig" },
 			{ number: 1, kind: "removed", text: "one" },
@@ -133,7 +143,7 @@ describe("a model's questions", () => {
 	const multiple: Question = { question: "Which checks?", header: "Checks", options: [{ label: "lint" }, { label: "test" }], multiple: true };
 
 	it("are asked one by one from the request's questions", () => {
-		expect(formOf(ask("question", { type: "object" }, { questions: [single, multiple] }))).toEqual({ kind: "question", questions: [single, multiple] });
+		expect(formOf(questions([single, multiple]))).toEqual({ kind: "question", questions: [single, multiple] });
 	});
 
 	it("take one choice or the person's own words for a question of one, several and words of their own for one of several", () => {
@@ -143,6 +153,8 @@ describe("a model's questions", () => {
 		expect(write(single, bun, "Deno")).toEqual({ chosen: [], own: "Deno" });
 		const both = choose(multiple, choose(multiple, UNANSWERED, "lint"), "test");
 		expect(write(multiple, both, " e2e ")).toEqual({ chosen: ["lint", "test"], own: " e2e " });
-		expect(questionsAnswer([bun, write(multiple, both, " e2e "), UNANSWERED])).toEqual({ answers: [["Bun"], ["lint", "test", "e2e"], []] });
+		expect(questionsAnswer([bun, write(multiple, both, " e2e "), UNANSWERED])).toEqual({
+			answers: [{ chosen: ["Bun"] }, { chosen: ["lint", "test"], text: "e2e" }, null],
+		});
 	});
 });

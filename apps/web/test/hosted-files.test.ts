@@ -42,12 +42,12 @@ describe("kept files read through a tunnel", () => {
 });
 
 describe("the requests beside the socket", () => {
-	const refusing = async (): Promise<NodeAnswer> => answer(403, JSON.stringify({ message: "That link was spent." }));
+	const refusing = async (): Promise<NodeAnswer> => answer(403, "That link was spent.");
 
 	it("tell the node's words where it refuses, and its status where it gives none", async () => {
 		await expect(pairBrowser(refusing, "c")).rejects.toThrow("That link was spent.");
-		await expect(pairBrowser(async () => answer(502, "<html>"), "c")).rejects.toThrow("(502)");
-		await expect(keepFile(refusing, new Blob(["x"]))).rejects.toThrow("That link was spent.");
+		await expect(pairBrowser(async () => answer(502, ""), "c")).rejects.toThrow("(502)");
+		await expect(keepFile(refusing, "t1", new Blob(["x"]), "x.txt")).rejects.toThrow("That link was spent.");
 	});
 
 	it("send a credential as JSON, and give back what was kept", async () => {
@@ -56,7 +56,8 @@ describe("the requests beside the socket", () => {
 			sent.push(request);
 			return answer(200, "{}");
 		}, "c");
-		expect(sent).toEqual([{ method: "POST", path: "/api/auth/session", contentType: "application/json", body: '{"credential":"c"}' }]);
-		expect(await keepFile(async () => answer(200, JSON.stringify({ ref: "sha256:a", size: 1 })), new Blob(["x"]))).toEqual({ ref: "sha256:a", size: 1 });
+		expect(sent).toEqual([{ method: "POST", path: "/pair", contentType: "application/json", body: '{"credential":"c"}' }]);
+		const kept = { ref: "sha256:a", media_type: "text/plain", filename: "x.txt" };
+		expect(await keepFile(async () => answer(200, JSON.stringify(kept)), "t1", new Blob(["x"]), "x.txt")).toEqual(kept);
 	});
 });

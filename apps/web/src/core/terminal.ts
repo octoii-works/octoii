@@ -21,6 +21,6 @@ export const TERMINAL_FONT_SIZE = 12;
 
 /** A terminal's name on its tab: the title its program set, or its number in the thread. */
 export function terminalName(terminal: TerminalListed): string {
-	const title = terminal.title?.trim() ?? "";
+	const title = terminal.title.trim();
 	return title === "" ? `Terminal ${String(terminal.number)}` : title;
 }

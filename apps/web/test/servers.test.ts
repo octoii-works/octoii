@@ -1,6 +1,6 @@
 /** The MCP servers as the new thread's page groups them: the person's own, and the project's as the person stands on it. */
 import { describe, expect, it } from "bun:test";
-import type { ServerShown, ServersListed } from "@octoii-works/octoii-client";
+import type { ServerListed as ServerShown, ServersListed } from "@octoii-works/octoii-client";
 import { countOf, groupsOf } from "../src/core/servers.ts";
 
 const PERSON = "/home/me/.octoii/mcp.json";
@@ -10,8 +10,7 @@ const PROJECT = "/work/app/.mcp.json";
 const running = (name: string, source: string, tools: readonly string[] = []): ServerShown => ({
 	name,
 	source,
-	command: "npx",
-	args: [name],
+	runs: `npx ${name}`,
 	connected: tools.length > 0,
 	tools: [...tools],
 });
@@ -21,7 +20,7 @@ const listing = (servers: readonly ServerShown[], named: readonly string[], trus
 	servers: [...servers],
 	problems: [],
 	project: {
-		named: { folder: "/work/app", path: PROJECT, digest: "d1", servers: named.map((name) => ({ name, command: "node", args: [`${name}.js`] })) },
+		named: { folder: "/work/app", path: PROJECT, digest: "d1", servers: named.map((name) => ({ name, runs: `node ${name}.js` })) },
 		...(trusted === undefined ? {} : { trusted }),
 	},
 });
@@ -46,7 +45,7 @@ describe("the servers", () => {
 		expect(groups.project).toMatchObject({
 			trusted: undefined,
 			digest: "d1",
-			servers: [{ name: "db", command: "node", source: PROJECT, connected: false, tools: [] }],
+			servers: [{ name: "db", runs: "node db.js", source: PROJECT, connected: false, tools: [] }],
 		});
 		expect(countOf(undecided)).toEqual({ running: 1, awaiting: true });
 		expect(countOf(listing([], ["db"], false))).toEqual({ running: 0, awaiting: false });

@@ -14,13 +14,10 @@ import {
 	recentModelsOf,
 	toggledFavorite,
 } from "../src/core/models.ts";
+import { catalogued } from "./fixtures.ts";
 
-const model = (provider: string, id: string, name: string, released: string, context?: number): Model => ({
-	id,
-	name,
-	...(context === undefined ? {} : { context_length: context }),
-	octoii: { provider, release_date: released },
-});
+const model = (provider: string, id: string, name: string, released: string, context?: number): Model =>
+	catalogued(provider, id, { name, release_date: released, ...(context === undefined ? {} : { context_length: context }) });
 
 const DIRECTORY: Directory = {
 	models: [
@@ -78,8 +75,9 @@ describe("the model picker", () => {
 	it("takes the recent models from the newest threads, each once, and stars a model or no longer", () => {
 		const row = (id: string, chosen?: string): Listed => ({
 			id,
-			manifest: { mode: "auto", ...(chosen === undefined ? {} : { model: chosen }) },
-			standing: { status: "replied", inbox: [], asks: [], compacting: false },
+			config: { mode: "auto", ...(chosen === undefined ? {} : { model: chosen }) },
+			marks: { pinned: false, archived: false },
+			status: { turn: "replied", inbox: [], asks: [], compacting: false },
 		});
 		expect(recentModelsOf([row("3", "b"), row("2"), row("1", "a"), row("0", "b")])).toEqual(["b", "a"]);
 		expect(toggledFavorite(["a"], "b")).toEqual(["a", "b"]);
@@ -90,9 +88,9 @@ describe("the model picker", () => {
 describe("a model's efforts", () => {
 	const plain = model("openrouter", "z/old", "Z: Old", "2025-01-01");
 	it("are those it lists, highest first; high, medium and low where it lists none; none where it does not reason", () => {
-		expect(effortsOf({ ...plain, reasoning: { supported_efforts: ["low", "high", "xhigh"] } })).toEqual(["xhigh", "high", "low"]);
-		expect(effortsOf({ ...plain, supported_parameters: ["reasoning"] })).toEqual(["high", "medium", "low", "none"]);
-		expect(effortsOf({ ...plain, reasoning: { mandatory: true } })).toEqual(["high", "medium", "low"]);
+		expect(effortsOf({ ...plain, reasoning: { efforts: ["low", "high", "xhigh"], default_effort: null, mandatory: false } })).toEqual(["xhigh", "high", "low"]);
+		expect(effortsOf({ ...plain, parameters: ["reasoning"] })).toEqual(["high", "medium", "low", "none"]);
+		expect(effortsOf({ ...plain, reasoning: { efforts: null, default_effort: null, mandatory: true } })).toEqual(["high", "medium", "low"]);
 		expect(effortsOf(plain)).toEqual([]);
 		expect(effortsOf(undefined)).toEqual([]);
 	});
