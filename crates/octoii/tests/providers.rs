@@ -34,6 +34,12 @@ async fn the_person_manages_providers_keys_and_accounts() {
     let chatgpt = provider(&listed, "chatgpt").expect("ChatGPT");
     assert_eq!(chatgpt["connects"], "sign_in");
 
+    let status = asked(&mut client, "providers.status", json!({ "provider": "zai" })).await;
+    assert!(
+        status["result"].is_object(),
+        "a provider's standing is asked of its driver: {status}"
+    );
+
     asked(&mut client, "credentials.set", json!({ "provider": "zai", "api_key": "sk-test" })).await;
     let listed = asked(&mut client, "providers.list", json!({})).await;
     assert_eq!(

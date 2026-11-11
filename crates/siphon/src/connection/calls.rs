@@ -29,6 +29,7 @@ pub(crate) async fn answered(caller: Caller, method: Method) -> Result<serde_jso
         | Method::GitVersions(_)
         | Method::GitCommits(_)) => super::git::answered(siphon, method).await,
         method @ (Method::ListProviders(_)
+        | Method::StatusOfProvider(_)
         | Method::SignIn(_)
         | Method::FinishSignIn(_)
         | Method::SetCredential(_)
