@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use beak::Kernel;
 use bytes::Bytes;
-use octoii_ai::vocabulary::{FileRef, ImageDetail, InputContent};
+use octoii_ai::vocabulary::{ImageDetail, InputContent};
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 use siphon_machine::paths::Base;
@@ -73,25 +73,17 @@ impl Context {
     /// # Errors
     /// A `Refusal` where it is no image that can be read, or it could not be kept.
     pub async fn show_image(&self, bytes: &[u8], name: Option<&str>) -> Result<Vec<InputContent>, Refusal> {
-        let fitted = siphon_image::fit(bytes, &siphon_image::Bounds::MODELS)
-            .map_err(|error| Refusal(format!("{}: {error}", name.unwrap_or("the image"))))?;
         let snapshot = self.runtime.snapshot().map_err(|error| Refusal(error.to_string()))?;
         let mut changes = Changes::new();
-        let kept = Bytes::copy_from_slice(&fitted.bytes);
-        let reference =
-            siphon_threads::files::keep(&snapshot, &mut changes, &self.thread, kept).map_err(|error| Refusal(error.to_string()))?;
+        let (file, size) = siphon_threads::files::keep_image(&snapshot, &mut changes, &self.thread, bytes, name)
+            .map_err(|error| Refusal(format!("{}: {error}", name.unwrap_or("the image"))))?;
         if !changes.is_empty() {
             self.runtime.commit(changes).await.map_err(|error| Refusal(error.to_string()))?;
         }
-        let size = format!("{}×{}", fitted.size.width, fitted.size.height);
+        let size = format!("{}×{}", size.width, size.height);
         let said = match name {
             Some(name) => format!("{name}, an image of {size}"),
             None => format!("an image of {size}"),
-        };
-        let file = FileRef {
-            reference,
-            media_type: fitted.format.media_type().to_owned(),
-            filename: name.map(str::to_owned),
         };
         Ok(vec![
             InputContent::text(said),

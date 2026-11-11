@@ -6,6 +6,7 @@ pub mod access;
 pub mod cli;
 pub mod control;
 pub mod credentials;
+mod files;
 pub mod home;
 pub mod http;
 pub mod qr;

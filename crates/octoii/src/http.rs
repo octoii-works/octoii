@@ -46,6 +46,11 @@ pub fn router(node: Node) -> Router {
     let mut router = Router::new()
         .route("/ws", get(socket).merge(on(MethodFilter::CONNECT, tunnel_socket)))
         .route("/pair", post(pair))
+        .route(
+            "/threads/{thread}/files",
+            post(crate::files::sent).layer(axum::extract::DefaultBodyLimit::max(siphon_threads::files::BYTES_MAX)),
+        )
+        .route("/threads/{thread}/files/{hash}", get(crate::files::kept))
         .with_state(node);
     if let Some(app) = app {
         let page = ServeFile::new(app.join("index.html"));
@@ -55,7 +60,7 @@ pub fn router(node: Node) -> Router {
 }
 
 /// A request refused: its status, and words for whoever reads it.
-struct Denied(StatusCode, String);
+pub(crate) struct Denied(pub(crate) StatusCode, pub(crate) String);
 
 impl IntoResponse for Denied {
     fn into_response(self) -> Response {
@@ -90,7 +95,7 @@ fn credential(headers: &HeaderMap) -> Option<String> {
 
 /// The session a request of `headers` holds — of the key `remote`, where it came in a tunnel session: its bearer
 /// token or its cookie, else the session the key holds.
-fn session(node: &Node, headers: &HeaderMap, remote: Option<&Remote>) -> Result<Shown, Denied> {
+pub(crate) fn session(node: &Node, headers: &HeaderMap, remote: Option<&Remote>) -> Result<Shown, Denied> {
     if remote.is_none() && foreign(node, headers) {
         return Err(Denied(StatusCode::FORBIDDEN, "a page of another origin".into()));
     }

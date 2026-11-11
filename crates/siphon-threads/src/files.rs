@@ -48,6 +48,66 @@ pub fn keep(snapshot: &Snapshot, changes: &mut Changes, id: &str, bytes: Bytes) 
     Ok(reference)
 }
 
+/// Why a file given was not kept.
+#[derive(Debug, thiserror::Error)]
+pub enum Refused {
+    #[error("a file holds at most {BYTES_MAX} bytes")]
+    TooLarge,
+    #[error("the image: {0}")]
+    Image(#[from] siphon_image::Error),
+    #[error(transparent)]
+    Beak(#[from] beak::Error),
+}
+
+/// Keeps the image `bytes`, named `name`, in the thread `id` with `changes`, fitted to what every model reads: what
+/// names it, and the size it was kept at.
+///
+/// # Errors
+/// An image that cannot be read, or fits no bounds; the volume's failure, reading what is kept.
+pub fn keep_image(
+    snapshot: &Snapshot,
+    changes: &mut Changes,
+    id: &str,
+    bytes: &[u8],
+    name: Option<&str>,
+) -> Result<(octoii_ai::vocabulary::FileRef, siphon_image::Size), Refused> {
+    let fitted = siphon_image::fit(bytes, &siphon_image::Bounds::MODELS)?;
+    let reference = keep(snapshot, changes, id, Bytes::copy_from_slice(&fitted.bytes))?;
+    let file = octoii_ai::vocabulary::FileRef {
+        reference,
+        media_type: fitted.format.media_type().to_owned(),
+        filename: name.map(str::to_owned),
+    };
+    Ok((file, fitted.size))
+}
+
+/// Keeps `bytes`, of `media_type` and named `name`, in the thread `id` with `changes`, as every model reads what a
+/// conversation names: an image fitted to what each reads, any other file as it came. What names it.
+///
+/// # Errors
+/// `TooLarge`; an image that cannot be read; the volume's failure, reading what is kept.
+pub fn keep_given(
+    snapshot: &Snapshot,
+    changes: &mut Changes,
+    id: &str,
+    bytes: &[u8],
+    media_type: &str,
+    name: Option<&str>,
+) -> Result<octoii_ai::vocabulary::FileRef, Refused> {
+    if bytes.len() > BYTES_MAX {
+        return Err(Refused::TooLarge);
+    }
+    if media_type.starts_with("image/") {
+        return Ok(keep_image(snapshot, changes, id, bytes, name)?.0);
+    }
+    let reference = keep(snapshot, changes, id, Bytes::copy_from_slice(bytes))?;
+    Ok(octoii_ai::vocabulary::FileRef {
+        reference,
+        media_type: media_type.to_owned(),
+        filename: name.map(str::to_owned),
+    })
+}
+
 /// The bytes the thread `id` keeps by `reference`; none where it keeps none.
 ///
 /// # Errors
