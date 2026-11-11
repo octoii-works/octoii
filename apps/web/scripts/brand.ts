@@ -123,34 +123,55 @@ function mark(n: number, { o, i, gaps, overshoot }: Tier): Cells {
 	return union(ring({ left, top, w: o.w, h: o.h, r: o.r }, o, o.counter), letterI(first, base, i), letterI(first + i.stem + gaps.ii, base, i));
 }
 
-/** The wordmark: "Octoii" on the grid of 32, its O and i's the mark's, its o, c and t of the same strokes. */
-function wordmark(): Cells {
-	const { o, i } = TIERS[32];
-	const [track, small, smallR, smallCounter] = [2, 11, 5, 2];
+/** A cut of the wordmark: its O and i's, as the mark's; its lowercase o's width, radius and counter's radius, the c an o
+ * opened; its t's rise above the x-height, bar and foot; and the space between letters. */
+type Word = {
+	readonly o: Tier["o"];
+	readonly i: LetterI;
+	readonly small: { readonly w: number; readonly r: number; readonly counter: number };
+	readonly t: { readonly rise: number; readonly bar: number; readonly foot: number };
+	readonly track: number;
+};
+
+/** The wordmark's cuts: for text, its capitals 18 cells high, the mark's on the grid of 32; for icons, 14 high and
+ * narrower, so that three pixels a cell fill a small icon. */
+const WORDS: Record<"text" | "icon", Word> = {
+	text: { o: TIERS[32].o, i: TIERS[32].i, small: { w: 11, r: 5, counter: 2 }, t: { rise: 4, bar: 8, foot: 2 }, track: 2 },
+	icon: {
+		o: { w: 12, h: 14, r: 5, side: 2, top: 2, counter: 3 },
+		i: { stem: 2, xHeight: 10, dot: 2, gap: 1, corners: { stem: 0, dot: 0 } },
+		small: { w: 9, r: 4, counter: 2 },
+		t: { rise: 3, bar: 6, foot: 2 },
+		track: 2,
+	},
+};
+
+/** The wordmark, "Octoii", in `cut`: its O and i's the mark's, its o, c and t of the same strokes. */
+function wordmark({ o, i, small, t, track }: Word): Cells {
 	const base = o.h - 1;
 	const xTop = base - i.xHeight + 1;
 	const s = i.stem;
 	const stroke = { side: s, top: s };
+	const lower = { top: xTop, w: small.w, h: i.xHeight, r: small.r };
 	const letters: Cells[] = [ring({ left: 0, top: 0, w: o.w, h: o.h, r: o.r }, o, o.counter)];
 	let x = o.w + track;
 	// The c: an o opened on its right — its last column gone, so its terminals end flat, and its right half between them.
-	const c = [...ring({ left: x, top: xTop, w: small, h: i.xHeight, r: smallR }, stroke, smallCounter)].filter((key) => {
+	const c = [...ring({ left: x, ...lower }, stroke, small.counter)].filter((key) => {
 		const [cx, cy] = point(key);
-		return cx < x + small - 1 && !(cx > x + Math.floor(small / 2) && cy >= xTop + s && cy < xTop + i.xHeight - s);
+		return cx < x + small.w - 1 && !(cx > x + Math.floor(small.w / 2) && cy >= xTop + s && cy < xTop + i.xHeight - s);
 	});
 	letters.push(new Set(c));
-	x += small - 1 + track;
-	// The t: a stem rising 4 above the x-height, a bar of 8 across its top, its foot turned right by 2.
-	const [rise, bar, foot] = [4, 8, 2];
-	const stemLeft = x + Math.floor((bar - s) / 2);
+	x += small.w - 1 + track;
+	// The t: a stem rising above the x-height, a bar across its top, its foot turned right.
+	const stemLeft = x + Math.floor((t.bar - s) / 2);
 	letters.push(
-		block({ left: stemLeft, top: xTop - rise, w: s, h: base - xTop + rise + 1, r: 0 }),
-		block({ left: x, top: xTop, w: bar, h: s, r: 0 }),
-		block({ left: stemLeft + s, top: base - s + 1, w: foot, h: s, r: 0 }),
+		block({ left: stemLeft, top: xTop - t.rise, w: s, h: base - xTop + t.rise + 1, r: 0 }),
+		block({ left: x, top: xTop, w: t.bar, h: s, r: 0 }),
+		block({ left: stemLeft + s, top: base - s + 1, w: t.foot, h: s, r: 0 }),
 	);
-	x += bar + track;
-	letters.push(ring({ left: x, top: xTop, w: small, h: i.xHeight, r: smallR }, stroke, smallCounter));
-	x += small + track;
+	x += t.bar + track;
+	letters.push(ring({ left: x, ...lower }, stroke, small.counter));
+	x += small.w + track;
 	letters.push(letterI(x, base, i), letterI(x + s + track, base, i));
 	return union(...letters);
 }
@@ -212,11 +233,12 @@ function chunk(kind: string, body: Uint8Array): Buffer {
 }
 
 /** The wordmark as a square 1-bit icon of `size`: at the most whole pixels a cell that keep every cell within the
- * circle a mask may cut a maskable icon to, of radius 40%, centred. */
-function icon(size: number): Buffer {
-	const figure = trimmed(wordmark());
+ * circle of `reach` of the size, centred — 40% for an icon a mask may cut to that circle, 50% for one only its corners
+ * are rounded off. */
+function icon(size: number, reach: number): Buffer {
+	const figure = trimmed(wordmark(WORDS.icon));
 	const points = [...figure.cells].map(point);
-	const reach = (k: number): number =>
+	const extent = (k: number): number =>
 		Math.max(
 			...points.map(([x, y]) =>
 				Math.hypot(
@@ -226,7 +248,7 @@ function icon(size: number): Buffer {
 			),
 		);
 	let k = 1;
-	while (reach(k + 1) <= size * 0.4) k++;
+	while (extent(k + 1) <= size * reach) k++;
 	const [left, top] = [Math.floor((size - figure.w * k) / 2), Math.floor((size - figure.h * k) / 2)];
 	const stride = Math.ceil(size / 8) + 1;
 	const pixels = Buffer.alloc(stride * size);
@@ -263,11 +285,11 @@ if (import.meta.main) {
 		["mark-16.svg", figureSvg(mark(16, TIERS[16]))],
 		["mark-32.svg", figureSvg(mark(32, TIERS[32]))],
 		["mark-64.svg", figureSvg(mark(64, TIERS[64]))],
-		["wordmark.svg", figureSvg(wordmark())],
+		["wordmark.svg", figureSvg(wordmark(WORDS.text))],
 		["favicon.svg", favicon()],
-		["icon-512.png", icon(512)],
-		["icon-192.png", icon(192)],
-		["apple-touch-icon.png", icon(180)],
+		["icon-512.png", icon(512, 0.4)],
+		["icon-192.png", icon(192, 0.4)],
+		["apple-touch-icon.png", icon(180, 0.5)],
 	];
 	for (const [name, data] of files) await writeFile(`${BRAND}${name}`, data);
 	console.log(`Drew ${files.map(([name]) => name).join(", ")} into ${BRAND}`);
