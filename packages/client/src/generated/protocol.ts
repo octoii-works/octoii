@@ -1,6 +1,14 @@
 // Siphon's protocol, generated from its Rust types — not to be edited by hand.
 
 /**
+ * A session or a link, as the access shows it: its id, what it grants, its label, how its client holds it — none for a
+ * link — and when it was made and goes.
+ */
+export type AccessEntry = { id: string, scopes: Array<Scope>, label?: string, holder?: Holder, made_at: number, expires_at: number, };
+
+export type AccessListed = { sessions: Array<AccessEntry>, links: Array<AccessEntry>, };
+
+/**
  * An account, as a list shows it: its id, the host's provider it is another of, and the name it was given.
  */
 export type Account = { id: string, provider: string, name: string, };
@@ -305,6 +313,11 @@ export type Grants = { commands: Array<string>, paths: Array<string>, tools: Arr
 export type GrantsListed = { projects: Array<Granted>, };
 
 /**
+ * How a client holds its session: a browser's cookie, a program's bearer token, or the key its tunnel session shows.
+ */
+export type Holder = "cookie" | "bearer" | "key";
+
+/**
  * How closely a model looks at an image.
  */
 export type ImageDetail = "auto" | "high" | "low";
@@ -351,6 +364,12 @@ export type Item = { "type": "message" } & Message | { "type": "function_call" }
 export type ItemStatus = "in_progress" | "completed" | "incomplete";
 
 export type JsonValue = number | string | boolean | Array<JsonValue> | { [key in string]: JsonValue } | null;
+
+/**
+ * A link made: what it grants, its credential — shown this once — and the addresses that open it: on this computer,
+ * and on another device where the node has a home relay.
+ */
+export type LinkMade = { link: AccessEntry, credential: string, url: string, device?: string, };
 
 /**
  * A page of a folder's entries: the folder, as the person names it, those after the entry `after` — from its first,
@@ -471,6 +490,11 @@ export type Navigate = { page: string, url: string, };
 export type Nothing = Record<symbol, never>;
 
 /**
+ * A session or a link, by its id.
+ */
+export type OfAccessEntry = { id: string, };
+
+/**
  * An account, by its id.
  */
 export type OfAccount = { account: string, };
@@ -557,6 +581,11 @@ export type PageListed = { id: string, url: string, title: string, view: View, d
 export type PageMouse = { motion: MouseMotion, x: number, y: number, button: PageButton, buttons: number, clicks: number, modifiers: number, delta_x: number, delta_y: number, };
 
 export type PageOpened = { page: string, };
+
+/**
+ * What a link is made with: its label, and what it grants — everything, where none is given.
+ */
+export type PairWith = { label?: string, scopes?: Array<Scope>, };
 
 /**
  * Where a sub-thread came from: the thread that delegated it, and its call that did.
@@ -664,6 +693,11 @@ context_tokens?: number | null, };
  * Where a response stands: under way, or ended `completed`, `incomplete` or `failed`.
  */
 export type ResponseStatus = "in_progress" | "completed" | "incomplete" | "failed";
+
+/**
+ * What was revoked: a session, or a link.
+ */
+export type Revoked = { revoked: string, };
 
 /**
  * What a session lets its client do: each scope opens some of the methods.
@@ -923,6 +957,9 @@ export type Methods = {
   'terminals.close': { params: OfTerminal; result: Nothing };
   'servers.list': { params: ListServers; result: ServersListed };
   'trust.decide': { params: DecideTrust; result: Nothing };
+  'access.list': { params: Nothing; result: AccessListed };
+  'access.pair': { params: PairWith; result: LinkMade };
+  'access.revoke': { params: OfAccessEntry; result: Revoked };
   'subscribe': { params: { topic: Topic }; result: Subscribed };
   'unsubscribe': { params: Unsubscribe; result: Nothing };
 };

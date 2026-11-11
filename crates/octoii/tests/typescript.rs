@@ -11,7 +11,16 @@ async fn the_client_s_typescript_is_what_the_node_s_siphon_and_plugins_make() {
     let folder = tempfile::tempdir().expect("a folder");
     let home = Home::at(folder.path());
     home.prepare().expect("a Home");
-    let siphon = octoii::serve::siphon(&home, siphon::providers::SignInSetup::default()).expect("Siphon");
+    let tunnel = octoii_tunnel::Tunnel::builder(octoii_tunnel::SecretKey::generate())
+        .bind()
+        .await
+        .expect("a tunnel");
+    let links = octoii::pairing::Links {
+        loopback: "http://127.0.0.1:7600".into(),
+        tunnel,
+    };
+    let building = octoii::serve::building(&home, siphon::providers::SignInSetup::default()).expect("Siphon");
+    let siphon = building.plugin(octoii::pairing::AccessPlugin { links }).start().expect("started");
     let made = siphon_protocol::typescript(siphon.sets());
     siphon.runtime.close().await;
     if std::env::var_os("UPDATE_EXPECT").is_some() {

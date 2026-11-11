@@ -23,9 +23,8 @@ use crate::http::Node;
 #[derive(Debug, Clone)]
 pub struct Control {
     pub node: Node,
-    pub loopback: String,
+    pub links: crate::pairing::Links,
     pub home: std::path::PathBuf,
-    pub tunnel: octoii_tunnel::Tunnel,
 }
 
 /// What a link or a session is asked with: its label, and what it grants — everything, where none is given.
@@ -56,24 +55,10 @@ fn failed(error: &Refused) -> Response {
     (status, Json(json!({ "error": error.to_string() }))).into_response()
 }
 
-/// Where the web app is served to a device that reaches the node through the tunnel.
-pub const APP: &str = "https://app.octoii.com";
-
-/// A link that pairs one client, and the addresses that open it, its credential in the fragment a page reads and no
-/// request sends: on this computer, at the loopback; on another device, at the web app, where the node has a home relay
-/// — with the node's key and its relay, by which the page dials it.
+/// A link that pairs one client, and the addresses that open it.
 async fn link(State(control): State<Control>, Json(asked): Json<Asked>) -> Response {
-    let scopes = asked.scopes.unwrap_or_else(|| access::ALL.to_vec());
-    match control.node.access.link(asked.label, scopes, access::LINK_LASTS).await {
-        Ok(made) => {
-            let url = format!("{}/pair#{}", control.loopback, made.credential);
-            let addr = control.tunnel.addr();
-            let device = addr
-                .relay_urls()
-                .next()
-                .map(|relay| format!("{APP}/pair#key={}&relay={relay}&link={}", control.tunnel.key(), made.credential));
-            Json(json!({ "link": made.shown, "url": url, "device": device })).into_response()
-        }
+    match control.links.made(&control.node.access, asked.label, asked.scopes).await {
+        Ok(made) => Json(made).into_response(),
         Err(error) => failed(&error),
     }
 }
@@ -90,16 +75,16 @@ async fn token(State(control): State<Control>, Json(asked): Json<Asked>) -> Resp
 /// How the node stands: its version, its Home, its machine and its loopback's address; the key devices reach it by,
 /// its home relay, where it is seen from outside.
 async fn status(State(control): State<Control>) -> Response {
-    let addr = control.tunnel.addr();
+    let addr = control.links.tunnel.addr();
     let relay = addr.relay_urls().next().map(ToString::to_string);
     Json(json!({
         "version": env!("CARGO_PKG_VERSION"),
         "home": control.home,
         "machine": control.node.machine.name,
-        "loopback": control.loopback,
-        "key": control.tunnel.key().to_string(),
+        "loopback": control.links.loopback,
+        "key": control.links.tunnel.key().to_string(),
         "relay": relay,
-        "seen_from_outside": control.tunnel.seen_from_outside(),
+        "seen_from_outside": control.links.tunnel.seen_from_outside(),
     }))
     .into_response()
 }

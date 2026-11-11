@@ -41,7 +41,7 @@ pub const ALL: [Scope; 8] = [
 ];
 
 /// How a client holds its session: a browser's cookie, a program's bearer token, or the key its tunnel session shows.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(rename_all = "snake_case")]
 pub enum Holder {
     Cookie,
@@ -67,13 +67,15 @@ struct Kept {
 
 /// A session or a link, as the access shows it: its id, what it grants, its label, how its client holds it — none for a
 /// link — and when it was made and goes.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Shown {
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+pub struct AccessEntry {
     pub id: String,
     pub scopes: Vec<Scope>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub label: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub holder: Option<Holder>,
     pub made_at: i64,
     pub expires_at: i64,
@@ -82,7 +84,7 @@ pub struct Shown {
 /// What was made, with the credential that holds it — shown this once.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Made {
-    pub shown: Shown,
+    pub shown: AccessEntry,
     pub credential: String,
 }
 
@@ -145,8 +147,8 @@ fn kept(snapshot: &Snapshot, path: &[u8]) -> Result<Option<Kept>, Refused> {
     Ok(Some(serde_json::from_slice(value)?))
 }
 
-fn shown(id: &str, kept: &Kept) -> Shown {
-    Shown {
+fn shown(id: &str, kept: &Kept) -> AccessEntry {
+    AccessEntry {
         id: id.to_owned(),
         scopes: kept.scopes.clone(),
         label: kept.label.clone(),
@@ -271,7 +273,7 @@ impl Access {
     ///
     /// # Errors
     /// The volume's failure.
-    pub fn held(&self, credential: &str) -> Result<Option<Shown>, Refused> {
+    pub fn held(&self, credential: &str) -> Result<Option<AccessEntry>, Refused> {
         let Some((id, secret)) = credential.split_once('.') else {
             return Ok(None);
         };
@@ -286,7 +288,7 @@ impl Access {
     ///
     /// # Errors
     /// The volume's failure.
-    pub fn held_by_key(&self, key: &str) -> Result<Option<Shown>, Refused> {
+    pub fn held_by_key(&self, key: &str) -> Result<Option<AccessEntry>, Refused> {
         let snapshot = self.runtime.snapshot()?;
         let query = beak::Query {
             kind: SESSION_KIND.as_bytes(),
@@ -309,7 +311,7 @@ impl Access {
     ///
     /// # Errors
     /// The volume's failure.
-    pub fn list(&self) -> Result<(Vec<Shown>, Vec<Shown>), Refused> {
+    pub fn list(&self) -> Result<(Vec<AccessEntry>, Vec<AccessEntry>), Refused> {
         let now = self.runtime.now_ms();
         let live = |all: Vec<(String, Kept)>| {
             all.into_iter()

@@ -24,7 +24,7 @@ use siphon_protocol::{Machine, SUBPROTOCOL};
 use tokio::sync::mpsc;
 use tower_http::services::{ServeDir, ServeFile};
 
-use crate::access::{self, Access, Holder, Shown};
+use crate::access::{self, Access, AccessEntry, Holder};
 
 /// The cookie a browser holds its session in.
 pub const COOKIE: &str = "octoii_session";
@@ -97,7 +97,7 @@ fn credential(headers: &HeaderMap) -> Option<String> {
 
 /// The session a request of `headers` holds — of the key `remote`, where it came in a tunnel session: its bearer
 /// token or its cookie, else the session the key holds.
-pub(crate) fn session(node: &Node, headers: &HeaderMap, remote: Option<&Remote>) -> Result<Shown, Denied> {
+pub(crate) fn session(node: &Node, headers: &HeaderMap, remote: Option<&Remote>) -> Result<AccessEntry, Denied> {
     if remote.is_none() && foreign(node, headers) {
         return Err(Denied(StatusCode::FORBIDDEN, "a page of another origin".into()));
     }
@@ -214,7 +214,7 @@ impl Frame for octoii_tunnel::Message {
 
 /// Carries the protocol over `socket` for the client of `session`: what it sends taken as calls, what Siphon sends it
 /// written as text and binary frames, till either side closes.
-async fn carried<S, F, E>(node: Node, session: Shown, socket: S)
+async fn carried<S, F, E>(node: Node, session: AccessEntry, socket: S)
 where
     S: Stream<Item = Result<F, E>> + Sink<F> + Send + 'static,
     F: Frame,

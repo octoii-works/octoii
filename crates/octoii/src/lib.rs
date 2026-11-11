@@ -9,6 +9,7 @@ pub mod credentials;
 mod files;
 pub mod home;
 pub mod http;
+pub mod pairing;
 pub mod qr;
 pub mod serve;
 pub mod service;

@@ -24,6 +24,7 @@ use crate::control::{self, Control};
 use crate::credentials::Credstore;
 use crate::home::Home;
 use crate::http::{self, Node};
+use crate::pairing::{AccessPlugin, Links};
 
 /// What the node is served with: its Home, the loopback port, the web app's folder, and the relays its tunnel is at
 /// home on — none, reached directly alone.
@@ -67,11 +68,20 @@ fn machine(home: &Home) -> siphon_machine::Host {
     }
 }
 
-/// Siphon on this computer, with its core plugins: a provider's sign-in in a browser come back to `sign_in`.
+/// Siphon on this computer, started with its core plugins: a provider's sign-in in a browser come back to `sign_in`.
 ///
 /// # Errors
 /// Where Beak or the volume cannot be opened.
 pub fn siphon(home: &Home, sign_in: SignInSetup) -> anyhow::Result<Siphon> {
+    building(home, sign_in)?.start().context("Siphon")
+}
+
+/// Siphon on this computer being built, its core plugins added — the browser, the terminals, the MCP servers — for the
+/// node to add its own and start it.
+///
+/// # Errors
+/// Where Beak or the volume cannot be opened.
+pub fn building(home: &Home, sign_in: SignInSetup) -> anyhow::Result<siphon::Building> {
     let beak = beak::Beak::new().context("Beak")?;
     let providers = providers();
     let setup = Setup {
@@ -96,12 +106,7 @@ pub fn siphon(home: &Home, sign_in: SignInSetup) -> anyhow::Result<Siphon> {
     let config = McpPlugin {
         config: Some(home.config()),
     };
-    built
-        .plugin(browser)
-        .plugin(TerminalsPlugin)
-        .plugin(config)
-        .start()
-        .context("Siphon")
+    Ok(built.plugin(browser).plugin(TerminalsPlugin).plugin(config))
 }
 
 /// Serves the node as `served` says, till it is asked to stop: an interrupt, or a terminate.
@@ -129,7 +134,6 @@ pub async fn serve_until(served: Served, stop: impl Future<Output = ()> + Send +
         callback: format!("{loopback}/sign-in/{{provider}}/callback"),
         host_id: key.public().to_string(),
     };
-    let siphon = siphon(&home, sign_in)?;
     let relays = relays
         .into_iter()
         .map(|relay| octoii_tunnel::RelayConfig::new(relay, None))
@@ -139,6 +143,12 @@ pub async fn serve_until(served: Served, stop: impl Future<Output = ()> + Send +
         .bind()
         .await
         .context("the tunnel")?;
+    let links = Links {
+        loopback: loopback.clone(),
+        tunnel: tunnel.clone(),
+    };
+    let access_plugin = AccessPlugin { links: links.clone() };
+    let siphon = building(&home, sign_in)?.plugin(access_plugin).start().context("Siphon")?;
     let node = Node {
         siphon: siphon.clone(),
         access: Access::new(siphon.runtime.clone()),
@@ -158,9 +168,8 @@ pub async fn serve_until(served: Served, stop: impl Future<Output = ()> + Send +
     }
     let control = Control {
         node: node.clone(),
-        loopback: loopback.clone(),
+        links,
         home: home.root().to_owned(),
-        tunnel: tunnel.clone(),
     };
     let (serving, router) = (tunnel.clone(), http::router(node.clone()));
     tokio::spawn(async move { serving.serve(router).await });
