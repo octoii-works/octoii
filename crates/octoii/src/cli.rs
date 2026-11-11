@@ -34,6 +34,9 @@ enum Command {
         /// The web app's folder; the one installed beside the program, where none is given.
         #[arg(long)]
         app: Option<PathBuf>,
+        /// A relay the node's tunnel is at home on, by its URL; again for another.
+        #[arg(long)]
+        relay: Vec<octoii_tunnel::RelayUrl>,
     },
     /// How the running node stands.
     Status {
@@ -123,13 +126,14 @@ fn scopes(named: Option<Vec<String>>) -> anyhow::Result<Option<Vec<Scope>>> {
 async fn run(home: Home, command: Command) -> anyhow::Result<()> {
     let socket = home.socket();
     match command {
-        Command::Serve { port, app } => {
-            serve::serve(Served {
+        Command::Serve { port, app, relay } => {
+            let served = Served {
                 home,
                 port,
                 app: app.or_else(installed_app),
-            })
-            .await
+                relays: relay,
+            };
+            serve::serve(served).await
         }
         Command::Status { json } => {
             let status = control::ask(&socket, Method::GET, "/status", None).await?;
@@ -143,6 +147,8 @@ async fn run(home: Home, command: Command) -> anyhow::Result<()> {
                 );
                 println!("home      {}", status["home"].as_str().unwrap_or("?"));
                 println!("loopback  {}", status["loopback"].as_str().unwrap_or("?"));
+                println!("key       {}", status["key"].as_str().unwrap_or("?"));
+                println!("relay     {}", status["relay"].as_str().unwrap_or("none: reached directly alone"));
             }
             Ok(())
         }

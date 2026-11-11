@@ -1,18 +1,22 @@
-//! The node's HTTP, as each way a client reaches it carries it: the protocol's WebSocket at `/ws`, its version agreed
-//! by the subprotocol `octoii.1` and its client known by the session it holds — a browser's in its cookie, a program's
-//! as a bearer token; the one request a browser pairs by, `/pair`, which redeems a link's credential for a session
-//! held in an `HttpOnly` cookie its page cannot read; and the web app's files, every path of no file its page. A request
-//! of a page of another origin is refused, as a browser lets any page send one to any address.
+//! The node's HTTP, as each way a client reaches it carries it — HTTP/1.1 and HTTP/2 on the loopback, HTTP/3 in a
+//! device's tunnel session — one router for both: the protocol's WebSocket at `/ws`, its version agreed by the
+//! subprotocol `octoii.1` — opened by an upgrade on the loopback, by extended CONNECT (RFC 9220) in a tunnel session —
+//! its client known by the session it holds: a browser's in its cookie, a program's as a bearer token, a device's by
+//! the key its tunnel session shows; the one request a client pairs by, `/pair`, which redeems a link's credential for
+//! a session — a browser's held in an `HttpOnly` cookie its page cannot read, a device's by its key; and the web app's
+//! files, every path of no file its page. On the loopback a request of a page of another origin is refused, as a
+//! browser lets any page send one to any address; in a tunnel session the key that dialled is who asks.
 
 use std::path::PathBuf;
 
 use axum::Router;
-use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{Json, State};
+use axum::extract::ws::{self, WebSocket, WebSocketUpgrade};
+use axum::extract::{Extension, Json, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
-use futures_util::{SinkExt as _, StreamExt as _};
+use axum::routing::{MethodFilter, get, on, post};
+use futures_util::{Sink, SinkExt as _, Stream, StreamExt as _};
+use octoii_tunnel::{OnConnect, Remote};
 use serde::Deserialize;
 use siphon::Siphon;
 use siphon::connection::{Access as Client, OUTGOING_AHEAD, Outgoing, serve};
@@ -39,7 +43,10 @@ pub struct Node {
 /// The node's routes.
 pub fn router(node: Node) -> Router {
     let app = node.app.clone();
-    let mut router = Router::new().route("/ws", get(socket)).route("/pair", post(pair)).with_state(node);
+    let mut router = Router::new()
+        .route("/ws", get(socket).merge(on(MethodFilter::CONNECT, tunnel_socket)))
+        .route("/pair", post(pair))
+        .with_state(node);
     if let Some(app) = app {
         let page = ServeFile::new(app.join("index.html"));
         router = router.fallback_service(ServeDir::new(app).precompressed_br().fallback(page));
@@ -81,36 +88,130 @@ fn credential(headers: &HeaderMap) -> Option<String> {
         .map(|(_, value)| value.to_owned())
 }
 
-/// The session a request of `headers` holds.
-fn session(node: &Node, headers: &HeaderMap) -> Result<Shown, Denied> {
-    if foreign(node, headers) {
+/// The session a request of `headers` holds — of the key `remote`, where it came in a tunnel session: its bearer
+/// token or its cookie, else the session the key holds.
+fn session(node: &Node, headers: &HeaderMap, remote: Option<&Remote>) -> Result<Shown, Denied> {
+    if remote.is_none() && foreign(node, headers) {
         return Err(Denied(StatusCode::FORBIDDEN, "a page of another origin".into()));
     }
-    let credential = credential(headers).ok_or_else(|| Denied(StatusCode::UNAUTHORIZED, "no session".into()))?;
-    match node.access.held(&credential) {
+    let held = match (credential(headers), remote) {
+        (Some(credential), _) => node.access.held(&credential),
+        (None, Some(Remote(key))) => node.access.held_by_key(&key.to_string()),
+        (None, None) => return Err(Denied(StatusCode::UNAUTHORIZED, "no session".into())),
+    };
+    match held {
         Ok(Some(session)) => Ok(session),
         Ok(None) => Err(Denied(StatusCode::UNAUTHORIZED, "no such session".into())),
         Err(error) => Err(Denied(StatusCode::INTERNAL_SERVER_ERROR, error.to_string())),
     }
 }
 
-/// The protocol's WebSocket, for the session the request holds, where it asks for the protocol's version.
+/// Whether a request of `headers` asks for the protocol's version among the subprotocols it offers.
+fn offers_protocol(headers: &HeaderMap) -> bool {
+    headers
+        .get_all(header::SEC_WEBSOCKET_PROTOCOL)
+        .into_iter()
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|offered| offered.split(','))
+        .any(|offered| offered.trim() == SUBPROTOCOL)
+}
+
+fn unversioned() -> Response {
+    let why = "the WebSocket asks for no protocol of this node's: octoii.1";
+    Denied(StatusCode::BAD_REQUEST, why.into()).into_response()
+}
+
+/// The protocol's WebSocket on the loopback, upgraded, for the session the request holds.
 async fn socket(State(node): State<Node>, headers: HeaderMap, upgrade: WebSocketUpgrade) -> Response {
-    let session = match session(&node, &headers) {
+    let session = match session(&node, &headers, None) {
         Ok(session) => session,
         Err(denied) => return denied.into_response(),
     };
     let upgrade = upgrade.protocols([SUBPROTOCOL]);
     if upgrade.selected_protocol().is_none() {
-        let why = "the WebSocket asks for no protocol of this node's: octoii.1";
-        return Denied(StatusCode::BAD_REQUEST, why.into()).into_response();
+        return unversioned();
     }
-    upgrade.on_upgrade(move |socket| carried(node, session, socket))
+    upgrade.on_upgrade(move |socket: WebSocket| carried(node, session, socket))
+}
+
+/// The protocol's WebSocket in a tunnel session, by extended CONNECT, for the session the dialling key holds: its
+/// stream taken once the answer is sent.
+async fn tunnel_socket(
+    State(node): State<Node>,
+    headers: HeaderMap,
+    Extension(remote): Extension<Remote>,
+    Extension(connect): Extension<OnConnect>,
+) -> Response {
+    let session = match session(&node, &headers, Some(&remote)) {
+        Ok(session) => session,
+        Err(denied) => return denied.into_response(),
+    };
+    if !offers_protocol(&headers) {
+        return unversioned();
+    }
+    tokio::spawn(async move {
+        let Some(stream) = connect.stream().await else { return };
+        carried(node, session, octoii_tunnel::socket::server(stream).await).await;
+    });
+    ([(header::SEC_WEBSOCKET_PROTOCOL, SUBPROTOCOL)], StatusCode::OK).into_response()
+}
+
+/// A WebSocket's message, as the protocol reads and writes it, whichever WebSocket carries it.
+trait Frame: Send + 'static {
+    /// A message of what Siphon sends.
+    fn of(outgoing: Outgoing) -> Self;
+    /// What the message says: a call's text; that the socket closes; or nothing the protocol reads.
+    fn read(self) -> Read;
+}
+
+/// What a message read says.
+enum Read {
+    Text(String),
+    Closed,
+    Nothing,
+}
+
+impl Frame for ws::Message {
+    fn of(outgoing: Outgoing) -> Self {
+        match outgoing {
+            Outgoing::Text(text) => Self::Text(text.into()),
+            Outgoing::Binary(bytes) => Self::Binary(bytes),
+        }
+    }
+
+    fn read(self) -> Read {
+        match self {
+            Self::Text(text) => Read::Text(text.as_str().to_owned()),
+            Self::Close(_) => Read::Closed,
+            _ => Read::Nothing,
+        }
+    }
+}
+
+impl Frame for octoii_tunnel::Message {
+    fn of(outgoing: Outgoing) -> Self {
+        match outgoing {
+            Outgoing::Text(text) => Self::text(text),
+            Outgoing::Binary(bytes) => Self::binary(bytes),
+        }
+    }
+
+    fn read(self) -> Read {
+        match self {
+            Self::Text(text) => Read::Text(text.as_str().to_owned()),
+            Self::Close(_) => Read::Closed,
+            _ => Read::Nothing,
+        }
+    }
 }
 
 /// Carries the protocol over `socket` for the client of `session`: what it sends taken as calls, what Siphon sends it
 /// written as text and binary frames, till either side closes.
-async fn carried(node: Node, session: Shown, socket: WebSocket) {
+async fn carried<S, F, E>(node: Node, session: Shown, socket: S)
+where
+    S: Stream<Item = Result<F, E>> + Sink<F> + Send + 'static,
+    F: Frame,
+{
     let (mut writing, mut reading) = socket.split();
     let (calls, incoming) = mpsc::channel(OUTGOING_AHEAD);
     let (outgoing, mut sent) = mpsc::channel(OUTGOING_AHEAD);
@@ -121,24 +222,20 @@ async fn carried(node: Node, session: Shown, socket: WebSocket) {
     let serving = tokio::spawn(serve(node.siphon.clone(), client, node.machine.clone(), incoming, outgoing));
     let writer = tokio::spawn(async move {
         while let Some(message) = sent.recv().await {
-            let message = match message {
-                Outgoing::Text(text) => Message::Text(text.into()),
-                Outgoing::Binary(bytes) => Message::Binary(bytes),
-            };
-            if writing.send(message).await.is_err() {
+            if writing.send(F::of(message)).await.is_err() {
                 return;
             }
         }
     });
     while let Some(Ok(message)) = reading.next().await {
-        match message {
-            Message::Text(text) => {
-                if calls.send(text.as_str().to_owned()).await.is_err() {
+        match message.read() {
+            Read::Text(text) => {
+                if calls.send(text).await.is_err() {
                     break;
                 }
             }
-            Message::Close(_) => break,
-            _ => {}
+            Read::Closed => break,
+            Read::Nothing => {}
         }
     }
     drop(calls);
@@ -146,28 +243,40 @@ async fn carried(node: Node, session: Shown, socket: WebSocket) {
     writer.abort();
 }
 
-/// What a browser pairs by: the credential of a link.
+/// What a client pairs by: the credential of a link.
 #[derive(Debug, Deserialize)]
 struct Pairing {
     credential: String,
 }
 
-/// A browser paired by a link's credential: its session, held in an `HttpOnly` cookie its page cannot read, sent to this
-/// node's own pages alone.
-async fn pair(State(node): State<Node>, headers: HeaderMap, Json(pairing): Json<Pairing>) -> Result<Response, Denied> {
-    if foreign(&node, &headers) {
+/// A client paired by a link's credential: a device in a tunnel session, its session held by its key; a browser on the
+/// loopback, its session held in an `HttpOnly` cookie its page cannot read, sent to this node's own pages alone.
+async fn pair(
+    State(node): State<Node>,
+    headers: HeaderMap,
+    remote: Option<Extension<Remote>>,
+    Json(pairing): Json<Pairing>,
+) -> Result<Response, Denied> {
+    if remote.is_none() && foreign(&node, &headers) {
         return Err(Denied(StatusCode::FORBIDDEN, "a page of another origin".into()));
     }
-    let made = match node.access.redeem(&pairing.credential, Holder::Cookie, None).await {
+    let (holder, key) = match &remote {
+        Some(Extension(Remote(key))) => (Holder::Key, Some(key.to_string())),
+        None => (Holder::Cookie, None),
+    };
+    let made = match node.access.redeem(&pairing.credential, holder, key).await {
         Ok(made) => made,
         Err(access::Refused::NoSuchLink) => return Err(Denied(StatusCode::FORBIDDEN, "the link was used, or went".into())),
         Err(error) => return Err(Denied(StatusCode::INTERNAL_SERVER_ERROR, error.to_string())),
     };
+    let body = serde_json::json!({ "session": made.shown.id });
+    if remote.is_some() {
+        return Ok(Json(body).into_response());
+    }
     let cookie = format!(
         "{COOKIE}={}; HttpOnly; SameSite=Strict; Path=/; Max-Age={}",
         made.credential,
         access::SESSION_LASTS.as_secs()
     );
-    let body = serde_json::json!({ "session": made.shown.id });
     Ok(([(header::SET_COOKIE, cookie)], Json(body)).into_response())
 }

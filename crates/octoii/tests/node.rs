@@ -56,6 +56,7 @@ async fn a_browser_and_a_program_reach_the_node_by_the_sessions_its_commands_mak
         home: home.clone(),
         port: 0,
         app: None,
+        relays: Vec::new(),
     };
     let node = tokio::spawn(serve_until(served, async move { stopping.cancelled().await }));
     let socket = home.socket();

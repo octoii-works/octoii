@@ -1,7 +1,8 @@
 //! `octoii serve`: Siphon and its core plugins on this computer — the volume in the Home, the providers' keys from the
 //! credstore and the login environment, the machine as the person's own with what the node keeps for itself hidden
-//! from it — served to clients on the loopback address, and its control socket opened to the node's commands, till it
-//! is asked to stop: then every listener closes, and Siphon with them.
+//! from it — served to clients on the loopback address and to the devices that reach the node by its key through the
+//! tunnel, at home on its relays, and its control socket opened to the node's commands, till it is asked to stop:
+//! then every listener closes, the tunnel's sessions with them, and Siphon last.
 
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
@@ -23,12 +24,14 @@ use crate::credentials::Credstore;
 use crate::home::Home;
 use crate::http::{self, Node};
 
-/// What the node is served with: its Home, the loopback port, and the web app's folder.
+/// What the node is served with: its Home, the loopback port, the web app's folder, and the relays its tunnel is at
+/// home on — none, reached directly alone.
 #[derive(Debug, Clone)]
 pub struct Served {
     pub home: Home,
     pub port: u16,
     pub app: Option<PathBuf>,
+    pub relays: Vec<octoii_tunnel::RelayUrl>,
 }
 
 /// The providers the node reaches models through.
@@ -112,9 +115,19 @@ pub async fn serve(served: Served) -> anyhow::Result<()> {
 /// # Errors
 /// Where its Home cannot be made, its volume opened, or its listeners bound.
 pub async fn serve_until(served: Served, stop: impl Future<Output = ()> + Send + 'static) -> anyhow::Result<()> {
-    let Served { home, port, app } = served;
+    let Served { home, port, app, relays } = served;
     home.prepare().context("the Home")?;
     let siphon = siphon(&home)?;
+    let key = octoii_tunnel::key::load_or_make(&home.key()).context("the node's key")?;
+    let relays = relays
+        .into_iter()
+        .map(|relay| octoii_tunnel::RelayConfig::new(relay, None))
+        .collect();
+    let tunnel = octoii_tunnel::Tunnel::builder(key)
+        .relays(relays)
+        .bind()
+        .await
+        .context("the tunnel")?;
     let listener = tokio::net::TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, port)))
         .await
         .with_context(|| format!("the loopback port {port}"))?;
@@ -141,7 +154,10 @@ pub async fn serve_until(served: Served, stop: impl Future<Output = ()> + Send +
         node: node.clone(),
         loopback: loopback.clone(),
         home: home.root().to_owned(),
+        tunnel: tunnel.clone(),
     };
+    let (serving, router) = (tunnel.clone(), http::router(node.clone()));
+    tokio::spawn(async move { serving.serve(router).await });
     tracing::info!(%loopback, "serving");
     let stopping = tokio_util::sync::CancellationToken::new();
     let (stop_loopback, stop_control) = (stopping.clone(), stopping.clone());
@@ -154,6 +170,7 @@ pub async fn serve_until(served: Served, stop: impl Future<Output = ()> + Send +
     });
     let (served, controlled) = tokio::join!(loopback_served.into_future(), control_served.into_future());
     let _ = std::fs::remove_file(&socket);
+    tunnel.close().await;
     siphon.runtime.close().await;
     served.context("the loopback")?;
     controlled.context("the control socket")?;

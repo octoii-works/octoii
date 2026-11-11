@@ -19,12 +19,13 @@ use siphon_protocol::Scope;
 use crate::access::{self, Refused};
 use crate::http::Node;
 
-/// What the control socket serves with: the node, the address of its loopback, and its Home's folder.
+/// What the control socket serves with: the node, the address of its loopback, its Home's folder, and its tunnel.
 #[derive(Debug, Clone)]
 pub struct Control {
     pub node: Node,
     pub loopback: String,
     pub home: std::path::PathBuf,
+    pub tunnel: octoii_tunnel::Tunnel,
 }
 
 /// What a link or a session is asked with: its label, and what it grants — everything, where none is given.
@@ -77,13 +78,19 @@ async fn token(State(control): State<Control>, Json(asked): Json<Asked>) -> Resp
     }
 }
 
-/// How the node stands: its version, its Home, its machine and its loopback's address.
+/// How the node stands: its version, its Home, its machine and its loopback's address; the key devices reach it by,
+/// its home relay, where it is seen from outside.
 async fn status(State(control): State<Control>) -> Response {
+    let addr = control.tunnel.addr();
+    let relay = addr.relay_urls().next().map(ToString::to_string);
     Json(json!({
         "version": env!("CARGO_PKG_VERSION"),
         "home": control.home,
         "machine": control.node.machine.name,
         "loopback": control.loopback,
+        "key": control.tunnel.key().to_string(),
+        "relay": relay,
+        "seen_from_outside": control.tunnel.seen_from_outside(),
     }))
     .into_response()
 }
