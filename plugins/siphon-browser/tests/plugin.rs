@@ -68,9 +68,22 @@ async fn a_page_is_opened_listed_painted_and_worked_by_the_person() {
         .await;
     assert_eq!(client.answer(&id).await["result"], json!({}));
     client.event(&pages, |event| event["pages"][0]["title"] == "Moved").await;
+    // Its history goes back from where it went, and nowhere forward; and it is told loading no more once it loaded.
+    client
+        .event(&pages, |event| {
+            let listed = &event["pages"][0];
+            listed["back"] == true && listed["forward"] == false && listed["loading"] == false
+        })
+        .await;
     let id = client.call("browser.back", json!({ "page": page })).await;
     client.answer(&id).await;
     client.event(&pages, |event| event["pages"][0]["title"] == "Hello").await;
+    // Back where it began, its history goes forward again — and back still, to the blank page it was opened on.
+    client
+        .event(&pages, |event| {
+            event["pages"][0]["back"] == true && event["pages"][0]["forward"] == true
+        })
+        .await;
     let id = client.call("browser.close", json!({ "page": page })).await;
     client.answer(&id).await;
     client.event(&pages, |event| event["pages"] == json!([])).await;

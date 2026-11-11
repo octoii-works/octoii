@@ -603,9 +603,10 @@ export type PageDialog = { kind: string, message: string, offered: string, };
 export type PageKey = { pressed: boolean, key: string, code: string, text?: string, modifiers: number, key_code: number, commands: Array<string>, };
 
 /**
- * A page of a thread's: its id, where it is and what it is called, its view, and the dialog that holds it.
+ * A page of a thread's: its id, where it is and what it is called, its view, the dialog that holds it, whether it
+ * loads, and whether its history goes back and forward from where it is.
  */
-export type PageListed = { id: string, url: string, title: string, view: View, dialog?: PageDialog, };
+export type PageListed = { id: string, url: string, title: string, view: View, dialog?: PageDialog, loading: boolean, back: boolean, forward: boolean, };
 
 /**
  * The mouse over a page, at a point of its CSS pixels: what it did, the button pressed or let go, the buttons held

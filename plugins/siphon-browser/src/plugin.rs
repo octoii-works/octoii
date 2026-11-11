@@ -171,6 +171,9 @@ fn listed(view: PageView) -> PageListed {
             message: dialog.message,
             offered: dialog.offered,
         }),
+        loading: view.loading,
+        back: view.back,
+        forward: view.forward,
     }
 }
 

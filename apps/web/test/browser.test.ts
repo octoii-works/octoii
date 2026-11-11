@@ -20,7 +20,7 @@ describe("the address bar", () => {
 });
 
 describe("a page on its tab", () => {
-	const page = { id: "p", url: "https://docs.example.com/a", title: "", view: { width: 800, height: 600 } };
+	const page = { id: "p", url: "https://docs.example.com/a", title: "", view: { width: 800, height: 600 }, loading: false, back: false, forward: false };
 	it("is named by its title, else its host, else New tab", () => {
 		expect(pageName({ ...page, title: "Docs" })).toBe("Docs");
 		expect(pageName(page)).toBe("docs.example.com");

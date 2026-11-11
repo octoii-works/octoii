@@ -79,7 +79,8 @@ pub struct Message {
     pub number: u64,
 }
 
-/// A page as a list of a thread's shows it.
+/// A page as a list of a thread's shows it: whether it loads, and whether its history goes back and forward from where
+/// it is.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PageView {
     pub id: String,
@@ -88,6 +89,9 @@ pub struct PageView {
     pub title: String,
     pub size: Size,
     pub dialog: Option<Dialog>,
+    pub loading: bool,
+    pub back: bool,
+    pub forward: bool,
 }
 
 /// A frame of a page as the browser painted it: JPEG, its size in device pixels, and its number among the page's.
@@ -389,6 +393,11 @@ struct Page {
     /// Where it is to go once its target is set up.
     going: Option<String>,
     dialog: Option<Dialog>,
+    /// Whether its main frame loads, as the browser tells of it.
+    loading: bool,
+    /// Whether its history goes back and forward from where it is, as the browser told of it last.
+    back: bool,
+    forward: bool,
     frame: Option<Frame>,
     messages: VecDeque<Message>,
     heard: u64,
@@ -564,6 +573,27 @@ impl Owner {
         self.pages.iter_mut().find(|page| page.id == id)
     }
 
+    /// Asks the browser where the history of the page `id` goes from where it is — back where it has entries before, forward
+    /// where after — kept and told where it changed.
+    async fn history(&mut self, id: &str) {
+        let (Some(running), Some(session)) = (&self.running, self.page(id).and_then(|page| page.session.clone())) else {
+            return;
+        };
+        let Ok(history) = running.cdp.call(Some(&session), "Page.getNavigationHistory", json!({})).await else {
+            return;
+        };
+        let at = history["currentIndex"].as_i64().unwrap_or_default();
+        let entries = history["entries"].as_array().map_or(0, Vec::len);
+        let (back, forward) = (at > 0, usize::try_from(at + 1).is_ok_and(|next| next < entries));
+        let Some(page) = self.page_mut(id) else { return };
+        if (page.back, page.forward) == (back, forward) {
+            return;
+        }
+        (page.back, page.forward) = (back, forward);
+        let thread = page.thread.clone();
+        self.told(&thread);
+    }
+
     fn told(&self, thread: &str) {
         let _ = self.events.send(Change::Pages { thread: thread.to_owned() });
     }
@@ -600,6 +630,9 @@ impl Owner {
             session: None,
             going: url,
             dialog: None,
+            loading: false,
+            back: false,
+            forward: false,
             frame: None,
             messages: VecDeque::new(),
             heard: 0,
@@ -720,10 +753,11 @@ impl Owner {
                 else {
                     return;
                 };
-                // Its address as the browser tells it; its title as its own watch does.
+                // Its address as the browser tells it; its title as its own watch does; where its history goes, asked anew.
                 page.url.clone_from(&info.url);
-                let thread = page.thread.clone();
+                let (id, thread) = (page.id.clone(), page.thread.clone());
                 self.told(&thread);
+                self.history(&id).await;
             }
             CdpEvent::TargetDetachedFromTarget(event) => {
                 for page in &mut self.pages {
@@ -812,18 +846,7 @@ impl Owner {
         };
         match event {
             CdpEvent::PageScreencastFrame(frame) => {
-                let jpeg = base64::engine::general_purpose::STANDARD
-                    .decode(AsRef::<str>::as_ref(&frame.data))
-                    .unwrap_or_default();
-                let number = page.frame.as_ref().map_or(1, |frame| frame.number + 1);
-                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-                let (width, height) = (frame.metadata.device_width as u32, frame.metadata.device_height as u32);
-                page.frame = Some(Frame {
-                    jpeg: jpeg.into(),
-                    width,
-                    height,
-                    number,
-                });
+                let number = painted(page, &frame);
                 let id = page.id.clone();
                 if let Some(running) = &self.running {
                     let _ = running
@@ -865,6 +888,16 @@ impl Owner {
             }
             CdpEvent::RuntimeBindingCalled(called) if called.name == TITLE_BINDING => {
                 page.title.clone_from(&called.payload);
+                let thread = page.thread.clone();
+                self.told(&thread);
+            }
+            CdpEvent::PageFrameStartedLoading(started) if page.target.as_deref() == Some(started.frame_id.as_ref()) => {
+                page.loading = true;
+                let thread = page.thread.clone();
+                self.told(&thread);
+            }
+            CdpEvent::PageFrameStoppedLoading(stopped) if page.target.as_deref() == Some(stopped.frame_id.as_ref()) => {
+                page.loading = false;
                 let thread = page.thread.clone();
                 self.told(&thread);
             }
@@ -959,6 +992,9 @@ impl Owner {
                 session: None,
                 going: None,
                 dialog: None,
+                loading: false,
+                back: false,
+                forward: false,
                 frame: None,
                 messages: VecDeque::new(),
                 heard: 0,
@@ -1000,6 +1036,23 @@ fn keep(page: &mut Page, level: String, text: &str) {
     }
 }
 
+/// Keeps `frame` as the page's newest, as the browser painted it: its number among the page's.
+fn painted(page: &mut Page, frame: &chromiumoxide_cdp::cdp::browser_protocol::page::EventScreencastFrame) -> u64 {
+    let jpeg = base64::engine::general_purpose::STANDARD
+        .decode(AsRef::<str>::as_ref(&frame.data))
+        .unwrap_or_default();
+    let number = page.frame.as_ref().map_or(1, |frame| frame.number + 1);
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let (width, height) = (frame.metadata.device_width as u32, frame.metadata.device_height as u32);
+    page.frame = Some(Frame {
+        jpeg: jpeg.into(),
+        width,
+        height,
+        number,
+    });
+    number
+}
+
 fn view(page: &Page) -> PageView {
     PageView {
         id: page.id.clone(),
@@ -1008,6 +1061,9 @@ fn view(page: &Page) -> PageView {
         title: page.title.clone(),
         size: page.size,
         dialog: page.dialog.clone(),
+        loading: page.loading,
+        back: page.back,
+        forward: page.forward,
     }
 }
 

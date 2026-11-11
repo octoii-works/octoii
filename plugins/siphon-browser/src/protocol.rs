@@ -168,7 +168,8 @@ pub struct PageDialog {
     pub offered: String,
 }
 
-/// A page of a thread's: its id, where it is and what it is called, its view, and the dialog that holds it.
+/// A page of a thread's: its id, where it is and what it is called, its view, the dialog that holds it, whether it
+/// loads, and whether its history goes back and forward from where it is.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 pub struct PageListed {
     pub id: String,
@@ -178,6 +179,9 @@ pub struct PageListed {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub dialog: Option<PageDialog>,
+    pub loading: bool,
+    pub back: bool,
+    pub forward: bool,
 }
 
 /// What a client subscribes to of the browser's: a thread's pages, or a page as it is painted.
