@@ -308,3 +308,68 @@ async fn what_a_project_was_granted_is_listed_and_taken_back_in_part() {
     assert_eq!(listed[0]["grants"]["commands"], json!(["cargo test *"]), "taken back in part");
     siphon.runtime.close().await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_thread_goes_on_at_a_time_as_its_status_tells_and_its_window_is_told_part_by_part() {
+    let beak = Beak::new().expect("Beak");
+    let siphon = siphon(&beak);
+    let mut client = Client::connect(&siphon, ALL.to_vec(), 64);
+    client.message().await;
+    let id = client.call("threads.create", json!({ "config": {}, "key": "k1" })).await;
+    let thread = client.answer(&id).await["result"]["thread"].as_str().expect("an id").to_owned();
+    let id = client
+        .call("subscribe", json!({ "topic": { "type": "thread", "thread": thread } }))
+        .await;
+    let followed = client.answer(&id).await["result"]["subscription"]
+        .as_str()
+        .expect("an id")
+        .to_owned();
+    let first = client.event(&followed, |event| event["event"] == "status").await.0;
+    assert_eq!(
+        (first["status"]["compacting"].as_bool(), first["status"].get("resuming_at")),
+        (Some(false), None)
+    );
+
+    let at = 4_102_444_800_000_i64;
+    let id = client.call("threads.resume", json!({ "thread": thread, "at": at })).await;
+    assert_eq!(client.answer(&id).await["result"], json!({}));
+    client
+        .event(&followed, |event| {
+            event["event"] == "status" && event["status"]["resuming_at"] == at
+        })
+        .await;
+    let id = client.call("threads.resume", json!({ "thread": thread })).await;
+    client.answer(&id).await;
+    client
+        .event(&followed, |event| {
+            event["event"] == "status" && event["status"].get("resuming_at").is_none()
+        })
+        .await;
+
+    let id = client
+        .call(
+            "threads.deliver",
+            json!({ "thread": thread, "content": [{ "type": "input_text", "text": "hello" }], "key": "d1" }),
+        )
+        .await;
+    client.answer(&id).await;
+    client
+        .event(&followed, |event| {
+            event["event"] == "entries"
+                && event["entries"]
+                    .as_array()
+                    .is_some_and(|entries| entries.iter().any(|entry| entry["type"] == "input"))
+        })
+        .await;
+    let id = client.call("threads.context", json!({ "thread": thread })).await;
+    let composition = client.answer(&id).await["result"].clone();
+    let parts: Vec<&str> = composition["parts"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|share| share["part"].as_str())
+        .collect();
+    assert!(parts.contains(&"messages"), "{composition}");
+    assert!(composition["tokens"].as_u64().is_some_and(|tokens| tokens > 0), "{composition}");
+    siphon.runtime.close().await;
+}

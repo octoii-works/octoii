@@ -3,6 +3,7 @@
 //! its sub-threads; and the second model that judges its calls in auto.
 
 pub mod compaction;
+pub mod context;
 pub mod delegate;
 pub mod gather;
 pub mod model;
@@ -16,6 +17,7 @@ pub mod told;
 pub mod turn;
 
 pub use compaction::{CompactInput, CompactProgram};
+pub use context::{Composition, ContextPart, Share};
 pub use delegate::{DelegateArgs, DelegateProgram, DelegateTool, DelegatedProgram};
 pub use gather::{Gather, Sources, Teller, Telling, answer_gather};
 pub use model::{ModelRequest, Streamed, answer_model};

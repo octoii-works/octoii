@@ -23,6 +23,12 @@ pub const PARENT_CALL_ANNOTATION: &str = "siphon.parent_call";
 /// The key of a thread's main process.
 pub const MAIN_KEY: &str = "main";
 
+/// The key of a thread's compaction, a process under its main process: one at a time.
+pub const COMPACTION_KEY: &str = "compact";
+
+/// The key of a thread's resume, a process under its main process that sleeps till the thread goes on.
+pub const RESUME_KEY: &str = "resume";
+
 /// The kind of a thread's turn, a process under its main process — which a stop of the thread asks to stop, and
 /// nothing else beside it.
 pub const TURN_KIND: &str = "siphon.turn";

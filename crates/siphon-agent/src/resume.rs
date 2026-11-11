@@ -43,7 +43,7 @@ impl ResumeInput {
 pub struct ResumeProgram;
 
 impl ResumeProgram {
-    pub const KEY: &'static str = "resume";
+    pub const KEY: &'static str = thread::RESUME_KEY;
 }
 
 /// Why a resume was not armed.

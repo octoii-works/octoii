@@ -142,7 +142,7 @@ pub enum CompactState {
 pub struct CompactProgram;
 
 impl CompactProgram {
-    pub const KEY: &'static str = "compact";
+    pub const KEY: &'static str = thread::COMPACTION_KEY;
 }
 
 /// The path of the compaction of the thread `id`.

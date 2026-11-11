@@ -100,6 +100,11 @@ export type Commits = { commits: Array<Commit>, truncated: boolean, };
 export type Comparison = { old: string, new?: string, };
 
 /**
+ * What fills a window: its tokens, and each part's share of them — those that hold none left out.
+ */
+export type Composition = { tokens: number, parts: Array<Share>, };
+
+/**
  * How a thread runs: each setting, or none where it has none.
  */
 export type Config = { 
@@ -148,6 +153,11 @@ export type ConnectionEvent = { "event": "welcome", session: string, scopes: Arr
  * machine, signed in to on its own; or as a server of the person's.
  */
 export type Connects = "api_key" | "sign_in" | "agent" | "server";
+
+/**
+ * What holds a share of a window.
+ */
+export type ContextPart = "system" | "instructions" | "skills" | "catalog" | "tools" | "recap" | "messages" | "replies" | "results";
 
 export type CreateThread = { config: Config, key: string, };
 
@@ -712,6 +722,11 @@ context_tokens?: number | null, };
 export type ResponseStatus = "in_progress" | "completed" | "incomplete" | "failed";
 
 /**
+ * A thread going on at `at`, in milliseconds since the epoch; none to let go of the time it goes on at.
+ */
+export type ResumeThread = { thread: string, at?: number, };
+
+/**
  * What was revoked: a session, or a link.
  */
 export type Revoked = { revoked: string, };
@@ -757,6 +772,11 @@ export type Settings = { environment: Environment, device: JsonValue, };
 export type SettingsChange = { environment?: EnvironmentChange | null, device?: JsonValue | null, };
 
 /**
+ * A part's share of a window, in tokens.
+ */
+export type Share = { part: ContextPart, tokens: number, };
+
+/**
  * A server as the person is shown it: its name, and what it runs, or where it is reached.
  */
 export type ShownServer = { name: string, runs: string, };
@@ -790,7 +810,15 @@ export type Status = { turn: Turn, began_at?: number | null, ended_at?: number |
 /**
  * What waits in its inbox, by its id, in the order it came.
  */
-inbox: Array<[string, Inbound]>, asks: Array<Ask>, };
+inbox: Array<[string, Inbound]>, asks: Array<Ask>, 
+/**
+ * Whether it compacts its window now.
+ */
+compacting: boolean, 
+/**
+ * When it goes on, where the person asked it to at a time and it has not gone on since.
+ */
+resuming_at?: number | null, };
 
 /**
  * What streams of a reply as it is written, as the thread's followers are told it: an item begun at its place in the
@@ -944,6 +972,9 @@ export type Methods = {
   'threads.delete': { params: OfThread; result: Nothing };
   'threads.answer': { params: AnswerThread; result: Nothing };
   'threads.read': { params: ReadThread; result: ThreadRead };
+  'threads.context': { params: OfThread; result: Composition };
+  'threads.compact': { params: OfThread; result: Nothing };
+  'threads.resume': { params: ResumeThread; result: Nothing };
   'files.list': { params: ListFolder; result: FolderPage };
   'files.read': { params: ReadFile; result: FilePage };
   'files.search': { params: SearchFiles; result: FoundPaths };

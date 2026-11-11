@@ -138,6 +138,11 @@ pub struct Status {
     /// What waits in its inbox, by its id, in the order it came.
     pub inbox: Vec<(String, inbox::Inbound)>,
     pub asks: Vec<Ask>,
+    /// Whether it compacts its window now.
+    pub compacting: bool,
+    /// When it goes on, where the person asked it to at a time and it has not gone on since.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resuming_at: Option<i64>,
 }
 
 /// Where a sub-thread came from: the thread that delegated it, and its call that did, by the model's id of it.
@@ -206,6 +211,10 @@ fn status(runtime: &Runtime, snapshot: &Snapshot, id: &str, directory: &Director
         .into_iter()
         .map(|Waiting { id, inbound }| (id, inbound))
         .collect();
+    let running = |key: &str| -> Result<Option<beak::Record>, Error> {
+        let record = snapshot.record(&beak::layout::process(&thread::main(id), key.as_bytes()))?;
+        Ok(record.filter(|record| record.outcome.is_none()))
+    };
     Ok(Status {
         turn,
         began_at: time(directory, BEGAN_AT_ANNOTATION),
@@ -213,6 +222,8 @@ fn status(runtime: &Runtime, snapshot: &Snapshot, id: &str, directory: &Director
         usage,
         inbox,
         asks: asks(runtime, snapshot, id)?,
+        compacting: running(thread::COMPACTION_KEY)?.is_some(),
+        resuming_at: running(thread::RESUME_KEY)?.and_then(|record| record.waits_until),
     })
 }
 

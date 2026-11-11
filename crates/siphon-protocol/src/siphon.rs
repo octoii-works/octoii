@@ -3,6 +3,7 @@
 
 use octoii_ai::vocabulary::InputContent;
 use serde::{Deserialize, Serialize};
+use siphon_agent::Composition;
 use siphon_machine::git::{ChangedFile, Changes, ChangesScope, Commit, Comparison, Repository};
 use siphon_settings::{Environment, SettingsChange};
 use siphon_threads::log::Cursor;
@@ -33,6 +34,12 @@ crate::methods! {
     "threads.answer" AnswerThread(AnswerThread) -> Nothing, Some(Scope::ThreadsOperate);
     /// A page of a thread's entries, the latest before an entry, or the latest of all.
     "threads.read" ReadThread(ReadThread) -> ThreadRead, Some(Scope::ThreadsRead);
+    /// What fills a thread's window: the tokens its next request takes, and each part's share of them.
+    "threads.context" ThreadContext(OfThread) -> Composition, Some(Scope::ThreadsRead);
+    /// A thread's window compacted now, where it is not compacting already.
+    "threads.compact" CompactThread(OfThread) -> Nothing, Some(Scope::ThreadsOperate);
+    /// A thread going on at a time, unless the person goes on first; or not, where no time is given.
+    "threads.resume" ResumeThread(ResumeThread) -> Nothing, Some(Scope::ThreadsOperate);
     /// A page of a folder of the machine's: its entries in order by name, after the one named, each with whether git
     /// leaves it out.
     "files.list" ListFolder(ListFolder) -> FolderPage, Some(Scope::FilesRead);
@@ -144,6 +151,15 @@ pub struct AnswerThread {
     pub thread: String,
     pub key: String,
     pub answer: serde_json::Value,
+}
+
+/// A thread going on at `at`, in milliseconds since the epoch; none to let go of the time it goes on at.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct ResumeThread {
+    pub thread: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub at: Option<i64>,
 }
 
 /// A page of a thread's entries: at most `limit`, the latest before the entry `before`, or the latest of all.

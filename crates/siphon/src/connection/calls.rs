@@ -126,6 +126,24 @@ async fn threads_answered(siphon: &Siphon, method: Method) -> Result<serde_json:
             json(&Nothing {})
         }
         Method::ReadThread(read) => json(&read_thread(siphon, &read.thread, read.before.as_deref(), read.limit)?),
+        Method::ThreadContext(of) => {
+            let snapshot = siphon.runtime.snapshot().map_err(|error| refusal("failed", &error.to_string()))?;
+            threads.listed(&of.thread).map_err(|error| failed(&error))?;
+            let window = siphon_threads::Window::read(&snapshot, &of.thread).map_err(|error| refusal("failed", &error.to_string()))?;
+            json(&siphon_agent::context::composition(&window))
+        }
+        Method::CompactThread(of) => {
+            threads.listed(&of.thread).map_err(|error| failed(&error))?;
+            let snapshot = siphon.runtime.snapshot().map_err(|error| refusal("failed", &error.to_string()))?;
+            let mut changes = siphon_runtime::Changes::new();
+            siphon_agent::compaction::start(&snapshot, &mut changes, &of.thread).map_err(|error| refusal("failed", &error.to_string()))?;
+            commit(siphon, changes).await?;
+            json(&Nothing {})
+        }
+        Method::ResumeThread(resume) => {
+            resume_thread(siphon, &resume.thread, resume.at).await?;
+            json(&Nothing {})
+        }
         _ => Err(refusal("bad_call", "no method of the threads'")),
     }
 }
@@ -143,6 +161,31 @@ fn read_thread(siphon: &Siphon, thread: &str, before: Option<&str>, limit: u32) 
         .map_err(|error| refusal("failed", &error.to_string()))?;
     let end = log::end(&snapshot, thread).map_err(|error| refusal("failed", &error.to_string()))?;
     Ok(ThreadRead { entries, complete, end })
+}
+
+/// Has the thread `thread` go on at `at`, unless the person goes on first — the time it went on at before let go of —
+/// or at no time, where `at` is none.
+async fn resume_thread(siphon: &Siphon, thread: &str, at: Option<i64>) -> Result<(), Error> {
+    siphon.threads.listed(thread).map_err(|error| failed(&error))?;
+    let mut changes = siphon_runtime::Changes::new();
+    siphon_agent::resume::disarm(&mut changes, thread);
+    commit(siphon, changes).await?;
+    let Some(at) = at else { return Ok(()) };
+    let snapshot = siphon.runtime.snapshot().map_err(|error| refusal("failed", &error.to_string()))?;
+    let input = siphon_agent::ResumeInput::now(&snapshot, thread, at, PERSON).map_err(|error| refusal("failed", &error.to_string()))?;
+    let mut changes = siphon_runtime::Changes::new();
+    siphon_agent::resume::arm(&snapshot, &mut changes, &input).map_err(|error| refusal("failed", &error.to_string()))?;
+    commit(siphon, changes).await
+}
+
+/// Commits `changes` to Siphon's volume.
+async fn commit(siphon: &Siphon, changes: siphon_runtime::Changes) -> Result<(), Error> {
+    siphon
+        .runtime
+        .commit(changes)
+        .await
+        .map(|_| ())
+        .map_err(|error| refusal("failed", &error.to_string()))
 }
 
 /// Why an operation on threads was not done, as a client is told.
