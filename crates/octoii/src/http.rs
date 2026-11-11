@@ -95,18 +95,16 @@ fn credential(headers: &HeaderMap) -> Option<String> {
         .map(|(_, value)| value.to_owned())
 }
 
-/// The session a request of `headers` holds — of the key `remote`, where it came in a tunnel session: its bearer
-/// token or its cookie, else the session the key holds.
+/// The session a request of `headers` holds — by its bearer token or its cookie; `remote` where it came in a tunnel
+/// session, where no page of another origin is to be feared.
 pub(crate) fn session(node: &Node, headers: &HeaderMap, remote: Option<&Remote>) -> Result<AccessEntry, Denied> {
     if remote.is_none() && foreign(node, headers) {
         return Err(Denied(StatusCode::FORBIDDEN, "a page of another origin".into()));
     }
-    let held = match (credential(headers), remote) {
-        (Some(credential), _) => node.access.held(&credential),
-        (None, Some(Remote(key))) => node.access.held_by_key(&key.to_string()),
-        (None, None) => return Err(Denied(StatusCode::UNAUTHORIZED, "no session".into())),
+    let Some(credential) = credential(headers) else {
+        return Err(Denied(StatusCode::UNAUTHORIZED, "no session".into()));
     };
-    match held {
+    match node.access.held(&credential) {
         Ok(Some(session)) => Ok(session),
         Ok(None) => Err(Denied(StatusCode::UNAUTHORIZED, "no such session".into())),
         Err(error) => Err(Denied(StatusCode::INTERNAL_SERVER_ERROR, error.to_string())),
@@ -141,7 +139,7 @@ async fn socket(State(node): State<Node>, headers: HeaderMap, upgrade: WebSocket
     upgrade.on_upgrade(move |socket: WebSocket| carried(node, session, socket))
 }
 
-/// The protocol's WebSocket in a tunnel session, by extended CONNECT, for the session the dialling key holds: its
+/// The protocol's WebSocket in a tunnel session, by extended CONNECT, for the session its bearer token holds: its
 /// stream taken once the answer is sent.
 async fn tunnel_socket(
     State(node): State<Node>,
@@ -281,8 +279,9 @@ struct Pairing {
     credential: String,
 }
 
-/// A client paired by a link's credential: a device in a tunnel session, its session held by its key; a browser on the
-/// loopback, its session held in an `HttpOnly` cookie its page cannot read, sent to this node's own pages alone.
+/// A client paired by a link's credential: a device in a tunnel session, given its session's credential to send as a
+/// bearer token; a browser on the loopback, its session held in an `HttpOnly` cookie its page cannot read, sent to this
+/// node's own pages alone.
 async fn pair(
     State(node): State<Node>,
     headers: HeaderMap,
@@ -292,23 +291,23 @@ async fn pair(
     if remote.is_none() && foreign(&node, &headers) {
         return Err(Denied(StatusCode::FORBIDDEN, "a page of another origin".into()));
     }
-    let (holder, key) = match &remote {
-        Some(Extension(Remote(key))) => (Holder::Key, Some(key.to_string())),
-        None => (Holder::Cookie, None),
-    };
-    let made = match node.access.redeem(&pairing.credential, holder, key).await {
+    let holder = if remote.is_some() { Holder::Bearer } else { Holder::Cookie };
+    let made = match node.access.redeem(&pairing.credential, holder).await {
         Ok(made) => made,
         Err(access::Refused::NoSuchLink) => return Err(Denied(StatusCode::FORBIDDEN, "the link was used, or went".into())),
         Err(error) => return Err(Denied(StatusCode::INTERNAL_SERVER_ERROR, error.to_string())),
     };
-    let body = serde_json::json!({ "session": made.shown.id });
-    if remote.is_some() {
-        return Ok(Json(body).into_response());
+    if holder == Holder::Bearer {
+        return Ok(Json(serde_json::json!({ "session": made.shown.id, "credential": made.credential })).into_response());
     }
     let cookie = format!(
         "{COOKIE}={}; HttpOnly; SameSite=Strict; Path=/; Max-Age={}",
         made.credential,
         access::SESSION_LASTS.as_secs()
     );
-    Ok(([(header::SET_COOKIE, cookie)], Json(body)).into_response())
+    Ok((
+        [(header::SET_COOKIE, cookie)],
+        Json(serde_json::json!({ "session": made.shown.id })),
+    )
+        .into_response())
 }

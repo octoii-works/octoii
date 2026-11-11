@@ -1,6 +1,6 @@
 //! A device reaching the node through a relay, by the node's key, over HTTP/3 in its tunnel session: refused the
-//! protocol till it pairs; paired by a link's credential for a session its key holds, once; then welcomed on the
-//! protocol's WebSocket, opened by extended CONNECT, with nothing but its key.
+//! protocol till it pairs; paired by a link's credential, once, for a session's credential it sends as a bearer token;
+//! then welcomed on the protocol's WebSocket, opened by extended CONNECT with that token.
 
 use ::http::Request;
 use bytes::Bytes;
@@ -21,12 +21,14 @@ async fn place(relay: &net::RelayUrl) -> Tunnel {
         .expect("bound")
 }
 
-/// The protocol's WebSocket at the peer, opened with the protocol's version: the first message it is sent.
-async fn welcomed(peer: &octoii_tunnel::Peer) -> Result<Value, PeerError> {
-    let head = Request::builder()
-        .header("sec-websocket-protocol", "octoii.1")
-        .body(())
-        .expect("a head");
+/// The protocol's WebSocket at the peer, opened with the protocol's version and `bearer` where it is given: the first
+/// message it is sent.
+async fn welcomed(peer: &octoii_tunnel::Peer, bearer: Option<&str>) -> Result<Value, PeerError> {
+    let mut head = Request::builder().header("sec-websocket-protocol", "octoii.1");
+    if let Some(bearer) = bearer {
+        head = head.header("authorization", format!("Bearer {bearer}"));
+    }
+    let head = head.body(()).expect("a head");
     let stream = peer.websocket("/ws", head).await?;
     let mut socket = octoii_tunnel::socket::client(stream).await;
     let Some(Ok(Message::Text(text))) = futures_util::StreamExt::next(&mut socket).await else {
@@ -36,7 +38,7 @@ async fn welcomed(peer: &octoii_tunnel::Peer) -> Result<Value, PeerError> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_device_pairs_through_the_tunnel_by_its_key_and_speaks_the_protocol_with_nothing_else() {
+async fn a_device_pairs_through_the_tunnel_and_speaks_the_protocol_by_its_bearer_token() {
     let (_map, relay, _server) = run_relay_server().await.expect("a relay");
     let folder = tempfile::tempdir().expect("a folder");
     let home = Home::at(folder.path());
@@ -62,7 +64,7 @@ async fn a_device_pairs_through_the_tunnel_by_its_key_and_speaks_the_protocol_wi
         .await
         .expect("reached");
     assert!(
-        matches!(welcomed(&peer).await, Err(PeerError::Refused(status)) if status == 401),
+        matches!(welcomed(&peer, None).await, Err(PeerError::Refused(status)) if status == 401),
         "no session till it pairs"
     );
 
@@ -78,16 +80,23 @@ async fn a_device_pairs_through_the_tunnel_by_its_key_and_speaks_the_protocol_wi
     assert_eq!(paired.status(), 200);
     assert!(
         paired.headers().get("set-cookie").is_none(),
-        "a device holds its session by its key, not a cookie"
+        "a device holds its session as a bearer token, not a cookie"
     );
+    let given: Value = serde_json::from_slice(paired.body()).expect("JSON");
+    let credential = given["credential"].as_str().expect("its credential");
     assert_eq!(peer.request(pairing).await.expect("answered").status(), 403, "a link pairs once");
+    assert!(
+        matches!(welcomed(&peer, None).await, Err(PeerError::Refused(status)) if status == 401),
+        "its key alone holds nothing"
+    );
 
-    let welcome = welcomed(&peer).await.expect("welcomed");
+    let welcome = welcomed(&peer, Some(credential)).await.expect("welcomed");
     assert_eq!(
         (welcome["event"].as_str(), welcome["scopes"].as_array().map(Vec::len)),
         (Some("welcome"), Some(8))
     );
-    let session = access.held_by_key(&device.key().to_string()).expect("read").expect("its session");
+    let session = access.held(credential).expect("read").expect("its session");
+    assert_eq!(session.holder, Some(access::Holder::Bearer));
     assert_eq!(welcome["session"].as_str(), Some(session.id.as_str()));
     device.close().await;
     machine.close().await;

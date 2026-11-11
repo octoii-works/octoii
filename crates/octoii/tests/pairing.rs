@@ -44,7 +44,7 @@ async fn the_access_is_listed_paired_and_revoked_through_the_protocol() {
     );
     assert!(made.get("device").is_none(), "no device link without a home relay");
     let credential = made["credential"].as_str().expect("a credential");
-    let paired = access.redeem(credential, Holder::Cookie, None).await.expect("it pairs");
+    let paired = access.redeem(credential, Holder::Cookie).await.expect("it pairs");
     assert_eq!(paired.shown.scopes, vec![Scope::ThreadsRead], "what the link granted");
 
     let listed = asked(&mut client, "access.list", json!({})).await["result"].clone();

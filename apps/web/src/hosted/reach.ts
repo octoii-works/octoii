@@ -1,47 +1,31 @@
 /**
- * The page at the app's address reaches a computer through a tunnel: this browser's key and the computer it is paired
- * with kept in its storage, one session to that computer at a time, lasting as long as the WebSocket on it.
+ * The page at the app's address reaches a computer through a tunnel: the computer it is paired with and the credential
+ * of its session there kept in its storage, one tunnel session to that computer at a time, lasting as long as the
+ * WebSocket on it.
  */
 import { type WebSocketLike } from "@octoii-works/octoii-client";
 import { matches } from "../core/schema.ts";
 import { Type } from "typebox";
 import { pairBrowser } from "../app/pairing.ts";
-import type { Reach, SendRequest } from "../components/state/reach.ts";
-import { type RemoteMachine, remotePairingOf } from "../core/pairing.ts";
-import { Tunnel, type TunnelSocket } from "../../vendor/tunnel/tunnel.js";
-import tunnelModule from "../../vendor/tunnel/tunnel.wasm";
+import { jsonOf, type Reach, type SendRequest } from "../components/state/reach.ts";
+import { remotePairingOf } from "../core/pairing.ts";
+import init, { Session, type Socket } from "../../vendor/tunnel/octoii_tunnel_wasm.js";
+import tunnelModule from "../../vendor/tunnel/octoii_tunnel_wasm_bg.wasm";
 import { createFileSources } from "./file-sources.ts";
 
-const SEED_ITEM = "octoii.device-seed";
 const MACHINE_ITEM = "octoii.machine";
-const SEED_BYTES = 32;
 
-const MachineSchema = Type.Object({ relay: Type.String(), key: Type.String() });
+const MachineSchema = Type.Object({ relay: Type.String(), key: Type.String(), credential: Type.Optional(Type.String()) });
+const PairedSchema = Type.Object({ credential: Type.String() });
+
+/** The computer this browser is paired with: its relay, its key, and the credential of its session there once paired. */
+type Machine = { readonly relay: string; readonly key: string; readonly credential?: string };
 
 /** Why the computer cannot be reached, whichever it was: the relay does not tell a computer off from one that left. */
 const AWAY = "Can't reach your computer. It may be off or asleep, or Octoii is not running on it. Trying again…";
 
-/** The hex of `bytes`. */
-function hexOf(bytes: Uint8Array): string {
-	return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-/** The bytes of `hex`. */
-function bytesOf(hex: string): Uint8Array {
-	return Uint8Array.from(hex.match(/../g) ?? [], (pair) => Number.parseInt(pair, 16));
-}
-
-/** The seed of this browser's key, made the first time it is asked for. */
-function deviceSeed(): Uint8Array {
-	const kept = localStorage.getItem(SEED_ITEM);
-	if (kept !== null && kept.length === SEED_BYTES * 2) return bytesOf(kept);
-	const made = crypto.getRandomValues(new Uint8Array(SEED_BYTES));
-	localStorage.setItem(SEED_ITEM, hexOf(made));
-	return made;
-}
-
 /** The computer this browser is paired with; none where it has none. */
-function pairedMachine(): RemoteMachine | undefined {
+function pairedMachine(): Machine | undefined {
 	const kept = localStorage.getItem(MACHINE_ITEM);
 	if (kept === null) return undefined;
 	try {
@@ -52,13 +36,32 @@ function pairedMachine(): RemoteMachine | undefined {
 	}
 }
 
-/** The compiled session, compiled once. */
-let compiled: Promise<WebAssembly.Module> | undefined;
+/** The tunnel's WebAssembly, instantiated once. */
+let instantiated: Promise<void> | undefined;
 
-function compiledModule(): Promise<WebAssembly.Module> {
-	compiled ??= WebAssembly.compileStreaming(fetch(new URL(tunnelModule, import.meta.url)));
-	return compiled;
+function tunnelReady(): Promise<void> {
+	instantiated ??= init({ module_or_path: new URL(tunnelModule, import.meta.url) }).then(() => undefined);
+	return instantiated;
 }
+
+/** The value of the header `name` among `headers`, name and value in turn, as the tunnel gives them in lower case. */
+function headerOf(headers: readonly string[], name: string): string | undefined {
+	for (let at = 0; at + 1 < headers.length; at += 2) if (headers[at] === name) return headers[at + 1];
+	return undefined;
+}
+
+/** `headers` as the tunnel takes them: name and value in turn. */
+function flattened(headers: Readonly<Record<string, string>>): string[] {
+	return Object.entries(headers).flat();
+}
+
+/** A message as a page's WebSocket of binary type `arraybuffer` gives it: text a string, bytes an `ArrayBuffer`. */
+function received(data: TunnelMessage): string | ArrayBuffer {
+	return data instanceof Uint8Array ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) : data;
+}
+
+/** A message the tunnel's WebSocket gives: text a string, bytes a `Uint8Array`. */
+type TunnelMessage = string | Uint8Array<ArrayBuffer>;
 
 /** A listener of a socket. */
 type SocketListener = (event: { readonly data: unknown }) => void;
@@ -67,7 +70,7 @@ type SocketListener = (event: { readonly data: unknown }) => void;
 class PageSocket implements WebSocketLike {
 	binaryType = "arraybuffer";
 	readonly #listeners = { open: new Set<SocketListener>(), close: new Set<SocketListener>(), message: new Set<SocketListener>() };
-	#socket: TunnelSocket | undefined;
+	#socket: Socket | undefined;
 	#closed = false;
 
 	addEventListener(type: "open" | "close", listener: () => void): void;
@@ -77,22 +80,31 @@ class PageSocket implements WebSocketLike {
 	}
 
 	send(data: string): void {
-		this.#socket?.send(data);
+		this.#socket?.send_text(data).catch(() => this.close());
 	}
 
 	close(): void {
 		if (this.#closed) return;
-		this.#socket?.close();
+		void this.#socket?.close();
 		this.dropped();
 	}
 
-	/** The tunnel's WebSocket is open behind this one. */
-	joined(socket: TunnelSocket): void {
-		if (this.#closed) return socket.close();
+	/** The tunnel's WebSocket is open behind this one: its messages told till it closes. */
+	joined(socket: Socket): void {
+		if (this.#closed) return void socket.close();
 		this.#socket = socket;
-		socket.onmessage = (data) => this.#tell("message", data);
-		socket.onclose = () => this.dropped();
 		this.#tell("open", undefined);
+		void this.#read(socket);
+	}
+
+	async #read(socket: Socket): Promise<void> {
+		try {
+			for (let data: TunnelMessage | null = await socket.next(); data !== null && !this.#closed; data = await socket.next())
+				this.#tell("message", received(data));
+		} catch {
+			// A socket that failed has closed, as one that ended has.
+		}
+		this.dropped();
 	}
 
 	/** This socket is over: closed, or no tunnel's WebSocket opened behind it. */
@@ -110,42 +122,48 @@ class PageSocket implements WebSocketLike {
 /** The reach of the page at the app's address, and whether this browser has a computer to reach. */
 export function tunnelReach(about: string): { readonly reach: Reach; readonly paired: () => boolean } {
 	let machine = pairedMachine();
-	let session: Promise<Tunnel> | undefined;
+	let session: Promise<Session> | undefined;
 	let away: string | undefined;
 	const letGo = (): void => {
 		const going = session;
 		session = undefined;
 		void going?.then(
-			(tunnel) => tunnel.close(),
+			(ending) => ending.close().finally(() => ending.free()),
 			() => undefined,
 		);
 	};
-	const tunnel = (): Promise<Tunnel> => {
+	const tunnel = (): Promise<Session> => {
 		const target = machine;
 		if (target === undefined) return Promise.reject(new Error("This browser is paired with no computer."));
 		if (session !== undefined) return session;
-		const opening = compiledModule().then((module) => Tunnel.open({ module, relay: target.relay, machine: target.key, seed: deviceSeed() }));
+		const opening = tunnelReady().then(() => Session.open(target.relay, target.key));
 		session = opening;
 		void opening.catch(() => {
 			if (session === opening) session = undefined;
 		});
 		return opening;
 	};
-	const client = { "user-agent": navigator.userAgent };
+	/** What every request carries: this browser, and its session's credential where it is paired. */
+	const carried = (): Record<string, string> => {
+		const credential = machine?.credential;
+		return { "user-agent": navigator.userAgent, ...(credential === undefined ? {} : { authorization: `Bearer ${credential}` }) };
+	};
 	const send: SendRequest = async ({ method, path, contentType, body }) => {
 		const reached = await tunnel();
-		const given = body === undefined ? {} : { body: typeof body === "string" ? body : new Uint8Array(await body.arrayBuffer()) };
-		const answer = await reached.request(method, path, {
-			headers: { ...client, ...(contentType === undefined ? {} : { "content-type": contentType }) },
-			...given,
-		});
-		return { status: answer.status, contentType: answer.headers.get("content-type") ?? undefined, bytes: answer.body };
+		const given = body === undefined ? new Uint8Array() : typeof body === "string" ? new TextEncoder().encode(body) : new Uint8Array(await body.arrayBuffer());
+		const headers = { ...carried(), ...(contentType === undefined ? {} : { "content-type": contentType }) };
+		const answer = await reached.request(method, path, flattened(headers), given);
+		try {
+			return { status: answer.status, contentType: headerOf(answer.headers, "content-type"), bytes: answer.body };
+		} finally {
+			answer.free();
+		}
 	};
 	const open = (protocol: string): WebSocketLike => {
 		const page = new PageSocket();
 		page.addEventListener("close", letGo);
 		tunnel()
-			.then((reached) => reached.socket("/ws", { headers: { ...client, "sec-websocket-protocol": protocol } }))
+			.then((reached) => reached.socket("/ws", flattened({ ...carried(), "sec-websocket-protocol": protocol })))
 			.then(
 				(socket) => {
 					away = undefined;
@@ -165,14 +183,16 @@ export function tunnelReach(about: string): { readonly reach: Reach; readonly pa
 		machine = given.machine;
 		letGo();
 		try {
-			await pairBrowser(send, given.credential);
+			const paired = jsonOf(await pairBrowser(send, given.credential));
+			if (!matches(PairedSchema, paired)) throw new Error("The computer paired this browser but gave it no credential.");
+			machine = { ...given.machine, credential: paired.credential };
 		} catch (error) {
 			machine = before;
 			letGo();
 			throw error;
 		}
-		localStorage.setItem(MACHINE_ITEM, JSON.stringify(given.machine));
-		// Kept through the browser's clearing of storage, where it agrees to, as a lost key means pairing again.
+		localStorage.setItem(MACHINE_ITEM, JSON.stringify(machine));
+		// Kept through the browser's clearing of storage, where it agrees to, as a lost credential means pairing again.
 		void navigator.storage.persist().catch(() => false);
 	};
 	const reach: Reach = {
@@ -185,5 +205,5 @@ export function tunnelReach(about: string): { readonly reach: Reach; readonly pa
 		whyAway: () => away,
 		about,
 	};
-	return { reach, paired: () => machine !== undefined };
+	return { reach, paired: () => machine?.credential !== undefined };
 }

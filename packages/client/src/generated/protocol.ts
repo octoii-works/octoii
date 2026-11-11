@@ -345,9 +345,9 @@ export type GrantsListed = { projects: Array<Granted>, };
 export type Guidance = { words: string, commands: Array<string>, };
 
 /**
- * How a client holds its session: a browser's cookie, a program's bearer token, or the key its tunnel session shows.
+ * How a client holds its session: a browser's cookie, or a bearer token — a program's, or a device's in a tunnel session.
  */
-export type Holder = "cookie" | "bearer" | "key";
+export type Holder = "cookie" | "bearer";
 
 /**
  * How closely a model looks at an image.

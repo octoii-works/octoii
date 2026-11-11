@@ -1,8 +1,7 @@
 //! The node's access: the sessions its clients hold and the links that pair new clients, each a directory of the
 //! volume's — `octoii.session:<id>`, `octoii.link:<id>` — that holds the digest of its secret, never the secret, as an
 //! SSH server keeps its authorized keys, and goes as it expires. A client presents its credential, `<id>.<secret>`: a
-//! browser in its cookie, a program as a bearer token; a device in a tunnel session is known by the key its session
-//! showed. A link's credential pairs one client, once, while it lasts: redeemed, it is gone in the commit that issues the
+//! browser on the node's own address in its cookie, a program or a device in a tunnel session as a bearer token. A link's credential pairs one client, once, while it lasts: redeemed, it is gone in the commit that issues the
 //! client a session granting what the link granted — so of two clients that redeem it at once, one alone is paired.
 
 use std::time::Duration;
@@ -20,8 +19,6 @@ const SESSION_KIND: &str = "octoii.session";
 const LINK_KIND: &str = "octoii.link";
 /// The annotation that holds what a session or a link is.
 const KEPT: &str = "octoii.access";
-/// The label of a device's session that holds the key its tunnel session shows, as the label index finds it by.
-const KEY_LABEL: &str = "octoii.key";
 
 /// How long a session lasts.
 pub const SESSION_LASTS: Duration = Duration::from_hours(365 * 24);
@@ -40,17 +37,16 @@ pub const ALL: [Scope; 8] = [
     Scope::AccessWrite,
 ];
 
-/// How a client holds its session: a browser's cookie, a program's bearer token, or the key its tunnel session shows.
+/// How a client holds its session: a browser's cookie, or a bearer token — a program's, or a device's in a tunnel session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(rename_all = "snake_case")]
 pub enum Holder {
     Cookie,
     Bearer,
-    Key,
 }
 
 /// What a session's or a link's directory holds: the digest of its secret, what it grants, its label, how its client
-/// holds it and the key it shows where it is a device's, when it was made and when it goes, in ms since the epoch.
+/// holds it, when it was made and when it goes, in ms since the epoch.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct Kept {
     digest: String,
@@ -59,8 +55,6 @@ struct Kept {
     label: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     holder: Option<Holder>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    key: Option<String>,
     made_at: i64,
     expires_at: i64,
 }
@@ -175,14 +169,9 @@ impl Access {
         kept.digest = digest(&secret);
         let path = path(kind, &id);
         let annotation = (Bytes::from_static(KEPT.as_bytes()), Some(Bytes::from(serde_json::to_vec(kept)?)));
-        let labels = kept
-            .key
-            .iter()
-            .map(|key| (Bytes::from_static(KEY_LABEL.as_bytes()), Some(Bytes::from(key.clone()))))
-            .collect();
         changes
             .mkdir(path.clone())
-            .meta(path.clone(), labels, vec![annotation])
+            .meta(path.clone(), Vec::new(), vec![annotation])
             .expire(path, Some(kept.expires_at));
         Ok((id.clone(), format!("{id}.{secret}")))
     }
@@ -198,7 +187,6 @@ impl Access {
             scopes,
             label,
             holder: None,
-            key: None,
             made_at: now,
             expires_at: now + millis(lasts),
         };
@@ -211,23 +199,14 @@ impl Access {
         })
     }
 
-    /// A session with `scopes`, labelled `label`, its client holding it as `holder`, by the key `key` where it is a
-    /// device's — made with `changes`.
-    fn session(
-        &self,
-        changes: &mut Changes,
-        scopes: Vec<Scope>,
-        label: Option<String>,
-        holder: Holder,
-        key: Option<String>,
-    ) -> Result<Made, Refused> {
+    /// A session with `scopes`, labelled `label`, its client holding it as `holder` — made with `changes`.
+    fn session(&self, changes: &mut Changes, scopes: Vec<Scope>, label: Option<String>, holder: Holder) -> Result<Made, Refused> {
         let now = self.runtime.now_ms();
         let mut kept = Kept {
             digest: String::new(),
             scopes,
             label,
             holder: Some(holder),
-            key,
             made_at: now,
             expires_at: now + millis(SESSION_LASTS),
         };
@@ -244,17 +223,17 @@ impl Access {
     /// The volume's failure.
     pub async fn issue(&self, label: Option<String>, scopes: Vec<Scope>) -> Result<Made, Refused> {
         let mut changes = Changes::new();
-        let made = self.session(&mut changes, scopes, label, Holder::Bearer, None)?;
+        let made = self.session(&mut changes, scopes, label, Holder::Bearer)?;
         self.runtime.commit(changes).await?;
         Ok(made)
     }
 
-    /// The session the link of `credential` grants, its client holding it as `holder`, by the key `key` where it is a
-    /// device's — the link gone in the same commit.
+    /// The session the link of `credential` grants, its client holding it as `holder` — the link gone in the same
+    /// commit.
     ///
     /// # Errors
     /// `NoSuchLink` where the credential is no link's, or its link was used or went; the volume's failure.
-    pub async fn redeem(&self, credential: &str, holder: Holder, key: Option<String>) -> Result<Made, Refused> {
+    pub async fn redeem(&self, credential: &str, holder: Holder) -> Result<Made, Refused> {
         let (id, secret) = credential.split_once('.').ok_or(Refused::NoSuchLink)?;
         let link = path(LINK_KIND, id);
         let kept = kept(&self.runtime.snapshot()?, &link)?.ok_or(Refused::NoSuchLink)?;
@@ -264,7 +243,7 @@ impl Access {
         let mut changes = Changes::new();
         // The link's deletion fails where another took it first, and the session with it.
         changes.delete(link);
-        let made = self.session(&mut changes, kept.scopes, kept.label, holder, key)?;
+        let made = self.session(&mut changes, kept.scopes, kept.label, holder)?;
         self.runtime.commit(changes).await.map_err(|_| Refused::NoSuchLink)?;
         Ok(made)
     }
@@ -282,29 +261,6 @@ impl Access {
         };
         let live = same(&kept.digest, &digest(secret)) && kept.expires_at > self.runtime.now_ms();
         Ok(live.then(|| shown(id, &kept)))
-    }
-
-    /// The session a device holds by its key `key`, where it holds one that has not gone.
-    ///
-    /// # Errors
-    /// The volume's failure.
-    pub fn held_by_key(&self, key: &str) -> Result<Option<AccessEntry>, Refused> {
-        let snapshot = self.runtime.snapshot()?;
-        let query = beak::Query {
-            kind: SESSION_KIND.as_bytes(),
-            name: KEY_LABEL.as_bytes(),
-            value: Some(key.as_bytes()),
-            ..beak::Query::default()
-        };
-        let (now, prefix) = (self.runtime.now_ms(), format!("{SESSION_KIND}:"));
-        for found in snapshot.find(&query, usize::MAX)? {
-            let Some(kept) = kept(&snapshot, &found.path)? else { continue };
-            if kept.expires_at > now {
-                let id = String::from_utf8_lossy(&found.path[prefix.len()..]).into_owned();
-                return Ok(Some(shown(&id, &kept)));
-            }
-        }
-        Ok(None)
     }
 
     /// The sessions and the links, each in the order made.
