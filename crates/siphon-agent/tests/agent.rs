@@ -25,7 +25,6 @@ use siphon_agent::{
 use siphon_machine::Host as Machine;
 use siphon_runtime::{Asked, Options, Runtime};
 use siphon_threads::{CallStatus, Config, Entry, Mode, NewThread, Outcome, Threads, Turn};
-use siphon_tools::mcp::{Servers, Trust, TrustProgram};
 use siphon_tools::{Asks, Exec, ExecuteTool, Permission, ReadTool, Review, ScriptProgram, ShellTool, Tools, WriteTool, answer_exec};
 
 /// What the scripted provider answers each request with, in turn — but a request with an input of words it keeps a
@@ -185,17 +184,12 @@ fn models(script: &Arc<Script>) -> Arc<Models> {
 }
 
 fn runtime(beak: &Beak, script: &Arc<Script>) -> Runtime {
-    let servers = Servers::start(Machine::default(), None);
-    let inner = Tools::new()
-        .with(ReadTool)
-        .with(WriteTool)
-        .with(ShellTool)
-        .with_servers(servers.clone());
+    let inner = Tools::new().with(ReadTool).with(WriteTool).with(ShellTool);
     let tools = inner.clone().with(ExecuteTool { tools: inner.clone() }).with(DelegateTool);
     let models = models(script);
     let sources = Sources {
         tools: tools.clone(),
-        servers,
+        tellers: Vec::new(),
         models: Arc::clone(&models),
         host: Machine::default(),
         home: None,
@@ -209,7 +203,6 @@ fn runtime(beak: &Beak, script: &Arc<Script>) -> Runtime {
             models: Arc::clone(&models),
         })
         .program(ScriptProgram { tools: inner })
-        .program(TrustProgram)
         .program(TitleProgram)
         .program(siphon_agent::CompactProgram)
         .program(DelegateProgram)
@@ -236,7 +229,6 @@ fn runtime(beak: &Beak, script: &Arc<Script>) -> Runtime {
         })
         .ask_person::<Permission>()
         .ask_person::<Asks>()
-        .ask_person::<Trust>()
         .start(beak, Options::default())
         .expect("started")
 }

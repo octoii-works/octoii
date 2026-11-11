@@ -12,9 +12,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use siphon_machine::Host;
 use siphon_machine::paths::Base;
+use siphon_mcp::trust::{self, Trust, TrustProgram};
+use siphon_mcp::{Launch, Servers, parse};
 use siphon_runtime::{Asked, Changes, Ending, Options, Program, Run, Runtime};
 use siphon_threads::Mode;
-use siphon_tools::mcp::{Launch, Place, Servers, Trust, TrustProgram, parse, trust};
+use siphon_tools::projects::Place;
 use siphon_tools::{CallStatus, Calls, Exec, ExecuteTool, ReadTool, ScriptProgram, Setting, Tools, answer_exec};
 
 fn fixture() -> String {
@@ -102,9 +104,9 @@ fn said(call: siphon_tools::Call) -> (CallStatus, String, usize) {
 }
 
 fn tools(servers: &Servers) -> (Tools, Tools) {
-    let inner = Tools::new().with(ReadTool).with_servers(servers.clone());
+    let inner = Tools::new().with(ReadTool).with_toolset(std::sync::Arc::new(servers.clone()));
     let outer = inner.clone().with(ExecuteTool { tools: inner.clone() });
-    (inner, outer.with_servers(servers.clone()))
+    (inner, outer.with_toolset(std::sync::Arc::new(servers.clone())))
 }
 
 fn runtime(beak: &Beak, servers: &Servers) -> Runtime {

@@ -8,18 +8,14 @@
 use octoii_ai::vocabulary::Tool;
 use serde::{Deserialize, Serialize};
 use siphon_threads::{Entry, Section, Window};
-use siphon_tools::mcp::Trust;
 
-/// What the model is told: its sections, by name, in the order told; the tools it may call; the names of the MCP
-/// servers' tools its scripts may call; and what the person is asked to trust, where its project names what they have
-/// not decided on.
+/// What the model is told: its sections, by name, in the order told; the tools it may call; and the names of the tools
+/// its scripts may call beside them, as the plugins told them.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Told {
     pub sections: Vec<(String, String)>,
     pub tools: Vec<Tool>,
     pub catalog: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub asks: Option<Trust>,
 }
 
 /// The sections the model holds after `window`'s system entries, in the order first told: each as the last entry that

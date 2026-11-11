@@ -19,7 +19,6 @@ use tokio_util::sync::CancellationToken;
 
 use crate::calls::Setting;
 use crate::effect::Effect;
-use crate::mcp::Servers;
 use crate::permissions::Writes;
 
 /// Why a tool did not do what it was asked, in words the model reads.
@@ -223,11 +222,27 @@ struct Entry {
     tool: Arc<dyn Erased>,
 }
 
-/// The tools a thread's model may call, by name: its own, and the MCP servers' it reaches, each `<server>.<tool>`.
+/// A set of tools beyond those a thread's model is given one by one, found by their names as the set has them — an MCP
+/// server's, each `<server>.<tool>`: whether a name is one of its, and a call of one done. Each may do anything, as its own end
+/// checks what it is given.
+pub trait Toolset: Send + Sync + 'static {
+    /// Whether `name` is one of its tools'.
+    fn has(&self, name: &str) -> bool;
+
+    /// A call of its tool `name` with `arguments`, for `context`.
+    fn call<'a>(
+        &'a self,
+        context: &'a Context,
+        name: &'a str,
+        arguments: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<InputContent>, Refusal>> + Send + 'a>>;
+}
+
+/// The tools a thread's model may call, by name: its own, and those of its toolsets.
 #[derive(Clone, Default)]
 pub struct Tools {
     entries: Arc<BTreeMap<String, Entry>>,
-    servers: Option<Servers>,
+    toolsets: Vec<Arc<dyn Toolset>>,
 }
 
 impl std::fmt::Debug for Tools {
@@ -260,18 +275,19 @@ impl Tools {
         self
     }
 
-    /// These tools, and the tools of the MCP servers `servers` holds.
+    /// These tools, and those of `toolset`.
     #[must_use]
-    pub fn with_servers(mut self, servers: Servers) -> Self {
-        self.servers = Some(servers);
+    pub fn with_toolset(mut self, toolset: Arc<dyn Toolset>) -> Self {
+        self.toolsets.push(toolset);
         self
     }
 
-    /// Whether `name` is one of a server's tools: none of these tools', but a server's name and the tool's after a dot.
-    fn served(&self, name: &str) -> Option<&Servers> {
-        self.servers
-            .as_ref()
-            .filter(|_| !self.entries.contains_key(name) && name.contains('.'))
+    /// The toolset `name` is a tool of: none of these tools', but one a toolset has.
+    fn served(&self, name: &str) -> Option<&Arc<dyn Toolset>> {
+        if self.entries.contains_key(name) {
+            return None;
+        }
+        self.toolsets.iter().find(|toolset| toolset.has(name))
     }
 
     /// Whether there is a tool of `name`: one of these, or one a server may have.
@@ -287,12 +303,12 @@ impl Tools {
     }
 
     /// What a call of `name` with `arguments` does to the machine, its arguments checked against the tool's schema;
-    /// a server's tool acts, as it may do anything.
+    /// a toolset's tool acts, as it may do anything.
     ///
     /// # Errors
     /// A `Refusal` naming no tool there is, or saying how the arguments do not fit.
     pub fn effect(&self, name: &str, arguments: &serde_json::Value, base: &Base) -> Result<Effect, Refusal> {
-        // A server's tool may do anything; its server checks what it is given.
+        // A toolset's tool may do anything; its own end checks what it is given.
         if self.served(name).is_some() {
             return Ok(Effect::Acts { tool: name.to_owned() });
         }
@@ -352,8 +368,8 @@ impl Tools {
     /// # Errors
     /// A `Refusal` naming no tool there is, or the tool's own.
     pub async fn exec(&self, name: &str, context: Context, arguments: serde_json::Value) -> Result<Vec<InputContent>, Refusal> {
-        if let Some(servers) = self.served(name) {
-            return servers.call(&context, name, arguments).await;
+        if let Some(toolset) = self.served(name) {
+            return toolset.call(&context, name, arguments).await;
         }
         let tool = Arc::clone(&self.entries.get(name).ok_or_else(|| Refusal(format!("no tool {name}")))?.tool);
         tool.exec(context, arguments).await

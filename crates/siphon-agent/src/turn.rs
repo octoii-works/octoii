@@ -18,7 +18,7 @@ use siphon_machine::paths::Base;
 use siphon_runtime::{Answer, Ending, Program, Retries, Run, Wait};
 use siphon_threads::log::Writer;
 use siphon_threads::{CallStatus, Config, Entry, ThreadUsage, Window, inbox, thread};
-use siphon_tools::mcp::Place;
+use siphon_tools::projects::Place;
 use siphon_tools::{Calls, Setting, State, Tools};
 
 use crate::compaction;

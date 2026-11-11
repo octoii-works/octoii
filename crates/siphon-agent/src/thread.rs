@@ -15,7 +15,6 @@ use siphon_runtime::{Answer, Ending, Program, Retries, Run, Wait};
 use siphon_threads::inbox::{self, Ended, Inbound};
 use siphon_threads::log::Writer;
 use siphon_threads::{CallStatus, Config, Entry, MainInput, Outcome as TurnOutcome, ThreadUsage, Turn, Window, thread};
-use siphon_tools::mcp::TrustProgram;
 
 use crate::gather::Gather;
 use crate::title::{TitleInput, TitleProgram};
@@ -134,12 +133,6 @@ fn begin(run: &mut Run<'_>, id: &str, told: Told) -> anyhow::Result<Ending<MainS
             tools,
         };
         writer.append(&mut run.changes, &entry)?;
-    }
-    if let Some(trust) = told.asks {
-        let asking = layout::process(run.path(), TrustProgram::KEY.as_bytes());
-        if run.snapshot().record(&asking)?.is_none() {
-            run.start::<TrustProgram>(TrustProgram::KEY, &trust)?;
-        }
     }
     let taken = inbox::take(run, id, &mut writer)?;
     if !taken.iter().any(|each| matches!(each.entry, Entry::Input { .. })) {

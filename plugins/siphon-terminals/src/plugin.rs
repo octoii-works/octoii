@@ -21,6 +21,8 @@ impl Plugin for TerminalsPlugin {
 
     fn build(self: Box<Self>, builder: &mut Builder) {
         let terminals = Terminals::start(builder.kernel.clone(), builder.machine.clone());
+        let closing = terminals.clone();
+        builder.on_thread_deleted(move |thread| closing.close_thread(thread));
         let doing = terminals.clone();
         builder.methods(protocol::set(), Method::read, move |context: Context, method| {
             let terminals = doing.clone();

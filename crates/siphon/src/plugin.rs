@@ -46,10 +46,15 @@ pub(crate) type Telling = Box<dyn FnOnce(Subscription) -> Boxed<Result<(), Lagge
 /// How a family of topics is read: the telling of a topic of the family's; none of one it is not.
 type Teller = Arc<dyn Fn(&serde_json::Value) -> Option<Telling> + Send + Sync>;
 
-/// The methods and topics Siphon and its plugins brought, as the connection finds them.
+/// What a plugin does as a thread is deleted: lets go of what it held for it.
+pub(crate) type Deleted = Arc<dyn Fn(&str) + Send + Sync>;
+
+/// The methods and topics Siphon and its plugins brought, as the connection finds them, and what each plugin does as
+/// a thread is deleted.
 #[derive(Default)]
 pub(crate) struct Registry {
     pub(crate) sets: Vec<Set>,
+    pub(crate) deleted: Vec<Deleted>,
     pub(crate) methods: std::collections::HashMap<&'static str, (Option<Scope>, Handler)>,
     pub(crate) topics: Vec<(Scope, Teller)>,
 }
@@ -129,6 +134,7 @@ pub struct Builder {
     pub(crate) runtime: siphon_runtime::Builder,
     pub(crate) tools: Tools,
     pub(crate) providers: Vec<Provider>,
+    pub(crate) tellers: Vec<Arc<dyn siphon_agent::Teller>>,
     pub(crate) registry: Registry,
 }
 
@@ -148,6 +154,17 @@ impl Builder {
     /// The tools of a thread's model and its scripts, as `add` leaves them.
     pub fn tools(&mut self, add: impl FnOnce(Tools) -> Tools) {
         self.tools = add(std::mem::take(&mut self.tools));
+    }
+
+    /// What tells a thread's model of the place it works in, before each turn.
+    pub fn teller(&mut self, teller: Arc<dyn siphon_agent::Teller>) {
+        self.tellers.push(teller);
+    }
+
+    /// What to do as a thread is deleted, given its id: what the plugin held for it let go of, as a process's
+    /// resources go with it.
+    pub fn on_thread_deleted(&mut self, deleted: impl Fn(&str) + Send + Sync + 'static) {
+        self.registry.deleted.push(Arc::new(deleted));
     }
 
     /// A provider models are reached through.

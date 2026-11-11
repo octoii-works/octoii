@@ -12,15 +12,11 @@ workspace = true
 
 [dependencies]
 anyhow = "1.0.104"
-base64 = "0.23.1"
 beak = { path = "../../vendor/beak/crates/beak" }
 bytes = "1.12.1"
-futures = "0.3.34"
 globset = "0.4.21"
-http = "1"
 jsonschema = { version = "0.61.1", default-features = false }
 octoii-ai = { path = "../octoii-ai" }
-rmcp = { version = "3.9.0", default-features = false, features = ["client", "transport-async-rw", "transport-streamable-http-client-reqwest", "reqwest"] }
 schemars = "1.2.3"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
@@ -34,7 +30,7 @@ siphon-text = { path = "../siphon-text" }
 siphon-threads = { path = "../siphon-threads" }
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", features = ["rt", "sync", "macros", "time"] }
-tokio-util = { version = "0.7.20", features = ["io"] }
+tokio-util = "0.7.20"
 
 [dev-dependencies]
 image = { version = "0.25", default-features = false, features = ["png"] }

@@ -1,12 +1,13 @@
 //! Each method a call names, done on Siphon for the person whose session made it: its result as JSON, or why it was
 //! refused.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde::Serialize;
 use siphon_protocol::siphon::{Created, Delivered, Method, ThreadRead, ThreadsListed, Withdrawn};
 use siphon_protocol::{Error, Nothing};
 use siphon_threads::{NewThread, log};
+use siphon_tools::projects::Place;
 
 use super::refusal;
 use crate::Siphon;
@@ -24,7 +25,11 @@ pub(crate) async fn answered(context: Context, method: Method) -> Result<serde_j
             threads: threads.list().map_err(|error| failed(&error))?,
         }),
         Method::CreateThread(create) => {
-            let project = create.config.workspace.as_deref().map(|workspace| project_of(Path::new(workspace)));
+            let project = create
+                .config
+                .workspace
+                .as_deref()
+                .map(|workspace| Place::of(Path::new(workspace)).project);
             let new = NewThread {
                 actor: PERSON.to_owned(),
                 config: create.config,
@@ -63,7 +68,7 @@ pub(crate) async fn answered(context: Context, method: Method) -> Result<serde_j
             json(&Nothing {})
         }
         Method::DeleteThread(of) => {
-            threads.delete(&of.thread).await.map_err(|error| failed(&error))?;
+            siphon.delete_thread(&of.thread).await.map_err(|error| failed(&error))?;
             json(&Nothing {})
         }
         Method::AnswerThread(answer) => {
@@ -95,16 +100,6 @@ fn read_thread(siphon: &Siphon, thread: &str, before: Option<&str>, limit: u32) 
         .collect::<Result<_, _>>()
         .map_err(|error| refusal("failed", &error.to_string()))?;
     Ok(ThreadRead { entries, complete })
-}
-
-/// The project of a thread working in `workspace`: the repository the workspace is in, by its root, else the
-/// workspace itself.
-fn project_of(workspace: &Path) -> PathBuf {
-    workspace
-        .ancestors()
-        .find(|folder| folder.join(".git").exists())
-        .unwrap_or(workspace)
-        .to_path_buf()
 }
 
 /// Why an operation on threads was not done, as a client is told.

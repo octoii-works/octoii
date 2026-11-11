@@ -3123,6 +3123,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "siphon-mcp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64 0.23.1",
+ "beak",
+ "bytes",
+ "futures",
+ "http",
+ "octoii-ai",
+ "rmcp",
+ "schemars 1.2.3",
+ "serde",
+ "serde_json",
+ "siphon",
+ "siphon-agent",
+ "siphon-machine",
+ "siphon-runtime",
+ "siphon-threads",
+ "siphon-tools",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
 name = "siphon-protocol"
 version = "0.1.0"
 dependencies = [
@@ -3234,16 +3260,12 @@ name = "siphon-tools"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "base64 0.23.1",
  "beak",
  "bytes",
- "futures",
  "globset",
- "http",
  "image",
  "jsonschema",
  "octoii-ai",
- "rmcp",
  "schemars 1.2.3",
  "serde",
  "serde_json",

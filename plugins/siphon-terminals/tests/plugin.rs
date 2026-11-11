@@ -89,5 +89,10 @@ async fn a_terminal_is_opened_drawn_and_told_as_it_writes_each_piece_once() {
         text(&replayed).starts_with(&text(&pieces)),
         "a client that stood at an offset told the same from there"
     );
+    let id = client.call("threads.delete", json!({ "thread": thread })).await;
+    client.answer(&id).await;
+    client
+        .event(&listed, |event| event["event"] == "terminals" && event["terminals"] == json!([]))
+        .await;
     siphon.runtime.close().await;
 }

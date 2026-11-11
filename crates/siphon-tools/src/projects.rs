@@ -3,6 +3,7 @@
 //! and whether they trust what its configuration runs.
 
 use std::fmt::Write as _;
+use std::path::{Path, PathBuf};
 
 use beak::Snapshot;
 use bytes::Bytes;
@@ -10,6 +11,29 @@ use sha2::{Digest, Sha256};
 use siphon_runtime::Changes;
 
 use crate::permissions::Grants;
+
+/// Where a thread works: its workspace, and its project's folder — the git repository that holds the workspace, else
+/// the workspace itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Place {
+    pub workspace: PathBuf,
+    pub project: PathBuf,
+}
+
+impl Place {
+    /// Where a thread working in `workspace` works.
+    #[must_use]
+    pub fn of(workspace: &Path) -> Self {
+        let project = workspace
+            .ancestors()
+            .find(|folder| folder.join(".git").exists())
+            .unwrap_or(workspace);
+        Self {
+            workspace: workspace.to_owned(),
+            project: project.to_owned(),
+        }
+    }
+}
 
 /// The kind of a project's directory, and the label that holds its folder.
 pub const KIND: &str = "siphon.project";
@@ -24,7 +48,8 @@ pub fn path(folder: &str) -> Bytes {
 }
 
 /// The SHA-256 of `bytes`, in lowercase hexadecimal.
-pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
+#[must_use]
+pub fn sha256_hex(bytes: &[u8]) -> String {
     Sha256::digest(bytes).iter().fold(String::with_capacity(64), |mut hex, byte| {
         let _ = write!(hex, "{byte:02x}");
         hex

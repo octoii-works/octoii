@@ -1,6 +1,6 @@
 //! Siphon whole: the runtime on Beak with the programs of a thread's and the handlers of its requests, the tools its
-//! model calls and the MCP servers they reach, the models it asks, and the protocol a client speaks to it — built with
-//! the plugins a host picks, which bring the rest: their providers, tools, programs and methods.
+//! model calls, the models it asks, and the protocol a client speaks to it — built with the plugins a host picks, which
+//! bring the rest: their providers, tools, programs, what they tell the model, and their methods.
 
 pub mod connection;
 mod plugin;
@@ -19,7 +19,6 @@ use siphon_machine::Host;
 use siphon_protocol::Scope;
 use siphon_runtime::{Asked, Options, Runtime};
 use siphon_threads::Threads;
-use siphon_tools::mcp::{Servers, Trust, TrustProgram};
 use siphon_tools::{
     Asks, EditTool, Exec, ExecuteTool, GlobTool, GrepTool, Permission, QuestionTool, ReadTool, Review, ScriptProgram, ShellTool, Tools,
     WriteTool, answer_exec,
@@ -38,16 +37,30 @@ pub struct Setup {
     pub options: Options,
 }
 
-/// Siphon, started: the machine its work is done on, its runtime, its threads, the models they ask, the MCP servers,
-/// and the protocol's methods and topics as Siphon and its plugins brought them.
+/// Siphon, started: the machine its work is done on, its runtime, its threads, the models they ask, and the protocol's
+/// methods and topics as Siphon and its plugins brought them.
 #[derive(Debug, Clone)]
 pub struct Siphon {
     pub machine: Host,
     pub runtime: Runtime,
     pub threads: Threads<ThreadProgram>,
     pub models: Arc<Models>,
-    pub servers: Servers,
     pub(crate) registry: Arc<plugin::Registry>,
+}
+
+impl Siphon {
+    /// Deletes the thread `id` and every thread under it, each plugin letting go of what it held for each.
+    ///
+    /// # Errors
+    /// `NoSuchThread`; the volume's failure.
+    pub async fn delete_thread(&self, id: &str) -> Result<(), siphon_threads::Error> {
+        for deleted in self.threads.delete(id).await? {
+            for plugin in &self.registry.deleted {
+                plugin(&deleted);
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Siphon being built: what its plugins add to, and what it is started with.
@@ -87,6 +100,7 @@ impl Siphon {
                 .with(GrepTool)
                 .with(ShellTool),
             providers,
+            tellers: Vec::new(),
             registry: plugin::Registry::default(),
         };
         builder.methods(
@@ -129,25 +143,23 @@ impl Building {
             kernel,
             machine,
             runtime,
-            tools,
+            tools: inner,
             providers,
+            tellers,
             registry,
         } = builder;
-        let servers = Servers::start(machine.clone(), machine.home.as_deref());
-        let inner = tools.with_servers(servers.clone());
         let outer = inner
             .clone()
             .with(ExecuteTool { tools: inner.clone() })
             .with(QuestionTool)
             .with(DelegateTool);
         let models = Arc::new(Models::new(network, providers, catalogue));
-        let runtime = programs(runtime, &machine, &models, &servers, inner, outer).start_on((kernel, events), options)?;
+        let runtime = programs(runtime, &machine, &models, tellers, inner, outer).start_on((kernel, events), options)?;
         Ok(Siphon {
             machine,
             threads: Threads::new(runtime.clone()),
             runtime,
             models,
-            servers,
             registry: Arc::new(registry),
         })
     }
@@ -159,13 +171,13 @@ fn programs(
     runtime: siphon_runtime::Builder,
     machine: &Host,
     models: &Arc<Models>,
-    servers: &Servers,
+    tellers: Vec<Arc<dyn siphon_agent::Teller>>,
     inner: Tools,
     tools: Tools,
 ) -> siphon_runtime::Builder {
     let sources = Sources {
         tools: tools.clone(),
-        servers: servers.clone(),
+        tellers,
         models: Arc::clone(models),
         host: machine.clone(),
         home: machine.home.clone(),
@@ -180,7 +192,6 @@ fn programs(
             models: Arc::clone(models),
         })
         .program(ScriptProgram { tools: inner })
-        .program(TrustProgram)
         .program(TitleProgram)
         .program(CompactProgram)
         .program(DelegateProgram)
@@ -204,5 +215,4 @@ fn programs(
         })
         .ask_person::<Permission>()
         .ask_person::<Asks>()
-        .ask_person::<Trust>()
 }

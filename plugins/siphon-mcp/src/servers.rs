@@ -23,10 +23,11 @@ use siphon_machine::{Host, Machine, Writes};
 use siphon_runtime::{Changes, Runtime};
 use tokio::sync::{mpsc, oneshot};
 
-use super::config::{Configured, Launch, OWN_FILE, PROJECT_FILE, Server, parse};
-use super::stdio;
-use super::trust::{self, ShownServer, Trust};
-use crate::tool::{Context, Declared, Refusal};
+use crate::config::{Configured, Launch, OWN_FILE, PROJECT_FILE, Server, parse};
+use crate::stdio;
+use crate::trust::{self, ShownServer, Trust};
+use siphon_tools::projects::Place;
+use siphon_tools::{Context, Declared, Refusal};
 
 /// How long a server nothing uses keeps running before it is stopped.
 pub const IDLE: Duration = Duration::from_secs(600);
@@ -36,29 +37,6 @@ const CONNECTING_MAX: Duration = Duration::from_secs(30);
 const RECORDS: &[u8] = b"siphon.servers";
 /// The most of a configuration read.
 const CONFIGURATION_BYTES_MAX: u64 = 1 << 20;
-
-/// Where a thread works, as the servers it reaches are found from: its workspace, and its project's folder — the git
-/// repository that holds the workspace, else the workspace itself.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Place {
-    pub workspace: PathBuf,
-    pub project: PathBuf,
-}
-
-impl Place {
-    /// Where a thread working in `workspace` works.
-    #[must_use]
-    pub fn of(workspace: &Path) -> Self {
-        let project = workspace
-            .ancestors()
-            .find(|folder| folder.join(".git").exists())
-            .unwrap_or(workspace);
-        Self {
-            workspace: workspace.to_owned(),
-            project: project.to_owned(),
-        }
-    }
-}
 
 /// What a thread's model is told of the servers it reaches: their tools, what could not be taken of them, and what the
 /// person is asked to trust, where they decided nothing on its project's configuration as it is.

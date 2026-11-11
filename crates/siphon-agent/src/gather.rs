@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use siphon_machine::Host;
 use siphon_runtime::{Asked, Request, Runtime, Unanswered};
 use siphon_threads::{Config, Mode, thread};
-use siphon_tools::mcp::{Place, Servers};
+use siphon_tools::projects::Place;
 use siphon_tools::{Tool as _, Tools};
 
 use crate::delegate::DelegateTool;
@@ -32,15 +32,43 @@ impl Request for Gather {
     type Answer = Told;
 }
 
-/// Where what the model is told comes from: the tools it may call, the MCP servers they reach, the models' facts, the
+/// What a plugin tells a thread's model of the place it works in, gathered before each turn: sections of what it is
+/// told, and the names of the tools its scripts may call beside its own — as the MCP servers tell their catalog.
+pub trait Teller: Send + Sync + 'static {
+    /// What it tells the model of the thread `thread`, working at `place`, on `runtime`.
+    ///
+    /// # Errors
+    /// What keeps it from telling.
+    fn tell<'a>(
+        &'a self,
+        runtime: &'a Runtime,
+        thread: &'a str,
+        place: &'a Place,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<Telling>> + Send + 'a>>;
+}
+
+/// What a teller tells: its sections, by name, and the tools a script may call by name.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Telling {
+    pub sections: Vec<(String, String)>,
+    pub tools: Vec<String>,
+}
+
+/// Where what the model is told comes from: the tools it may call, what the plugins tell, the models' facts, the
 /// machine, and the Octoii Home, where the person's own instructions and skills are.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Sources {
     pub tools: Tools,
-    pub servers: Servers,
+    pub tellers: Vec<Arc<dyn Teller>>,
     pub models: Arc<Models>,
     pub host: Host,
     pub home: Option<PathBuf>,
+}
+
+impl std::fmt::Debug for Sources {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Sources").field("tools", &self.tools).finish_non_exhaustive()
+    }
 }
 
 /// The name of a folder's instructions file.
@@ -89,6 +117,7 @@ pub async fn gathered(sources: &Sources, runtime: &Runtime, id: &str) -> anyhow:
     let config = Config::of(&directory)?;
     let workspace = config.workspace.as_deref().map(PathBuf::from);
     let mut told = Told::default();
+    let mut catalog = Vec::new();
     let mut add = |name: &str, text: String| told.sections.push((name.to_owned(), text));
     add("base", BASE.to_owned());
     if let Some(workspace) = &workspace {
@@ -100,13 +129,15 @@ pub async fn gathered(sources: &Sources, runtime: &Runtime, id: &str) -> anyhow:
         if !found.is_empty() {
             add("skills", skills::told(&found));
         }
-        let catalog = sources.servers.catalog(runtime, &place).await?;
-        if !catalog.tools.is_empty() || !catalog.problems.is_empty() {
-            add("catalog", catalog_told(&catalog));
+        for teller in &sources.tellers {
+            let telling = teller.tell(runtime, id, &place).await?;
+            for (name, text) in telling.sections {
+                add(&name, text);
+            }
+            catalog.extend(telling.tools);
         }
-        told.catalog = catalog.tools.iter().map(|tool| tool.name.clone()).collect();
-        told.asks = catalog.asks;
     }
+    told.catalog = catalog;
     let mode = config.mode.unwrap_or_default();
     add(
         "environment",
@@ -199,22 +230,6 @@ fn skill_places(home: Option<&Path>, place: &Place) -> Vec<PathBuf> {
             .map(|folder| folder.join(".agents/skills")),
     );
     places
-}
-
-/// The catalog of the MCP servers' tools as the model is told it: how they are called, their declarations, and what
-/// could not be taken of the servers.
-fn catalog_told(catalog: &siphon_tools::mcp::Catalog) -> String {
-    let mut out = String::from("<catalog>\n");
-    if !catalog.tools.is_empty() {
-        out.push_str("The MCP servers' tools, members of `tools` as a script of `execute` calls them:\n");
-        out.push_str(&siphon_tools::declarations(&catalog.tools));
-        out.push('\n');
-    }
-    for problem in &catalog.problems {
-        let _ = writeln!(out, "[{problem}]");
-    }
-    out.push_str("</catalog>");
-    out
 }
 
 /// The environment a thread works in, as the model is told it: its workspace, the platform and shell its commands run

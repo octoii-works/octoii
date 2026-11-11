@@ -17,7 +17,7 @@ pub mod turn;
 
 pub use compaction::{CompactInput, CompactProgram};
 pub use delegate::{DelegateArgs, DelegateProgram, DelegateTool, DelegatedProgram};
-pub use gather::{Gather, Sources, answer_gather};
+pub use gather::{Gather, Sources, Teller, Telling, answer_gather};
 pub use model::{ModelRequest, answer_model};
 pub use resume::{ResumeInput, ResumeProgram};
 pub use review::answer_review;

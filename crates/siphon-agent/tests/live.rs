@@ -15,7 +15,6 @@ use siphon_agent::{CompactProgram, Gather, ModelRequest, Sources, ThreadProgram,
 use siphon_machine::Host as Machine;
 use siphon_runtime::{Asked, Options, Runtime};
 use siphon_threads::{Config, Mode, NewThread, Threads, Turn};
-use siphon_tools::mcp::{Servers, TrustProgram};
 use siphon_tools::{EditTool, Exec, ExecuteTool, GlobTool, GrepTool, ReadTool, ScriptProgram, ShellTool, Tools, WriteTool, answer_exec};
 
 /// The key in the environment, as the host's credentials.
@@ -74,19 +73,17 @@ fn new_id() -> String {
 }
 
 fn runtime(beak: &Beak, models: &Arc<Models>) -> Runtime {
-    let servers = Servers::start(Machine::default(), None);
     let inner = Tools::new()
         .with(ReadTool)
         .with(WriteTool)
         .with(EditTool)
         .with(GlobTool)
         .with(GrepTool)
-        .with(ShellTool)
-        .with_servers(servers.clone());
+        .with(ShellTool);
     let tools = inner.clone().with(ExecuteTool { tools: inner.clone() });
     let sources = Sources {
         tools: tools.clone(),
-        servers,
+        tellers: Vec::new(),
         models: Arc::clone(models),
         host: Machine::default(),
         home: None,
@@ -101,7 +98,6 @@ fn runtime(beak: &Beak, models: &Arc<Models>) -> Runtime {
             models: Arc::clone(models),
         })
         .program(ScriptProgram { tools: inner })
-        .program(TrustProgram)
         .program(TitleProgram)
         .program(CompactProgram)
         .handle(move |asked: Asked<Gather>| {

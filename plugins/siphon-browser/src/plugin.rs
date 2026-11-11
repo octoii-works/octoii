@@ -32,6 +32,8 @@ impl Plugin for BrowserPlugin {
             profile: self.profile,
             downloads: self.downloads,
         });
+        let closing = browser.clone();
+        builder.on_thread_deleted(move |thread| closing.close_thread(thread));
         let tool = BrowserTool { browser: browser.clone() };
         builder.tools(|tools| tools.with(tool));
         let doing = browser.clone();
