@@ -3,8 +3,8 @@
  * drawn as pixel type on grids of 16, 32 and 64 cells, each grid for the sizes that are whole multiples of it: the O a
  * rounded rectangle whose corners are clean pixel arcs, its strokes a little heavier than the i's stems, as a curve must
  * be to look as heavy as a straight; the i's flat stems under their dots, the O closer to them than they are to each
- * other. The wordmark is "Octoii" in the same letters on the grid of 32. From them come the app's icons, white on
- * #141414, and its favicon.
+ * other. The wordmark is "Octoii" in the same letters on the grid of 32. The app's icons are the wordmark, white on
+ * #141414; the favicon, too small for the word, the mark on its grid of 16.
  *
  *   bun scripts/brand.ts
  */
@@ -211,10 +211,10 @@ function chunk(kind: string, body: Uint8Array): Buffer {
 	return Buffer.concat([head, body, tail]);
 }
 
-/** The mark on the grid of 64 as a square 1-bit icon of `size`: at the most whole pixels a cell that keep every cell
- * within the circle a mask may cut a maskable icon to, of radius 40%, centred. */
+/** The wordmark as a square 1-bit icon of `size`: at the most whole pixels a cell that keep every cell within the
+ * circle a mask may cut a maskable icon to, of radius 40%, centred. */
 function icon(size: number): Buffer {
-	const figure = trimmed(mark(64, TIERS[64]));
+	const figure = trimmed(wordmark());
 	const points = [...figure.cells].map(point);
 	const reach = (k: number): number =>
 		Math.max(
