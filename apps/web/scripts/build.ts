@@ -11,8 +11,10 @@ import tailwind from "bun-plugin-tailwind";
 const root = new URL("..", import.meta.url).pathname;
 
 /** What the page at the app's address links, for a browser to install it; written here as the bundler would try to bundle them. */
-const INSTALL_LINKS =
-	'<link rel="manifest" href="/manifest.webmanifest"><link rel="icon" href="/icon-192.png"><link rel="apple-touch-icon" href="/apple-touch-icon.png">';
+const INSTALL_LINKS = '<link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" href="/apple-touch-icon.png">';
+
+/** The icons a browser installing the app takes, as `scripts/brand.ts` draws them. */
+const ICONS = ["icon-512.png", "icon-192.png", "apple-touch-icon.png"];
 
 /** Builds the page at `entry` into `outdir`, which it empties first. */
 async function buildPage(entry: string, outdir: string): Promise<void> {
@@ -46,6 +48,7 @@ export function buildWeb(outdir: string): Promise<void> {
 async function buildHosted(outdir: string): Promise<void> {
 	await buildPage(`${root}src/hosted/index.html`, outdir);
 	await cp(`${root}src/hosted/public`, outdir, { recursive: true });
+	await Promise.all(ICONS.map((icon) => cp(`${root}../../brand/${icon}`, `${outdir}/${icon}`)));
 	const page = `${outdir}/index.html`;
 	await writeFile(page, (await readFile(page, "utf8")).replace("</head>", `${INSTALL_LINKS}</head>`));
 }

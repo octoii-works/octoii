@@ -9,6 +9,7 @@
   "author": "Elian Yang (https://elianyang.com)",
   "scripts": {
     "build": "bun scripts/build.ts",
+    "brand": "bun scripts/brand.ts",
     "typecheck": "bun check",
     "test": "bun test --timeout=60000 --no-env-file --no-install ./test"
   },
