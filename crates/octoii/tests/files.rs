@@ -45,7 +45,10 @@ async fn served(siphon: &siphon::Siphon, access: &Access) -> String {
     let node = Node {
         siphon: siphon.clone(),
         access: access.clone(),
-        machine: Machine { name: "here".into() },
+        machine: Machine {
+            name: "here".into(),
+            workspace: siphon.machine.workspace_of(None).to_string_lossy().into_owned(),
+        },
         origins: Vec::new(),
         cookie: http::cookie_of(7600),
         app: None,

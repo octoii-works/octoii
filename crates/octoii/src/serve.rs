@@ -57,11 +57,13 @@ fn providers() -> Vec<Provider> {
 }
 
 /// The machine as the person's own: their home folder and shell, the system's temporary folder, the threads shown at
-/// the Home's `threads/`, and what the node keeps for itself — its credentials and its state —
-/// hidden from what reaches the machine through Siphon.
+/// the Home's `threads/`, what the node keeps for itself — its credentials and its state — hidden from what reaches the
+/// machine through Siphon, and `~/octoii`, where a thread of no folder works.
 fn machine(home: &Home) -> siphon_machine::Host {
+    let person = std::env::home_dir();
     siphon_machine::Host {
-        home: std::env::home_dir(),
+        workspace: person.as_ref().map(|person| person.join("octoii")),
+        home: person,
         shell: std::env::var_os("SHELL").map(PathBuf::from),
         excludes: None,
         temporary: vec![std::env::temp_dir()],
@@ -164,11 +166,15 @@ pub async fn serve_until(served: Served, stop: impl Future<Output = ()> + Send +
     // its model, and the person picks one, in the directory alone.
     let models = std::sync::Arc::clone(&siphon.models);
     tokio::spawn(async move { models.refresh().await });
+    // Where a thread of no folder works is there before any thread works in it.
+    let workspace = siphon.machine.workspace_of(None);
+    std::fs::create_dir_all(&workspace).with_context(|| format!("the folder of the threads of none, {}", workspace.display()))?;
     let node = Node {
         siphon: siphon.clone(),
         access: Access::new(siphon.runtime.clone()),
         machine: Machine {
             name: gethostname::gethostname().to_string_lossy().into_owned(),
+            workspace: workspace.to_string_lossy().into_owned(),
         },
         origins: vec![loopback.clone(), format!("http://localhost:{port}")],
         cookie: http::cookie_of(port),

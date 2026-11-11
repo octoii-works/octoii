@@ -87,7 +87,12 @@ async fn a_client_is_welcomed_its_calls_checked_and_answered() {
     let welcome = reader.message().await;
     assert_eq!(
         welcome,
-        json!({ "event": "welcome", "session": "session-1", "scopes": ["threads.read"], "machine": { "name": "here" } })
+        json!({
+            "event": "welcome",
+            "session": "session-1",
+            "scopes": ["threads.read"],
+            "machine": { "name": "here", "workspace": siphon.machine.workspace_of(None) },
+        })
     );
     reader.calls.send("{ not json".into()).await.expect("sent");
     let refused = reader.message().await;

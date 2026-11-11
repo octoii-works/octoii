@@ -26,6 +26,7 @@ import { MessageThreadContext } from "../components/thread/message-thread.ts";
 import { failed } from "../components/state/notices.ts";
 import { useSeen } from "../components/effects/seen.ts";
 import { useNow } from "../components/effects/now.ts";
+import { useFolder } from "../components/state/folder.ts";
 
 /** How often a page looks again whether the quota that limits its thread is given again: a minute. */
 const LIMITED_CHECKED_MS = 60_000;
@@ -53,7 +54,7 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 	const limited = limitedOf(conversation, row?.config.model ?? undefined, now);
 	const items = withLimited(itemsOf(conversation), limited, conversation.status?.resuming_at ?? undefined);
 	const project = row === undefined ? undefined : projectOf(row);
-	const workspace = row?.config.workspace ?? undefined;
+	const workspace = useFolder(row);
 	const said = firstSaid(items);
 	// Where the thread's turns stand, which its repository and its changes are read again at.
 	const revision = `${conversation.status?.turn ?? ""} ${String(conversation.status?.ended_at ?? "")}`;
@@ -123,6 +124,7 @@ function Dock(props: {
 }): ReactNode {
 	const { thread, row, conversation } = props;
 	const client = useClient();
+	const workspace = useFolder(row);
 	const working = conversation.status?.turn === "running" || conversation.inbox.length > 0;
 	return (
 		<div className="relative shrink-0 bg-background pb-[max(--spacing(4),env(safe-area-inset-bottom))]">
@@ -146,7 +148,7 @@ function Dock(props: {
 							sendShortcut={props.device.send_shortcut}
 							{...(working ? { placeholder: "Steer the work: your message joins at its next step" } : {})}
 							draft={{ thread }}
-							folder={row?.config.workspace ?? undefined}
+							folder={workspace}
 							onSend={async ({ text, attachments }) => {
 								props.onSent(await client.deliver(thread, contentOf(text, attachments)));
 							}}

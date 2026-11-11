@@ -37,7 +37,7 @@ describe("a client of the node's", () => {
 		const client = node.client({ report });
 		await until(() => client.status.value.status === "open", "the welcome");
 		const open = client.status.value;
-		expect(open.status === "open" && open.scopes.includes("threads.operate") && open.machine.length > 0).toBe(true);
+		expect(open.status === "open" && open.scopes.includes("threads.operate") && open.machine.name.length > 0 && open.machine.workspace.length > 0).toBe(true);
 		const thread = await client.create({ title: "first" });
 		expect((await client.threads()).map((row) => row.id)).toContain(thread);
 		client.close();

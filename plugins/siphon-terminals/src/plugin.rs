@@ -51,12 +51,7 @@ async fn answered(terminals: &Terminals, context: &Caller, method: Method) -> Re
                 .threads
                 .listed(&open.thread)
                 .map_err(|error| refused("no_such_thread", &error))?;
-            let cwd = listed
-                .config
-                .workspace
-                .map(std::path::PathBuf::from)
-                .or_else(|| context.siphon.machine.home.clone())
-                .unwrap_or_else(|| std::path::PathBuf::from("/"));
+            let cwd = context.siphon.machine.workspace_of(listed.config.workspace.as_deref());
             let terminal = terminals
                 .open(&open.thread, cwd, size(open.size))
                 .await

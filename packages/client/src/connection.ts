@@ -9,12 +9,12 @@ import { RECONNECT_MAX_MS, RECONNECT_MIN_MS } from "./constants.ts";
 import { ClientError, clientError, isConnectionError } from "./errors.ts";
 import { Value } from "./followed.ts";
 import type { ClientOptions, WebSocketLike } from "./options.ts";
-import { type Event, type MethodName, type ParamsOf, PROTOCOL, type Received, type ResultOf, type Scope } from "./protocol.ts";
+import { type Event, type Machine, type MethodName, type ParamsOf, PROTOCOL, type Received, type ResultOf, type Scope } from "./protocol.ts";
 
 /** Where the connection stands. */
 export type ConnectionStatus =
 	| { readonly status: "connecting"; readonly attempt: number }
-	| { readonly status: "open"; readonly session: string; readonly scopes: readonly Scope[]; readonly machine: string }
+	| { readonly status: "open"; readonly session: string; readonly scopes: readonly Scope[]; readonly machine: Machine }
 	| { readonly status: "waiting"; readonly until: number; readonly error?: ClientError }
 	| { readonly status: "stopped"; readonly error: ClientError };
 
@@ -134,7 +134,7 @@ export class Connection {
 
 	#welcomed(welcome: Extract<Event, { readonly event: "welcome" }>): void {
 		this.#drops = 0;
-		this.status.set({ status: "open", session: welcome.session, scopes: welcome.scopes, machine: welcome.machine.name });
+		this.status.set({ status: "open", session: welcome.session, scopes: welcome.scopes, machine: welcome.machine });
 		this.#handlers.opened();
 	}
 

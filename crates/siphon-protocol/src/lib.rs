@@ -69,10 +69,11 @@ pub enum Scope {
     AccessWrite,
 }
 
-/// The machine a client reached: its name.
+/// The machine a client reached: its name, and the folder a thread of no folder of its own works in.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct Machine {
     pub name: String,
+    pub workspace: String,
 }
 
 /// Nothing: what a method takes or answers where it takes or answers nothing.

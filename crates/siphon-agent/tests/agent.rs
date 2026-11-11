@@ -196,7 +196,7 @@ fn runtime(beak: &Beak, script: &Arc<Script>) -> Runtime {
         .program(ThreadProgram)
         .program(TurnProgram {
             tools,
-            home: None,
+            machine: siphon_machine::Host::default(),
             models: Arc::clone(&models),
         })
         .program(ScriptProgram { tools: inner })

@@ -282,7 +282,7 @@ fn programs(
         .program(ThreadProgram)
         .program(TurnProgram {
             tools,
-            home: machine.home.clone(),
+            machine: machine.clone(),
             models: Arc::clone(models),
         })
         .program(ScriptProgram { tools: inner })

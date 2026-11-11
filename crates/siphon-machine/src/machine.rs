@@ -13,8 +13,8 @@ use tokio_util::sync::CancellationToken;
 use crate::paths::Base;
 
 /// The machine as the host gives it: the home folder of the person it runs for and their shell; their own ignore file,
-/// git's `core.excludesFile`; what the host keeps for itself, by absolute paths, which nothing reaches through it; and
-/// the folder the threads are shown in, where the host lays them out.
+/// git's `core.excludesFile`; what the host keeps for itself, by absolute paths, which nothing reaches through it; the
+/// folder the threads are shown in, where the host lays them out; and the folder a thread of no folder works in.
 #[derive(Debug, Clone, Default)]
 pub struct Host {
     pub home: Option<PathBuf>,
@@ -24,6 +24,21 @@ pub struct Host {
     pub temporary: Vec<PathBuf>,
     pub hidden: Vec<PathBuf>,
     pub threads: Option<PathBuf>,
+    /// The folder a thread of no folder of its own works in, no project's.
+    pub workspace: Option<PathBuf>,
+}
+
+impl Host {
+    /// The folder a thread works in: `given`, its own, else the folder of the threads of none, else the person's home,
+    /// else the machine's root.
+    #[must_use]
+    pub fn workspace_of(&self, given: Option<&str>) -> PathBuf {
+        given
+            .map(PathBuf::from)
+            .or_else(|| self.workspace.clone())
+            .or_else(|| self.home.clone())
+            .unwrap_or_else(|| PathBuf::from("/"))
+    }
 }
 
 /// Where work on the machine may write: anywhere; or within the places given alone — a thread's workspace and the

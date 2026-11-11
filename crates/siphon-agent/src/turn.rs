@@ -7,7 +7,6 @@
 //! one as too long. Asked to stop, it keeps what had come of the reply and what its calls gave as they were cut off, and
 //! ends every call it never ran as stopped, so every call the log holds has its result.
 
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use octoii_ai::models::Models;
@@ -73,12 +72,12 @@ impl TurnState {
     };
 }
 
-/// The program of a thread's turns: its calls taken on with `tools`, their paths starting from the person's `home`
-/// where the thread names no workspace; how full a window may grow told by the `models`' facts.
+/// The program of a thread's turns: its calls taken on with `tools`, their paths starting from where the `machine`
+/// has the thread work; how full a window may grow told by the `models`' facts.
 #[derive(Debug, Clone)]
 pub struct TurnProgram {
     pub tools: Tools,
-    pub home: Option<PathBuf>,
+    pub machine: siphon_machine::Host,
     pub models: Arc<Models>,
 }
 
@@ -272,17 +271,11 @@ impl TurnProgram {
         Ok(Ending::Next(TurnState::FRESH))
     }
 
-    /// Where the thread's paths start: its workspace, else the person's home, else the machine's root.
+    /// Where the thread's paths start: the folder the machine has it work in.
     fn base(&self, config: &Config) -> Base {
-        let workspace = config
-            .workspace
-            .as_deref()
-            .map(PathBuf::from)
-            .or_else(|| self.home.clone())
-            .unwrap_or_else(|| PathBuf::from("/"));
         Base {
-            workspace,
-            home: self.home.clone(),
+            workspace: self.machine.workspace_of(config.workspace.as_deref()),
+            home: self.machine.home.clone(),
         }
     }
 

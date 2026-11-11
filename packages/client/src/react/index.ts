@@ -5,7 +5,7 @@
 import { createContext, createElement, type ReactNode, useContext, useSyncExternalStore } from "react";
 import type { Client } from "../client.ts";
 import type { ConnectionStatus } from "../connection.ts";
-import type { PageListed, Settings, TerminalListed } from "../protocol.ts";
+import type { Machine, PageListed, Settings, TerminalListed } from "../protocol.ts";
 import { type Conversation, conversationOf } from "../conversation.ts";
 import type { Followable, Followed } from "../followed.ts";
 import type { ThreadView } from "../thread.ts";
@@ -43,6 +43,12 @@ export function useClient(): Client {
 /** Where the connection stands. */
 export function useConnection(): ConnectionStatus {
 	return useFollowed("status", (client) => followedValue(client.status));
+}
+
+/** The machine the client reached, while it is connected: its name, and the folder a thread of no folder works in. */
+export function useMachine(): Machine | undefined {
+	const status = useConnection();
+	return status.status === "open" ? status.machine : undefined;
 }
 
 /** A thread, as far as the client has read it, followed while a component reads it. */

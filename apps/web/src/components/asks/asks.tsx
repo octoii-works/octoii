@@ -46,6 +46,7 @@ import { Kbd } from "../ui/kbd.tsx";
 import { Pill } from "../ui/pill.tsx";
 import { Segmented } from "../ui/segmented.tsx";
 import { Switch } from "../ui/switch.tsx";
+import { useFolder } from "../state/folder.ts";
 
 /**
  * What waits on the person in `thread`, docked in the composer's place while it waits: the oldest of `asks`, in the
@@ -54,13 +55,14 @@ import { Switch } from "../ui/switch.tsx";
  */
 export function AskDock(props: { readonly thread: string; readonly asks: readonly Ask[] }): ReactNode {
 	const row = useThreads()?.find((each) => each.id === props.thread);
+	const workspace = useFolder(row);
 	const [first] = props.asks.toSorted((a, b) => (a.key < b.key ? -1 : 1));
 	if (first === undefined) return null;
 	return (
 		<section aria-label="Waiting for you">
 			{props.asks.length > 1 ? <p className="mb-1.5 px-1 text-end text-xs text-muted-foreground tabular-nums">1 of {props.asks.length}</p> : null}
 			<div className="max-h-[70dvh] overflow-y-auto rounded-lg border border-border bg-card p-4 shadow-raised">
-				<AskForm key={first.key} thread={props.thread} workspace={row?.config.workspace ?? undefined} project={row?.project ?? undefined} ask={first} />
+				<AskForm key={first.key} thread={props.thread} workspace={workspace} project={row?.project ?? undefined} ask={first} />
 			</div>
 		</section>
 	);

@@ -93,7 +93,7 @@ fn runtime(beak: &Beak, models: &Arc<Models>) -> Runtime {
         .program(ThreadProgram)
         .program(TurnProgram {
             tools,
-            home: None,
+            machine: siphon_machine::Host::default(),
             models: Arc::clone(models),
         })
         .program(ScriptProgram { tools: inner })

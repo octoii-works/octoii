@@ -31,6 +31,7 @@ import { SpendingCard } from "./spending.tsx";
 import { ContextCard } from "./context-card.tsx";
 import { isCompacting } from "../../core/context.ts";
 import { SubThreadAvatar, WorkedFor } from "./sub-thread.tsx";
+import { useFolder } from "../state/folder.ts";
 
 /** What the card tells of: the thread, as it is listed, its turns, and where its turns stand, which its repository is read again at. */
 export type DetailsProps = {
@@ -83,7 +84,7 @@ export function InlineDetails(props: DetailsProps): ReactNode {
 
 /** The card's sections, a line between each two. */
 function DetailsCard(props: DetailsProps): ReactNode {
-	const folder = props.row?.config.workspace ?? undefined;
+	const folder = useFolder(props.row);
 	return (
 		<div className="flex flex-col divide-y divide-border text-ui">
 			<Workspace thread={props.thread} folder={folder} />
@@ -136,7 +137,7 @@ function RowContent(props: { readonly icon: ReactNode; readonly label: ReactNode
 /** The machine the thread works on, by the name it goes by; and its folder, opened in the Files view, or that it works in none. */
 function Workspace(props: { readonly thread: string; readonly folder: string | undefined }): ReactNode {
 	const connection = useConnection();
-	const machine = connection.status === "open" ? connection.machine : undefined;
+	const machine = connection.status === "open" ? connection.machine.name : undefined;
 	const { folder } = props;
 	return (
 		<section className="p-1.5">

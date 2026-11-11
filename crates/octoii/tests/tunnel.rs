@@ -48,7 +48,10 @@ async fn a_device_pairs_through_the_tunnel_and_speaks_the_protocol_by_its_bearer
     let node = Node {
         siphon: siphon.clone(),
         access: access.clone(),
-        machine: Machine { name: "here".into() },
+        machine: Machine {
+            name: "here".into(),
+            workspace: siphon.machine.workspace_of(None).to_string_lossy().into_owned(),
+        },
         origins: Vec::new(),
         cookie: http::cookie_of(7600),
         app: None,

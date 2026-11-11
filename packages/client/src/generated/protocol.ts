@@ -425,9 +425,9 @@ export type ListServers = { workspace?: string, };
 export type Listed = { id: string, project?: string | null, parent?: Parent | null, config: Config, marks: Marks, status: Status, };
 
 /**
- * The machine a client reached: its name.
+ * The machine a client reached: its name, and the folder a thread of no folder of its own works in.
  */
-export type Machine = { name: string, };
+export type Machine = { name: string, workspace: string, };
 
 export type MarkThread = { thread: string, change: MarksChange, };
 
