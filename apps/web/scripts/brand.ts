@@ -3,7 +3,7 @@
  * drawn as pixel type on grids of 16, 32 and 64 cells, each grid for the sizes that are whole multiples of it: the O a
  * rounded rectangle whose corners are clean pixel arcs, its strokes a little heavier than the i's stems, as a curve must
  * be to look as heavy as a straight; the i's flat stems under their dots, the O closer to them than they are to each
- * other. The wordmark is "Octoii" in the same letters on the grid of 32. The app's icons are the wordmark, white on
+ * other. The wordmark is "Octoii" in bold letters built the same way. The app's icons are the wordmark, white on
  * #141414; the favicon, too small for the word, the mark on its grid of 16.
  *
  *   bun scripts/brand.ts
@@ -123,45 +123,44 @@ function mark(n: number, { o, i, gaps, overshoot }: Tier): Cells {
 	return union(ring({ left, top, w: o.w, h: o.h, r: o.r }, o, o.counter), letterI(first, base, i), letterI(first + i.stem + gaps.ii, base, i));
 }
 
-/** A cut of the wordmark: its O and i's, as the mark's; its lowercase o's width, radius and counter's radius, the c an o
- * opened; its t's rise above the x-height, bar and foot; and the space between letters. */
+/** The wordmark's letters: its O and i's, built as the mark's; its lowercase o's width, radius and counter's radius, the
+ * c an o opened; its t's rise above the x-height, bar and foot; and the space after each letter but the last, O to i. */
 type Word = {
 	readonly o: Tier["o"];
 	readonly i: LetterI;
 	readonly small: { readonly w: number; readonly r: number; readonly counter: number };
 	readonly t: { readonly rise: number; readonly bar: number; readonly foot: number };
-	readonly track: number;
+	readonly tracks: readonly [number, number, number, number, number];
 };
 
-/** The wordmark's cuts: for text, its capitals 18 cells high, the mark's on the grid of 32; for icons, 14 high and
- * narrower, so that three pixels a cell fill a small icon. */
-const WORDS: Record<"text" | "icon", Word> = {
-	text: { o: TIERS[32].o, i: TIERS[32].i, small: { w: 11, r: 5, counter: 2 }, t: { rise: 4, bar: 8, foot: 2 }, track: 2 },
-	icon: {
-		o: { w: 12, h: 14, r: 5, side: 2, top: 2, counter: 3 },
-		i: { stem: 2, xHeight: 10, dot: 2, gap: 1, corners: { stem: 0, dot: 0 } },
-		small: { w: 9, r: 4, counter: 2 },
-		t: { rise: 3, bar: 6, foot: 2 },
-		track: 2,
-	},
+/** The wordmark's letters: capitals 14 cells high, bold — stems of 3 — the c and the t, open at their sides, set closer,
+ * so that three pixels a cell fill a small icon. */
+const WORD: Word = {
+	o: { w: 12, h: 14, r: 5, side: 3, top: 3, counter: 3 },
+	i: { stem: 3, xHeight: 10, dot: 3, gap: 1, corners: { stem: 0, dot: 0 } },
+	small: { w: 9, r: 4, counter: 1 },
+	t: { rise: 3, bar: 6, foot: 2 },
+	tracks: [2, 1, 1, 2, 2],
 };
 
-/** The wordmark, "Octoii", in `cut`: its O and i's the mark's, its o, c and t of the same strokes. */
-function wordmark({ o, i, small, t, track }: Word): Cells {
+/** The wordmark, "Octoii": its O and i's built as the mark's, its o, c and t of the same strokes. */
+function wordmark(): Cells {
+	const { o, i, small, t, tracks } = WORD;
+	const [oc, ct, to, oi, ii] = tracks;
 	const base = o.h - 1;
 	const xTop = base - i.xHeight + 1;
 	const s = i.stem;
 	const stroke = { side: s, top: s };
 	const lower = { top: xTop, w: small.w, h: i.xHeight, r: small.r };
 	const letters: Cells[] = [ring({ left: 0, top: 0, w: o.w, h: o.h, r: o.r }, o, o.counter)];
-	let x = o.w + track;
+	let x = o.w + oc;
 	// The c: an o opened on its right — its last column gone, so its terminals end flat, and its right half between them.
 	const c = [...ring({ left: x, ...lower }, stroke, small.counter)].filter((key) => {
 		const [cx, cy] = point(key);
 		return cx < x + small.w - 1 && !(cx > x + Math.floor(small.w / 2) && cy >= xTop + s && cy < xTop + i.xHeight - s);
 	});
 	letters.push(new Set(c));
-	x += small.w - 1 + track;
+	x += small.w - 1 + ct;
 	// The t: a stem rising above the x-height, a bar across its top, its foot turned right.
 	const stemLeft = x + Math.floor((t.bar - s) / 2);
 	letters.push(
@@ -169,10 +168,10 @@ function wordmark({ o, i, small, t, track }: Word): Cells {
 		block({ left: x, top: xTop, w: t.bar, h: s, r: 0 }),
 		block({ left: stemLeft + s, top: base - s + 1, w: t.foot, h: s, r: 0 }),
 	);
-	x += t.bar + track;
+	x += t.bar + to;
 	letters.push(ring({ left: x, ...lower }, stroke, small.counter));
-	x += small.w + track;
-	letters.push(letterI(x, base, i), letterI(x + s + track, base, i));
+	x += small.w + oi;
+	letters.push(letterI(x, base, i), letterI(x + s + ii, base, i));
 	return union(...letters);
 }
 
@@ -236,7 +235,7 @@ function chunk(kind: string, body: Uint8Array): Buffer {
  * circle of `reach` of the size, centred — 40% for an icon a mask may cut to that circle, 50% for one only its corners
  * are rounded off. */
 function icon(size: number, reach: number): Buffer {
-	const figure = trimmed(wordmark(WORDS.icon));
+	const figure = trimmed(wordmark());
 	const points = [...figure.cells].map(point);
 	const extent = (k: number): number =>
 		Math.max(
@@ -285,7 +284,7 @@ if (import.meta.main) {
 		["mark-16.svg", figureSvg(mark(16, TIERS[16]))],
 		["mark-32.svg", figureSvg(mark(32, TIERS[32]))],
 		["mark-64.svg", figureSvg(mark(64, TIERS[64]))],
-		["wordmark.svg", figureSvg(wordmark(WORDS.text))],
+		["wordmark.svg", figureSvg(wordmark())],
 		["favicon.svg", favicon()],
 		["icon-512.png", icon(512, 0.4)],
 		["icon-192.png", icon(192, 0.4)],
