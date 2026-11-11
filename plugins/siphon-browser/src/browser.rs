@@ -142,6 +142,8 @@ pub enum BrowserError {
     Cdp(#[from] CdpError),
     #[error(transparent)]
     Beak(#[from] beak::Error),
+    #[error("the browser's own folders: {0}")]
+    Folders(String),
 }
 
 /// A page's target as what reads and acts on it speaks to it: the pipe, and the target's session.
@@ -1082,6 +1084,11 @@ fn launch(host: &BrowserHost) -> Result<Running, BrowserError> {
         home: Some(home.clone()),
     };
     let machine = Machine::open(&host.kernel, &host.machine, base, &Writes::Anywhere, None)?;
+    // The browser's own folders, among what the host keeps for itself, are its own to reach.
+    for own in host.profile.iter().chain(&host.downloads) {
+        std::fs::create_dir_all(own).map_err(|error| BrowserError::Folders(error.to_string()))?;
+        machine.bind(own)?;
+    }
     let spec = Spec {
         stdio: Stdio::Channel,
         ..Spec::new(Exec::Argv(argv), home.to_string_lossy())

@@ -17,6 +17,14 @@ use tokio_util::io::StreamReader;
 
 use crate::machine::{Machine, RunError};
 
+/// The variables a coprocess runs with: these over the machine's own, as a child inherits its parent's; or these
+/// alone, as `execve` is given its whole environment.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Variables {
+    Over(Vec<(String, String)>),
+    Only(Vec<(String, String)>),
+}
+
 /// A program running beside the host: its standard input, output and errors, as a child's are.
 #[derive(Debug)]
 pub struct Coprocess {
@@ -41,21 +49,19 @@ pub struct Stdout {
 pub struct Stderr(Arc<Command>);
 
 impl Machine {
-    /// Starts `argv` in `cwd` as a coprocess at `time`, the variables `set` over the machine's own, held to what the
-    /// namespace reaches, recorded under `under`.
+    /// Starts `argv` in `cwd` as a coprocess at `time` with `variables`, held to what the namespace reaches, recorded
+    /// under `under`.
     ///
     /// # Errors
     /// `MissingProgram`; Beak's failure to start it.
-    pub fn coprocess(
-        &self,
-        time: i64,
-        under: &[u8],
-        argv: Vec<String>,
-        cwd: &Path,
-        set: Vec<(String, String)>,
-    ) -> Result<Coprocess, RunError> {
+    pub fn coprocess(&self, time: i64, under: &[u8], argv: Vec<String>, cwd: &Path, variables: Variables) -> Result<Coprocess, RunError> {
+        let (set, clear) = match variables {
+            Variables::Over(set) => (set, false),
+            Variables::Only(set) => (set, true),
+        };
         let spec = Spec {
             set,
+            clear,
             stdio: Stdio::Coprocess,
             ..Spec::new(Exec::Argv(argv), cwd.to_string_lossy())
         };

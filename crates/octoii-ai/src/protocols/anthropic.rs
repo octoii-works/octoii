@@ -28,14 +28,22 @@ pub const API_VERSION: &str = "2026-10-21";
 /// The beta that takes an effort changed where it stands.
 pub const MESSAGE_EFFORT_BETA: &str = "mid-conversation-output-config-2026-07-01";
 
-/// The request as Anthropic takes it for `model`, and the betas it needs.
+/// A request's conversation as Anthropic's messages carry it for `model`: its system, its messages, the effort it is
+/// answered at, and whether an effort changed stands where it was changed.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Rendered {
+    pub system: Vec<Value>,
+    pub messages: Vec<Value>,
+    pub effort: Option<ReasoningEffort>,
+    pub effort_updates: bool,
+}
+
+/// The conversation of `request` as Anthropic's messages carry it for `model`.
 ///
 /// # Errors
-/// An `invalid_request` failure for what Anthropic refuses: a call forced while the model reasons, no limit on the
-/// answer where the model gives none, a file in an update, a file the host does not have.
-pub fn render(call: &Call, model: &Model, request: &Request) -> Result<(Value, Vec<&'static str>), Failure> {
+/// An `invalid_request` failure for a file in an update, or a file the host does not have.
+pub fn rendered(call: &Call, model: &Model, request: &Request) -> Result<Rendered, Failure> {
     let reference = model.reference();
-    let refused = |words: String| Failure::new(FailureKind::InvalidRequest, words);
     let mut effort = request.reasoning.map(|reasoning| reasoning.effort);
     let updates: Vec<ReasoningEffort> = request
         .input
@@ -50,17 +58,6 @@ pub fn render(call: &Call, model: &Model, request: &Request) -> Result<(Value, V
     if !in_place && let Some(last) = updates.last() {
         effort = Some(*last);
     }
-    let reasons = model.reasoning.is_some() && effort != Some(ReasoningEffort::None);
-    if reasons && matches!(request.tool_choice, Some(ToolChoice::Required | ToolChoice::Function { .. })) {
-        return Err(refused(format!(
-            "The model {reference} reasons, and Anthropic refuses a request that forces a call while the model reasons"
-        )));
-    }
-    let max_tokens = request.max_output_tokens.or(model.max_output_tokens).ok_or_else(|| {
-        refused(format!(
-            "The request gives no limit on its answer and the model {reference} has none: Anthropic needs one"
-        ))
-    })?;
     let mut conversation = Conversation {
         call,
         reference: &reference,
@@ -74,6 +71,39 @@ pub fn render(call: &Call, model: &Model, request: &Request) -> Result<(Value, V
     };
     conversation.build(request)?;
     let messages = conversation.messages();
+    Ok(Rendered {
+        system: conversation.system,
+        messages,
+        effort,
+        effort_updates: in_place && !updates.is_empty(),
+    })
+}
+
+/// The request as Anthropic takes it for `model`, and the betas it needs.
+///
+/// # Errors
+/// An `invalid_request` failure for what Anthropic refuses: a call forced while the model reasons, no limit on the
+/// answer where the model gives none, a file in an update, a file the host does not have.
+pub fn render(call: &Call, model: &Model, request: &Request) -> Result<(Value, Vec<&'static str>), Failure> {
+    let reference = model.reference();
+    let refused = |words: String| Failure::new(FailureKind::InvalidRequest, words);
+    let Rendered {
+        system,
+        messages,
+        effort,
+        effort_updates,
+    } = rendered(call, model, request)?;
+    let reasons = model.reasoning.is_some() && effort != Some(ReasoningEffort::None);
+    if reasons && matches!(request.tool_choice, Some(ToolChoice::Required | ToolChoice::Function { .. })) {
+        return Err(refused(format!(
+            "The model {reference} reasons, and Anthropic refuses a request that forces a call while the model reasons"
+        )));
+    }
+    let max_tokens = request.max_output_tokens.or(model.max_output_tokens).ok_or_else(|| {
+        refused(format!(
+            "The request gives no limit on its answer and the model {reference} has none: Anthropic needs one"
+        ))
+    })?;
     let mut body = json!({
         "model": model.id,
         "max_tokens": max_tokens,
@@ -81,8 +111,8 @@ pub fn render(call: &Call, model: &Model, request: &Request) -> Result<(Value, V
         "cache_control": { "type": "ephemeral" },
         "stream": true,
     });
-    if !conversation.system.is_empty() {
-        body["system"] = Value::Array(conversation.system);
+    if !system.is_empty() {
+        body["system"] = Value::Array(system);
     }
     if !request.tools.is_empty() {
         body["tools"] = Value::Array(request.tools.iter().map(rendered_tool).collect());
@@ -112,11 +142,7 @@ pub fn render(call: &Call, model: &Model, request: &Request) -> Result<(Value, V
     if !output.is_empty() {
         body["output_config"] = Value::Object(output);
     }
-    let betas = if in_place && !updates.is_empty() {
-        vec![MESSAGE_EFFORT_BETA]
-    } else {
-        Vec::new()
-    };
+    let betas = if effort_updates { vec![MESSAGE_EFFORT_BETA] } else { Vec::new() };
     Ok((body, betas))
 }
 

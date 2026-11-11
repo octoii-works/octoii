@@ -38,6 +38,7 @@ siphon = { path = "../siphon" }
 siphon-browser = { path = "../../plugins/siphon-browser" }
 siphon-machine = { path = "../siphon-machine" }
 siphon-image = { path = "../siphon-image" }
+siphon-claude-code = { path = "../../plugins/siphon-claude-code" }
 siphon-mcp = { path = "../../plugins/siphon-mcp" }
 siphon-protocol = { path = "../siphon-protocol" }
 siphon-runtime = { path = "../siphon-runtime" }

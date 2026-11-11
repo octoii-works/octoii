@@ -337,8 +337,9 @@ async fn a_coprocess_reads_what_it_is_given_answers_on_its_output_keeps_its_erro
         "-c".into(),
         "printf started >&2; while read line; do echo \"$WORD $line\"; done".into(),
     ];
-    let set = vec![("WORD".into(), "heard".into())];
-    let siphon_machine::Coprocess { mut stdin, stdout, stderr } = machine.coprocess(1_000, b"", argv, &workspace, set).expect("started");
+    let variables = siphon_machine::Variables::Over(vec![("WORD".into(), "heard".into())]);
+    let siphon_machine::Coprocess { mut stdin, stdout, stderr } =
+        machine.coprocess(1_000, b"", argv, &workspace, variables).expect("started");
     let mut stdout = BufReader::new(stdout);
     stdin.write_all(b"one\n").await.expect("written");
     let mut line = String::new();
@@ -349,6 +350,59 @@ async fn a_coprocess_reads_what_it_is_given_answers_on_its_output_keeps_its_erro
     let mut rest = String::new();
     stdout.read_to_string(&mut rest).await.expect("read to its end");
     assert_eq!(rest, "", "its output ends as it does");
-    let missing = machine.coprocess(1_000, b"", vec!["no-such-program-anywhere".into()], &workspace, Vec::new());
+    let missing = machine.coprocess(
+        1_000,
+        b"",
+        vec!["no-such-program-anywhere".into()],
+        &workspace,
+        siphon_machine::Variables::Over(Vec::new()),
+    );
     assert!(matches!(missing, Err(RunError::MissingProgram(_))));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_coprocess_given_its_variables_alone_runs_with_those_alone() {
+    use tokio::io::AsyncReadExt as _;
+
+    let beak = Beak::new().expect("Beak");
+    let kernel = kernel(&beak);
+    let (machine, _folder, workspace) = machine(&kernel, &Host::default());
+    let argv = vec!["/bin/sh".into(), "-c".into(), "printf '%s|%s' \"$WORD\" \"${HOME-none}\"".into()];
+    let only = siphon_machine::Variables::Only(vec![("WORD".into(), "alone".into())]);
+    let mut coprocess = machine.coprocess(1_000, b"", argv, &workspace, only).expect("started");
+    let mut told = String::new();
+    coprocess.stdout.read_to_string(&mut told).await.expect("read");
+    assert_eq!(told, "alone|none", "nothing of the machine's own");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_folder_bound_back_over_what_the_host_hides_is_reached_by_a_command_and_the_rest_is_not() {
+    use tokio::io::AsyncReadExt as _;
+
+    let beak = Beak::new().expect("Beak");
+    let kernel = kernel(&beak);
+    let kept = tempfile::tempdir().expect("a folder");
+    let kept = kept.path().canonicalize().expect("its real path");
+    let own = kept.join("plugin");
+    std::fs::create_dir_all(&own).expect("its folder");
+    std::fs::write(kept.join("secret"), "s").expect("written");
+    let host = Host {
+        hidden: vec![kept.clone()],
+        ..Host::default()
+    };
+    let (machine, _folder, workspace) = machine(&kernel, &host);
+    machine.bind(&own).expect("bound");
+    let line = format!(
+        "printf x > '{}/made' && printf ok; cat '{}/secret' 2>/dev/null || printf ' hidden'",
+        own.display(),
+        kept.display()
+    );
+    let argv = vec!["/bin/sh".into(), "-c".into(), line];
+    let mut coprocess = machine
+        .coprocess(1_000, b"", argv, &workspace, siphon_machine::Variables::Over(Vec::new()))
+        .expect("started");
+    let mut told = String::new();
+    coprocess.stdout.read_to_string(&mut told).await.expect("read");
+    assert_eq!(told, if beak::machine_confines() { "ok hidden" } else { "oks" });
+    assert!(own.join("made").is_file(), "its own folder written");
 }

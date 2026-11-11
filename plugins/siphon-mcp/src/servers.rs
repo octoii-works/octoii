@@ -19,7 +19,7 @@ use rmcp::service::{Peer, RoleClient, RunningService, ServiceExt};
 use rmcp::transport::{StreamableHttpClientTransport, streamable_http_client::StreamableHttpClientTransportConfig};
 use siphon::{Ends, Kept};
 use siphon_machine::paths::Base;
-use siphon_machine::{Host, Machine, Writes};
+use siphon_machine::{Host, Machine, Variables, Writes};
 use siphon_runtime::Runtime;
 
 use crate::config::{Configured, Launch, OWN_FILE, PROJECT_FILE, Server, parse};
@@ -365,7 +365,7 @@ async fn connect(runtime: Runtime, host: Host, server: Server) -> Result<Connect
             let mut argv = vec![command.clone()];
             argv.extend(args.iter().cloned());
             let coprocess = machine
-                .coprocess(runtime.now_ms(), b"", argv, cwd, env.clone())
+                .coprocess(runtime.now_ms(), b"", argv, cwd, Variables::Over(env.clone()))
                 .map_err(|error| error.to_string())?;
             let serving = ().serve((coprocess.stdout, coprocess.stdin));
             match tokio::time::timeout(CONNECTING_MAX, serving).await {

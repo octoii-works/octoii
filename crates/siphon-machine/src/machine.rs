@@ -157,6 +157,16 @@ impl Machine {
         self.base.shown(&Path::new("/").join(path))
     }
 
+    /// Binds the host's folder `place` back, writable, over what hides it, as `mount --bind` does: a plugin's own
+    /// folder, among what the host keeps for itself, reached by the plugin's own programs alone.
+    ///
+    /// # Errors
+    /// Beak's failure to mount it.
+    pub fn bind(&self, place: &Path) -> beak::Result<()> {
+        self.namespace
+            .mount(&inside(place), &FileSystem::Host(&place.to_string_lossy()), true)
+    }
+
     /// The namespace the machine is reached through.
     #[must_use]
     pub fn namespace(&self) -> &Namespace {

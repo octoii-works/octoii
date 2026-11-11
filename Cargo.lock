@@ -3901,6 +3901,7 @@ dependencies = [
  "sha2 0.11.1",
  "siphon",
  "siphon-browser",
+ "siphon-claude-code",
  "siphon-image",
  "siphon-machine",
  "siphon-mcp",
@@ -5603,6 +5604,24 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "ts-rs",
+]
+
+[[package]]
+name = "siphon-claude-code"
+version = "0.1.0"
+dependencies = [
+ "beak",
+ "futures",
+ "octoii-ai",
+ "serde",
+ "serde_json",
+ "siphon",
+ "siphon-machine",
+ "siphon-tools",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "tracing",
 ]
 
 [[package]]

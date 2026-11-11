@@ -9,7 +9,7 @@ mod machine;
 pub mod paths;
 mod search;
 
-pub use coprocess::{Coprocess, Stderr, Stdin, Stdout};
+pub use coprocess::{Coprocess, Stderr, Stdin, Stdout, Variables};
 pub use files::{Change, EditOutcome, Error, Is, Read, ReadOptions, Stat, media_type};
 pub use machine::{Errors, Host, Machine, Program, Ran, RunError, ThreadsView, Writes};
 pub use search::{Globbed, GrepError, GrepFile, GrepLine, GrepOptions, Grepped, Listed, Walked};

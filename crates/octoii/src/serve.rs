@@ -14,6 +14,7 @@ use octoii_ai::models::Provider;
 use siphon::providers::SignInSetup;
 use siphon::{Setup, Siphon};
 use siphon_browser::BrowserPlugin;
+use siphon_claude_code::ClaudeCodePlugin;
 use siphon_mcp::McpPlugin;
 use siphon_protocol::Machine;
 use siphon_runtime::Options;
@@ -76,8 +77,8 @@ pub fn siphon(home: &Home, sign_in: SignInSetup) -> anyhow::Result<Siphon> {
     building(home, sign_in)?.start().context("Siphon")
 }
 
-/// Siphon on this computer being built, its core plugins added — the browser, the terminals, the MCP servers — for the
-/// node to add its own and start it.
+/// Siphon on this computer being built, its core plugins added — the browser, the terminals, the MCP servers, Claude
+/// Code — for the node to add its own and start it.
 ///
 /// # Errors
 /// Where Beak or the volume cannot be opened.
@@ -106,7 +107,11 @@ pub fn building(home: &Home, sign_in: SignInSetup) -> anyhow::Result<siphon::Bui
     let config = McpPlugin {
         config: Some(home.config()),
     };
-    Ok(built.plugin(browser).plugin(TerminalsPlugin).plugin(config))
+    let claude = ClaudeCodePlugin {
+        program: None,
+        folder: home.state().join("claude-code"),
+    };
+    Ok(built.plugin(browser).plugin(TerminalsPlugin).plugin(config).plugin(claude))
 }
 
 /// Serves the node as `served` says, till it is asked to stop: an interrupt, or a terminate.
