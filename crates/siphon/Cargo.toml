@@ -1,0 +1,25 @@
+[package]
+name = "siphon"
+description = "Siphon whole: the runtime on Beak with every program and handler of the agent, its tools, the MCP servers, the terminals and the browser, started as one"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+beak = { path = "../../vendor/beak/crates/beak" }
+octoii-ai = { path = "../octoii-ai" }
+siphon-agent = { path = "../siphon-agent" }
+siphon-browser = { path = "../siphon-browser" }
+siphon-machine = { path = "../siphon-machine" }
+siphon-runtime = { path = "../siphon-runtime" }
+siphon-terminals = { path = "../siphon-terminals" }
+siphon-threads = { path = "../siphon-threads" }
+siphon-tools = { path = "../siphon-tools" }
+
+[dev-dependencies]
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros"] }

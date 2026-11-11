@@ -3010,6 +3010,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "siphon"
+version = "0.1.0"
+dependencies = [
+ "beak",
+ "octoii-ai",
+ "siphon-agent",
+ "siphon-browser",
+ "siphon-machine",
+ "siphon-runtime",
+ "siphon-terminals",
+ "siphon-threads",
+ "siphon-tools",
+ "tokio",
+]
+
+[[package]]
 name = "siphon-accounts"
 version = "0.1.0"
 dependencies = [

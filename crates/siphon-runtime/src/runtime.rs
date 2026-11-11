@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use beak::{Kernel, Snapshot, layout};
+use beak::{Beak, Events, Kernel, Snapshot, layout};
 use bytes::Bytes;
 use tokio::sync::{Notify, watch};
 use tokio_util::sync::CancellationToken;
@@ -91,6 +91,22 @@ impl Default for Options {
             clock: Arc::new(SystemClock),
             collection: Collection::default(),
         }
+    }
+}
+
+impl Options {
+    /// The kernel of the volume these options name, opened, with what it tells.
+    ///
+    /// # Errors
+    /// The volume's failure, as another holding its directory.
+    pub fn open(&self, beak: &Beak) -> beak::Result<(Kernel, Events)> {
+        Kernel::open(
+            beak,
+            &beak::Options {
+                directory: self.directory.clone(),
+                time: self.clock.now_ms(),
+            },
+        )
     }
 }
 

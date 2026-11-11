@@ -6,7 +6,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use beak::{Beak, Kernel};
+use beak::{Beak, Events, Kernel};
 use bytes::Bytes;
 use schemars::JsonSchema;
 use tokio::sync::{Notify, watch};
@@ -123,19 +123,23 @@ impl Builder {
         self
     }
 
-    /// Opens the kernel as `options` say, registers the programs and starts the runtime's tasks on the current Tokio
-    /// runtime: the requests made before it opened are told first, a handler's answered interrupted.
+    /// Opens the kernel as `options` say and starts the runtime on it.
     ///
     /// # Errors
     /// The volume's failure, as another holding its directory.
     pub fn start(self, beak: &Beak, options: Options) -> beak::Result<Runtime> {
-        let (kernel, events) = Kernel::open(
-            beak,
-            &beak::Options {
-                directory: options.directory.clone(),
-                time: options.clock.now_ms(),
-            },
-        )?;
+        let opened = options.open(beak)?;
+        self.start_on(opened, options)
+    }
+
+    /// Registers the programs on the kernel `opened` — opened as `options` say, by `Options::open`, for what is built
+    /// on it before the runtime — and starts the runtime's tasks on the current Tokio runtime: the requests made before
+    /// it opened are told first, a handler's answered interrupted.
+    ///
+    /// # Errors
+    /// The volume's failure.
+    pub fn start_on(self, opened: (Kernel, Events), options: Options) -> beak::Result<Runtime> {
+        let (kernel, events) = opened;
         let mut programs = HashMap::new();
         for (kind, registered, program) in self.programs {
             kernel.register(kind.as_bytes(), registered)?;
