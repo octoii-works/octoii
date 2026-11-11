@@ -1,5 +1,7 @@
 // Siphon's protocol, generated from its Rust types — not to be edited by hand.
 
+export type AnswerDialog = { page: string, accept: boolean, text?: string, };
+
 /**
  * What a thread asks the person, by its request's key, answered with `answer`, which fits the schema the ask gives.
  */
@@ -12,9 +14,26 @@ export type AnswerThread = { thread: string, key: string, answer: JsonValue, };
 export type Ask = { process: string, key: string, name: string, payload: JsonValue, answer_schema: JsonValue, };
 
 /**
+ * An event of a subscription to the browser's: a thread's pages as they changed; or a frame of a page, the newest the
+ * browser painted — its number among the page's, its size in device pixels — sent as a binary frame whose bytes after
+ * this event are the frame's JPEG.
+ */
+export type BrowserEvent = { "event": "pages", subscription: string, pages: Array<PageListed>, } | { "event": "frame", subscription: string, number: number, width: number, height: number, };
+
+/**
+ * What a client subscribes to of the browser's: a thread's pages, or a page as it is painted.
+ */
+export type BrowserTopic = { "type": "pages", thread: string, } | { "type": "page", page: string, };
+
+/**
  * How a call ended.
  */
 export type CallStatus = "ok" | "unavailable" | "invalid-arguments" | "tool-error" | "rejected" | "interrupted";
+
+/**
+ * A terminal's size, in cells.
+ */
+export type Cells = { rows: number, cols: number, };
 
 /**
  * A field changed: what it was, and what it is; `None` for not set.
@@ -243,14 +262,40 @@ export type Message = { "role": "user", content: Array<InputContent>, } | { "rol
 export type Mode = "default" | "auto" | "full-access";
 
 /**
+ * What the mouse did: pressed, let go, moved, or its wheel turned.
+ */
+export type MouseMotion = "down" | "up" | "move" | "wheel";
+
+export type Navigate = { page: string, url: string, };
+
+/**
  * Nothing: what a method takes or answers where it takes or answers nothing.
  */
 export type Nothing = Record<symbol, never>;
 
 /**
+ * A page, by its id.
+ */
+export type OfPage = { page: string, };
+
+/**
+ * A terminal, by its id.
+ */
+export type OfTerminal = { terminal: string, };
+
+/**
  * A thread, by its id.
  */
 export type OfThread = { thread: string, };
+
+/**
+ * What the person did on a page.
+ */
+export type OnPage<E> = { page: string, event: E, };
+
+export type OpenPage = { thread: string, url?: string, view: View, };
+
+export type OpenTerminal = { thread: string, size: Cells, };
 
 /**
  * Which model wrote an item, by its reference, and what its provider attached to it that no field holds — a
@@ -268,6 +313,36 @@ export type Outcome = "replied" | "failed" | "stopped";
  * What an assistant message holds: text the model wrote, with the pages it cites, or its refusal in its words.
  */
 export type OutputContent = { "type": "output_text", text: string, annotations?: Array<UrlCitation>, } | { "type": "refusal", refusal: string, };
+
+/**
+ * A mouse button, as the DOM names them.
+ */
+export type PageButton = "none" | "left" | "middle" | "right";
+
+/**
+ * A dialog that holds a page till it is answered: its kind — alert, confirm, prompt, beforeunload — its message, and
+ * the text a prompt offers.
+ */
+export type PageDialog = { kind: string, message: string, offered: string, };
+
+/**
+ * A key pressed or let go on a page: its name and the key it is on, as the DOM names them, the text it types, the
+ * modifiers held, its key code, and the editing commands it stands for as the person's platform binds its shortcuts.
+ */
+export type PageKey = { pressed: boolean, key: string, code: string, text?: string, modifiers: number, key_code: number, commands: Array<string>, };
+
+/**
+ * A page of a thread's: its id, where it is and what it is called, its view, and the dialog that holds it.
+ */
+export type PageListed = { id: string, url: string, title: string, view: View, dialog?: PageDialog, };
+
+/**
+ * The mouse over a page, at a point of its CSS pixels: what it did, the button pressed or let go, the buttons held
+ * and the modifiers, as the DOM counts them, how many clicks a press makes, and how far the wheel turned.
+ */
+export type PageMouse = { motion: MouseMotion, x: number, y: number, button: PageButton, buttons: number, clicks: number, modifiers: number, delta_x: number, delta_y: number, };
+
+export type PageOpened = { page: string, };
 
 /**
  * Where a sub-thread came from: the thread that delegated it, and its call that did.
@@ -303,6 +378,10 @@ export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "
  * commit `started` started it — whichever lives there, where none — as `wait(2)` tells a parent its child's status.
  */
 export type ReplyTo = { process: string, started?: number | null, key: string, };
+
+export type ResizePage = { page: string, view: View, };
+
+export type ResizeTerminal = { terminal: string, size: Cells, };
 
 /**
  * What a request came to: its provider's id of it, the model that answered by its reference, its status, what the
@@ -368,6 +447,26 @@ inbox: Array<[string, Inbound]>, asks: Array<Ask>, };
 export type Subscribed = { subscription: string, };
 
 /**
+ * A terminal of a thread's: its id, its number in the thread, its size, and the title its program set.
+ */
+export type TerminalListed = { id: string, number: number, size: Cells, title: string, };
+
+export type TerminalOpened = { terminal: string, };
+
+/**
+ * An event of a subscription to the terminals': a thread's terminals as they changed; a terminal's screen drawn again
+ * whole, through the offset in its output it shows; or a piece of what it wrote, from an offset. A screen and a piece
+ * are binary frames, whose bytes after this event are the screen's sequences, or the piece.
+ */
+export type TerminalsEvent = { "event": "terminals", subscription: string, terminals: Array<TerminalListed>, } | { "event": "screen", subscription: string, through: number, } | { "event": "output", subscription: string, offset: number, };
+
+/**
+ * What a client subscribes to of the terminals': a thread's terminals, or a terminal as it writes — from the offset
+ * in its output the client stood at, or its screen drawn first, where none.
+ */
+export type TerminalsTopic = { "type": "terminals", thread: string, } | { "type": "terminal", terminal: string, from?: number, };
+
+/**
  * The entries read, oldest first, and whether they reach the thread's first.
  */
 export type ThreadRead = { entries: Array<Entry>, complete: boolean, };
@@ -390,6 +489,8 @@ export type Tool = { "type": "function", name: string, description: string, para
  * How a thread's turns stand: none run yet, one running, or how the last ended.
  */
 export type Turn = "created" | "running" | "replied" | "failed" | "stopped";
+
+export type TypeText = { page: string, text: string, };
 
 /**
  * A subscription to let go of.
@@ -425,6 +526,11 @@ reasoning_tokens: number,
 web_searches: number, cost_nanodollars?: number | null, };
 
 /**
+ * A page's view: CSS pixels across and down, and device pixels to each — one, where none is given.
+ */
+export type View = { width: number, height: number, scale?: number, };
+
+/**
  * What a web search did: searched, opened a page, or looked for a pattern in one.
  */
 export type WebSearchAction = { "type": "search", query: string, sources?: Array<string>, } | { "type": "open_page", url?: string | null, } | { "type": "find_in_page", url: string, pattern: string, };
@@ -443,11 +549,13 @@ export type Withdraw = { thread: string, delivery: string, };
 
 export type Withdrawn = { withdrawn: boolean, };
 
+export type WriteTerminal = { terminal: string, data: string, };
+
 /** What a client subscribes to. */
-export type Topic = SiphonTopic;
+export type Topic = SiphonTopic | BrowserTopic | TerminalsTopic;
 
 /** An event: the connection's, or a subscription's. */
-export type Event = ConnectionEvent | SiphonEvent;
+export type Event = ConnectionEvent | SiphonEvent | BrowserEvent | TerminalsEvent;
 
 /** The methods, each by its name: the params it takes and the result it answers with. */
 export type Methods = {
@@ -462,6 +570,21 @@ export type Methods = {
   'threads.answer': { params: AnswerThread; result: Nothing };
   'threads.read': { params: ReadThread; result: ThreadRead };
   'settings.set': { params: SettingsChange; result: Nothing };
+  'browser.open': { params: OpenPage; result: PageOpened };
+  'browser.navigate': { params: Navigate; result: Nothing };
+  'browser.back': { params: OfPage; result: Nothing };
+  'browser.forward': { params: OfPage; result: Nothing };
+  'browser.reload': { params: OfPage; result: Nothing };
+  'browser.dialog': { params: AnswerDialog; result: Nothing };
+  'browser.close': { params: OfPage; result: Nothing };
+  'browser.resize': { params: ResizePage; result: Nothing };
+  'browser.mouse': { params: OnPage<PageMouse>; result: Nothing };
+  'browser.key': { params: OnPage<PageKey>; result: Nothing };
+  'browser.text': { params: TypeText; result: Nothing };
+  'terminals.open': { params: OpenTerminal; result: TerminalOpened };
+  'terminals.write': { params: WriteTerminal; result: Nothing };
+  'terminals.resize': { params: ResizeTerminal; result: Nothing };
+  'terminals.close': { params: OfTerminal; result: Nothing };
   'subscribe': { params: { topic: Topic }; result: Subscribed };
   'unsubscribe': { params: Unsubscribe; result: Nothing };
 };

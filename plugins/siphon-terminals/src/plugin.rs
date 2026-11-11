@@ -61,7 +61,7 @@ async fn answered(terminals: &Terminals, context: &Context, method: Method) -> R
                 .open(&open.thread, cwd, size(open.size))
                 .await
                 .map_err(|error| failed(&error))?;
-            return Ok(json!(protocol::Opened { terminal }));
+            return Ok(json!(protocol::TerminalOpened { terminal }));
         }
         Method::Write(write) => terminals
             .write(&write.terminal, write.data.into_bytes().into())

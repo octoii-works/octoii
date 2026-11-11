@@ -50,6 +50,8 @@ impl TypeVisitor for Declarations<'_> {
         let id = TypeId::of::<T::WithoutGenerics>();
         if let Some((seen, _)) = self.out.get(&ident) {
             assert!(*seen == id, "two types are named {ident} in TypeScript; name one of them anew");
+            // A generic type declared already may be named here with other arguments, each to be declared.
+            T::visit_generics(self);
             return;
         }
         let docs = T::docs().unwrap_or_default();

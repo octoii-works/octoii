@@ -1,0 +1,207 @@
+//! `octoii serve`: Siphon and its core plugins on this computer — the volume in the Home, the providers' keys from the
+//! credstore and the login environment, the machine as the person's own with what the node keeps for itself hidden
+//! from it — served to clients on the loopback address, and its control socket opened to the node's commands, till it
+//! is asked to stop: then every listener closes, and Siphon with them.
+
+use std::net::{Ipv4Addr, SocketAddr};
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use anyhow::Context as _;
+use octoii_ai::drivers;
+use octoii_ai::host::{Files, NoSuchFile};
+use octoii_ai::models::{Host as Network, Provider};
+use siphon::{Setup, Siphon};
+use siphon_browser::BrowserPlugin;
+use siphon_mcp::McpPlugin;
+use siphon_protocol::Machine;
+use siphon_runtime::Options;
+use siphon_terminals::TerminalsPlugin;
+
+use crate::access::Access;
+use crate::control::{self, Control};
+use crate::credentials::Credstore;
+use crate::home::Home;
+use crate::http::{self, Node};
+
+/// What the node is served with: its Home, the loopback port, and the web app's folder.
+#[derive(Debug, Clone)]
+pub struct Served {
+    pub home: Home,
+    pub port: u16,
+    pub app: Option<PathBuf>,
+}
+
+/// The providers the node reaches models through.
+fn providers() -> Vec<Provider> {
+    let drivers: [&'static dyn octoii_ai::driver::Driver; 11] = [
+        &drivers::OPENAI,
+        &drivers::CHATGPT,
+        &drivers::ANTHROPIC,
+        &drivers::GOOGLE,
+        &drivers::OPENROUTER,
+        &drivers::DEEPSEEK,
+        &drivers::XAI,
+        &drivers::META,
+        &drivers::ZAI,
+        &drivers::OLLAMA,
+        &drivers::LMSTUDIO,
+    ];
+    drivers.into_iter().map(Provider::of).collect()
+}
+
+/// The files a conversation names: none yet, till the node keeps the files its clients send.
+struct NoFiles;
+
+impl Files for NoFiles {
+    fn read(&self, reference: &str) -> Result<bytes::Bytes, NoSuchFile> {
+        Err(NoSuchFile(reference.into()))
+    }
+}
+
+/// The machine as the person's own: their home folder and shell, the system's temporary folder, the threads shown at
+/// the Home's `threads/`, and what the node keeps for itself — its credentials, its state, what lasts while it runs —
+/// hidden from what reaches the machine through Siphon.
+fn machine(home: &Home) -> siphon_machine::Host {
+    siphon_machine::Host {
+        home: std::env::home_dir(),
+        shell: std::env::var_os("SHELL").map(PathBuf::from),
+        excludes: None,
+        temporary: vec![std::env::temp_dir()],
+        hidden: vec![home.credstore(), home.state(), home.run()],
+        threads: Some(home.threads()),
+    }
+}
+
+/// Siphon on this computer, with its core plugins.
+///
+/// # Errors
+/// Where Beak or the volume cannot be opened.
+pub fn siphon(home: &Home) -> anyhow::Result<Siphon> {
+    let beak = beak::Beak::new().context("Beak")?;
+    let providers = providers();
+    let network = Network {
+        credentials: Arc::new(Credstore::new(home.credstore(), &providers)),
+        files: Arc::new(NoFiles),
+        transport: Arc::new(octoii_ai::transport::Network::default()),
+        new_id: Arc::new(|| {
+            format!(
+                "{:x}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos()
+            )
+        }),
+        clock: Arc::new(|| {
+            i64::try_from(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis(),
+            )
+            .unwrap_or(i64::MAX)
+        }),
+    };
+    let setup = Setup {
+        machine: machine(home),
+        config: Some(home.config()),
+        network,
+        providers,
+        catalogue: octoii_ai::catalogue::bundled(),
+        options: Options {
+            directory: Some(home.volume()),
+            ..Options::default()
+        },
+    };
+    let browser = BrowserPlugin {
+        program: None,
+        profile: Some(home.browser().join("profile")),
+        downloads: Some(home.browser().join("downloads")),
+    };
+    let built = Siphon::builder(&beak, setup).context("the volume")?;
+    let config = McpPlugin {
+        config: Some(home.config()),
+    };
+    built
+        .plugin(browser)
+        .plugin(TerminalsPlugin)
+        .plugin(config)
+        .start()
+        .context("Siphon")
+}
+
+/// Serves the node as `served` says, till it is asked to stop: an interrupt, or a terminate.
+///
+/// # Errors
+/// Where its Home cannot be made, its volume opened, or its listeners bound.
+pub async fn serve(served: Served) -> anyhow::Result<()> {
+    serve_until(served, stopped()).await
+}
+
+/// Serves the node as `served` says, till `stop` is done.
+///
+/// # Errors
+/// Where its Home cannot be made, its volume opened, or its listeners bound.
+pub async fn serve_until(served: Served, stop: impl Future<Output = ()> + Send + 'static) -> anyhow::Result<()> {
+    let Served { home, port, app } = served;
+    home.prepare().context("the Home")?;
+    let siphon = siphon(&home)?;
+    let listener = tokio::net::TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, port)))
+        .await
+        .with_context(|| format!("the loopback port {port}"))?;
+    let port = listener.local_addr()?.port();
+    let loopback = format!("http://127.0.0.1:{port}");
+    let node = Node {
+        siphon: siphon.clone(),
+        access: Access::new(siphon.runtime.clone()),
+        machine: Machine {
+            name: gethostname::gethostname().to_string_lossy().into_owned(),
+        },
+        origins: vec![loopback.clone(), format!("http://localhost:{port}")],
+        app,
+    };
+    let socket = home.socket();
+    let _ = std::fs::remove_file(&socket);
+    let controls = tokio::net::UnixListener::bind(&socket).context("the control socket")?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o600))?;
+    }
+    let control = Control {
+        node: node.clone(),
+        loopback: loopback.clone(),
+        home: home.root().to_owned(),
+    };
+    tracing::info!(%loopback, "serving");
+    let stopping = tokio_util::sync::CancellationToken::new();
+    let (stop_loopback, stop_control) = (stopping.clone(), stopping.clone());
+    let loopback_served = axum::serve(listener, http::router(node)).with_graceful_shutdown(async move { stop_loopback.cancelled().await });
+    let control_served =
+        axum::serve(controls, control::router(control)).with_graceful_shutdown(async move { stop_control.cancelled().await });
+    tokio::spawn(async move {
+        stop.await;
+        stopping.cancel();
+    });
+    let (served, controlled) = tokio::join!(loopback_served.into_future(), control_served.into_future());
+    let _ = std::fs::remove_file(&socket);
+    siphon.runtime.close().await;
+    served.context("the loopback")?;
+    controlled.context("the control socket")?;
+    Ok(())
+}
+
+/// Waits till the node is asked to stop: an interrupt, or a terminate.
+async fn stopped() {
+    #[cfg(unix)]
+    {
+        let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).ok();
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {}
+            () = async { if let Some(terminate) = terminate.as_mut() { terminate.recv().await; } else { std::future::pending::<()>().await } } => {}
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = tokio::signal::ctrl_c().await;
+}

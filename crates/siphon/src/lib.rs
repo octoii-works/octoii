@@ -52,6 +52,12 @@ pub struct Siphon {
 }
 
 impl Siphon {
+    /// The sets of methods Siphon and its plugins brought, as the protocol is described by.
+    #[must_use]
+    pub fn sets(&self) -> &[siphon_protocol::Set] {
+        &self.registry.sets
+    }
+
     /// Deletes the thread `id` and every thread under it, each plugin letting go of what it held for each.
     ///
     /// # Errors

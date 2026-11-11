@@ -9,7 +9,7 @@ use ts_rs::TS;
 siphon_protocol::methods! {
     events: BrowserEvent, topics: BrowserTopic;
     /// A page opened in a thread's browser, at an address or blank, sized as the person's view of it is: its id.
-    "browser.open" Open(Open) -> Opened, Some(Scope::BrowserOperate);
+    "browser.open" Open(OpenPage) -> PageOpened, Some(Scope::BrowserOperate);
     /// A page taken to an address.
     "browser.navigate" Navigate(Navigate) -> Nothing, Some(Scope::BrowserOperate);
     /// A page taken back in its history.
@@ -23,7 +23,7 @@ siphon_protocol::methods! {
     /// A page closed.
     "browser.close" Close(OfPage) -> Nothing, Some(Scope::BrowserOperate);
     /// A page's view sized anew.
-    "browser.resize" Resize(Resize) -> Nothing, Some(Scope::BrowserOperate);
+    "browser.resize" Resize(ResizePage) -> Nothing, Some(Scope::BrowserOperate);
     /// The person's mouse on a page.
     "browser.mouse" Mouse(OnPage<PageMouse>) -> Nothing, Some(Scope::BrowserOperate);
     /// A key the person pressed or let go on a page.
@@ -49,7 +49,7 @@ pub struct View {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-pub struct Open {
+pub struct OpenPage {
     pub thread: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -58,7 +58,7 @@ pub struct Open {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct Opened {
+pub struct PageOpened {
     pub page: String,
 }
 
@@ -78,7 +78,7 @@ pub struct AnswerDialog {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-pub struct Resize {
+pub struct ResizePage {
     pub page: String,
     pub view: View,
 }

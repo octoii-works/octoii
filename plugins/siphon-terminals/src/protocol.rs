@@ -10,11 +10,11 @@ siphon_protocol::methods! {
     events: TerminalsEvent, topics: TerminalsTopic;
     /// A terminal opened for a thread, the person's login shell in its workspace, sized as the person's view of it is:
     /// its id.
-    "terminals.open" Open(Open) -> Opened, Some(Scope::TerminalsOperate);
+    "terminals.open" Open(OpenTerminal) -> TerminalOpened, Some(Scope::TerminalsOperate);
     /// Keys the person typed, and what they pasted, to a terminal's program.
-    "terminals.write" Write(Write) -> Nothing, Some(Scope::TerminalsOperate);
+    "terminals.write" Write(WriteTerminal) -> Nothing, Some(Scope::TerminalsOperate);
     /// A terminal sized anew, its program told.
-    "terminals.resize" Resize(Resize) -> Nothing, Some(Scope::TerminalsOperate);
+    "terminals.resize" Resize(ResizeTerminal) -> Nothing, Some(Scope::TerminalsOperate);
     /// A terminal closed, its program hung up on.
     "terminals.close" Close(OfTerminal) -> Nothing, Some(Scope::TerminalsOperate);
 }
@@ -33,24 +33,24 @@ pub struct OfTerminal {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct Open {
+pub struct OpenTerminal {
     pub thread: String,
     pub size: Cells,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct Opened {
+pub struct TerminalOpened {
     pub terminal: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct Write {
+pub struct WriteTerminal {
     pub terminal: String,
     pub data: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct Resize {
+pub struct ResizeTerminal {
     pub terminal: String,
     pub size: Cells,
 }

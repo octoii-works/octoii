@@ -65,7 +65,7 @@ async fn answered(browser: &Browser, method: Method) -> Result<Value, Error> {
                 .open(&open.thread, open.url.as_deref(), size(open.view))
                 .await
                 .map_err(|error| failed(&error))?;
-            return Ok(json!(protocol::Opened { page }));
+            return Ok(json!(protocol::PageOpened { page }));
         }
         Method::Navigate(navigate) => browser.page(&navigate.page).navigate(&navigate.url).await.map(drop),
         Method::Back(of) => browser.page(&of.page).go(-1).await.map(drop),
