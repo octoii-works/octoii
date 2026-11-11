@@ -127,6 +127,7 @@ fn a_window_is_asked_at_the_effort_set_before_its_first_reply_and_told_a_change_
             turn: Some("t".into()),
             outcome: Outcome::Stopped,
             reason: None,
+            failure: None,
         },
         effort("6", ReasoningEffort::High),
         input("7", vec![InputContent::text("again")]),

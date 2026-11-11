@@ -1,7 +1,7 @@
 /** A thread its model's quota limits: the window in words, and the other accounts it may go on with. */
 import { describe, expect, it } from "bun:test";
-import type { Model } from "@octoii-works/octoii-client";
-import { onwardOf, windowWords } from "../src/core/limits.ts";
+import { conversationOf, type Entry, type Failure, type Model } from "@octoii-works/octoii-client";
+import { limitedOf, onwardOf, windowWords } from "../src/core/limits.ts";
 import type { Directory } from "../src/core/models.ts";
 import { catalogued } from "./fixtures.ts";
 
@@ -47,5 +47,25 @@ describe("a limited thread", () => {
 		// From an added account, the host's own is another account of the same provider.
 		expect(onwardOf(DIRECTORY, { provider: "work", reset_at_ms: 9 }, "work/gpt-6-luna").map((each) => each.reference)).toEqual(["chatgpt/gpt-6-luna"]);
 		expect(onwardOf(DIRECTORY, { provider: "claude", reset_at_ms: 9 }, "claude/claude-opus-5-5")).toEqual([]);
+	});
+
+	it("is told by its last turn's end: its model's account's quota used up, till a time still to come", () => {
+		const ended = (failure: Failure | undefined, reason?: string): ReturnType<typeof conversationOf> => {
+			const said: Entry = { type: "input", id: "1", actor: "person", delivery: "d1", content: [{ type: "input_text", text: "hi" }] };
+			const end: Entry = {
+				type: "turn-end",
+				id: "2",
+				outcome: "failed",
+				...(failure === undefined ? {} : { failure }),
+				...(reason === undefined ? {} : { reason }),
+			};
+			return conversationOf({ entries: [said, end], read: true, complete: true, status: undefined, streaming: new Map(), gone: false });
+		};
+		const quota: Failure = { kind: "quota", message: "the weekly limit is reached", reset_at_ms: 2_000, window_minutes: 10_080 };
+		expect(limitedOf(ended(quota), "chatgpt/gpt-6-luna", 1_000)).toEqual({ provider: "chatgpt", reset_at_ms: 2_000, window_minutes: 10_080 });
+		// Given again since, or a failure of another kind, or none of a model's: nothing limits it.
+		expect(limitedOf(ended(quota), "chatgpt/gpt-6-luna", 3_000)).toBeUndefined();
+		expect(limitedOf(ended({ kind: "server", message: "down" }), "chatgpt/gpt-6-luna", 1_000)).toBeUndefined();
+		expect(limitedOf(ended(undefined, "its thread's budget is spent"), "chatgpt/gpt-6-luna", 1_000)).toBeUndefined();
 	});
 });

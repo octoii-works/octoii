@@ -406,6 +406,58 @@ async fn a_failure_that_may_pass_is_kept_and_the_model_asked_again() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_quota_used_up_ends_the_turn_with_the_failure_and_the_next_before_it_asks() {
+    let reset_at_ms = 4_102_444_800_000;
+    let mut failure = Failure::new(FailureKind::Quota, "the weekly limit is reached");
+    failure.reset_at_ms = Some(reset_at_ms);
+    failure.window_minutes = Some(10_080);
+    let script = script(vec![Err(failure)]);
+    let beak = Beak::new().expect("Beak");
+    let runtime = runtime(&beak, &script);
+    let threads = Threads::<ThreadProgram>::new(runtime.clone());
+    let (_folder, workspace) = folder();
+    let id = thread(&threads, &workspace).await;
+    threads
+        .deliver(&id, "person", vec![InputContent::text("hi")], "d1")
+        .await
+        .expect("delivered");
+    until(&threads, &id, Turn::Failed).await;
+    let ended = |at: usize| {
+        entries(&threads, &id)
+            .into_iter()
+            .filter_map(|entry| match entry {
+                Entry::TurnEnd { reason, failure, .. } => Some((reason, failure)),
+                _ => None,
+            })
+            .nth(at)
+    };
+    let (reason, failure) = ended(0).expect("its end");
+    assert_eq!(reason, None, "the provider's failure says why");
+    let failure = failure.expect("the failure, as the provider told it");
+    assert_eq!(
+        (failure.kind, failure.reset_at_ms, failure.window_minutes),
+        (FailureKind::Quota, Some(reset_at_ms), Some(10_080))
+    );
+
+    // The account's quota used up still, the next turn ends before its model is asked, the quota its failure.
+    threads
+        .deliver(&id, "person", vec![InputContent::text("again")], "d2")
+        .await
+        .expect("delivered");
+    for _ in 0..200 {
+        if ended(1).is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    let (_, failure) = ended(1).expect("the next end");
+    let failure = failure.expect("the quota used up still");
+    assert_eq!((failure.kind, failure.reset_at_ms), (FailureKind::Quota, Some(reset_at_ms)));
+    assert_eq!(script.asked.lock().expect("held").len(), 1, "the model asked once");
+    runtime.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_stop_ends_the_turn_with_every_call_it_made_answered() {
     let script = script(vec![Ok(vec![
         calls("c1", "shell", &serde_json::json!({ "command": "sleep 30" })),

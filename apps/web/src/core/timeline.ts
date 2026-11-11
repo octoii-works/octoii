@@ -540,7 +540,7 @@ function endingOf(turn: Turn): Ending {
 		case "replied":
 			return { state: "replied" };
 		case "failed":
-			return { state: "failed", why: end.reason ?? "The turn failed." };
+			return { state: "failed", why: end.failure?.message ?? end.reason ?? "The turn failed." };
 		case "stopped":
 			return { state: "stopped" };
 	}

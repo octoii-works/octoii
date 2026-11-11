@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use octoii_ai::models::Models;
 
-use octoii_ai::vocabulary::{FailureKind, FunctionCallOutput, InputContent, Item, ItemStatus, Response, ResponseStatus};
+use octoii_ai::vocabulary::{Failure, FailureKind, FunctionCallOutput, InputContent, Item, ItemStatus, Response, ResponseStatus};
 use serde::{Deserialize, Serialize};
 use siphon_machine::paths::Base;
 use siphon_runtime::{Answer, Ending, Program, Retries, Run, Wait};
@@ -82,6 +82,10 @@ pub struct TurnProgram {
     pub models: Arc<Models>,
 }
 
+/// How a turn ended, as its process completes: the failure of its model that ended it, as the provider told it; none
+/// where it replied. A fault of the turn's own fails its process.
+pub type Ended = Option<Failure>;
+
 impl Program for TurnProgram {
     const KIND: &'static str = siphon_threads::thread::TURN_KIND;
     const STOP_HANDLER: bool = true;
@@ -92,9 +96,9 @@ impl Program for TurnProgram {
     };
     type Input = TurnInput;
     type Checkpoint = TurnState;
-    type Output = ();
+    type Output = Ended;
 
-    fn run(&self, run: &mut Run<'_>, input: TurnInput, state: Option<TurnState>) -> anyhow::Result<Ending<TurnState, ()>> {
+    fn run(&self, run: &mut Run<'_>, input: TurnInput, state: Option<TurnState>) -> anyhow::Result<Ending<TurnState, Ended>> {
         let state = state.unwrap_or(TurnState::FRESH);
         if run.is_stop_handler() {
             return self.stop(run, &input, state);
@@ -110,7 +114,7 @@ impl Program for TurnProgram {
 
 /// Has the thread's window compacted — its compaction started where it is not running — and sleeps on it: not the
 /// turn's own process, it is waited on by its record's changes.
-fn compact(run: &mut Run<'_>, id: &str, attempt: u32) -> anyhow::Result<Ending<TurnState, ()>> {
+fn compact(run: &mut Run<'_>, id: &str, attempt: u32) -> anyhow::Result<Ending<TurnState, Ended>> {
     let mut started = siphon_runtime::Changes::new();
     compaction::start(run.snapshot(), &mut started, id)?;
     run.changes.extend(started);
@@ -121,7 +125,7 @@ fn compact(run: &mut Run<'_>, id: &str, attempt: u32) -> anyhow::Result<Ending<T
 }
 
 /// The thread's compaction ended: the model asked on the window it began; the turn fails as it failed.
-fn compaction_ended(run: &Run<'_>, id: &str, attempt: u32) -> anyhow::Result<Ending<TurnState, ()>> {
+fn compaction_ended(run: &Run<'_>, id: &str, attempt: u32) -> anyhow::Result<Ending<TurnState, Ended>> {
     let record = run.snapshot().record(&compaction::path(id))?;
     match record.and_then(|record| record.outcome) {
         None => Ok(Ending::Wait(
@@ -149,7 +153,7 @@ fn config_of(run: &Run<'_>, id: &str) -> anyhow::Result<Config> {
 impl TurnProgram {
     /// Asks the thread's model for what follows its window, and sleeps till the answer comes; has the window compacted
     /// first where it is too full for the request, once for it.
-    fn ask(&self, run: &mut Run<'_>, id: &str, attempt: u32, compacted: bool) -> anyhow::Result<Ending<TurnState, ()>> {
+    fn ask(&self, run: &mut Run<'_>, id: &str, attempt: u32, compacted: bool) -> anyhow::Result<Ending<TurnState, Ended>> {
         let config = config_of(run, id)?;
         let Some(model) = config.model else {
             return Ok(Ending::Fail("the thread names no model".into()));
@@ -183,7 +187,7 @@ impl TurnProgram {
         key: &str,
         attempt: u32,
         compacted: bool,
-    ) -> anyhow::Result<Ending<TurnState, ()>> {
+    ) -> anyhow::Result<Ending<TurnState, Ended>> {
         let Some(answer) = run.answer::<ModelRequest>(key)? else {
             let wait = Wait::new().mail(key.to_owned());
             let state = TurnState::Asked {
@@ -238,14 +242,14 @@ impl TurnProgram {
             )?;
         }
         if made.is_empty() {
-            return Ok(Ending::Done(()));
+            return Ok(Ending::Done(None));
         }
         self.calling(run, input, Calls::keyed(made), 0)
     }
 
     /// The calls of a reply taken on as far as they go, each result appended as it and every call before it ended;
     /// once every call ended, what waits in the inbox taken in, and the model asked again.
-    fn calling(&self, run: &mut Run<'_>, input: &TurnInput, mut calls: Calls, appended: usize) -> anyhow::Result<Ending<TurnState, ()>> {
+    fn calling(&self, run: &mut Run<'_>, input: &TurnInput, mut calls: Calls, appended: usize) -> anyhow::Result<Ending<TurnState, Ended>> {
         let config = config_of(run, &input.thread)?;
         let base = self.base(&config);
         let project = Place::of(&base.workspace).project.to_string_lossy().into_owned();
@@ -284,7 +288,7 @@ impl TurnProgram {
 
     /// The turn's stop handler: what had come of the reply kept, and every call ended — those that ran as their cut
     /// gave, the rest never run — each with its result; then the turn ends stopped.
-    fn stop(&self, run: &mut Run<'_>, input: &TurnInput, state: TurnState) -> anyhow::Result<Ending<TurnState, ()>> {
+    fn stop(&self, run: &mut Run<'_>, input: &TurnInput, state: TurnState) -> anyhow::Result<Ending<TurnState, Ended>> {
         let mut writer = Writer::open(run.snapshot(), &input.thread)?;
         match state {
             TurnState::Asking { .. } | TurnState::Compacting { .. } => Ok(Ending::Stopped(None)),
@@ -448,13 +452,13 @@ fn keep_used_up(run: &mut Run<'_>, response: &Response) -> anyhow::Result<()> {
 }
 
 /// After the model failed with `response`: asked again once the wait passes, where the failure may pass and retries
-/// are left; else the turn fails, for what the provider said.
-fn failed(run: &Run<'_>, response: &Response, attempt: u32) -> Ending<TurnState, ()> {
+/// are left; else the turn ends with the failure, as the provider told it.
+fn failed(run: &Run<'_>, response: &Response, attempt: u32) -> Ending<TurnState, Ended> {
     let Some(failure) = &response.failure else {
-        return Ending::Fail("the model failed, saying nothing".into());
+        return Ending::Done(Some(Failure::new(FailureKind::InvalidResponse, "the model failed, saying nothing")));
     };
     if !failure.retryable() || attempt + 1 > RETRIES_MAX {
-        return Ending::Fail(failure.message.clone());
+        return Ending::Done(Some(failure.clone()));
     }
     let wait = match failure.retry_after_ms {
         Some(after) => i64::try_from(after).unwrap_or(i64::MAX).min(RETRY_AFTER_MOST_MS),

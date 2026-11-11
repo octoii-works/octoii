@@ -1,22 +1,25 @@
 /**
- * A thread its model's quota limits, as the page shows it: whether it is — its last turn failed, and the account of its
- * model has its quota used up still — the window the quota is counted over, in words; and the other accounts of the
- * same provider it may go on with — connected, their quota not used up, serving the same model.
+ * A thread its model's quota limits, as the page shows it: whether it is — its last turn ended as its model's account's
+ * quota was used up, as its log tells, till a time to come — the window the quota is counted over, in words; and the
+ * other accounts of the same provider it may go on with — connected, their quota not used up, serving the same model.
  */
-import type { Listed, ProviderShown as Provider } from "@octoii-works/octoii-client";
+import type { Conversation, ProviderShown as Provider } from "@octoii-works/octoii-client";
 import { type Directory, isConnected, providerOf, referenceOf } from "./models.ts";
 
 /** A thread's model's quota used up: the account by its provider, when the quota is given again, and the window it is counted over. */
 export type Limited = { readonly provider: string; readonly reset_at_ms: number; readonly window_minutes?: number };
 
-/** The quota that limits the thread `row`: its last turn failed, and its model's account has its quota used up still, as `providers` tell; none where none does. */
-export function limitedOf(row: Listed | undefined, providers: readonly Provider[] | undefined): Limited | undefined {
-	const model = row?.config.model;
-	if (row?.status.turn !== "failed" || model === undefined || model === null) return undefined;
-	const provider = providerOf(model);
-	const used = providers?.find((each) => each.id === provider)?.used_up;
-	if (used === undefined) return undefined;
-	return { provider, reset_at_ms: used.reset_at_ms, ...(used.window_minutes === undefined ? {} : { window_minutes: used.window_minutes }) };
+/**
+ * The quota that limits a thread of `conversation`, running `model`, at `now`: its last turn ended as its model's
+ * account's quota was used up, till a time still to come; none where it did not.
+ */
+export function limitedOf(conversation: Conversation, model: string | undefined, now: number): Limited | undefined {
+	const end = conversation.turns.at(-1)?.end;
+	const failure = end?.outcome === "failed" ? end.failure : undefined;
+	const resetAt = failure?.reset_at_ms;
+	if (failure?.kind !== "quota" || resetAt === undefined || resetAt === null || resetAt <= now || model === undefined) return undefined;
+	const window = failure.window_minutes ?? undefined;
+	return { provider: providerOf(model), reset_at_ms: resetAt, ...(window === undefined ? {} : { window_minutes: window }) };
 }
 
 /** The window a quota is counted over, as a person names it — "5-hour", "weekly" — none where it is not known. */

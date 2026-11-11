@@ -7,7 +7,7 @@
 
 use beak::{Range, Snapshot};
 use bytes::Bytes;
-use octoii_ai::vocabulary::{FunctionCallOutput, InputContent, ReasoningEffort, Response, Tool};
+use octoii_ai::vocabulary::{Failure, FunctionCallOutput, InputContent, ReasoningEffort, Response, Tool};
 use serde::{Deserialize, Serialize};
 use siphon_runtime::Changes;
 
@@ -70,7 +70,8 @@ pub enum Entry {
         output: FunctionCallOutput,
     },
     /// A turn's end: the turn, by its id — none for inputs that failed before a turn ran — how it ended, and why,
-    /// unless it replied.
+    /// unless it replied: the failure of its model that ended it, as the provider told it — a request that failed, or
+    /// its account's quota used up still as the turn would begin — else the reason, in words.
     TurnEnd {
         id: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -78,6 +79,8 @@ pub enum Entry {
         outcome: Outcome,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        failure: Option<Failure>,
     },
     /// Where the conversation grew past what its model takes: the recap the model wrote, by the request of `request`,
     /// its response as it came, of everything before the entry `from` but the input `kept` — the latest the person gave

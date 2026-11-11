@@ -25,7 +25,10 @@ import { RightPanel } from "../components/panel/right-panel.tsx";
 import { MessageThreadContext } from "../components/thread/message-thread.ts";
 import { failed } from "../components/state/notices.ts";
 import { useSeen } from "../components/effects/seen.ts";
-import { useDirectory } from "../components/composer/directory.ts";
+import { useNow } from "../components/effects/now.ts";
+
+/** How often a page looks again whether the quota that limits its thread is given again: a minute. */
+const LIMITED_CHECKED_MS = 60_000;
 
 /** What a thread's page is given: its thread, and the device's settings. */
 export type ThreadScreenProps = {
@@ -41,13 +44,14 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 	const row = useThreads()?.find((each) => each.id === thread);
 	const terminals = useTerminals(thread) ?? [];
 	const pages = usePages(thread) ?? [];
-	const providers = useDirectory()?.providers;
+	const now = useNow(LIMITED_CHECKED_MS);
 	useSeen(thread);
 	// The input the person last sent from here, by the id it was delivered by, which the timeline keeps near its top as
 	// the reply grows under it.
 	const [sent, setSent] = useState<string | undefined>(undefined);
 	const timeline = useRef<TimelineHandle>(null);
-	const items = withLimited(itemsOf(conversation), limitedOf(row, providers), conversation.status?.resuming_at ?? undefined);
+	const limited = limitedOf(conversation, row?.config.model ?? undefined, now);
+	const items = withLimited(itemsOf(conversation), limited, conversation.status?.resuming_at ?? undefined);
 	const project = row === undefined ? undefined : projectOf(row);
 	const workspace = row?.config.workspace ?? undefined;
 	const said = firstSaid(items);

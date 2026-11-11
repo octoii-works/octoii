@@ -9,7 +9,7 @@
 
 use beak::{Outcome, layout};
 use bytes::Bytes;
-use octoii_ai::vocabulary::{FunctionCallOutput, InputContent, Item};
+use octoii_ai::vocabulary::{Failure, FailureKind, FunctionCallOutput, InputContent};
 use serde::{Deserialize, Serialize};
 use siphon_runtime::{Answer, Ending, Program, Retries, Run, Wait};
 use siphon_threads::inbox::{self, Ended, Inbound};
@@ -69,7 +69,7 @@ fn rest(run: &mut Run<'_>, id: &str) -> anyhow::Result<Ending<MainState, ()>> {
             run,
             id,
             TurnOutcome::Failed,
-            Some("its thread's process ended while it ran".into()),
+            Some(Why::Reason("its thread's process ended while it ran".into())),
             None,
         )?;
         return Ok(Ending::Next(MainState::Rest));
@@ -115,7 +115,7 @@ fn gathered(run: &mut Run<'_>, id: &str, key: &str) -> anyhow::Result<Ending<Mai
         Answer::Interrupted => Ok(Ending::Next(MainState::Rest)),
         Answer::Failed(why) => {
             let reason = format!("what the model is told could not be gathered: {why}");
-            fail_before(run, id, &reason)
+            fail_before(run, id, reason)
         }
     }
 }
@@ -147,13 +147,20 @@ fn begin(run: &mut Run<'_>, id: &str, told: Told) -> anyhow::Result<Ending<MainS
     )?;
     let left = budget_left(run, id, &config)?;
     if left == Some(0) {
-        return end_before(run, id, &mut writer, &taken, "its thread's budget is spent");
+        return end_before(run, id, &mut writer, &taken, Why::Reason("its thread's budget is spent".into()));
     }
     if let Some(model) = &config.model
         && let Some(used_up) = siphon_accounts::used_up(run.snapshot(), siphon_accounts::provider_of(model))?
     {
-        let reason = format!("its model's account is used up till {} ms since the epoch", used_up.reset_at_ms);
-        return end_before(run, id, &mut writer, &taken, &reason);
+        let failure = Failure {
+            reset_at_ms: Some(used_up.reset_at_ms),
+            window_minutes: used_up.window_minutes,
+            ..Failure::new(
+                FailureKind::Quota,
+                format!("its model's account is used up till {} ms since the epoch", used_up.reset_at_ms),
+            )
+        };
+        return end_before(run, id, &mut writer, &taken, Why::Failure(failure));
     }
     if config.title.is_none() && config.model.is_some() {
         let titling = layout::process(run.path(), TitleProgram::KEY.as_bytes());
@@ -191,28 +198,57 @@ fn budget_left(run: &Run<'_>, id: &str, config: &Config) -> anyhow::Result<Optio
 }
 
 /// Ends the inputs that wait as a turn that failed before its model was asked, for `reason`.
-fn fail_before(run: &mut Run<'_>, id: &str, reason: &str) -> anyhow::Result<Ending<MainState, ()>> {
+fn fail_before(run: &mut Run<'_>, id: &str, reason: String) -> anyhow::Result<Ending<MainState, ()>> {
     let mut writer = Writer::open(run.snapshot(), id)?;
     let taken: Vec<Entry> = inbox::take(run, id, &mut writer)?.into_iter().map(|each| each.entry).collect();
     if !taken.iter().any(|entry| matches!(entry, Entry::Input { .. })) {
         return Ok(Ending::Next(MainState::Rest));
     }
-    end_before(run, id, &mut writer, &taken, reason)
+    end_before(run, id, &mut writer, &taken, Why::Reason(reason))
 }
 
-/// Ends the inputs just taken, `taken`, as a turn that failed before its model was asked, for `reason`: its end
-/// appended with the same commit, and who waits on them told.
-fn end_before(run: &mut Run<'_>, id: &str, writer: &mut Writer, taken: &[Entry], reason: &str) -> anyhow::Result<Ending<MainState, ()>> {
+/// Why a turn failed: the failure of its model, as the provider told it; or a reason of Siphon's, in words.
+enum Why {
+    Failure(Failure),
+    Reason(String),
+}
+
+impl Why {
+    /// Why, in words.
+    fn words(&self) -> &str {
+        match self {
+            Self::Failure(failure) => &failure.message,
+            Self::Reason(reason) => reason,
+        }
+    }
+
+    /// Why, as a turn's end keeps it: its reason, or its model's failure.
+    fn kept(why: Option<Self>) -> (Option<String>, Option<Failure>) {
+        match why {
+            None => (None, None),
+            Some(Self::Reason(reason)) => (Some(reason), None),
+            Some(Self::Failure(failure)) => (None, Some(failure)),
+        }
+    }
+}
+
+/// Ends the inputs just taken, `taken`, as a turn that failed before its model was asked, for `why`: its end appended
+/// with the same commit, and who waits on them told.
+fn end_before(run: &mut Run<'_>, id: &str, writer: &mut Writer, taken: &[Entry], why: Why) -> anyhow::Result<Ending<MainState, ()>> {
+    let ended = Ended::Failed {
+        reason: why.words().to_owned(),
+    };
+    let (reason, failure) = Why::kept(Some(why));
     let entry = Entry::TurnEnd {
         id: run.new_id()?,
         turn: None,
         outcome: TurnOutcome::Failed,
-        reason: Some(reason.to_owned()),
+        reason,
+        failure,
     };
     writer.append(&mut run.changes, &entry)?;
     let now = run.time_ms();
     siphon_threads::ended(&mut run.changes, id, Turn::Failed, now);
-    let ended = Ended::Failed { reason: reason.to_owned() };
     tell(run, taken, &ended)?;
     Ok(Ending::Next(MainState::Rest))
 }
@@ -242,15 +278,26 @@ fn running(run: &mut Run<'_>, id: &str, turn: &str) -> anyhow::Result<Ending<Mai
             Wait::new().child(turn.to_owned()),
         ));
     };
-    let (ended, reason) = match outcome {
-        Outcome::Completed(_) => (TurnOutcome::Replied, None),
-        Outcome::Failed { error, .. } => (TurnOutcome::Failed, Some(said(error.as_deref(), "it failed"))),
-        Outcome::Stopped { reason, .. } if reason.as_deref() == Some(layout::LIMIT_REASON) => {
-            (TurnOutcome::Stopped, Some("its thread's budget ran out".to_owned()))
+    let (ended, why) = match outcome {
+        Outcome::Completed(output) => {
+            let failure = output
+                .and_then(|output| serde_json::from_slice::<crate::turn::Ended>(&output).ok())
+                .flatten();
+            match failure {
+                Some(failure) => (TurnOutcome::Failed, Some(Why::Failure(failure))),
+                None => (TurnOutcome::Replied, None),
+            }
         }
-        Outcome::Stopped { reason, .. } => (TurnOutcome::Stopped, reason.map(|reason| said(Some(&reason), "stopped"))),
+        Outcome::Failed { error, .. } => (TurnOutcome::Failed, Some(Why::Reason(said(error.as_deref(), "it failed")))),
+        Outcome::Stopped { reason, .. } if reason.as_deref() == Some(layout::LIMIT_REASON) => {
+            (TurnOutcome::Stopped, Some(Why::Reason("its thread's budget ran out".to_owned())))
+        }
+        Outcome::Stopped { reason, .. } => (
+            TurnOutcome::Stopped,
+            reason.map(|reason| Why::Reason(said(Some(&reason), "stopped"))),
+        ),
     };
-    settle(run, id, ended, reason, Some(turn))?;
+    settle(run, id, ended, why, Some(turn))?;
     run.changes.reap(process);
     Ok(Ending::Next(MainState::Rest))
 }
@@ -269,7 +316,7 @@ fn said(bytes: Option<&[u8]>, otherwise: &str) -> String {
 /// Settles the turn `turn` — none for one whose process is gone — as it ended: every call the replies since the last
 /// turn's end made that has no result answered interrupted, its end appended, how and when it ended set, and who
 /// waits on its inputs told.
-fn settle(run: &mut Run<'_>, id: &str, ended: TurnOutcome, reason: Option<String>, turn: Option<&str>) -> anyhow::Result<()> {
+fn settle(run: &mut Run<'_>, id: &str, ended: TurnOutcome, why: Option<Why>, turn: Option<&str>) -> anyhow::Result<()> {
     let window = Window::read(run.snapshot(), id)?;
     let since = window
         .conversation
@@ -281,28 +328,25 @@ fn settle(run: &mut Run<'_>, id: &str, ended: TurnOutcome, reason: Option<String
     let mut said = String::new();
     for entry in &window.conversation[since..] {
         match entry {
-            Entry::Reply { response, .. } => {
-                made.extend(response.output.iter().filter_map(|item| match item {
-                    Item::FunctionCall(call) => Some(call.call_id.clone()),
-                    _ => None,
-                }));
+            Entry::Reply { response, calls, .. } => {
+                made.extend(calls.iter().cloned());
                 let words = response.words();
                 if !words.is_empty() {
                     said = words;
                 }
             }
-            Entry::Result { output, .. } => answered.push(output.call_id.clone()),
+            Entry::Result { call, .. } => answered.push(call.clone()),
             _ => {}
         }
     }
     let mut writer = Writer::open(run.snapshot(), id)?;
-    for call_id in made.into_iter().filter(|call_id| !answered.contains(call_id)) {
+    for call in made.into_iter().filter(|call| !answered.contains(&call.key)) {
         let entry = Entry::Result {
             id: run.new_id()?,
-            call: String::new(),
+            call: call.key,
             status: CallStatus::Interrupted,
             output: FunctionCallOutput {
-                call_id,
+                call_id: call.call_id,
                 output: vec![InputContent::text("cut off as its turn ended; it may or may not have acted")],
                 is_error: true,
             },
@@ -312,16 +356,18 @@ fn settle(run: &mut Run<'_>, id: &str, ended: TurnOutcome, reason: Option<String
     let told = match ended {
         TurnOutcome::Replied => Ended::Replied { said },
         TurnOutcome::Failed => Ended::Failed {
-            reason: reason.clone().unwrap_or_default(),
+            reason: why.as_ref().map(Why::words).unwrap_or_default().to_owned(),
         },
         TurnOutcome::Stopped => Ended::Stopped,
     };
     tell(run, &window.conversation[since..], &told)?;
+    let (reason, failure) = Why::kept(why);
     let entry = Entry::TurnEnd {
         id: run.new_id()?,
         turn: turn.map(str::to_owned),
         outcome: ended,
         reason,
+        failure,
     };
     writer.append(&mut run.changes, &entry)?;
     let status = match ended {
