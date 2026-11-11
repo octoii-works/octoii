@@ -1,7 +1,8 @@
 /**
  * A new thread: "What should we build in <project>?" over the composer, in the middle of the page, and under the
- * composer, joined to it, the folder the thread will work in — a menu, opening upward, of the folders threads work in,
- * none, or another chosen as a file manager chooses one — and on its right the MCP servers a thread there would use.
+ * composer, joined to it, the folder the thread will work in — none, or the project the page was opened for, till the
+ * person chooses from a menu, opening upward, of the folders threads work in, none, or another chosen as a file manager
+ * chooses one — and on its right the MCP servers a thread there would use.
  * Sending makes the thread there, with the model chosen — the one the newest thread chose where none is — the mode
  * chosen, else the one the environment's settings name, and the message's first line as its title, delivers the
  * message, and goes to the thread.
@@ -44,7 +45,8 @@ export function NewThreadScreen(props: NewThreadScreenProps): ReactNode {
 	const [effort, setEffort] = useState<Effort | undefined>(undefined);
 	const settings = useSettings();
 	const mode = chosenMode ?? settings?.environment.thread_mode;
-	const folder = chosen === undefined ? (props.project ?? projects[0]?.folder) : chosen.folder;
+	// None till the person chooses one, unless the page was opened for a project: a thread of no folder is no project's.
+	const folder = chosen === undefined ? props.project : chosen.folder;
 	const running = model ?? recentModelsOf(rows)[0];
 	const choose = (next: string | undefined): void => {
 		setChosen({ folder: next });

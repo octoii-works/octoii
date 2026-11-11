@@ -154,14 +154,14 @@ function Shown(props: { readonly shows: Shows; readonly thread: string; readonly
 }
 
 /**
- * A tab: its icon and name, shaded while it is the one chosen, as wide as its name and narrower, its name cut short,
- * where the bar runs out of room; its cross shown as it is pointed at or focused, and always, larger, where a finger
+ * A tab: its icon and name, shaded while it is the one chosen, as wide as its name and its cross and narrower, its name
+ * cut short, where the bar runs out of room — never past its icon and a few letters; its cross shown as it is pointed at or focused, and always, larger, where a finger
  * points.
  */
 function TabButton(props: { readonly tab: Tab; readonly onClose: () => void }): ReactNode {
 	const { icon, label } = props.tab;
 	return (
-		<span className="group/tab flex h-control-sm max-w-48 min-w-30 items-center rounded-md text-ui text-muted-foreground hover:bg-accent has-data-active:bg-accent has-data-active:text-foreground">
+		<span className="group/tab flex h-control-sm max-w-48 min-w-16 items-center rounded-md text-ui text-muted-foreground hover:bg-accent has-data-active:bg-accent has-data-active:text-foreground">
 			<Tabs.Tab
 				value={props.tab.key}
 				title={label}
