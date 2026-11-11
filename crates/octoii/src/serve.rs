@@ -11,6 +11,7 @@ use std::sync::Arc;
 use anyhow::Context as _;
 use octoii_ai::drivers;
 use octoii_ai::models::Provider;
+use siphon::providers::SignInSetup;
 use siphon::{Setup, Siphon};
 use siphon_browser::BrowserPlugin;
 use siphon_mcp::McpPlugin;
@@ -66,16 +67,17 @@ fn machine(home: &Home) -> siphon_machine::Host {
     }
 }
 
-/// Siphon on this computer, with its core plugins.
+/// Siphon on this computer, with its core plugins: a provider's sign-in in a browser come back to `sign_in`.
 ///
 /// # Errors
 /// Where Beak or the volume cannot be opened.
-pub fn siphon(home: &Home) -> anyhow::Result<Siphon> {
+pub fn siphon(home: &Home, sign_in: SignInSetup) -> anyhow::Result<Siphon> {
     let beak = beak::Beak::new().context("Beak")?;
     let providers = providers();
     let setup = Setup {
         machine: machine(home),
         config: Some(home.config()),
+        sign_in,
         credentials: Arc::new(Credstore::new(home.credstore(), &providers)),
         transport: Arc::new(octoii_ai::transport::Network::default()),
         providers,
@@ -117,8 +119,17 @@ pub async fn serve(served: Served) -> anyhow::Result<()> {
 pub async fn serve_until(served: Served, stop: impl Future<Output = ()> + Send + 'static) -> anyhow::Result<()> {
     let Served { home, port, app, relays } = served;
     home.prepare().context("the Home")?;
-    let siphon = siphon(&home)?;
+    let listener = tokio::net::TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, port)))
+        .await
+        .with_context(|| format!("the loopback port {port}"))?;
+    let port = listener.local_addr()?.port();
+    let loopback = format!("http://127.0.0.1:{port}");
     let key = octoii_tunnel::key::load_or_make(&home.key()).context("the node's key")?;
+    let sign_in = SignInSetup {
+        callback: format!("{loopback}/sign-in/{{provider}}/callback"),
+        host_id: key.public().to_string(),
+    };
+    let siphon = siphon(&home, sign_in)?;
     let relays = relays
         .into_iter()
         .map(|relay| octoii_tunnel::RelayConfig::new(relay, None))
@@ -128,11 +139,6 @@ pub async fn serve_until(served: Served, stop: impl Future<Output = ()> + Send +
         .bind()
         .await
         .context("the tunnel")?;
-    let listener = tokio::net::TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, port)))
-        .await
-        .with_context(|| format!("the loopback port {port}"))?;
-    let port = listener.local_addr()?.port();
-    let loopback = format!("http://127.0.0.1:{port}");
     let node = Node {
         siphon: siphon.clone(),
         access: Access::new(siphon.runtime.clone()),

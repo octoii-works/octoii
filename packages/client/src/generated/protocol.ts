@@ -1,5 +1,17 @@
 // Siphon's protocol, generated from its Rust types — not to be edited by hand.
 
+/**
+ * An account, as a list shows it: its id, the host's provider it is another of, and the name it was given.
+ */
+export type Account = { id: string, provider: string, name: string, };
+
+export type AccountAdded = { account: string, };
+
+/**
+ * An account to add: of the provider `provider`, named `name`, once for `key`.
+ */
+export type AddAccount = { provider: string, name: string, key: string, };
+
 export type AnswerDialog = { page: string, accept: boolean, text?: string, };
 
 /**
@@ -123,9 +135,20 @@ export type ConfigureThread = { thread: string, change: ConfigChange, };
  */
 export type ConnectionEvent = { "event": "welcome", session: string, scopes: Array<Scope>, machine: Machine, } | { "event": "lagged", subscription: string, topic: Topic, };
 
+/**
+ * How a provider is connected: by an API key the person gives; by a sign-in in a browser; through an agent on the
+ * machine, signed in to on its own; or as a server of the person's.
+ */
+export type Connects = "api_key" | "sign_in" | "agent" | "server";
+
 export type CreateThread = { config: Config, key: string, };
 
 export type Created = { thread: string, };
+
+/**
+ * The kind of credential kept for a provider.
+ */
+export type CredentialKind = "api_key" | "o_auth" | "none";
 
 /**
  * Where a reader of a log stands: the segment it read, and how far.
@@ -186,6 +209,13 @@ export type Failure = { kind: FailureKind, message: string, code?: string | null
 export type FailureKind = "context_overflow" | "payload_too_large" | "rate_limit" | "quota" | "auth" | "forbidden" | "content_filter" | "invalid_request" | "server" | "transport" | "invalid_response" | "timeout";
 
 /**
+ * What sets a text model apart from its provider's others: whether it takes instructions updated after the person's
+ * first turn where they stand, and an effort changed where it stands; and the tool choices it takes. Each is unknown
+ * where no source says.
+ */
+export type Features = { instruction_updates: boolean | null, effort_updates: boolean | null, tool_choices: Array<string> | null, };
+
+/**
  * What a name in a folder is.
  */
 export type FileKind = "directory" | "file" | "link";
@@ -201,6 +231,8 @@ export type FilePage = { "type": "text", path: string, size: number, from: numbe
  * where it has one.
  */
 export type FileRef = { ref: string, media_type: string, filename?: string | null, };
+
+export type FinishSignIn = { provider: string, redirect: string, };
 
 /**
  * A name in a folder: what it names, and whether its repository's ignore rules leave it out.
@@ -289,6 +321,11 @@ export type Incomplete = "max_output_tokens" | "content_filter" | "cancelled";
 export type InputContent = { "type": "input_text", text: string, } | { "type": "input_image", file: FileRef, detail: ImageDetail, } | { "type": "input_file", file: FileRef, };
 
 /**
+ * The largest a model's input may be, where its provider says.
+ */
+export type InputLimits = { request_bytes: number | null, image_bytes: number | null, image_side_pixels: number | null, images: number | null, };
+
+/**
  * An item of a conversation.
  */
 export type Item = { "type": "message" } & Message | { "type": "function_call" } & FunctionCall | { "type": "function_call_output" } & FunctionCallOutput | { "type": "reasoning" } & Reasoning | { "type": "web_search_call" } & WebSearchCall | { "type": "configuration_update" } & ConfigurationUpdate;
@@ -359,6 +396,52 @@ export type Message = { "role": "user", content: Array<InputContent>, } | { "rol
 export type Mode = "default" | "auto" | "full-access";
 
 /**
+ * A text model: its provider's id of it and its provider, which make its reference `provider/id`; its name for
+ * people; and its facts.
+ */
+export type Model = { id: string, provider: string, name: string, 
+/**
+ * The tokens a request and its response may take together.
+ */
+context_length: number | null, 
+/**
+ * The tokens a response may take.
+ */
+max_output_tokens: number | null, 
+/**
+ * Whether it reads images, and files such as PDFs, besides text.
+ */
+reads_images: boolean, reads_files: boolean, 
+/**
+ * How it reasons; none for a model that does not.
+ */
+reasoning: ModelReasoning | null, 
+/**
+ * The request's fields it takes, by their names, such as `structured_outputs`; none, it takes every one.
+ */
+parameters: Array<string> | null, 
+/**
+ * Its prices; none for a model that cannot be priced, as one a subscription pays for.
+ */
+pricing: Pricing | null, 
+/**
+ * When its provider released it, as YYYY-MM-DD.
+ */
+release_date: string | null, 
+/**
+ * Whether its provider runs a web search for it.
+ */
+searches_web: boolean, limits: InputLimits, features: Features, };
+
+/**
+ * How a model reasons: the efforts it takes, highest first — every one where none is listed — the one it reasons at
+ * where a request names none, and whether it always reasons, taking no effort `none`.
+ */
+export type ModelReasoning = { efforts: Array<ReasoningEffort> | null, default_effort: ReasoningEffort | null, mandatory: boolean, };
+
+export type ModelsListed = { models: Array<Model>, };
+
+/**
  * What the mouse did: pressed, let go, moved, or its wheel turned.
  */
 export type MouseMotion = "down" | "up" | "move" | "wheel";
@@ -371,9 +454,19 @@ export type Navigate = { page: string, url: string, };
 export type Nothing = Record<symbol, never>;
 
 /**
+ * An account, by its id.
+ */
+export type OfAccount = { account: string, };
+
+/**
  * A page, by its id.
  */
 export type OfPage = { page: string, };
+
+/**
+ * A provider, by its id.
+ */
+export type OfProvider = { provider: string, };
 
 /**
  * A terminal, by its id.
@@ -410,6 +503,13 @@ export type Outcome = "replied" | "failed" | "stopped";
  * What an assistant message holds: text the model wrote, with the pages it cites, or its refusal in its words.
  */
 export type OutputContent = { "type": "output_text", text: string, annotations?: Array<UrlCitation>, } | { "type": "refusal", refusal: string, };
+
+/**
+ * Prices that replace a model's base prices for a request that meets every condition given: an input of more
+ * tokens than `min_prompt_tokens`; a time of day by UTC from `utc_start` to before `utc_end`, as HHMM, a window that
+ * may wrap past midnight; days by UTC, Monday 0.
+ */
+export type Override = { min_prompt_tokens: number | null, utc_start: number | null, utc_end: number | null, utc_days: Array<number> | null, prices: Prices, };
 
 /**
  * A mouse button, as the DOM names them.
@@ -454,6 +554,32 @@ export type Part = "text" | "refusal" | "reasoning" | "summary" | "arguments";
 export type Patch = { patch: string, };
 
 /**
+ * The prices a model lists for a text request, each a unit's: a token read, read from the prompt cache, written to
+ * it, written, spent reasoning; a web search; the request itself. None, the meter is not charged.
+ */
+export type Prices = { prompt: Rate | null, completion: Rate | null, cache_read: Rate | null, cache_write: Rate | null, reasoning: Rate | null, web_search: Rate | null, request: Rate | null, };
+
+/**
+ * A model's prices: its base prices, the overrides a later one of which wins, and the fraction taken off every
+ * price, in millionths.
+ */
+export type Pricing = { base: Prices, overrides: Array<Override>, discount_millionths: number, };
+
+/**
+ * A provider, as the person is shown it: its id and name, how it is connected and the agent it is reached through,
+ * the kind of credential kept for it — none where none is — the account it is, where the person added it, and its
+ * quota, where it is used up.
+ */
+export type ProviderShown = { id: string, name: string, connects: Connects, through?: string, credential?: CredentialKind, account?: Account, used_up?: UsedUp, };
+
+export type ProvidersListed = { providers: Array<ProviderShown>, };
+
+/**
+ * A price a unit: in picodollars, or one that varies, as a router's `-1` says, which no cost can be made of.
+ */
+export type Rate = { "picodollars": number } | "varies";
+
+/**
  * A file to read: as the person names it, its lines from `offset` — from 1, where none — `limit` at most.
  */
 export type ReadFile = { path: string, offset?: number, limit?: number, };
@@ -481,6 +607,8 @@ signature?: string | null, status?: ItemStatus | null, origin: Origin, };
  * How hard a model reasons, from `none` to `max`.
  */
 export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+
+export type RenameAccount = { account: string, name: string, };
 
 /**
  * Who is told how the turn that takes an input ends, by mail of `key`: the process at `process`, by its path, as the
@@ -529,6 +657,8 @@ export type SearchFiles = { path: string, query: string, limit: number, };
  */
 export type Section = { name: string, text: string | null, };
 
+export type SetCredential = { provider: string, api_key: string, };
+
 /**
  * The settings, as a client is told of them: the environment's, which every client shares, and its device's own,
  * which Siphon keeps for it and reads none of.
@@ -539,6 +669,8 @@ export type Settings = { environment: Environment, device: JsonValue, };
  * A change of the settings: the environment's, and the device's, as a merge patch of its document.
  */
 export type SettingsChange = { environment?: EnvironmentChange | null, device?: JsonValue | null, };
+
+export type SignInBegun = { url: string, };
 
 /**
  * An event of a subscription to Siphon's, by the subscription's id: a thread's entries appended, with where its
@@ -653,6 +785,12 @@ reasoning_tokens: number,
 web_searches: number, cost_nanodollars?: number | null, };
 
 /**
+ * A provider's quota used up: when it is given again, in milliseconds since the epoch, and how long the window it is
+ * counted over lasts, in minutes, where the provider said.
+ */
+export type UsedUp = { reset_at_ms: number, window_minutes?: number, };
+
+/**
  * A file's two versions: the older, none where it came; the newer, none where it went.
  */
 export type Versions = { old?: string, new?: string, };
@@ -709,6 +847,16 @@ export type Methods = {
   'git.patch': { params: GitPatch; result: Patch };
   'git.versions': { params: GitVersions; result: Versions };
   'git.commits': { params: GitCommits; result: Commits };
+  'providers.list': { params: Nothing; result: ProvidersListed };
+  'providers.sign-in': { params: OfProvider; result: SignInBegun };
+  'providers.finish-sign-in': { params: FinishSignIn; result: Nothing };
+  'credentials.set': { params: SetCredential; result: Nothing };
+  'credentials.remove': { params: OfProvider; result: Nothing };
+  'accounts.add': { params: AddAccount; result: AccountAdded };
+  'accounts.rename': { params: RenameAccount; result: Nothing };
+  'accounts.remove': { params: OfAccount; result: Nothing };
+  'models.list': { params: Nothing; result: ModelsListed };
+  'models.refresh': { params: Nothing; result: Nothing };
   'settings.set': { params: SettingsChange; result: Nothing };
   'browser.open': { params: OpenPage; result: PageOpened };
   'browser.navigate': { params: Navigate; result: Nothing };

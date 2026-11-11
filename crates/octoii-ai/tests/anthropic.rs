@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use bytes::Bytes;
 use futures::future::BoxFuture;
-use octoii_ai::catalogue::{Model, Reasoning as ReasoningFacts};
+use octoii_ai::catalogue::{Model, ModelReasoning as ReasoningFacts};
 use octoii_ai::driver::Driver;
 use octoii_ai::drivers::{ANTHROPIC, CLAUDE};
 use octoii_ai::protocols::anthropic;

@@ -8,6 +8,7 @@ mod calls;
 mod git;
 mod journal;
 mod machine;
+mod providers;
 mod subscriptions;
 
 use std::collections::HashMap;

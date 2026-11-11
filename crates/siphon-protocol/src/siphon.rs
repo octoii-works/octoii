@@ -52,6 +52,25 @@ crate::methods! {
     "git.versions" GitVersions(GitVersions) -> Versions, Some(Scope::FilesRead);
     /// The commits of a branch since it parted from its base.
     "git.commits" GitCommits(GitCommits) -> Commits, Some(Scope::FilesRead);
+    /// The providers, each as the person manages it.
+    "providers.list" ListProviders(Nothing) -> ProvidersListed, Some(Scope::ProvidersManage);
+    /// A sign-in of a provider begun in a browser: where the person signs in.
+    "providers.sign-in" SignIn(OfProvider) -> SignInBegun, Some(Scope::ProvidersManage);
+    /// A sign-in finished from the address the person's browser was sent back to, as they paste it.
+    "providers.finish-sign-in" FinishSignIn(FinishSignIn) -> Nothing, Some(Scope::ProvidersManage);
+    /// A provider's API key set.
+    "credentials.set" SetCredential(SetCredential) -> Nothing, Some(Scope::ProvidersManage);
+    /// A provider's credential forgotten; one the host reads elsewhere, as from its environment, read as before.
+    "credentials.remove" RemoveCredential(OfProvider) -> Nothing, Some(Scope::ProvidersManage);
+    /// An account added of a provider, once for its idempotency key: its id, by which it is a provider.
+    "accounts.add" AddAccount(AddAccount) -> AccountAdded, Some(Scope::ProvidersManage);
+    "accounts.rename" RenameAccount(RenameAccount) -> Nothing, Some(Scope::ProvidersManage);
+    /// An account removed, its credential with it.
+    "accounts.remove" RemoveAccount(OfAccount) -> Nothing, Some(Scope::ProvidersManage);
+    /// The models a thread may run with, as the catalogue and the providers' listings describe them.
+    "models.list" ListModels(Nothing) -> ModelsListed, Some(Scope::ThreadsRead);
+    /// The providers' listings of their models fetched anew.
+    "models.refresh" RefreshModels(Nothing) -> Nothing, Some(Scope::ProvidersManage);
     /// The settings changed: the environment's each given, the device's merged.
     "settings.set" SetSettings(SettingsChange) -> Nothing, Some(Scope::ThreadsOperate);
 }
@@ -295,6 +314,106 @@ pub struct GitCommits {
 pub struct Commits {
     pub commits: Vec<Commit>,
     pub truncated: bool,
+}
+
+/// How a provider is connected: by an API key the person gives; by a sign-in in a browser; through an agent on the
+/// machine, signed in to on its own; or as a server of the person's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum Connects {
+    ApiKey,
+    SignIn,
+    Agent,
+    Server,
+}
+
+/// The kind of credential kept for a provider.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum CredentialKind {
+    ApiKey,
+    OAuth,
+    None,
+}
+
+/// A provider, as the person is shown it: its id and name, how it is connected and the agent it is reached through,
+/// the kind of credential kept for it — none where none is — the account it is, where the person added it, and its
+/// quota, where it is used up.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct ProviderShown {
+    pub id: String,
+    pub name: String,
+    pub connects: Connects,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub through: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub credential: Option<CredentialKind>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub account: Option<siphon_accounts::Account>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub used_up: Option<siphon_accounts::UsedUp>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct ProvidersListed {
+    pub providers: Vec<ProviderShown>,
+}
+
+/// A provider, by its id.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct OfProvider {
+    pub provider: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct SignInBegun {
+    pub url: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct FinishSignIn {
+    pub provider: String,
+    pub redirect: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct SetCredential {
+    pub provider: String,
+    pub api_key: String,
+}
+
+/// An account to add: of the provider `provider`, named `name`, once for `key`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct AddAccount {
+    pub provider: String,
+    pub name: String,
+    pub key: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct AccountAdded {
+    pub account: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct RenameAccount {
+    pub account: String,
+    pub name: String,
+}
+
+/// An account, by its id.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct OfAccount {
+    pub account: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+pub struct ModelsListed {
+    pub models: Vec<octoii_ai::catalogue::Model>,
 }
 
 /// What a client subscribes to of Siphon's: a thread — its entries from where the client stood, none for from the start, then its

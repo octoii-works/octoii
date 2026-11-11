@@ -11,7 +11,7 @@ use crate::vocabulary::ReasoningEffort;
 
 /// A text model: its provider's id of it and its provider, which make its reference `provider/id`; its name for
 /// people; and its facts.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
 pub struct Model {
     pub id: String,
     pub provider: String,
@@ -24,7 +24,7 @@ pub struct Model {
     pub reads_images: bool,
     pub reads_files: bool,
     /// How it reasons; none for a model that does not.
-    pub reasoning: Option<Reasoning>,
+    pub reasoning: Option<ModelReasoning>,
     /// The request's fields it takes, by their names, such as `structured_outputs`; none, it takes every one.
     pub parameters: Option<Vec<String>>,
     /// Its prices; none for a model that cannot be priced, as one a subscription pays for.
@@ -55,15 +55,15 @@ impl Model {
 
 /// How a model reasons: the efforts it takes, highest first — every one where none is listed — the one it reasons at
 /// where a request names none, and whether it always reasons, taking no effort `none`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Reasoning {
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
+pub struct ModelReasoning {
     pub efforts: Option<Vec<ReasoningEffort>>,
     pub default_effort: Option<ReasoningEffort>,
     pub mandatory: bool,
 }
 
 /// The largest a model's input may be, where its provider says.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
 pub struct InputLimits {
     pub request_bytes: Option<u64>,
     pub image_bytes: Option<u64>,
@@ -74,7 +74,7 @@ pub struct InputLimits {
 /// What sets a text model apart from its provider's others: whether it takes instructions updated after the person's
 /// first turn where they stand, and an effort changed where it stands; and the tool choices it takes. Each is unknown
 /// where no source says.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
 pub struct Features {
     pub instruction_updates: Option<bool>,
     pub effort_updates: Option<bool>,

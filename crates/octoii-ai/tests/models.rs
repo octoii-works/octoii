@@ -5,7 +5,7 @@ mod support;
 
 use std::sync::Arc;
 
-use octoii_ai::catalogue::{self, Reasoning as ReasoningFacts};
+use octoii_ai::catalogue::{self, ModelReasoning as ReasoningFacts};
 use octoii_ai::driver::Settings;
 use octoii_ai::drivers::{OLLAMA, OPENAI};
 use octoii_ai::host::Credential;

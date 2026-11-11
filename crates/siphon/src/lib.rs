@@ -4,6 +4,7 @@
 
 pub mod connection;
 mod plugin;
+pub mod providers;
 pub mod testing;
 
 use std::sync::Arc;
@@ -35,6 +36,7 @@ pub use plugin::{Builder, Context, Full, Lagged, Plugin, Sink, Subscription};
 pub struct Setup {
     pub machine: Host,
     pub config: Option<std::path::PathBuf>,
+    pub sign_in: providers::SignInSetup,
     pub credentials: Arc<dyn Credentials>,
     pub transport: Arc<dyn Transport>,
     pub providers: Vec<Provider>,
@@ -42,14 +44,19 @@ pub struct Setup {
     pub options: Options,
 }
 
-/// Siphon, started: the machine its work is done on, its runtime, its threads, the models they ask, and the protocol's
+/// Siphon, started: the machine its work is done on, its runtime, its threads, the models they ask — reached with the
+/// host's providers, the credentials kept, and how a sign-in comes back — the sign-ins begun, and the protocol's
 /// methods and topics as Siphon and its plugins brought them.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Siphon {
     pub machine: Host,
     pub runtime: Runtime,
     pub threads: Threads<ThreadProgram>,
     pub models: Arc<Models>,
+    pub credentials: Arc<dyn Credentials>,
+    pub providers: Arc<Vec<Provider>>,
+    pub sign_in: Arc<providers::SignInSetup>,
+    pub sign_ins: providers::SignIns,
     pub(crate) registry: Arc<plugin::Registry>,
 }
 
@@ -94,14 +101,21 @@ impl Siphon {
 }
 
 /// Siphon being built: what its plugins add to, and what it is started with.
-#[derive(Debug)]
 pub struct Building {
     pub builder: Builder,
     config: Option<std::path::PathBuf>,
+    sign_in: providers::SignInSetup,
+    credentials: Arc<dyn Credentials>,
     events: Events,
     network: Network,
     catalogue: Vec<Model>,
     options: Options,
+}
+
+impl std::fmt::Debug for Siphon {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Siphon").field("machine", &self.machine).finish_non_exhaustive()
+    }
 }
 
 impl std::fmt::Debug for Setup {
@@ -127,6 +141,7 @@ impl Siphon {
         let Setup {
             machine,
             config,
+            sign_in,
             credentials,
             transport,
             providers,
@@ -136,7 +151,7 @@ impl Siphon {
         let (kernel, events) = options.open(beak)?;
         let (minting, minted_at, clock) = (kernel.clone(), Arc::clone(&options.clock), Arc::clone(&options.clock));
         let network = Network {
-            credentials,
+            credentials: Arc::clone(&credentials),
             transport,
             // Beak mints a UUIDv7 at any time: past a millisecond's ids it goes on in the next, till the year 10889.
             new_id: Arc::new(move || minting.new_id(minted_at.now_ms()).expect("the volume mints an id")),
@@ -166,11 +181,19 @@ impl Siphon {
         Ok(Building {
             builder,
             config,
+            sign_in,
+            credentials,
             events,
             network,
             catalogue,
             options,
         })
+    }
+}
+
+impl std::fmt::Debug for Building {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Building").field("builder", &self.builder).finish_non_exhaustive()
     }
 }
 
@@ -190,6 +213,8 @@ impl Building {
         let Building {
             builder,
             config,
+            sign_in,
+            credentials,
             events,
             network,
             catalogue,
@@ -209,15 +234,25 @@ impl Building {
             .with(ExecuteTool { tools: inner.clone() })
             .with(QuestionTool)
             .with(DelegateTool);
-        let models = Arc::new(Models::new(network, providers, catalogue));
+        let hosts = Arc::new(providers);
+        let models = Arc::new(Models::new(network, hosts.to_vec(), catalogue));
         let runtime = programs(runtime, &machine, config, &models, tellers, inner, outer).start_on((kernel, events), options)?;
-        Ok(Siphon {
+        let siphon = Siphon {
             machine,
             threads: Threads::new(runtime.clone()),
             runtime,
             models,
+            credentials,
+            providers: hosts,
+            sign_in: Arc::new(sign_in),
+            sign_ins: providers::SignIns::start(),
             registry: Arc::new(registry),
-        })
+        };
+        // The accounts the person added are providers beside the host's.
+        if let Err(providers::Refused::Beak(error)) = providers::refreshed(&siphon.runtime, &siphon.models, &siphon.providers) {
+            return Err(error);
+        }
+        Ok(siphon)
     }
 }
 

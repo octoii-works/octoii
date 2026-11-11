@@ -4,7 +4,7 @@
 use serde::Deserialize;
 
 use super::pricing::{Override, Prices, Pricing, Rate};
-use super::{Features, InputLimits, Model, Reasoning};
+use super::{Features, InputLimits, Model, ModelReasoning};
 use crate::vocabulary::ReasoningEffort;
 
 #[derive(Deserialize)]
@@ -161,7 +161,7 @@ impl Listed {
             name: self.name,
             context_length: self.context_length,
             max_output_tokens: self.max_completion_tokens,
-            reasoning: self.reasoning.map(|reasoning| Reasoning {
+            reasoning: self.reasoning.map(|reasoning| ModelReasoning {
                 efforts: reasoning.supported_efforts,
                 default_effort: reasoning.default_effort,
                 mandatory: reasoning.mandatory,

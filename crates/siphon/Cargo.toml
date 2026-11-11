@@ -14,6 +14,7 @@ workspace = true
 bytes = "1.12.1"
 beak = { path = "../../vendor/beak/crates/beak" }
 octoii-ai = { path = "../octoii-ai" }
+siphon-accounts = { path = "../siphon-accounts" }
 siphon-agent = { path = "../siphon-agent" }
 siphon-machine = { path = "../siphon-machine" }
 siphon-protocol = { path = "../siphon-protocol" }
@@ -24,6 +25,7 @@ siphon-tools = { path = "../siphon-tools" }
 serde = "1.0.229"
 serde_json = "1.0.154"
 tokio = { version = "1.54.1", features = ["rt", "sync", "macros", "time"] }
+thiserror = "2.0.21"
 tokio-util = "0.7.20"
 nucleo-matcher = "0.3.1"
 siphon-text = { path = "../siphon-text" }

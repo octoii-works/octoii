@@ -5,7 +5,7 @@ mod support;
 
 use std::sync::Arc;
 
-use octoii_ai::catalogue::Reasoning as ReasoningFacts;
+use octoii_ai::catalogue::ModelReasoning as ReasoningFacts;
 use octoii_ai::driver::Driver;
 use octoii_ai::drivers::{OLLAMA, ZAI};
 use octoii_ai::protocols::chat_completions;

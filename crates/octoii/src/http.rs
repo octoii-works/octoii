@@ -52,6 +52,7 @@ pub fn router(node: Node) -> Router {
         )
         .route("/threads/{thread}/files/{hash}", get(crate::files::kept))
         .route("/machine", get(crate::files::machined))
+        .route("/sign-in/{provider}/callback", get(signed_in))
         .with_state(node);
     if let Some(app) = app {
         let page = ServeFile::new(app.join("index.html"));
@@ -247,6 +248,31 @@ where
     drop(calls);
     let _ = serving.await;
     writer.abort();
+}
+
+/// A provider's sign-in come back: finished from the address the person's browser was sent back to — the attempt's own
+/// state and proof what it is checked by, as a provider's redirect carries no cookie of the node's.
+async fn signed_in(State(node): State<Node>, axum::extract::Path(provider): axum::extract::Path<String>, uri: axum::http::Uri) -> Response {
+    let redirect = node.siphon.sign_in.callback.replace("{provider}", &provider);
+    let redirect = match uri.query() {
+        Some(query) => format!("{redirect}?{query}"),
+        None => redirect,
+    };
+    let finished = siphon::providers::finish_sign_in(&node.siphon.models, &node.siphon.sign_ins, &provider, &redirect).await;
+    let said = match finished {
+        Ok(()) => "Signed in. You may close this page.".to_owned(),
+        Err(error) => format!("Not signed in: {error}"),
+    };
+    axum::response::Html(format!(
+        "<!doctype html><meta charset=\"utf-8\"><title>Octoii</title><p>{}</p>",
+        html_escaped(&said)
+    ))
+    .into_response()
+}
+
+/// `text` with what HTML reads as markup escaped.
+fn html_escaped(text: &str) -> String {
+    text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
 }
 
 /// What a client pairs by: the credential of a link.

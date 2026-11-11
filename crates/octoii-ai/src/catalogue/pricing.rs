@@ -6,7 +6,8 @@
 use crate::vocabulary::Usage;
 
 /// A price a unit: in picodollars, or one that varies, as a router's `-1` says, which no cost can be made of.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
+#[serde(rename_all = "snake_case")]
 pub enum Rate {
     Picodollars(u64),
     Varies,
@@ -35,7 +36,7 @@ impl Rate {
 
 /// The prices a model lists for a text request, each a unit's: a token read, read from the prompt cache, written to
 /// it, written, spent reasoning; a web search; the request itself. None, the meter is not charged.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
 pub struct Prices {
     pub prompt: Option<Rate>,
     pub completion: Option<Rate>,
@@ -64,7 +65,7 @@ impl Prices {
 /// Prices that replace a model's base prices for a request that meets every condition given: an input of more
 /// tokens than `min_prompt_tokens`; a time of day by UTC from `utc_start` to before `utc_end`, as HHMM, a window that
 /// may wrap past midnight; days by UTC, Monday 0.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
 pub struct Override {
     pub min_prompt_tokens: Option<u64>,
     pub utc_start: Option<u32>,
@@ -99,7 +100,7 @@ impl Override {
 
 /// A model's prices: its base prices, the overrides a later one of which wins, and the fraction taken off every
 /// price, in millionths.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
 pub struct Pricing {
     pub base: Prices,
     pub overrides: Vec<Override>,

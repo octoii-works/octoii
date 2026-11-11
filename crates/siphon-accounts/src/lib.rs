@@ -23,7 +23,7 @@ pub const NAME_ANNOTATION: &str = "siphon.name";
 pub const NAME_BYTES_MAX: usize = 64;
 
 /// An account, as a list shows it: its id, the host's provider it is another of, and the name it was given.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct Account {
     pub id: String,
     pub provider: String,
@@ -32,10 +32,11 @@ pub struct Account {
 
 /// A provider's quota used up: when it is given again, in milliseconds since the epoch, and how long the window it is
 /// counted over lasts, in minutes, where the provider said.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct UsedUp {
     pub reset_at_ms: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub window_minutes: Option<u32>,
 }
 

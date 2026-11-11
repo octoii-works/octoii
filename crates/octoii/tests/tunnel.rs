@@ -41,7 +41,7 @@ async fn a_device_pairs_through_the_tunnel_by_its_key_and_speaks_the_protocol_wi
     let folder = tempfile::tempdir().expect("a folder");
     let home = Home::at(folder.path());
     home.prepare().expect("a Home");
-    let siphon = octoii::serve::siphon(&home).expect("Siphon");
+    let siphon = octoii::serve::siphon(&home, siphon::providers::SignInSetup::default()).expect("Siphon");
     let access = Access::new(siphon.runtime.clone());
     let node = Node {
         siphon: siphon.clone(),

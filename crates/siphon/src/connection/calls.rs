@@ -87,6 +87,16 @@ pub(crate) async fn answered(context: Context, method: Method) -> Result<serde_j
         | Method::GitPatch(_)
         | Method::GitVersions(_)
         | Method::GitCommits(_)) => super::git::answered(siphon, method).await,
+        method @ (Method::ListProviders(_)
+        | Method::SignIn(_)
+        | Method::FinishSignIn(_)
+        | Method::SetCredential(_)
+        | Method::RemoveCredential(_)
+        | Method::AddAccount(_)
+        | Method::RenameAccount(_)
+        | Method::RemoveAccount(_)
+        | Method::ListModels(_)
+        | Method::RefreshModels(_)) => super::providers::answered(siphon, method).await,
         Method::SetSettings(change) => {
             siphon_settings::set(&siphon.runtime, session, &change)
                 .await

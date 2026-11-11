@@ -5524,6 +5524,7 @@ dependencies = [
  "octoii-ai",
  "serde",
  "serde_json",
+ "siphon-accounts",
  "siphon-agent",
  "siphon-machine",
  "siphon-protocol",
@@ -5533,6 +5534,7 @@ dependencies = [
  "siphon-threads",
  "siphon-tools",
  "tempfile",
+ "thiserror 2.0.21",
  "tokio",
  "tokio-util",
  "ts-rs",
@@ -5551,6 +5553,7 @@ dependencies = [
  "siphon-threads",
  "thiserror 2.0.21",
  "tokio",
+ "ts-rs",
 ]
 
 [[package]]
@@ -5664,6 +5667,7 @@ dependencies = [
  "octoii-ai",
  "serde",
  "serde_json",
+ "siphon-accounts",
  "siphon-agent",
  "siphon-machine",
  "siphon-settings",

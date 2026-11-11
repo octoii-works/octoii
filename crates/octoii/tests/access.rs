@@ -9,7 +9,7 @@ async fn a_device_s_session_is_found_by_its_key_and_a_credential_holds_only_its_
     let folder = tempfile::tempdir().expect("a folder");
     let home = Home::at(folder.path());
     home.prepare().expect("a Home");
-    let siphon = octoii::serve::siphon(&home).expect("Siphon");
+    let siphon = octoii::serve::siphon(&home, siphon::providers::SignInSetup::default()).expect("Siphon");
     let access = Access::new(siphon.runtime.clone());
     let link = access
         .link(Some("phone".into()), access::ALL.to_vec(), access::LINK_LASTS)

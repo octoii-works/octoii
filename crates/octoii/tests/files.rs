@@ -45,7 +45,7 @@ async fn a_thread_s_files_are_sent_kept_and_given_back_to_a_session_that_may() {
     let folder = tempfile::tempdir().expect("a folder");
     let home = Home::at(folder.path());
     home.prepare().expect("a Home");
-    let siphon = octoii::serve::siphon(&home).expect("Siphon");
+    let siphon = octoii::serve::siphon(&home, siphon::providers::SignInSetup::default()).expect("Siphon");
     let access = Access::new(siphon.runtime.clone());
     let thread = siphon.threads.create(&NewThread::default(), "k1").await.expect("a thread");
     let other = siphon.threads.create(&NewThread::default(), "k2").await.expect("a thread");
