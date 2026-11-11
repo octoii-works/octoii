@@ -218,12 +218,8 @@ async fn a_subscription_its_client_does_not_keep_up_with_lags_and_is_made_again_
         }
     };
     assert!(seen.len() < 13, "it lagged before telling all");
-    let id = client
-        .call(
-            "subscribe",
-            json!({ "topic": { "type": "thread", "thread": thread, "from": lagged["cursor"] } }),
-        )
-        .await;
+    assert_eq!(lagged["topic"]["from"].is_null(), seen.is_empty(), "it stands past what it told");
+    let id = client.call("subscribe", json!({ "topic": lagged["topic"] })).await;
     let again = client.answer(&id).await["result"]["subscription"]
         .as_str()
         .expect("an id")
