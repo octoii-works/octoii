@@ -41,7 +41,7 @@ pub enum Verdict {
 
 /// What the person granted a project for good: each a command's pattern, as `git push *`, a path's glob, as
 /// `/work/app/docs/**`, or a tool's name.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct Grants {
     pub commands: Vec<String>,
     pub paths: Vec<String>,

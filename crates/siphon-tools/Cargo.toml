@@ -28,6 +28,7 @@ siphon-shell = { path = "../siphon-shell" }
 siphon-text = { path = "../siphon-text" }
 siphon-threads = { path = "../siphon-threads" }
 thiserror = "2.0.21"
+ts-rs = { version = "12.0.1", features = ["serde-json-impl", "no-serde-warnings"] }
 tokio = { version = "1.54.1", features = ["rt", "sync", "macros", "time"] }
 tokio-util = "0.7.20"
 

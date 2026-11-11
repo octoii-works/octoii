@@ -254,3 +254,30 @@ async fn a_plugin_s_methods_and_topics_are_the_protocol_s_beside_siphon_s() {
     assert!(typescript.contains("'echo.say': { params: Said; result: Said };"));
     siphon.runtime.close().await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn what_a_project_was_granted_is_listed_and_taken_back_in_part() {
+    let beak = Beak::new().expect("Beak");
+    let siphon = siphon(&beak);
+    let granted = siphon_tools::Grants {
+        commands: vec!["git push *".into(), "cargo test *".into()],
+        paths: vec!["/work/app/docs/**".into()],
+        tools: Vec::new(),
+    };
+    let snapshot = siphon.runtime.snapshot().expect("a snapshot");
+    let changes = siphon_tools::projects::grant(&snapshot, "/work/app", granted).expect("granted");
+    siphon.runtime.commit(changes).await.expect("committed");
+    let mut client = Client::connect(&siphon, ALL.to_vec(), 64);
+    client.message().await;
+    let id = client.call("grants.list", json!({})).await;
+    let listed = client.answer(&id).await["result"]["projects"].clone();
+    assert_eq!(listed[0]["folder"], "/work/app");
+    assert_eq!(listed[0]["grants"]["commands"], json!(["git push *", "cargo test *"]));
+    let less = json!({ "folder": "/work/app", "grants": { "commands": ["git push *"], "paths": [], "tools": [] } });
+    let id = client.call("grants.revoke", less).await;
+    client.answer(&id).await;
+    let id = client.call("grants.list", json!({})).await;
+    let listed = client.answer(&id).await["result"]["projects"].clone();
+    assert_eq!(listed[0]["grants"]["commands"], json!(["cargo test *"]), "taken back in part");
+    siphon.runtime.close().await;
+}

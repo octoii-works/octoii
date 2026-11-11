@@ -19,4 +19,5 @@ siphon-accounts = { path = "../siphon-accounts" }
 siphon-machine = { path = "../siphon-machine" }
 siphon-settings = { path = "../siphon-settings" }
 siphon-threads = { path = "../siphon-threads" }
+siphon-tools = { path = "../siphon-tools" }
 ts-rs = { version = "12.0.1", features = ["serde-json-impl", "no-serde-warnings"] }

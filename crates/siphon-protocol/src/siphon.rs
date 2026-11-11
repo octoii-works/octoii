@@ -71,6 +71,10 @@ crate::methods! {
     "models.list" ListModels(Nothing) -> ModelsListed, Some(Scope::ThreadsRead);
     /// The providers' listings of their models fetched anew.
     "models.refresh" RefreshModels(Nothing) -> Nothing, Some(Scope::ProvidersManage);
+    /// What each project was granted for good, of each granted anything.
+    "grants.list" ListGrants(Nothing) -> GrantsListed, Some(Scope::ThreadsRead);
+    /// What a project was granted, taken back in part.
+    "grants.revoke" RevokeGrants(siphon_tools::projects::Granted) -> Nothing, Some(Scope::ThreadsOperate);
     /// The settings changed: the environment's each given, the device's merged.
     "settings.set" SetSettings(SettingsChange) -> Nothing, Some(Scope::ThreadsOperate);
 }
@@ -414,6 +418,11 @@ pub struct OfAccount {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 pub struct ModelsListed {
     pub models: Vec<octoii_ai::catalogue::Model>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct GrantsListed {
+    pub projects: Vec<siphon_tools::projects::Granted>,
 }
 
 /// What a client subscribes to of Siphon's: a thread — its entries from where the client stood, none for from the start, then its

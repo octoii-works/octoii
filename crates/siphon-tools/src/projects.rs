@@ -102,3 +102,48 @@ pub fn grant(snapshot: &Snapshot, folder: &str, more: Grants) -> anyhow::Result<
     all.add(more);
     Ok(annotate(snapshot, folder, GRANTS, Bytes::from(serde_json::to_vec(&all)?))?)
 }
+
+/// A project's grants, as the person is shown them: its folder, and what it was granted for good.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+pub struct Granted {
+    pub folder: String,
+    pub grants: Grants,
+}
+
+/// Every project's grants, of each that was granted anything.
+///
+/// # Errors
+/// The volume's failure; grants not as Siphon writes them.
+pub fn all_grants(snapshot: &Snapshot) -> anyhow::Result<Vec<Granted>> {
+    let prefix = format!("{KIND}:");
+    let range = beak::Range {
+        prefix: prefix.as_bytes(),
+        limit: usize::MAX,
+        ..beak::Range::default()
+    };
+    let mut out = Vec::new();
+    for entry in snapshot.list(b"", &range)?.unwrap_or_default() {
+        let Some(directory) = &entry.directory else { continue };
+        let Some(folder) = directory.label(FOLDER_LABEL.as_bytes()) else {
+            continue;
+        };
+        let folder = String::from_utf8_lossy(folder).into_owned();
+        let grants = grants(snapshot, &folder)?;
+        if grants != Grants::default() {
+            out.push(Granted { folder, grants });
+        }
+    }
+    Ok(out)
+}
+
+/// The changes that take `less` from what the project of `folder` was granted.
+///
+/// # Errors
+/// The volume's failure; grants not as Siphon writes them.
+pub fn revoke(snapshot: &Snapshot, folder: &str, less: &Grants) -> anyhow::Result<Changes> {
+    let mut all = grants(snapshot, folder)?;
+    all.commands.retain(|pattern| !less.commands.contains(pattern));
+    all.paths.retain(|pattern| !less.paths.contains(pattern));
+    all.tools.retain(|pattern| !less.tools.contains(pattern));
+    Ok(annotate(snapshot, folder, GRANTS, Bytes::from(serde_json::to_vec(&all)?))?)
+}

@@ -16,9 +16,56 @@ use crate::plugin::Caller;
 /// Who a person's calls are made as, as the threads' logs name them.
 const PERSON: &str = "person";
 
-/// Does `method` for the client of `caller`.
+/// Does `method` for the client of `caller`, by the group it is of.
 pub(crate) async fn answered(caller: Caller, method: Method) -> Result<serde_json::Value, Error> {
     let Caller { siphon, session } = &caller;
+    match method {
+        Method::ListFolder(asked) => json(&super::machine::list(siphon, &asked)?),
+        Method::ReadFile(asked) => json(&super::machine::read(siphon, &asked)?),
+        Method::SearchFiles(asked) => json(&super::machine::search(siphon, &asked)?),
+        method @ (Method::GitRepository(_)
+        | Method::GitChanges(_)
+        | Method::GitPatch(_)
+        | Method::GitVersions(_)
+        | Method::GitCommits(_)) => super::git::answered(siphon, method).await,
+        method @ (Method::ListProviders(_)
+        | Method::SignIn(_)
+        | Method::FinishSignIn(_)
+        | Method::SetCredential(_)
+        | Method::RemoveCredential(_)
+        | Method::AddAccount(_)
+        | Method::RenameAccount(_)
+        | Method::RemoveAccount(_)
+        | Method::ListModels(_)
+        | Method::RefreshModels(_)) => super::providers::answered(siphon, method).await,
+        Method::ListGrants(Nothing {}) => {
+            let snapshot = siphon.runtime.snapshot().map_err(|error| refusal("failed", &error.to_string()))?;
+            let projects = siphon_tools::projects::all_grants(&snapshot).map_err(|error| refusal("failed", &error.to_string()))?;
+            json(&siphon_protocol::siphon::GrantsListed { projects })
+        }
+        Method::RevokeGrants(less) => {
+            let snapshot = siphon.runtime.snapshot().map_err(|error| refusal("failed", &error.to_string()))?;
+            let changes = siphon_tools::projects::revoke(&snapshot, &less.folder, &less.grants)
+                .map_err(|error| refusal("failed", &error.to_string()))?;
+            siphon
+                .runtime
+                .commit(changes)
+                .await
+                .map_err(|error| refusal("failed", &error.to_string()))?;
+            json(&Nothing {})
+        }
+        Method::SetSettings(change) => {
+            siphon_settings::set(&siphon.runtime, session, &change)
+                .await
+                .map_err(|error| refusal("bad_settings", &error.to_string()))?;
+            json(&Nothing {})
+        }
+        method => threads_answered(siphon, method).await,
+    }
+}
+
+/// Does the threads' method `method` on `siphon`.
+async fn threads_answered(siphon: &Siphon, method: Method) -> Result<serde_json::Value, Error> {
     let threads = &siphon.threads;
     match method {
         Method::ListThreads(Nothing {}) => json(&ThreadsListed {
@@ -79,30 +126,7 @@ pub(crate) async fn answered(caller: Caller, method: Method) -> Result<serde_jso
             json(&Nothing {})
         }
         Method::ReadThread(read) => json(&read_thread(siphon, &read.thread, read.before.as_deref(), read.limit)?),
-        Method::ListFolder(asked) => json(&super::machine::list(siphon, &asked)?),
-        Method::ReadFile(asked) => json(&super::machine::read(siphon, &asked)?),
-        Method::SearchFiles(asked) => json(&super::machine::search(siphon, &asked)?),
-        method @ (Method::GitRepository(_)
-        | Method::GitChanges(_)
-        | Method::GitPatch(_)
-        | Method::GitVersions(_)
-        | Method::GitCommits(_)) => super::git::answered(siphon, method).await,
-        method @ (Method::ListProviders(_)
-        | Method::SignIn(_)
-        | Method::FinishSignIn(_)
-        | Method::SetCredential(_)
-        | Method::RemoveCredential(_)
-        | Method::AddAccount(_)
-        | Method::RenameAccount(_)
-        | Method::RemoveAccount(_)
-        | Method::ListModels(_)
-        | Method::RefreshModels(_)) => super::providers::answered(siphon, method).await,
-        Method::SetSettings(change) => {
-            siphon_settings::set(&siphon.runtime, session, &change)
-                .await
-                .map_err(|error| refusal("bad_settings", &error.to_string()))?;
-            json(&Nothing {})
-        }
+        _ => Err(refusal("bad_call", "no method of the threads'")),
     }
 }
 

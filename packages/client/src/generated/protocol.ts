@@ -292,6 +292,19 @@ export type GitPatch = { path: string, comparison: Comparison, file: ChangedFile
 export type GitVersions = { path: string, comparison: Comparison, file: ChangedFile, };
 
 /**
+ * A project's grants, as the person is shown them: its folder, and what it was granted for good.
+ */
+export type Granted = { folder: string, grants: Grants, };
+
+/**
+ * What the person granted a project for good: each a command's pattern, as `git push *`, a path's glob, as
+ * `/work/app/docs/**`, or a tool's name.
+ */
+export type Grants = { commands: Array<string>, paths: Array<string>, tools: Array<string>, };
+
+export type GrantsListed = { projects: Array<Granted>, };
+
+/**
  * How closely a model looks at an image.
  */
 export type ImageDetail = "auto" | "high" | "low";
@@ -890,6 +903,8 @@ export type Methods = {
   'accounts.remove': { params: OfAccount; result: Nothing };
   'models.list': { params: Nothing; result: ModelsListed };
   'models.refresh': { params: Nothing; result: Nothing };
+  'grants.list': { params: Nothing; result: GrantsListed };
+  'grants.revoke': { params: Granted; result: Nothing };
   'settings.set': { params: SettingsChange; result: Nothing };
   'browser.open': { params: OpenPage; result: PageOpened };
   'browser.navigate': { params: Navigate; result: Nothing };
