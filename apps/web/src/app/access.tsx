@@ -6,7 +6,7 @@
 import { type FormEvent, type ReactNode, useContext, useState, useTransition } from "react";
 import type { ConnectionStatus } from "@octoii-works/octoii-client";
 import { ReachContext, useReach } from "../components/state/reach.ts";
-import { Wordmark } from "../components/ui/brand.tsx";
+import { Logo } from "../components/ui/brand.tsx";
 import { Button } from "../components/ui/button.tsx";
 import { Field } from "../components/ui/input.tsx";
 
@@ -37,7 +37,7 @@ export function PairingPage(props: { readonly failed?: string | undefined }): Re
 	};
 	return (
 		<div className="flex h-dvh flex-col items-center justify-center gap-3 px-6">
-			<Wordmark size="lg" />
+			<Logo size="lg" />
 			<h1 className="text-title font-semibold">Pair this browser with Octoii</h1>
 			<p className="max-w-md text-center text-ui text-muted-foreground">
 				On the computer Octoii runs on, run <code className="rounded-sm bg-muted px-1 py-0.5 font-mono text-xs">octoii pair</code> and open the link it prints

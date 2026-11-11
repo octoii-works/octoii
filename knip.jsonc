@@ -14,8 +14,9 @@
 			// The pages' entries, as their HTML loads them.
 			"entry": ["src/index.html", "src/main.tsx", "src/hosted/index.html", "src/hosted/main.tsx", "test/**/*.{ts,tsx}"],
 			"project": ["src/**/*.{ts,tsx}", "scripts/**/*.ts", "test/**/*.{ts,tsx}"],
-			// The stylesheet imports Tailwind and the Inter font, which knip does not read.
-			"ignoreDependencies": ["tailwindcss", "@fontsource-variable/inter"]
+			// The stylesheet imports Tailwind and the Inter font, which knip does not read; the brand script opens Inter Bold's
+			// file by its path.
+			"ignoreDependencies": ["tailwindcss", "@fontsource-variable/inter", "@fontsource/inter"]
 		}
 	},
 	"rules": { "catalog": "off" },

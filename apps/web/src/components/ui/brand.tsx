@@ -1,14 +1,21 @@
 /**
- * Octoii's wordmark, as `scripts/brand.ts` draws it into `brand/`, in the ink of the words beside it and at a whole
- * number of pixels a cell, so every edge falls on a whole pixel.
+ * Octoii's logo, as `scripts/brand.ts` draws it into `brand/`: the mark, an octopus, and "Octoii" beside it, in the ink
+ * of the words around it.
  */
 import type { ReactNode } from "react";
-import wordmark from "../../../../../brand/wordmark.svg";
+import logo from "../../../../../brand/logo.svg";
 
-/** How large the wordmark stands: one pixel a cell, its capitals 18 pixels high, or two. */
-const SIZES = { sm: "h-[18px] w-[49px]", lg: "h-[36px] w-[98px]" } as const;
+/** How large the logo stands: 22 pixels high, the mark's height, or twice that. */
+const SIZES = { sm: "h-[22px]", lg: "h-[44px]" } as const;
 
-/** The wordmark, "Octoii". */
-export function Wordmark(props: { readonly size?: keyof typeof SIZES }): ReactNode {
-	return <span role="img" aria-label="Octoii" style={{ "--mark": `url("${wordmark}")` }} className={`mark-ink shrink-0 ${SIZES[props.size ?? "sm"]}`} />;
+/** The logo, its width from its height. */
+export function Logo(props: { readonly size?: keyof typeof SIZES }): ReactNode {
+	return (
+		<span
+			role="img"
+			aria-label="Octoii"
+			style={{ "--mark": `url("${logo}")` }}
+			className={`mark-ink aspect-[95.63/22] shrink-0 ${SIZES[props.size ?? "sm"]}`}
+		/>
+	);
 }

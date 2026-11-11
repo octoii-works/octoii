@@ -19,7 +19,7 @@ import { useGlide } from "../effects/glide.ts";
 import { useNow } from "../effects/now.ts";
 import { HideSidebar } from "../frame/frame.tsx";
 import { go } from "../state/navigation.ts";
-import { Wordmark } from "../ui/brand.tsx";
+import { Logo } from "../ui/brand.tsx";
 import { IconButton } from "../ui/button.tsx";
 import { FoldChevron } from "../ui/collapsible.tsx";
 import { Input } from "../ui/input.tsx";
@@ -48,7 +48,7 @@ export function Sidebar(props: SidebarProps): ReactNode {
 		<>
 			<div className="flex h-[var(--topbar-height)] shrink-0 items-center gap-1.5 px-2">
 				<span className="flex min-w-0 flex-1 ps-2">
-					<Wordmark />
+					<Logo />
 				</span>
 				<HideSidebar />
 			</div>
