@@ -54,7 +54,7 @@ const ISOLATION: [(&str, &str); 10] = [
 pub const HOLDING: Duration = Duration::from_mins(10);
 /// How long a live session whose turn ended may stand once it settled before it is closed, for the person's next words
 /// to go on in it.
-pub const LINGER: Duration = Duration::from_mins(5);
+pub const LINGER: Duration = Duration::from_mins(2);
 /// How long a call may be held before Claude Code gives up on it, in milliseconds.
 const HOLD_MS: u64 = 20 * 60 * 1000;
 /// What Claude is told of a tool's result past which it is cut; the thread bounds its own already.
