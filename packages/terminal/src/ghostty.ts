@@ -66,7 +66,7 @@ export class Ghostty {
 	/** The callbacks' slots in the module's function table. */
 	readonly callbacks: CallbackSlots;
 
-	private constructor(vt: WebAssembly.Instance, callbacks: WebAssembly.Module) {
+	private constructor(vt: WebAssembly.Instance) {
 		this.#exports = vt.exports;
 		const memory = vt.exports["memory"];
 		if (!(memory instanceof WebAssembly.Memory)) throw new Error("libghostty-vt exports no memory");
@@ -75,13 +75,12 @@ export class Ghostty {
 		this.#view = new DataView(memory.buffer);
 		this.#types = parsed(ManifestSchema, JSON.parse(this.cString(this.call("ghostty_type_json"))), "libghostty-vt's manifest").types;
 		this.#resultNames = new Map(Object.entries(this.enumValues("GhosttyResult")).map(([name, value]) => [value, name]));
-		this.callbacks = this.#installCallbacks(new WebAssembly.Instance(callbacks, { env: this.#callbackImports() }));
+		this.callbacks = this.#installCallbacks(new WebAssembly.Instance(CALLBACKS, { env: this.#callbackImports() }));
 	}
 
-	/** Instantiates the module and its callbacks from their compiled bytes or their responses. */
-	static async instantiate(vt: WasmSource, callbacks: WasmSource): Promise<Ghostty> {
-		const [vtModule, callbacksModule] = await Promise.all([compiled(vt), compiled(callbacks)]);
-		return new Ghostty(await WebAssembly.instantiate(vtModule, {}), callbacksModule);
+	/** Instantiates the module from its compiled bytes or its response. */
+	static async instantiate(vt: WasmSource): Promise<Ghostty> {
+		return new Ghostty(await WebAssembly.instantiate(await compiled(vt), {}));
 	}
 
 	/** Calls an export of the module. */
@@ -284,6 +283,25 @@ export class Ghostty {
 
 /** A module's compiled bytes, or the response that brings them. */
 export type WasmSource = BufferSource | Response | PromiseLike<Response>;
+
+/**
+ * The callbacks, as functions of WebAssembly that the module's function table can hold — a page's own function cannot
+ * sit in another module's table: on_render_hold(terminal, userdata, held) hands its arguments to env.render_hold.
+ */
+const CALLBACKS = new WebAssembly.Module(
+	new Uint8Array([
+		...[0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00], // magic, version 1
+		...[0x01, 0x07, 0x01, 0x60, 0x03, 0x7f, 0x7f, 0x7f, 0x00], // types: (i32, i32, i32) -> ()
+		...[0x02, 0x13, 0x01, 0x03, ...ascii("env"), 0x0b, ...ascii("render_hold"), 0x00, 0x00], // import env.render_hold, function 0
+		...[0x03, 0x02, 0x01, 0x00], // functions: function 1 of type 0
+		...[0x07, 0x12, 0x01, 0x0e, ...ascii("on_render_hold"), 0x00, 0x01], // export on_render_hold, function 1
+		...[0x0a, 0x0c, 0x01, 0x0a, 0x00, 0x20, 0x00, 0x20, 0x01, 0x20, 0x02, 0x10, 0x00, 0x0b], // its code: call 0 with its three locals
+	]),
+);
+
+function ascii(text: string): number[] {
+	return [...text].map((char) => char.charCodeAt(0));
+}
 
 async function compiled(source: WasmSource): Promise<WebAssembly.Module> {
 	if (source instanceof ArrayBuffer || ArrayBuffer.isView(source)) return WebAssembly.compile(source);

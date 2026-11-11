@@ -32,8 +32,8 @@ SOFTWARE.
 --------------------------------------------------------------------------------
 T3 Code's web terminal (github.com/pingdotgg/t3code, commit 57d764ea1aaa0227ed851641c155765525df9273)
 
-Adapted in src/ghostty.ts, src/frame.ts, src/terminal.ts, src/keys.ts, src/paint.ts, src/input.ts, src/pointer.ts,
-src/surface.ts and native/callbacks.zig, each of which says what it changed.
+Adapted in src/ghostty.ts, src/frame.ts, src/terminal.ts, src/keys.ts, src/paint.ts, src/input.ts, src/pointer.ts
+and src/surface.ts, each of which says what it changed.
 
 MIT License
 

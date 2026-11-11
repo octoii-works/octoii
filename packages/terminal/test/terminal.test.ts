@@ -6,7 +6,7 @@ import { keyInput } from "../src/keys.ts";
 import { VtTerminal, type TerminalEvents } from "../src/terminal.ts";
 
 const vendor = new URL("../vendor/", import.meta.url);
-const ghostty = await Ghostty.instantiate(await readFile(new URL("ghostty-vt.wasm", vendor)), await readFile(new URL("callbacks.wasm", vendor)));
+const ghostty = await Ghostty.instantiate(await readFile(new URL("ghostty-vt.wasm", vendor)));
 
 const SIZE = { cols: 20, rows: 4, cellWidth: 8, cellHeight: 16 };
 
