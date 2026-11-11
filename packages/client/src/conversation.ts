@@ -10,14 +10,19 @@
  * say of it is laid over it, each part they change copied and every other part kept, so a reader that keeps what it
  * made of a part makes it again only where the part changed.
  */
-import type { Ask, Entry, Inbound, Item, Status, Streamed } from "./protocol.ts";
+import type { Ask, CallKey, Entry, Inbound, Item, Status, Streamed } from "./protocol.ts";
 import type { ThreadView } from "./thread.ts";
 
 type Of<Kind extends Entry["type"]> = Extract<Entry, { type: Kind }>;
 
-/** A call: the model's id of it, its tool and its arguments; its result, once it came; what it asks the person, while it waits on them. */
+/**
+ * A call: the model's id of it, and Siphon's key of it — by which its result, what it asks the person and a sub-thread
+ * it made name it — its tool and its arguments; its result, once it came; what it asks the person, while it waits on
+ * them.
+ */
 export type Call = {
 	readonly id: string;
+	readonly key: string;
 	readonly name: string;
 	readonly arguments: string;
 	readonly result: Of<"result"> | undefined;
@@ -62,11 +67,11 @@ export type Conversation = {
 	readonly gone: boolean;
 };
 
-/** The call an ask is made for, by the model's id of it, as the ask's payload names it; none for an ask of no call's. */
+/** The call an ask is made for, by Siphon's key of it, as the ask's payload names it; none for an ask of no call's. */
 export function callOfAsk(ask: Ask): string | undefined {
 	const { payload } = ask;
 	if (typeof payload !== "object" || payload === null || Array.isArray(payload)) return undefined;
-	const call = payload["call_id"];
+	const call = payload["call"];
 	return typeof call === "string" ? call : undefined;
 }
 
@@ -140,7 +145,7 @@ function runOf(entries: readonly Entry[], from: number, through: number): Turn |
 function turnOf(run: readonly Entry[]): Turn | undefined {
 	const told: Of<"system">[] = [];
 	let turn: BuildingTurn | undefined;
-	// The calls of the turn by their ids: each result settles one.
+	// The calls of the turn by Siphon's keys of them: each result settles one.
 	const calls = new Map<string, Call>();
 	const open = (): BuildingTurn => {
 		turn ??= { told, inputs: [], steps: [], end: undefined };
@@ -159,16 +164,16 @@ function turnOf(run: readonly Entry[]): Turn | undefined {
 			case "reply": {
 				const step = stepOf(open(), entry.request);
 				step.reply = entry;
-				step.calls = callsOf(entry.response.output);
-				for (const call of step.calls) calls.set(call.id, call);
+				step.calls = callsOf(entry.response.output, entry.calls ?? []);
+				for (const call of step.calls) calls.set(call.key, call);
 				break;
 			}
 			case "result": {
 				const building = open();
-				const call = calls.get(entry.output.call_id);
+				const call = calls.get(entry.call);
 				if (call === undefined) break;
 				const settled = { ...call, result: entry };
-				calls.set(call.id, settled);
+				calls.set(call.key, settled);
 				for (const step of building.steps) step.calls = step.calls.map((each) => (each === call ? settled : each));
 				break;
 			}
@@ -191,11 +196,13 @@ function stepOf(turn: BuildingTurn, request: string): BuildingStep {
 	return step;
 }
 
-/** The calls a reply's output made, in the order its model made them. */
-function callsOf(output: readonly Item[]): Call[] {
-	return output.flatMap((item) =>
-		item.type === "function_call" ? [{ id: item.call_id, name: item.name, arguments: item.arguments, result: undefined, ask: undefined }] : [],
-	);
+/** The calls a reply made, as it keyed them, in the order its model made them: each with its function and its arguments as its output gives them. */
+function callsOf(output: readonly Item[], keys: readonly CallKey[]): Call[] {
+	const made = new Map(output.flatMap((item) => (item.type === "function_call" ? [[item.call_id, item] as const] : [])));
+	return keys.flatMap(({ call_id: id, key }) => {
+		const item = made.get(id);
+		return item === undefined ? [] : [{ id, key, name: item.name, arguments: item.arguments, result: undefined, ask: undefined }];
+	});
 }
 
 /**
@@ -211,7 +218,7 @@ function running(turn: Turn, asks: readonly Ask[], streaming: ReadonlyMap<string
 	);
 	const steps = keptWhereSame(turn.steps, (step) => {
 		const calls = keptWhereSame(step.calls, (call) => {
-			const ask = call.result === undefined ? asked.get(call.id) : undefined;
+			const ask = call.result === undefined ? asked.get(call.key) : undefined;
 			return ask === call.ask ? call : { ...call, ask };
 		});
 		return calls === step.calls ? step : { ...step, calls };

@@ -235,12 +235,12 @@ describe("the threads", () => {
 		const sub = { ...row("3", undefined), parent: { thread: "2", call: "c1" } };
 		const others = { ...row("4", undefined), parent: { thread: "9", call: "c2" } };
 		const rows = [others, sub, parent];
-		expect(subThreadOf(rows, "2", { id: "c1", thread: undefined })?.id).toBe("3");
-		expect(subThreadOf(rows, "2", { id: "c7", thread: "3" })?.id).toBe("3");
+		expect(subThreadOf(rows, "2", { key: "c1", thread: undefined })?.id).toBe("3");
+		expect(subThreadOf(rows, "2", { key: "c7", thread: "3" })?.id).toBe("3");
 		// Another thread's sub-thread, or the thread itself, is none of its own.
-		expect(subThreadOf(rows, "2", { id: "c7", thread: "4" })).toBeUndefined();
-		expect(subThreadOf(rows, "2", { id: "c7", thread: "2" })).toBeUndefined();
-		expect(subThreadOf(rows, "2", { id: "c7", thread: undefined })).toBeUndefined();
+		expect(subThreadOf(rows, "2", { key: "c7", thread: "4" })).toBeUndefined();
+		expect(subThreadOf(rows, "2", { key: "c7", thread: "2" })).toBeUndefined();
+		expect(subThreadOf(rows, "2", { key: "c7", thread: undefined })).toBeUndefined();
 	});
 
 	it("are snoozed till an hour on, this evening before five, tomorrow at nine, or next Monday at nine", () => {

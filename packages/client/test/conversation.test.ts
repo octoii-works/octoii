@@ -10,7 +10,9 @@ const response = (output: Item[]) => ({ id: "r", model: "m", status: "completed"
 const text = (value: string): Item => ({ type: "message", role: "assistant", content: [{ type: "output_text", text: value }] });
 const call = (id: string, name: string): Item => ({ type: "function_call", call_id: id, name, arguments: "{}" });
 const input = (id: string, said: string): Entry => ({ type: "input", id, actor: "person", delivery: `d${id}`, content: [{ type: "input_text", text: said }] });
-const reply = (id: string, request: string, output: Item[]): Entry => ({ type: "reply", id, request, response: response(output) });
+/** The keys Siphon gives the calls `output` made: `k` and the model's id, as the tests' results name them. */
+const keysOf = (output: Item[]) => output.flatMap((item) => (item.type === "function_call" ? [{ call_id: item.call_id, key: `k${item.call_id}` }] : []));
+const reply = (id: string, request: string, output: Item[]): Entry => ({ type: "reply", id, request, response: response(output), calls: keysOf(output) });
 const result = (id: string, callId: string, said: string): Entry => ({
 	type: "result",
 	id,
@@ -22,7 +24,7 @@ const ask = (call: string): Ask => ({
 	process: "main/turn",
 	key: `k${call}.permission`,
 	name: "siphon.permission",
-	payload: { call_id: call },
+	payload: { call: `k${call}` },
 	answer_schema: {},
 });
 

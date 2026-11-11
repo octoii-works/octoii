@@ -12,6 +12,7 @@
 use std::future::Future;
 
 use beak::layout;
+use bytes::Bytes;
 use octoii_ai::vocabulary::InputContent;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -19,7 +20,7 @@ use siphon_machine::paths::Base;
 use siphon_runtime::{Changes, Ending, Program, Run, Wait};
 use siphon_threads::inbox::{self, Ended, Inbound, ReplyTo};
 use siphon_threads::{Config, NewThread, Parent, Threads, thread};
-use siphon_tools::{Context, Effect, Refusal, Setting, Started, Tool};
+use siphon_tools::{Context, Effect, Refusal, Setting, Tool};
 
 use crate::thread::ThreadProgram;
 
@@ -59,20 +60,16 @@ impl Tool for DelegateTool {
     fn start(
         &self,
         changes: &mut Changes,
-        started: &Started<'_>,
+        parent: &Bytes,
+        key: &str,
         args: &DelegateArgs,
         setting: &Setting<'_>,
     ) -> Option<serde_json::Result<()>> {
         let input = DelegateInput {
             thread: setting.thread.to_owned(),
-            call_id: started.call_id.to_owned(),
             args: args.clone(),
         };
-        Some(
-            changes
-                .start::<DelegateProgram>(started.parent.clone(), started.key, &input)
-                .map(|_| ()),
-        )
+        Some(changes.start::<DelegateProgram>(parent.clone(), key, &input).map(|_| ()))
     }
 
     fn finished(&self, outcome: &beak::Outcome) -> Vec<InputContent> {
@@ -89,12 +86,10 @@ impl Tool for DelegateTool {
     }
 }
 
-/// What a delegating call's process is started with: the thread that delegates, the call by the model's id of it, and
-/// its arguments.
+/// What a delegating call's process is started with: the thread that delegates, and the call's arguments.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DelegateInput {
     pub thread: String,
-    pub call_id: String,
     pub args: DelegateArgs,
 }
 
@@ -122,7 +117,7 @@ impl Program for DelegateProgram {
     fn run(&self, run: &mut Run<'_>, input: DelegateInput, waiting: Option<Waiting>) -> anyhow::Result<Ending<Waiting, String>> {
         match (waiting, run.is_stop_handler()) {
             (None, true) => Ok(Ending::Stopped(Some("stopped before the task was given".into()))),
-            (None, false) => give(run, &input),
+            (None, false) => give(run, &input.thread, &input.args),
             (Some(waiting), true) => stop(run, &waiting),
             (Some(waiting), false) => {
                 let child = &waiting.child;
@@ -187,8 +182,7 @@ fn label(directory: &beak::Directory, name: &str) -> Option<String> {
 /// Gives the task to the sub-thread `args` names, or to a new one, with the run's commit; then waits on it, or, in the
 /// background, starts what waits on it and ends with where the task went. A sub-thread is refused, as it delegates no
 /// further.
-fn give(run: &mut Run<'_>, input: &DelegateInput) -> anyhow::Result<Ending<Waiting, String>> {
-    let (own, args) = (input.thread.as_str(), &input.args);
+fn give(run: &mut Run<'_>, own: &str, args: &DelegateArgs) -> anyhow::Result<Ending<Waiting, String>> {
     let Some(directory) = directory_of(run, own)? else {
         return Ok(Ending::Fail("the thread is gone".into()));
     };
@@ -206,7 +200,7 @@ fn give(run: &mut Run<'_>, input: &DelegateInput) -> anyhow::Result<Ending<Waiti
             run.changes.extend(revived);
             named.clone()
         }
-        None => make(run, own, &input.call_id, &directory, args.title.clone())?,
+        None => make(run, own, &directory, args.title.clone())?,
     };
     let task = run.new_id()?;
     let background = format!("delegated-{task}");
@@ -244,16 +238,17 @@ fn give(run: &mut Run<'_>, input: &DelegateInput) -> anyhow::Result<Ending<Waiti
 }
 
 /// Makes a sub-thread of the thread `own`, whose directory is `directory`, with the run's commit: its model, its
-/// folder, its mode and its effort the thread's, titled `title`, its parent the call `call_id`; its id.
-fn make(run: &mut Run<'_>, own: &str, call_id: &str, directory: &beak::Directory, title: Option<String>) -> anyhow::Result<String> {
+/// folder, its mode and its effort the thread's, titled `title`, its parent the call; its id.
+fn make(run: &mut Run<'_>, own: &str, directory: &beak::Directory, title: Option<String>) -> anyhow::Result<String> {
     let config = Config::of(directory)?;
+    let call = run.path().rsplit(|&byte| byte == b':').next().unwrap_or_default();
     let new = NewThread {
         actor: own.to_owned(),
         config: Config { title, ..config },
         project: label(directory, thread::PROJECT_LABEL),
         parent: Some(Parent {
             thread: own.to_owned(),
-            call: call_id.to_owned(),
+            call: String::from_utf8_lossy(call).into_owned(),
         }),
     };
     let child = run.new_id()?;

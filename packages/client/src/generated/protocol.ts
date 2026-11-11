@@ -46,6 +46,12 @@ export type BrowserEvent = { "event": "pages", subscription: string, pages: Arra
 export type BrowserTopic = { "type": "pages", thread: string, } | { "type": "page", page: string, };
 
 /**
+ * A call a reply made, by the model's id of it and Siphon's key of it — the key it is run, asked of and answered by,
+ * minted as the reply is written; the model's id is its data.
+ */
+export type CallKey = { call_id: string, key: string, };
+
+/**
  * How a call ended.
  */
 export type CallStatus = "ok" | "unavailable" | "invalid-arguments" | "tool-error" | "rejected" | "interrupted";
@@ -182,7 +188,7 @@ export type Delivered = { delivery: string, };
 /**
  * An entry of a thread's log.
  */
-export type Entry = { "type": "config", id: string, actor: string, model?: Changed<string> | null, effort?: Changed<ReasoningEffort> | null, mode?: Changed<Mode> | null, workspace?: Changed<string> | null, title?: Changed<string> | null, budget_nanodollars?: Changed<number> | null, } | { "type": "input", id: string, actor: string, delivery: string, content: Array<InputContent>, reply_to?: ReplyTo | null, } | { "type": "system", id: string, sections: Array<Section>, tools?: Array<Tool>, } | { "type": "reply", id: string, request: string, response: Response, cancelled?: boolean, } | { "type": "result", id: string, call: string, status: CallStatus, output: FunctionCallOutput, } | { "type": "turn-end", id: string, turn?: string | null, outcome: Outcome, reason?: string | null, } | { "type": "compaction", id: string, request: string, kept?: string | null, from: string, effort?: ReasoningEffort | null, response: Response, } | { "type": "discarded", id: string, request: string, response: Response, };
+export type Entry = { "type": "config", id: string, actor: string, model?: Changed<string> | null, effort?: Changed<ReasoningEffort> | null, mode?: Changed<Mode> | null, workspace?: Changed<string> | null, title?: Changed<string> | null, budget_nanodollars?: Changed<number> | null, } | { "type": "input", id: string, actor: string, delivery: string, content: Array<InputContent>, reply_to?: ReplyTo | null, } | { "type": "system", id: string, sections: Array<Section>, tools?: Array<Tool>, } | { "type": "reply", id: string, request: string, response: Response, calls?: Array<CallKey>, cancelled?: boolean, } | { "type": "result", id: string, call: string, status: CallStatus, output: FunctionCallOutput, } | { "type": "turn-end", id: string, turn?: string | null, outcome: Outcome, reason?: string | null, } | { "type": "compaction", id: string, request: string, kept?: string | null, from: string, effort?: ReasoningEffort | null, response: Response, } | { "type": "discarded", id: string, request: string, response: Response, };
 
 /**
  * The environment's settings.
@@ -611,7 +617,7 @@ export type PageOpened = { page: string, };
 export type PairWith = { label?: string, scopes?: Array<Scope>, };
 
 /**
- * Where a sub-thread came from: the thread that delegated it, and its call that did, by the model's id of it.
+ * Where a sub-thread came from: the thread that delegated it, and its call that did, by Siphon's key of it.
  */
 export type Parent = { thread: string, call: string, };
 

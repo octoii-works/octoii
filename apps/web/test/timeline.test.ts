@@ -27,6 +27,7 @@ const turnsOf = (conversation: Parameters<typeof itemsOf>[0]): readonly Timeline
 const callOf = (id: string, tool: string, step: string): CallLine => ({
 	kind: "call",
 	id,
+	key: `k${id}`,
 	step,
 	thread: undefined,
 	tool,
@@ -58,11 +59,14 @@ const text = (words: string) => [{ type: "input_text" as const, text: words }];
 const said = (at: string, words: string): Entry => ({ id: at, type: "input", delivery: `d${at}`, actor: "person", content: text(words) });
 const words = (written: string): Item => ({ type: "message", role: "assistant", content: [{ type: "output_text", text: written }] });
 const call = (callId: string, name: string, args: unknown): Item => ({ type: "function_call", call_id: callId, name, arguments: JSON.stringify(args) });
+/** The keys Siphon gives the calls `output` made: `k` and the model's id, as the tests' results name them. */
+const keysOf = (output: Item[]) => output.flatMap((item) => (item.type === "function_call" ? [{ call_id: item.call_id, key: `k${item.call_id}` }] : []));
 const reply = (at: string, request: string, output: Item[]): Entry => ({
 	id: at,
 	type: "reply",
 	request,
 	response: { id: "r", model: "m", status: "completed", output },
+	calls: keysOf(output),
 });
 const result = (at: string, callId: string, status: "ok" | "tool-error" | "rejected", output = "…"): Entry => ({
 	id: at,
@@ -232,7 +236,7 @@ describe("a thread's timeline", () => {
 						reply(id(3, 4), "q2", [call("c3", "write", { path: "a.txt", content: "a" })]),
 					],
 					true,
-					[askOf(id(4, 5), "siphon.permission", { call_id: "c3" })],
+					[askOf(id(4, 5), "siphon.permission", { call: "kc3" })],
 				),
 			),
 		);

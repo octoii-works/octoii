@@ -27,4 +27,4 @@ pub use question::{Asked, Choice, QuestionArgs, QuestionTool};
 pub use requests::{Asks, Decision, Exec, Judgment, Permission, Review, Shown};
 pub use shell::ShellTool;
 pub use siphon_threads::CallStatus;
-pub use tool::{Context, Declared, Refusal, Started, Tool, Tools, Toolset};
+pub use tool::{Context, Declared, Refusal, Tool, Tools, Toolset};

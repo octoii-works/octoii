@@ -72,7 +72,7 @@ const QUESTION_TOOL = "question";
 const Nullable = <Schema extends Parameters<typeof Type.Optional>[0]>(schema: Schema) => Type.Optional(Type.Union([schema, Type.Null()]));
 const GrantsSchema = Type.Object({ commands: Type.Array(Type.String()), paths: Type.Array(Type.String()), tools: Type.Array(Type.String()) });
 const PermissionAskedSchema = Type.Object({
-	call: Type.Object({ tool: Type.String(), arguments: Type.String(), does: Type.Array(Type.String()), justification: Nullable(Type.String()) }),
+	shown: Type.Object({ tool: Type.String(), arguments: Type.String(), does: Type.Array(Type.String()), justification: Nullable(Type.String()) }),
 	always: GrantsSchema,
 });
 const QuestionSchema = Type.Object({
@@ -114,7 +114,7 @@ export function formOf(ask: Ask): AskForm {
 
 /** A call's permission, from what Siphon asks: its tool and its arguments, what it does, and what an always grants. */
 function permissionOf(asked: Static<typeof PermissionAskedSchema>): AskForm {
-	const { call, always } = asked;
+	const { shown: call, always } = asked;
 	const args = argumentsOf(call.arguments);
 	const action = call.tool === "shell" ? "command" : call.tool === "write" || call.tool === "edit" ? "edit" : "tool";
 	const access: Access = {

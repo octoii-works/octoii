@@ -27,14 +27,14 @@ const permission = (tool: string, args: JsonValue, does: string[], always: { com
 		"siphon.permission",
 		{ type: "object" },
 		{
-			call_id: "c1",
-			call: { tool, arguments: JSON.stringify(args), does },
+			call: "k1",
+			shown: { tool, arguments: JSON.stringify(args), does },
 			always: { commands: always.commands ?? [], paths: always.paths ?? [], tools: [] },
 		},
 	);
 
 /** A model's questions as Siphon asks them: a call of the `question` tool, answered by the person. */
-const questions = (asked: JsonValue): Ask => ask("siphon.asks", { type: "object" }, { call_id: "c1", tool: "question", arguments: { questions: asked } });
+const questions = (asked: JsonValue): Ask => ask("siphon.asks", { type: "object" }, { call: "k1", tool: "question", arguments: { questions: asked } });
 
 /** The answer Siphon's trust request takes. */
 const TRUSTED = { type: "object", properties: { trusted: { type: "boolean" } }, required: ["trusted"] };

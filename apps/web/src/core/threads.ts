@@ -250,12 +250,12 @@ export function subThreadsOf(rows: readonly Listed[], id: string): readonly List
 
 /**
  * The sub-thread of the thread `id` among `rows` a delegating call gave its task to, where there is one: the one its
- * arguments name, or else the one it made, which names the call by the model's id of it.
+ * arguments name, or else the one it made, which names the call by Siphon's key of it.
  */
-export function subThreadOf(rows: readonly Listed[], id: string, call: { readonly id: string; readonly thread: string | undefined }): Listed | undefined {
+export function subThreadOf(rows: readonly Listed[], id: string, call: { readonly key: string; readonly thread: string | undefined }): Listed | undefined {
 	const ours = subThreadsOf(rows, id);
 	if (call.thread !== undefined) return ours.find((row) => row.id === call.thread);
-	return ours.find((row) => row.parent?.call === call.id);
+	return ours.find((row) => row.parent?.call === call.key);
 }
 
 /**

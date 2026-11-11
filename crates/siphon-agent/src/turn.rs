@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use siphon_machine::paths::Base;
 use siphon_runtime::{Answer, Ending, Program, Retries, Run, Wait};
 use siphon_threads::log::Writer;
-use siphon_threads::{CallStatus, Config, Entry, ThreadUsage, Window, inbox, thread};
+use siphon_threads::{CallKey, CallStatus, Config, Entry, ThreadUsage, Window, inbox, thread};
 use siphon_tools::projects::Place;
 use siphon_tools::{Calls, Setting, State, Tools};
 
@@ -219,27 +219,28 @@ impl TurnProgram {
             }
             return Ok(failed(run, &response, attempt));
         }
-        let (made, cut) = calls_of(&response);
+        let keys = keyed(run, &response)?;
+        let (made, cut) = calls_of(&response, &keys);
         let reply = Entry::Reply {
             id: run.new_id()?,
             request: key.to_owned(),
             response,
+            calls: keys,
             cancelled: false,
         };
         writer.append(&mut run.changes, &reply)?;
-        for call_id in cut {
+        for call in &cut {
             append_unrun(
                 run,
                 &mut writer,
-                &call_id,
+                call,
                 "its arguments were cut off as it was written; it was not run",
             )?;
         }
         if made.is_empty() {
             return Ok(Ending::Done(()));
         }
-        let calls = Calls::new(run, made)?;
-        self.calling(run, input, calls, 0)
+        self.calling(run, input, Calls::keyed(made), 0)
     }
 
     /// The calls of a reply taken on as far as they go, each result appended as it and every call before it ended;
@@ -297,7 +298,7 @@ impl TurnProgram {
                     return Ok(Ending::Stopped(None));
                 };
                 charge(run, &response);
-                let (made, cut) = calls_of(&response);
+                let keys = keyed(run, &response)?;
                 let entry = if response.status == ResponseStatus::Failed || response.output.is_empty() {
                     Entry::Discarded {
                         id: run.new_id()?,
@@ -309,14 +310,15 @@ impl TurnProgram {
                         id: run.new_id()?,
                         request: key,
                         response,
+                        calls: keys.clone(),
                         cancelled: true,
                     }
                 };
                 let replied = matches!(entry, Entry::Reply { .. });
                 writer.append(&mut run.changes, &entry)?;
                 if replied {
-                    for call_id in made.into_iter().map(|(call_id, _, _)| call_id).chain(cut) {
-                        append_unrun(run, &mut writer, &call_id, "the turn was stopped before it ran")?;
+                    for call in &keys {
+                        append_unrun(run, &mut writer, call, "the turn was stopped before it ran")?;
                     }
                 }
                 Ok(Ending::Stopped(None))
@@ -344,17 +346,34 @@ impl TurnProgram {
     }
 }
 
-/// The calls `response` made, each by its call's id, its function and its arguments; and, by their ids, those cut off
-/// as they were written, which are never run.
-fn calls_of(response: &Response) -> (Vec<(String, String, String)>, Vec<String>) {
-    let mut made = Vec::new();
-    let mut cut = Vec::new();
+/// Each call `response` made — cut off as it was written or not — keyed by an id made now, in the order the model made
+/// them.
+fn keyed(run: &Run<'_>, response: &Response) -> beak::Result<Vec<CallKey>> {
+    let mut keys = Vec::new();
     for item in &response.output {
         let Item::FunctionCall(call) = item else { continue };
+        keys.push(CallKey {
+            call_id: call.call_id.clone(),
+            key: run.new_id()?,
+        });
+    }
+    Ok(keys)
+}
+
+/// The calls `response` made, each as `keys` keys it, with its function and its arguments; and those cut off as they
+/// were written, which are never run.
+fn calls_of(response: &Response, keys: &[CallKey]) -> (Vec<(CallKey, String, String)>, Vec<CallKey>) {
+    let mut made = Vec::new();
+    let mut cut = Vec::new();
+    let calls = response.output.iter().filter_map(|item| match item {
+        Item::FunctionCall(call) => Some(call),
+        _ => None,
+    });
+    for (call, key) in calls.zip(keys) {
         if call.status == Some(ItemStatus::Incomplete) {
-            cut.push(call.call_id.clone());
+            cut.push(key.clone());
         } else {
-            made.push((call.call_id.clone(), call.name.clone(), call.arguments.clone()));
+            made.push((key.clone(), call.name.clone(), call.arguments.clone()));
         }
     }
     (made, cut)
@@ -382,14 +401,14 @@ fn append_results(run: &mut Run<'_>, writer: &mut Writer, calls: &Calls, appende
     Ok(at)
 }
 
-/// Appends the result of the call `call_id`, which was never run, saying why.
-fn append_unrun(run: &mut Run<'_>, writer: &mut Writer, call_id: &str, why: &str) -> anyhow::Result<()> {
+/// Appends the result of the call `call`, which was never run, saying why.
+fn append_unrun(run: &mut Run<'_>, writer: &mut Writer, call: &CallKey, why: &str) -> anyhow::Result<()> {
     let entry = Entry::Result {
         id: run.new_id()?,
-        call: String::new(),
+        call: call.key.clone(),
         status: CallStatus::Interrupted,
         output: FunctionCallOutput {
-            call_id: call_id.to_owned(),
+            call_id: call.call_id.clone(),
             output: vec![InputContent::text(why)],
             is_error: true,
         },

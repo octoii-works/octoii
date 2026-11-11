@@ -62,6 +62,7 @@ fn reply(id: &str) -> Entry {
             incomplete: None,
             context_tokens: None,
         },
+        calls: Vec::new(),
         cancelled: false,
     }
 }

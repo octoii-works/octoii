@@ -12,6 +12,7 @@ const said = (key: string, text: string): Said => ({ key, delivery: `d-${key}`, 
 const callOf = (id: string): CallLine => ({
 	kind: "call",
 	id,
+	key: `k${id}`,
 	step: "s1",
 	thread: undefined,
 	tool: "read",

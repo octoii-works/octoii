@@ -64,7 +64,7 @@ pub async fn answer_review(models: &Arc<Models>, asked: Asked<Review>) -> Result
     if let Some(folder) = workspace {
         let _ = writeln!(told, "<workspace>{folder}</workspace>");
     }
-    let call = &asked.payload.call;
+    let call = &asked.payload.shown;
     let _ = write!(
         told,
         "<transcript>\n{}</transcript>\n<call>\n{} {}\n",

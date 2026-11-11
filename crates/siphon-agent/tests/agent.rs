@@ -590,12 +590,20 @@ async fn a_task_delegated_is_worked_on_by_a_sub_thread_and_what_it_said_last_giv
     let children = others(&threads, &id);
     assert_eq!(children.len(), 1);
     let child = &children[0];
-    assert_eq!(
-        child.parent.as_ref().map(|parent| (parent.thread.as_str(), parent.call.as_str())),
-        Some((id.as_str(), "c1")),
-        "its parent the thread, and the call by the model's id of it"
-    );
+    assert_eq!(child.parent.as_ref().map(|parent| parent.thread.as_str()), Some(id.as_str()));
     assert_eq!(child.config.title.as_deref(), Some("Helper"));
+    // The reply that made the call keys it as it is written: the sub-thread names its call by that key, as its result does.
+    let keyed = entries(&threads, &id).into_iter().find_map(|entry| match entry {
+        Entry::Reply { calls, .. } => calls.into_iter().find(|call| call.call_id == "c1"),
+        _ => None,
+    });
+    let key = keyed.expect("the call keyed by its reply").key;
+    assert_eq!(child.parent.as_ref().map(|parent| parent.call.as_str()), Some(key.as_str()));
+    let answered = entries(&threads, &id).into_iter().find_map(|entry| match entry {
+        Entry::Result { call, .. } => Some(call),
+        _ => None,
+    });
+    assert_eq!(answered.as_deref(), Some(key.as_str()));
     let result = entries(&threads, &id).into_iter().find_map(|entry| match entry {
         Entry::Result { status, output, .. } => Some((status, output.output)),
         _ => None,

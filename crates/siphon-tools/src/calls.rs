@@ -8,13 +8,13 @@ use octoii_ai::vocabulary::InputContent;
 use serde::{Deserialize, Serialize};
 use siphon_machine::paths::Base;
 use siphon_runtime::{Answer, Run, Wait};
-use siphon_threads::{CallStatus, Mode};
+use siphon_threads::{CallKey, CallStatus, Mode};
 
 use crate::effect::{Effect, Line};
 use crate::permissions::{Bounds, Grants, Verdict, Writes, patterns_of, weigh};
 use crate::projects;
 use crate::requests::{Asks, Decision, Exec, Judgment, Permission, Review, Shown};
-use crate::tool::{Started, Tools};
+use crate::tool::Tools;
 
 /// Where a call stands.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -100,18 +100,36 @@ impl Calls {
     /// # Errors
     /// Past the last id there is.
     pub fn new(run: &Run<'_>, made: Vec<(String, String, String)>) -> beak::Result<Self> {
-        let mut calls = Vec::with_capacity(made.len());
-        for (id, tool, arguments) in made {
-            calls.push(Call {
-                id,
-                key: run.new_id()?,
+        let mut keyed = Vec::with_capacity(made.len());
+        for (call_id, tool, arguments) in made {
+            keyed.push((
+                CallKey {
+                    call_id,
+                    key: run.new_id()?,
+                },
                 tool,
                 arguments,
-                acts: None,
-                state: State::Waiting,
-            });
+            ));
         }
-        Ok(Self(calls))
+        Ok(Self::keyed(keyed))
+    }
+
+    /// The calls `made` — each keyed already, its tool and its arguments — as the reply that made them records their
+    /// keys.
+    #[must_use]
+    pub fn keyed(made: Vec<(CallKey, String, String)>) -> Self {
+        Self(
+            made.into_iter()
+                .map(|(CallKey { call_id, key }, tool, arguments)| Call {
+                    id: call_id,
+                    key,
+                    tool,
+                    arguments,
+                    acts: None,
+                    state: State::Waiting,
+                })
+                .collect(),
+        )
     }
 
     /// Whether every call ended.
@@ -321,7 +339,8 @@ impl Calls {
                 let call = &self.0[at];
                 let review = Review {
                     thread: setting.thread.to_owned(),
-                    call: shown(&call.tool, &call.arguments, effect),
+                    call: call.key.clone(),
+                    shown: shown(&call.tool, &call.arguments, effect),
                 };
                 run.request(&format!("{}.review", call.key), &review)?;
                 Ok(State::Judging)
@@ -336,8 +355,8 @@ impl Calls {
             .effect(&call.tool, &serde_json::from_str(&call.arguments)?, setting.base)?;
         let permission = Permission {
             thread: setting.thread.to_owned(),
-            call_id: call.id.clone(),
-            call: shown(&call.tool, &call.arguments, &effect),
+            call: call.key.clone(),
+            shown: shown(&call.tool, &call.arguments, &effect),
             always: patterns_of(&effect),
         };
         run.request(&format!("{}.permission", call.key), &permission)?;
@@ -348,19 +367,17 @@ impl Calls {
         let call = &self.0[at];
         let arguments: serde_json::Value = serde_json::from_str(&call.arguments)?;
         let parent = bytes::Bytes::copy_from_slice(run.path());
-        let placed = Started {
-            parent: &parent,
-            key: &call.key,
-            call_id: &call.id,
-        };
-        if let Some(started) = setting.tools.start(&mut run.changes, &placed, &call.tool, &arguments, setting) {
+        if let Some(started) = setting
+            .tools
+            .start(&mut run.changes, &parent, &call.key, &call.tool, &arguments, setting)
+        {
             started?;
             return Ok(State::Program);
         }
         if let Some(answer_schema) = setting.tools.asks(&call.tool, &arguments) {
             let asks = Asks {
                 thread: setting.thread.to_owned(),
-                call_id: call.id.clone(),
+                call: call.key.clone(),
                 tool: call.tool.clone(),
                 arguments,
                 answer_schema,

@@ -36,6 +36,7 @@ fn reply(id: &str, input_tokens: u64) -> Entry {
             incomplete: None,
             context_tokens: None,
         },
+        calls: Vec::new(),
         cancelled: false,
     }
 }

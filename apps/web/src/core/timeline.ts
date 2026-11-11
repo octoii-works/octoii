@@ -39,8 +39,10 @@ type Compaction = Conversation["compactions"][number];
  */
 export type CallLine = {
 	readonly kind: "call";
-	/** The model's id of it, by which a sub-thread it made names it. */
+	/** The model's id of it. */
 	readonly id: string;
+	/** Siphon's key of it, by which a sub-thread it made names it. */
+	readonly key: string;
 	/** The step it was made in, by its request's key: the calls one reply made share it, and those made under them. */
 	readonly step: string;
 	/** The thread its arguments name: the sub-thread a delegation gives more to do. */
@@ -377,6 +379,7 @@ function lineOf(call: Call, turn: Turn, step: Step, ask: Ask | undefined): CallL
 	return {
 		kind: "call",
 		id: call.id,
+		key: call.key,
 		step: step.request,
 		thread: call.name === "delegate" ? given.thread : undefined,
 		tool: call.name,

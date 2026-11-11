@@ -15,6 +15,7 @@ const sub = (turn: Status["turn"], span: Partial<Pick<Status, "began_at" | "ende
 const delegation = (id: string, state: CallLine["state"] = "done"): CallLine => ({
 	kind: "call",
 	id,
+	key: `k${id}`,
 	step: "q",
 	thread: undefined,
 	tool: "delegate",

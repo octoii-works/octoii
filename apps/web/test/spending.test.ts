@@ -25,6 +25,7 @@ const usage = (input: number, cached: number, output: number, dollars: number): 
 });
 const result = (at: string, callId: string): Entry => ({ id: at, type: "result", call: `k${callId}`, status: "ok", output: { call_id: callId, output: [] } });
 const reply = (at: string, request: string, output: Item[], used: Usage): Entry => ({
+	calls: output.flatMap((item) => (item.type === "function_call" ? [{ call_id: item.call_id, key: `k${item.call_id}` }] : [])),
 	id: at,
 	type: "reply",
 	request,

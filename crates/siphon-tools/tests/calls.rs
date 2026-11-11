@@ -93,7 +93,7 @@ fn runtime(beak: &Beak) -> Runtime {
         .ask_person::<Permission>()
         .ask_person::<siphon_tools::Asks>()
         .handle(|asked: Asked<Review>| async move {
-            let removes = asked.payload.call.does.iter().any(|does| does.contains(" rm "));
+            let removes = asked.payload.shown.does.iter().any(|does| does.contains(" rm "));
             Ok(Judgment {
                 allow: !removes,
                 reason: if removes { "it removes files".into() } else { "it builds".into() },
@@ -212,9 +212,9 @@ async fn a_call_the_person_lets_go_ahead_for_good_is_granted_its_project_and_one
         ],
     };
     let path = caller(&runtime, "p1", &asking).await;
-    for (key, call_id, answer) in [
-        ("permission", "a", json!({ "decision": "allow", "always": true })),
-        ("permission", "b", json!({ "decision": "deny", "reason": "not there" })),
+    for (key, answer) in [
+        ("permission", json!({ "decision": "allow", "always": true })),
+        ("permission", json!({ "decision": "deny", "reason": "not there" })),
     ] {
         let waiting = async {
             loop {
@@ -242,7 +242,8 @@ async fn a_call_the_person_lets_go_ahead_for_good_is_granted_its_project_and_one
         };
         let (request, payload) = tokio::time::timeout(Duration::from_secs(10), waiting).await.expect("asked in time");
         assert!(request.ends_with(&format!(".{key}")));
-        assert_eq!(payload["call_id"], call_id, "the ask names its call by the model's id of it");
+        let call = payload["call"].as_str().expect("its call");
+        assert_eq!(request, format!("{call}.{key}"), "the ask names its call by Siphon's key of it");
         runtime.answer(&path, request.as_bytes(), &answer).await.expect("answered");
     }
     let said = ended(&runtime, &path).await;

@@ -50,11 +50,14 @@ pub enum Entry {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         tools: Vec<Tool>,
     },
-    /// The model's reply, as it came, to the model request of `request`, by its key; `cancelled` where a stop cut it.
+    /// The model's reply, as it came, to the model request of `request`, by its key, each call it made keyed as Siphon
+    /// takes it on; `cancelled` where a stop cut it.
     Reply {
         id: String,
         request: String,
         response: Response,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        calls: Vec<CallKey>,
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         cancelled: bool,
     },
@@ -110,6 +113,14 @@ impl Entry {
             | Self::Discarded { id, .. } => id,
         }
     }
+}
+
+/// A call a reply made, by the model's id of it and Siphon's key of it — the key it is run, asked of and answered by,
+/// minted as the reply is written; the model's id is its data.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+pub struct CallKey {
+    pub call_id: String,
+    pub key: String,
 }
 
 /// A section of what the model is told, by its name, with its text as it is sent; none for a section no longer told.

@@ -37,13 +37,13 @@ pub struct Shown {
     pub justification: Option<String>,
 }
 
-/// The person asked whether a call of the thread `thread` goes ahead — the call by the model's id of it, and what it
-/// would do — and offered what an "always" grants its project.
+/// The person asked whether a call of the thread `thread` goes ahead — the call by Siphon's key of it, and what it would
+/// do as they are shown it — and offered what an "always" grants its project.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Permission {
     pub thread: String,
-    pub call_id: String,
-    pub call: Shown,
+    pub call: String,
+    pub shown: Shown,
     pub always: Grants,
 }
 
@@ -68,11 +68,13 @@ impl Request for Permission {
 
 impl AskedOfPerson for Permission {}
 
-/// A second model asked to judge a call of the thread `thread`, as the person named it to.
+/// A second model asked to judge a call of the thread `thread`, by Siphon's key of it, as the person named it to: the
+/// call as it is shown.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Review {
     pub thread: String,
-    pub call: Shown,
+    pub call: String,
+    pub shown: Shown,
 }
 
 /// The model's judgment: let it go ahead, or not; and why; and what asking the model used, which is charged to the
@@ -90,12 +92,12 @@ impl Request for Review {
     type Answer = Judgment;
 }
 
-/// A call the person answers rather than a tool execs — a question the model asks them — by the model's id of it, with
+/// A call the person answers rather than a tool execs — a question the model asks them — by Siphon's key of it, with
 /// the JSON Schema their answer fits, as the tool made it of the call's arguments.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Asks {
     pub thread: String,
-    pub call_id: String,
+    pub call: String,
     pub tool: String,
     pub arguments: serde_json::Value,
     pub answer_schema: serde_json::Value,
