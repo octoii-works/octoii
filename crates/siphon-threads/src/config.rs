@@ -53,7 +53,7 @@ macro_rules! settings {
         #[derive(ts_rs::TS)]
         pub struct ConfigChange {
             $(#[serde(default, skip_serializing_if = "Option::is_none", with = "::serde_with::rust::double_option")]
-            #[ts(as = "_", optional = nullable)]
+            #[ts(as = "_", optional)]
             pub $field: Option<Option<$ty>>,)*
         }
 

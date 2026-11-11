@@ -184,8 +184,14 @@
 			}
 		},
 		{
-			// The client's source, which runs in a browser, on Bun and on Node: TypeBox and React alone, nothing of a
-			// platform and no other package of Octoii's.
+			// The client's tests against the node itself run its program as a process of their own: they wait on it, as a
+			// person's client does, in real time.
+			"files": ["packages/client/test/node/**"],
+			"rules": { "octoii/no-real-waits": "off", "octoii/no-wall-clock": "off" }
+		},
+		{
+			// The client's source, which runs in a browser, on Bun and on Node: React alone, nothing of a platform and no
+			// other package of Octoii's.
 			"files": ["packages/client/src/**"],
 			"rules": {
 				"no-restricted-imports": [

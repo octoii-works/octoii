@@ -3,7 +3,7 @@
 	"name": "@octoii-works/octoii-client",
 	"version": "0.0.1",
 	"private": true,
-	"description": "Octoii's client: one WebSocket to a node, speaking its protocol — threads followed from where their readers stood after a lost connection, a person's operations done once — with the protocol's types and schemas, and hooks for React",
+	"description": "Octoii's client: one WebSocket to a node, speaking its protocol — threads followed from where their readers stood after a lost connection, a person's operations done once — with the protocol's types, and hooks for React",
 	"homepage": "https://github.com/octoii-works/octoii/tree/main/packages/client#readme",
 	"license": "MIT",
 	"author": "Elian Yang (https://elianyang.com)",
@@ -20,9 +20,6 @@
 	"scripts": {
 		"typecheck": "bun check",
 		"test": "bun test --timeout=60000 --no-env-file --no-install ./test"
-	},
-	"dependencies": {
-		"typebox": "catalog:"
 	},
 	"devDependencies": {
 		"@types/bun": "catalog:",

@@ -57,10 +57,10 @@ pub struct EnvironmentChange {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub favorite_models: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none", with = "::serde_with::rust::double_option")]
-    #[ts(as = "_", optional = nullable)]
+    #[ts(as = "_", optional)]
     pub review_model: Option<Option<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none", with = "::serde_with::rust::double_option")]
-    #[ts(as = "_", optional = nullable)]
+    #[ts(as = "_", optional)]
     pub history_retention_days: Option<Option<u32>>,
 }
 

@@ -1,8 +1,9 @@
 /**
- * The list of threads as a client watches it: the list as it stood when the watch began, then each thread's row as the
- * node tells it changed, newest thread first. A watch begun again after a lost connection starts from the list anew.
+ * The list of threads as a client watches it: the list as it stood when its subscription was made, then each thread's
+ * row as the node tells it changed, newest thread first. A subscription made again — after a lost connection, or where
+ * it fell behind — starts from the list anew.
  */
-import type { Listed } from "./protocol.ts";
+import type { Listed, SubscriptionEvent } from "./protocol.ts";
 
 /** The threads, newest first; none until the node answered the watch. */
 export type ThreadsView = readonly Listed[] | undefined;
@@ -22,14 +23,21 @@ export class WatchedThreads {
 		return () => this.#listeners.delete(listener);
 	}
 
-	/** Takes the list as it stands, as a watch's answer gives it. */
+	/** Takes an event of the list's subscription. */
+	take(event: SubscriptionEvent): void {
+		if (event.event === "threads") this.reset(event.threads);
+		else if (event.event === "thread") this.put(event.thread);
+		else if (event.event === "thread_gone") this.forget(event.thread);
+	}
+
+	/** Takes the list as it stands, as its subscription tells it first. */
 	reset(rows: readonly Listed[]): void {
 		this.#rows = new Map(rows.map((row) => [row.id, row]));
 		this.#publish();
 	}
 
 	/** Takes a thread's row as it changed; one before the list came is in the list when it comes. */
-	take(row: Listed): void {
+	put(row: Listed): void {
 		if (this.#rows === undefined) return;
 		this.#rows.set(row.id, row);
 		this.#publish();

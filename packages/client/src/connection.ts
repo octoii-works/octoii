@@ -1,26 +1,25 @@
 /**
- * The connection: one WebSocket to the node, opened as the client starts and again after it drops, waiting longer after
- * each drop up to a bound, the socket authenticated as the app opens it; `hello` first, which names the protocol's
- * version and is answered with the session the node knows the client by and its scopes. What comes is read in order: an
- * answer settles the call of its id, checked against the method's result; an event goes to the client, which follows
- * its threads again on each connection that opens.
+ * The connection: one WebSocket to the node, speaking the protocol's version, opened as the client starts and again
+ * after it drops, waiting longer after each drop up to a bound, the socket authenticated as the app opens it. The node
+ * welcomes it first, with the session it knows the client by, its scopes and the machine; then what comes is read in
+ * order: an answer settles the call of its id; an event goes to the client — with its bytes, where it came as a binary
+ * message — which subscribes again to what it follows on each connection that opens.
  */
 import { RECONNECT_MAX_MS, RECONNECT_MIN_MS } from "./constants.ts";
 import { ClientError, clientError, isConnectionError } from "./errors.ts";
 import { Value } from "./followed.ts";
 import type { ClientOptions, WebSocketLike } from "./options.ts";
-import { type Event, METHODS, type MethodName, type ParamsOf, PROTOCOL_VERSION, ReceivedSchema, type ResultOf, type Scope } from "./protocol.ts";
-import { parsed } from "./std/schema.ts";
+import { type Event, type MethodName, type ParamsOf, PROTOCOL, type Received, type ResultOf, type Scope } from "./protocol.ts";
 
 /** Where the connection stands. */
 export type ConnectionStatus =
 	| { readonly status: "connecting"; readonly attempt: number }
-	| { readonly status: "open"; readonly session: string; readonly scopes: readonly Scope[]; readonly environment: string | undefined }
+	| { readonly status: "open"; readonly session: string; readonly scopes: readonly Scope[]; readonly machine: string }
 	| { readonly status: "waiting"; readonly until: number; readonly error?: ClientError }
 	| { readonly status: "stopped"; readonly error: ClientError };
 
-/** What the connection tells its client: each time one opens, and each event the node sends. */
-export type ConnectionHandlers = { readonly opened: () => void; readonly event: (event: Event) => void };
+/** What the connection tells its client: each time one opens, and each event the node sends, with its bytes where it has some. */
+export type ConnectionHandlers = { readonly opened: () => void; readonly event: (event: Event, bytes: Uint8Array | undefined) => void };
 
 /** What settles a call: the result the node answered with, or why there is none. */
 type Settle = (answer: { readonly result: unknown } | { readonly error: ClientError }) => void;
@@ -36,8 +35,6 @@ export class Connection {
 	/** The drops since a connection last opened: the next wait doubles with each. */
 	#drops = 0;
 	#counter = 0;
-	/** Why the last attempt did not open, told while the connection waits. */
-	#lastError: ClientError | undefined;
 
 	constructor(options: ClientOptions, handlers: ConnectionHandlers) {
 		this.#options = options;
@@ -48,15 +45,25 @@ export class Connection {
 		this.#connect();
 	}
 
+	/** Whether a connection is open. */
+	get open(): boolean {
+		return this.status.value.status === "open";
+	}
+
 	/** Calls a method on the open connection: its result; rejects with `not-connected` where none is open. */
 	call<Name extends MethodName>(method: Name, params: ParamsOf<Name>): Promise<ResultOf<Name>> {
-		if (this.status.value.status !== "open") return Promise.reject(clientError("not-connected", "No connection to the node is open."));
-		return this.#ask(method, params);
+		if (!this.open) return Promise.reject(clientError("not-connected", "No connection to the node is open."));
+		return new Promise((resolve, reject) => {
+			const id = String(++this.#counter);
+			// SAFETY: the node answers a call by its id with its method's result, as the protocol its types are made from says.
+			this.#pending.set(id, (answer) => ("error" in answer ? reject(answer.error) : resolve(answer.result as ResultOf<Name>)));
+			this.#socket?.send(JSON.stringify({ id, method, params }));
+		});
 	}
 
 	/**
 	 * Calls a method once a connection is open, and again on the next where it drops before the answer: for a method done
-	 * once however often it is asked, as an operation's id makes it. Rejects where the client stopped, or with the node's
+	 * once however often it is asked, as an operation's key makes it. Rejects where the client stopped, or with the node's
 	 * error.
 	 */
 	async callOpen<Name extends MethodName>(method: Name, params: ParamsOf<Name>): Promise<ResultOf<Name>> {
@@ -73,22 +80,6 @@ export class Connection {
 	/** Stops connecting for good: the client is closed. */
 	close(): void {
 		this.#stop(clientError("closed", "The client was closed."));
-	}
-
-	/** Sends a method on the socket that is now the connection's; its answer, read in order, settles it. */
-	#ask<Name extends MethodName>(method: Name, params: ParamsOf<Name>): Promise<ResultOf<Name>> {
-		return new Promise((resolve, reject) => {
-			const id = String(++this.#counter);
-			this.#pending.set(id, (answer) => {
-				if ("error" in answer) return reject(answer.error);
-				try {
-					resolve(parsed<(typeof METHODS)[Name]["result"]>(METHODS[method].result, answer.result, `${method}'s result`));
-				} catch (error) {
-					reject(clientError("invalid-answer", `The node answered ${method} with what the protocol does not hold.`, { cause: error }));
-				}
-			});
-			this.#socket?.send(JSON.stringify({ id, method, params }));
-		});
 	}
 
 	#ready(): Promise<void> {
@@ -109,50 +100,29 @@ export class Connection {
 
 	#connect(): void {
 		this.status.set({ status: "connecting", attempt: this.#drops + 1 });
-		const socket = this.#options.open();
+		const socket = this.#options.open(PROTOCOL);
+		socket.binaryType = "arraybuffer";
 		this.#socket = socket;
-		socket.addEventListener("open", () => {
-			if (this.#socket === socket) this.#hello();
-		});
 		socket.addEventListener("message", (event) => {
 			if (this.#socket === socket) this.#receive(event.data);
 		});
 		socket.addEventListener("close", () => this.#dropped(socket));
 	}
 
-	/** Says hello; its answer, read in order, opens the connection as the session it names, or says why it did not. */
-	#hello(): void {
-		this.#ask("hello", { protocol: PROTOCOL_VERSION }).then(
-			(greeted) => this.#welcomed(greeted),
-			(error: unknown) => this.#refused(error),
-		);
-	}
-
-	#welcomed(greeted: ResultOf<"hello">): void {
-		this.#drops = 0;
-		this.#lastError = undefined;
-		this.status.set({ status: "open", session: greeted.session, scopes: greeted.scopes, environment: greeted.environment?.name });
-		this.#handlers.opened();
-	}
-
-	/** `hello` refused: a version the node does not speak stops the client; anything else closes, and the wait says why. */
-	#refused(error: unknown): void {
-		const refusal =
-			error instanceof ClientError ? error : clientError("invalid-answer", "The node answered hello with what the protocol does not hold.", { cause: error });
-		if (refusal.code === "protocol") return this.#stop(refusal);
-		this.#lastError = refusal;
-		this.#socket?.close();
-	}
-
-	/** Takes one message the node sent: an answer settles its call, an event goes to the client. */
+	/** Takes one message the node sent: its welcome opens the connection; an answer settles its call; an event goes to the client. */
 	#receive(data: unknown): void {
-		let received;
+		let received: Received;
+		let bytes: Uint8Array | undefined;
 		try {
-			received = parsed(ReceivedSchema, JSON.parse(String(data)), "a message of the node's");
+			// SAFETY: what the node sends is the protocol's, made from the node's own types, of the version the socket names.
+			[received, bytes] = data instanceof ArrayBuffer ? framed(data) : [JSON.parse(String(data)) as Received, undefined];
 		} catch (error) {
-			return this.#options.report(error);
+			return this.#options.report(clientError("invalid-answer", "The node sent a message the client cannot read.", { cause: error }));
 		}
-		if ("event" in received) return this.#handlers.event(received);
+		if ("event" in received) {
+			if (received.event === "welcome") return this.#welcomed(received);
+			return this.#handlers.event(received, bytes);
+		}
 		const refused = "error" in received ? new ClientError(received.error.code, received.error.message) : undefined;
 		// A message whose id the node could not read is answered by none, and fails no call.
 		if (received.id === null) return this.#options.report(refused);
@@ -160,6 +130,12 @@ export class Connection {
 		if (settle === undefined) return this.#options.report(clientError("invalid-answer", `An answer came for no call of this connection: ${received.id}.`));
 		this.#pending.delete(received.id);
 		settle(refused === undefined ? { result: "result" in received ? received.result : undefined } : { error: refused });
+	}
+
+	#welcomed(welcome: Extract<Event, { readonly event: "welcome" }>): void {
+		this.#drops = 0;
+		this.status.set({ status: "open", session: welcome.session, scopes: welcome.scopes, machine: welcome.machine.name });
+		this.#handlers.opened();
 	}
 
 	/** The socket closed: each call waiting on it fails as lost, and the connection waits, longer after each drop, to connect again. */
@@ -170,8 +146,7 @@ export class Connection {
 		if (this.status.value.status === "stopped") return;
 		const wait = Math.min(RECONNECT_MAX_MS, RECONNECT_MIN_MS * 2 ** this.#drops);
 		this.#drops += 1;
-		const until = this.#options.clock.now() + wait;
-		this.status.set(this.#lastError === undefined ? { status: "waiting", until } : { status: "waiting", until, error: this.#lastError });
+		this.status.set({ status: "waiting", until: this.#options.clock.now() + wait });
 		this.#cancelWait = this.#options.clock.setTimer(() => {
 			this.#cancelWait = undefined;
 			this.#connect();
@@ -194,4 +169,12 @@ export class Connection {
 		this.#pending.clear();
 		for (const settle of pending) settle({ error });
 	}
+}
+
+/** A binary message: its event, the JSON whose length its first four bytes give, big-endian; and the bytes after it. */
+function framed(data: ArrayBuffer): [Received, Uint8Array] {
+	const length = new DataView(data).getUint32(0);
+	// SAFETY: what the node sends is the protocol's, made from the node's own types, of the version the socket names.
+	const event = JSON.parse(new TextDecoder().decode(new Uint8Array(data, 4, length))) as Received;
+	return [event, new Uint8Array(data, 4 + length)];
 }

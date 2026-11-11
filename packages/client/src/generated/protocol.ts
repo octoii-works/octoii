@@ -127,7 +127,7 @@ budget_nanodollars?: number | null, };
 /**
  * A change of how a thread runs: each setting given, `Some(None)` to let it go; each left out kept.
  */
-export type ConfigChange = { model?: string | null | null, effort?: ReasoningEffort | null | null, mode?: Mode | null | null, workspace?: string | null | null, title?: string | null | null, budget_nanodollars?: number | null | null, };
+export type ConfigChange = { model?: string | null, effort?: ReasoningEffort | null, mode?: Mode | null, workspace?: string | null, title?: string | null, budget_nanodollars?: number | null, };
 
 /**
  * A change of the reasoning effort from where it stands, so what a window began with is never changed within it.
@@ -199,7 +199,7 @@ history_retention_days: number | null, };
  * A change of the environment's settings: each given in place of the one it had, each left out kept;
  * `Some(None)` lets an optional one go.
  */
-export type EnvironmentChange = { thread_mode?: Mode | null, favorite_models?: Array<string> | null, review_model?: string | null | null, history_retention_days?: number | null | null, };
+export type EnvironmentChange = { thread_mode?: Mode | null, favorite_models?: Array<string> | null, review_model?: string | null, history_retention_days?: number | null, };
 
 /**
  * Why a call was refused, or what it asked could not be done: a code a client may act on, and words for the person.
@@ -340,7 +340,7 @@ export type InRepository = { repository?: Repository, };
 /**
  * What is delivered to a thread.
  */
-export type Inbound = { "type": "input", actor: string, content: Array<InputContent>, reply_to?: ReplyTo | null, } | { "type": "config", actor: string, model?: string | null | null, effort?: ReasoningEffort | null | null, mode?: Mode | null | null, workspace?: string | null | null, title?: string | null | null, budget_nanodollars?: number | null | null, };
+export type Inbound = { "type": "input", actor: string, content: Array<InputContent>, reply_to?: ReplyTo | null, } | { "type": "config", actor: string, model?: string | null, effort?: ReasoningEffort | null, mode?: Mode | null, workspace?: string | null, title?: string | null, budget_nanodollars?: number | null, };
 
 /**
  * Why a response ended `incomplete`: at its output limit, filtered by the provider's policy, or cut off by its caller,

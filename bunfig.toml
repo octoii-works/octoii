@@ -22,4 +22,5 @@ root = "./do-not-run-tests-from-root"
 flavor = "oxfmt"
 useTabs = true
 printWidth = 160
-ignorePatterns = ["node_modules/", "dist/", "dist-hosted/", "apps/web/vendor/", ".claude/worktrees/"]
+# What the node's types generate is kept as the generator writes it.
+ignorePatterns = ["node_modules/", "dist/", "dist-hosted/", "apps/web/vendor/", ".claude/worktrees/", "packages/client/src/generated/"]

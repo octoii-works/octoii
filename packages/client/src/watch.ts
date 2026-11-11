@@ -1,55 +1,51 @@
 /**
- * A watch the node keeps for the client while anyone reads it — the list of threads, the settings: what holds what it
- * was told, made as its first reader comes; begun then, and again as each connection opens, its answer and its events
- * given to what holds them; and ended once its last reader lets it go.
+ * What the client watches for its readers — the list of threads, the settings, a thread's terminals or its pages — by a
+ * key of its own: one subscription for all who read it, made as its first reader comes, what it is told held for them,
+ * and let go once its last reader lets it go.
  */
 import { type Followable, holding, type Reading } from "./followed.ts";
+import type { SubscriptionEvent, Topic } from "./protocol.ts";
+import type { Subscription, Subscriptions } from "./subscriptions.ts";
 
-/** What a watch is: what holds what it is told, what a reader sees of it and hears change, and how it begins and ends. */
+/** What a watch is: what holds what it is told, what a reader sees of it and hears change, its topic, and how it takes an event. */
 export type WatchOf<Thing, View> = {
 	readonly make: () => Thing;
 	readonly view: (thing: Thing) => View;
 	readonly subscribe: (thing: Thing, listener: () => void) => () => void;
-	/** Asks the node to begin the watch, its answer given to `thing`. */
-	readonly begin: (thing: Thing) => void;
-	/** Asks the node to end it. */
-	readonly end: () => void;
+	readonly topic: Topic;
+	readonly take: (thing: Thing, event: SubscriptionEvent) => void;
 };
 
-export class Watch<Thing, View> {
-	#reading: Reading<Thing> | undefined;
-	readonly #of: WatchOf<Thing, View>;
-	readonly #isOpen: () => boolean;
+type Watched = Reading<unknown> & { readonly subscription: Subscription };
 
-	constructor(of: WatchOf<Thing, View>, isOpen: () => boolean) {
-		this.#of = of;
-		this.#isOpen = isOpen;
+export class Watches {
+	readonly #watched = new Map<string, Watched>();
+	readonly #subscriptions: Subscriptions;
+
+	constructor(subscriptions: Subscriptions) {
+		this.#subscriptions = subscriptions;
 	}
 
-	/** What holds what the watch was told, while one reads it. */
-	get thing(): Thing | undefined {
-		return this.#reading?.thing;
-	}
-
-	/** Begins it again, as a connection opens, where one reads it. */
-	again(): void {
-		if (this.#reading !== undefined) this.#of.begin(this.#reading.thing);
-	}
-
-	/** One more reader of it: one watch for all who read it, begun as the first comes. */
-	hold(): Followable<View> {
-		if (this.#reading === undefined) {
-			this.#reading = { thing: this.#of.make(), holders: 0 };
-			if (this.#isOpen()) this.#of.begin(this.#reading.thing);
+	/** One more reader of the watch of `key`, as `of` makes it where none is held: one watch for all who read it. */
+	hold<Thing, View>(key: string, of: () => WatchOf<Thing, View>): Followable<View> {
+		const watch = of();
+		let watched = this.#watched.get(key);
+		if (watched === undefined) {
+			const made = watch.make();
+			const subscription = this.#subscriptions.hold(watch.topic, (event) => watch.take(made, event));
+			watched = { thing: made, holders: 0, subscription };
+			this.#watched.set(key, watched);
 		}
-		const { thing } = this.#reading;
+		// SAFETY: each key is held by one caller, whose `of` makes the same kind of thing every time.
+		const thing = watched.thing as Thing;
+		const { subscription } = watched;
 		return holding(
-			this.#reading,
-			(listener) => this.#of.subscribe(thing, listener),
-			() => this.#of.view(thing),
+			watched,
+			(listener) => watch.subscribe(thing, listener),
+			() => watch.view(thing),
 			() => {
-				this.#reading = undefined;
-				if (this.#isOpen()) this.#of.end();
+				this.#watched.delete(key);
+				subscription.stop();
 			},
 		);
 	}

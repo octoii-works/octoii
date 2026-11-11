@@ -5,7 +5,7 @@
 import { createContext, createElement, type ReactNode, useContext, useSyncExternalStore } from "react";
 import type { Client } from "../client.ts";
 import type { ConnectionStatus } from "../connection.ts";
-import type { Settings } from "../protocol.ts";
+import type { PageListed, Settings, TerminalListed } from "../protocol.ts";
 import { type Conversation, conversationOf } from "../conversation.ts";
 import type { Followable, Followed } from "../followed.ts";
 import type { ThreadView } from "../thread.ts";
@@ -63,6 +63,16 @@ export function useThreads(): ThreadsView {
 /** The settings — the environment's and this device's — watched while a component reads them: none until the node answered. */
 export function useSettings(): Settings | undefined {
 	return useFollowed("settings", (client) => client.watchSettings());
+}
+
+/** The thread's terminals, in the order they were opened, watched while a component reads them: none until the node told them. */
+export function useTerminals(thread: string): readonly TerminalListed[] | undefined {
+	return useFollowed(`terminals ${thread}`, (client) => client.watchTerminals(thread));
+}
+
+/** The thread's pages in the browser, in the order they were opened, watched while a component reads them: none until the node told them. */
+export function usePages(thread: string): readonly PageListed[] | undefined {
+	return useFollowed(`pages ${thread}`, (client) => client.watchPages(thread));
 }
 
 function useProvided(): Provided {
