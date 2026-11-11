@@ -102,6 +102,15 @@ const LOOKS: Readonly<Record<string, FileLook>> = {
 	webp: "image",
 };
 
+/** The extensions of the files written in markdown. */
+const MARKDOWN = new Set(["md", "markdown", "mdx"]);
+
+/** Whether `name` is of a file written in markdown, by its extension: one read as it is drawn, or as it is written. */
+export function isMarkdown(name: string): boolean {
+	const dot = name.lastIndexOf(".");
+	return dot > 0 && MARKDOWN.has(name.slice(dot + 1).toLowerCase());
+}
+
 /** What `name` says of its file, by its extension. */
 export function lookOf(name: string): FileLook {
 	const dot = name.lastIndexOf(".");

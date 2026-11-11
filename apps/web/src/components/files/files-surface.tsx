@@ -1,19 +1,20 @@
 /**
  * The Files surface: the thread's folder as a tree on the left — its folders opening as they are clicked — with a
  * search over its paths above it and a button that reads the folder again; and on the right the file chosen, under the
- * names on the way to it, beside them what wraps its long lines and what hides the tree, as the device keeps them, the
+ * names on the way to it, beside them what draws a file written in markdown, what wraps its long lines and what hides the tree, as the device keeps them, the
  * tree always shown while no file is. Where the surface is narrow, as on a phone, the tree and the file take its whole
  * width in turn: the tree till a file is chosen, then the file, with a button back to the tree. What it shows is the
  * panel's, kept for the thread, so a file or folder opened anywhere shows here; a folder a search finds is shown in the
  * tree, every folder on the way to it opened.
  */
 import { type ReactNode, useState } from "react";
-import { ListTree, RefreshCw, Search, WrapText } from "lucide-react";
+import { BookOpen, ListTree, RefreshCw, Search, WrapText } from "lucide-react";
 import { useDevice } from "../state/device.ts";
 import { closeFile, revealFolder, useThreadPanel } from "../state/panel.ts";
 import { IconButton, ToggleButton } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
 import { Input } from "../ui/input.tsx";
+import { isMarkdown } from "../../core/files.ts";
 import { FileView } from "./file-view.tsx";
 import { FolderRows, FoundRows } from "./file-tree.tsx";
 
@@ -82,8 +83,14 @@ function FolderSurface(props: { readonly thread: string; readonly folder: string
 						root={folder}
 						path={place.file}
 						wrap={device.wrap_lines}
+						preview={device.files_preview}
 						actions={
 							<>
+								{isMarkdown(place.file) ? (
+									<ToggleButton label="Preview" pressed={device.files_preview} onPressedChange={(files_preview) => set({ files_preview })}>
+										<BookOpen className="size-3.5" />
+									</ToggleButton>
+								) : null}
 								<ToggleButton label="Wrap long lines" pressed={device.wrap_lines} onPressedChange={(wrap_lines) => set({ wrap_lines })}>
 									<WrapText className="size-3.5" />
 								</ToggleButton>

@@ -1,21 +1,26 @@
 /**
  * A file of the machine's as the files surface shows it: the names on the way to it, from the folder the tree shows,
  * with what the surface puts beside them; its lines, numbered and coloured as its language reads, a page at a time, the
- * next read as the person asks for it, its long lines wrapped where the device says so; an image; a PDF, opened in the
- * browser's own viewer in a tab of its own; that it is binary; or the node's words where it could not be read.
+ * next read as the person asks for it, its long lines wrapped where the device says so — or, written in markdown, drawn
+ * as the device says, as a reply is; an image; a PDF, opened in the browser's own viewer in a tab of its own; that it is
+ * binary; or the node's words where it could not be read.
  */
 import type { ReactNode } from "react";
 import type { FilePage } from "@octoii-works/octoii-client";
 import { File } from "@pierre/diffs/react";
 import { machineAddress } from "../../core/attachments.ts";
-import { bytesText, crumbsOf, nameOf } from "../../core/files.ts";
+import { bytesText, crumbsOf, isMarkdown, nameOf } from "../../core/files.ts";
 import { useFileSource } from "../effects/file-source.ts";
 import { usePages } from "../effects/pages.ts";
 import { CODE_THEMES, useDarkPage } from "../effects/theme.ts";
+import { Prose } from "../thread/markdown.tsx";
 import { KeptImage } from "../ui/kept-image.tsx";
 
-/** What the view is given: the file at `path`, under the folder `root` the tree shows; whether its long lines wrap; what stands beside its names. */
-export type FileViewProps = { readonly root: string; readonly path: string; readonly wrap: boolean; readonly actions: ReactNode };
+/**
+ * What the view is given: the file at `path`, under the folder `root` the tree shows; whether its long lines wrap; whether
+ * one written in markdown is drawn; what stands beside its names.
+ */
+export type FileViewProps = { readonly root: string; readonly path: string; readonly wrap: boolean; readonly preview: boolean; readonly actions: ReactNode };
 
 /** The view. */
 export function FileView(props: FileViewProps): ReactNode {
@@ -33,7 +38,7 @@ export function FileView(props: FileViewProps): ReactNode {
 				{read === undefined ? (
 					<Note>Reading…</Note>
 				) : "pages" in read ? (
-					<Contents pages={read.pages} path={props.path} wrap={props.wrap} readMore={read.readMore} />
+					<Contents pages={read.pages} path={props.path} wrap={props.wrap} preview={props.preview} readMore={read.readMore} />
 				) : null}
 				{read?.failure === undefined ? null : <Note>{read.failure}</Note>}
 			</div>
@@ -61,24 +66,24 @@ function Note(props: { readonly children: ReactNode }): ReactNode {
 	return <p className="px-4 py-2 text-xs text-muted-foreground">{props.children}</p>;
 }
 
-/** What the file's pages hold: its lines, an image, a PDF, or that it is binary, as its first page says. */
+/** What the file's pages hold: its lines — drawn, where it is written in markdown and `preview` says — an image, a PDF, or that it is binary, as its first page says. */
 function Contents(props: {
 	readonly pages: readonly [FilePage, ...FilePage[]];
 	readonly path: string;
 	readonly wrap: boolean;
+	readonly preview: boolean;
 	readonly readMore: (() => void) | undefined;
 }): ReactNode {
 	const [first] = props.pages;
 	switch (first.type) {
-		case "text":
-			return (
-				<TextFile
-					name={nameOf(props.path)}
-					lines={props.pages.flatMap((page) => (page.type === "text" ? page.lines : []))}
-					wrap={props.wrap}
-					readMore={props.readMore}
-				/>
+		case "text": {
+			const lines = props.pages.flatMap((page) => (page.type === "text" ? page.lines : []));
+			return props.preview && isMarkdown(props.path) ? (
+				<DrawnFile lines={lines} readMore={props.readMore} />
+			) : (
+				<TextFile name={nameOf(props.path)} lines={lines} wrap={props.wrap} readMore={props.readMore} />
 			);
+		}
 		case "media":
 			return first.media_type === "application/pdf" ? (
 				<PdfNote size={first.size} path={first.path} />
@@ -108,12 +113,28 @@ function TextFile(props: {
 					options={{ theme: CODE_THEMES, themeType: dark ? "dark" : "light", overflow: props.wrap ? "wrap" : "scroll", disableFileHeader: true }}
 				/>
 			</div>
-			{props.readMore === undefined ? null : (
-				<button type="button" onClick={props.readMore} className="px-4 py-2 text-xs text-muted-foreground hover:text-foreground">
-					Show more lines
-				</button>
-			)}
+			<MoreLines readMore={props.readMore} />
 		</>
+	);
+}
+
+/** The lines read of a file written in markdown, drawn as a reply is; and where more follow, what reads them. */
+function DrawnFile(props: { readonly lines: readonly string[]; readonly readMore: (() => void) | undefined }): ReactNode {
+	if (props.lines.length === 0) return <Note>An empty file.</Note>;
+	return (
+		<>
+			<Prose text={props.lines.join("\n")} className="max-w-3xl px-6 py-4" />
+			<MoreLines readMore={props.readMore} />
+		</>
+	);
+}
+
+/** What reads the lines that follow, where more do. */
+function MoreLines(props: { readonly readMore: (() => void) | undefined }): ReactNode {
+	return props.readMore === undefined ? null : (
+		<button type="button" onClick={props.readMore} className="px-4 py-2 text-xs text-muted-foreground hover:text-foreground">
+			Show more lines
+		</button>
 	);
 }
 

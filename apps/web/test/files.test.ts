@@ -1,7 +1,7 @@
 /** The machine's files as the interface shows them, and the folders a folder is chosen among. */
 import { describe, expect, it } from "bun:test";
 import type { FolderEntry } from "@octoii-works/octoii-client";
-import { bytesText, childPath, crumbsOf, folderOf, foldersAmong, isWholePath, lookOf, nameOf, shownEntries, wayTo } from "../src/core/files.ts";
+import { bytesText, childPath, crumbsOf, folderOf, foldersAmong, isMarkdown, isWholePath, lookOf, nameOf, shownEntries, wayTo } from "../src/core/files.ts";
 
 const entry = (name: string, kind: FolderEntry["kind"] = "file", ignored = false): FolderEntry => ({ name, kind, ignored });
 
@@ -40,6 +40,7 @@ describe("the machine's files", () => {
 
 	it("tell a file by its extension", () => {
 		expect(["main.zig", "package.json", "README.md", "logo.png", "Makefile", ".env"].map(lookOf)).toEqual(["code", "data", "text", "image", "other", "other"]);
+		expect(["README.md", "guide.MARKDOWN", "page.mdx", "notes.txt", ".md", "md"].map(isMarkdown)).toEqual([true, true, true, false, false, false]);
 	});
 });
 

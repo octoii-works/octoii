@@ -29,6 +29,8 @@ const DeviceSchema = Type.Object({
 	diff_layout: Type.Union([Type.Literal("stacked"), Type.Literal("split")]),
 	wrap_lines: Type.Boolean(),
 	files_tree: Type.Boolean(),
+	/** Whether a file written in markdown is shown as it is drawn, else as it is written. */
+	files_preview: Type.Boolean(),
 });
 
 /** What is set for a device, each field its default where nothing is set. */
@@ -48,6 +50,7 @@ export const DEVICE_DEFAULTS: Device = {
 	diff_layout: "stacked",
 	wrap_lines: false,
 	files_tree: true,
+	files_preview: true,
 };
 
 const KeptSchema = Type.Record(Type.String(), Type.Unknown());
