@@ -81,10 +81,19 @@ pub struct ChatGpt {
     renewing: Mutex<()>,
 }
 
-/// ChatGPT, on the person's plan.
-pub static CHATGPT: ChatGpt = ChatGpt {
-    renewing: Mutex::const_new(()),
-};
+impl ChatGpt {
+    /// ChatGPT, on the person's plan.
+    #[must_use]
+    pub fn new() -> Self {
+        Self { renewing: Mutex::new(()) }
+    }
+}
+
+impl Default for ChatGpt {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 /// When a sign-in's tokens are stale: once they are due, or while they are still those the plan refused.
 #[derive(Debug, Clone, Copy)]
@@ -210,7 +219,7 @@ impl Driver for ChatGpt {
                 .await?;
             let mut reader = Reader::new(DIALECT);
             if !response.status().is_success() {
-                return Err(wire::failure_of(call, response, &|_: &http::HeaderMap, body: &str| reader.failure_detail(body)).await);
+                return Err(wire::failure_of(call, response, &|body: &str| reader.failure_detail(body)).await);
             }
             let events = wire::events(response.into_body()).filter_map(move |event| {
                 let made = match event {
@@ -347,7 +356,7 @@ async fn tokens_for(call: &Call, form: &[(&str, &str)], spent: &str) -> Result<T
         .body(bytes::Bytes::from(body))
         .map_err(|error| Failure::new(FailureKind::InvalidRequest, error.to_string()))?;
     let response = wire::send(call, request).await?;
-    wire::json(call, response, &|_: &http::HeaderMap, body: &str| {
+    wire::json(call, response, &|body: &str| {
         let said: serde_json::Value = serde_json::from_str(body).ok()?;
         let code = said["error"].as_str().or_else(|| said["error"]["code"].as_str())?;
         SPENT.contains(&code).then(|| wire::FailureDetail {

@@ -916,26 +916,12 @@ fn failure_of_error(error: &Value) -> Failure {
     failure
 }
 
-/// What a refusal before the stream says: its error's type and words, and — where Anthropic's unified limits say the
-/// account's are spent — a quota used up, given again at the reset they name.
-fn failure_detail(headers: &http::HeaderMap, body: &str) -> FailureDetail {
-    let header = |name: &str| headers.get(name).and_then(|value| value.to_str().ok());
-    let mut detail = serde_json::from_str::<Value>(body)
+/// What a refusal before the stream says: its error's type and words.
+fn failure_detail(body: &str) -> FailureDetail {
+    serde_json::from_str::<Value>(body)
         .ok()
         .map(|value| detail_of(&value["error"]))
-        .unwrap_or_default();
-    if header("anthropic-ratelimit-unified-status") == Some("rejected") {
-        detail.kind = Some(FailureKind::Quota);
-        detail.reset_at_ms = header("anthropic-ratelimit-unified-reset")
-            .and_then(|reset| reset.trim().parse::<i64>().ok())
-            .map(|seconds| seconds * 1000);
-        detail.window_minutes = match header("anthropic-ratelimit-unified-representative-claim") {
-            Some("five_hour") => Some(300),
-            Some("seven_day" | "seven_day_opus" | "seven_day_sonnet") => Some(10_080),
-            _ => None,
-        };
-    }
-    detail
+        .unwrap_or_default()
 }
 
 /// What makes each request of an answer: its address, its key where it has one, and the betas it needs.
@@ -1002,10 +988,7 @@ impl Driver for AnthropicDriver {
             };
             let response = wire::send(call, sender.request(&body)?).await?;
             if !response.status().is_success() {
-                return Err(wire::failure_of(call, response, &|headers: &http::HeaderMap, body: &str| {
-                    Some(failure_detail(headers, body))
-                })
-                .await);
+                return Err(wire::failure_of(call, response, &|body: &str| Some(failure_detail(body))).await);
             }
             let call = call.clone();
             let source: Source = Box::pin(async_stream::stream! {
@@ -1050,7 +1033,7 @@ impl Driver for AnthropicDriver {
                     response = match sent {
                         Ok(next) if next.status().is_success() => next,
                         Ok(next) => {
-                            yield Err(wire::failure_of(&call, next, &|headers: &http::HeaderMap, body: &str| Some(failure_detail(headers, body))).await);
+                            yield Err(wire::failure_of(&call, next, &|body: &str| Some(failure_detail(body))).await);
                             return;
                         }
                         Err(failure) => {

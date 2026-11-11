@@ -38,18 +38,18 @@ pub struct Served {
 
 /// The providers the node reaches models through.
 fn providers() -> Vec<Provider> {
-    let drivers: [&'static dyn octoii_ai::driver::Driver; 11] = [
-        &drivers::OPENAI,
-        &drivers::CHATGPT,
-        &drivers::ANTHROPIC,
-        &drivers::GOOGLE,
-        &drivers::OPENROUTER,
-        &drivers::DEEPSEEK,
-        &drivers::XAI,
-        &drivers::META,
-        &drivers::ZAI,
-        &drivers::OLLAMA,
-        &drivers::LMSTUDIO,
+    let drivers: [Arc<dyn octoii_ai::driver::Driver>; 11] = [
+        Arc::new(drivers::OPENAI),
+        Arc::new(drivers::ChatGpt::new()),
+        Arc::new(drivers::ANTHROPIC),
+        Arc::new(drivers::GOOGLE),
+        Arc::new(drivers::OPENROUTER),
+        Arc::new(drivers::DEEPSEEK),
+        Arc::new(drivers::XAI),
+        Arc::new(drivers::META),
+        Arc::new(drivers::ZAI),
+        Arc::new(drivers::OLLAMA),
+        Arc::new(drivers::LMSTUDIO),
     ];
     drivers.into_iter().map(Provider::of).collect()
 }

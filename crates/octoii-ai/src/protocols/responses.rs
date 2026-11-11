@@ -549,7 +549,7 @@ impl Driver for ResponsesDriver {
             let response = wire::send(call, request).await?;
             let mut reader = Reader::new(self.dialect);
             if !response.status().is_success() {
-                return Err(wire::failure_of(call, response, &|_: &http::HeaderMap, body: &str| reader.failure_detail(body)).await);
+                return Err(wire::failure_of(call, response, &|body: &str| reader.failure_detail(body)).await);
             }
             let events = wire::events(response.into_body()).filter_map(move |event| {
                 let made = match event {

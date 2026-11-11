@@ -1,10 +1,10 @@
 //! The providers' drivers. Those that speak the Responses API are its driver with their dialects — how each takes
 //! developer messages, whether it takes a cache's name and gives back its reasoning encrypted, and the kinds its codes
-//! stand for; Anthropic's API and Claude through its agent are Anthropic's driver, at their addresses.
+//! stand for; Anthropic's API is Anthropic's driver.
 
 mod chatgpt;
 
-pub use chatgpt::{CHATGPT, ChatGpt};
+pub use chatgpt::ChatGpt;
 
 use crate::driver::Connection;
 use crate::protocols::anthropic::AnthropicDriver;
@@ -170,15 +170,6 @@ pub const ANTHROPIC: AnthropicDriver = AnthropicDriver {
     connection: Connection::ApiKey {
         variable: "ANTHROPIC_API_KEY",
     },
-};
-
-/// Claude through the person's own Claude Code: the agent gateway beside the host, which speaks Anthropic's Messages
-/// API and is signed in to on its own.
-pub const CLAUDE: AnthropicDriver = AnthropicDriver {
-    id: "claude",
-    name: "Claude",
-    base_url: "gateway://claude/v1",
-    connection: Connection::Agent { through: "Claude Code" },
 };
 
 /// Ollama, a server of the person's on this machine.

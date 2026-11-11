@@ -57,7 +57,7 @@ fn models() -> Arc<Models> {
         new_id: Arc::new(new_id),
         clock: Arc::new(|| 0),
     };
-    Arc::new(Models::new(host, vec![Provider::of(&OPENROUTER)], vec![model]))
+    Arc::new(Models::new(host, vec![Provider::of(std::sync::Arc::new(OPENROUTER))], vec![model]))
 }
 
 /// An id of the time now, in nanoseconds, as hex, for what the provider leaves without one.

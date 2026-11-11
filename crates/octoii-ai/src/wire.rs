@@ -83,12 +83,12 @@ pub struct FailureDetail {
     pub window_minutes: Option<u32>,
 }
 
-/// How a protocol reads what a failure's headers and body say.
-pub type Details<'a> = &'a (dyn Fn(&HeaderMap, &str) -> Option<FailureDetail> + Sync);
+/// How a protocol reads what a failure's body says.
+pub type Details<'a> = &'a (dyn Fn(&str) -> Option<FailureDetail> + Sync);
 
 /// What a failure says of nothing.
 #[must_use]
-pub fn nothing(_: &HeaderMap, _: &str) -> Option<FailureDetail> {
+pub fn nothing(_: &str) -> Option<FailureDetail> {
     None
 }
 
@@ -100,7 +100,7 @@ pub async fn failure_of(call: &Call, response: http::Response<Body>, details: De
     let headers = response.headers().clone();
     let body = read_whole(response.into_body()).await.unwrap_or_default();
     let body = String::from_utf8_lossy(&body);
-    let detail = details(&headers, &body).unwrap_or_default();
+    let detail = details(&body).unwrap_or_default();
     let kind = detail.kind.unwrap_or_else(|| kind_of_status(status));
     let wait = retry_after_ms(&headers, call.now_ms).or(detail.retry_after_ms);
     let reset_at_ms = detail.reset_at_ms.or_else(|| {

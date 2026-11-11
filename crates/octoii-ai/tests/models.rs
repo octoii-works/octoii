@@ -65,11 +65,11 @@ fn each_provider_serves_its_catalogues_models_an_account_those_of_the_provider_i
         id: "openai-work".into(),
         name: "OpenAI (work)".into(),
         settings: Settings::default(),
-        ..Provider::of(&OPENAI)
+        ..Provider::of(std::sync::Arc::new(OPENAI))
     };
     let models = Models::new(
         host(Answering::streaming(&[])),
-        vec![Provider::of(&OPENAI), work],
+        vec![Provider::of(std::sync::Arc::new(OPENAI)), work],
         catalogue::bundled(),
     );
     let own = models.models().into_iter().filter(|model| model.provider == "openai").count();
@@ -83,7 +83,7 @@ fn each_provider_serves_its_catalogues_models_an_account_those_of_the_provider_i
 #[tokio::test]
 async fn a_listing_provider_serves_what_it_listed_once_refreshed() {
     let listing = Answering::answering(200, vec![r#"{"data":[{"id":"qwen3"}]}"#.into()]);
-    let models = Models::new(host(listing), vec![Provider::of(&OLLAMA)], catalogue::bundled());
+    let models = Models::new(host(listing), vec![Provider::of(std::sync::Arc::new(OLLAMA))], catalogue::bundled());
     assert!(models.model("ollama/qwen3").is_none());
     models.refresh().await;
     assert!(models.model("ollama/qwen3").is_some());
@@ -91,7 +91,11 @@ async fn a_listing_provider_serves_what_it_listed_once_refreshed() {
 
 #[tokio::test]
 async fn a_request_refused_before_it_is_sent_is_a_stream_of_its_failure() {
-    let models = Models::new(host(Answering::streaming(&[])), vec![Provider::of(&OPENAI)], catalogue::bundled());
+    let models = Models::new(
+        host(Answering::streaming(&[])),
+        vec![Provider::of(std::sync::Arc::new(OPENAI))],
+        catalogue::bundled(),
+    );
     assert_eq!(
         failure_of(&models, &request("openai/no-such-model")).await,
         Some(FailureKind::InvalidRequest)
@@ -110,7 +114,11 @@ async fn a_request_refused_before_it_is_sent_is_a_stream_of_its_failure() {
 #[tokio::test]
 async fn a_request_is_prepared_its_effort_fitted_to_the_model_and_its_calls_arguments_an_object() {
     let answering = Answering::streaming(&[]);
-    let models = Models::new(host(answering.clone()), vec![Provider::of(&OPENAI)], catalogue::bundled());
+    let models = Models::new(
+        host(answering.clone()),
+        vec![Provider::of(std::sync::Arc::new(OPENAI))],
+        catalogue::bundled(),
+    );
     let mut model = models.model("openai/gpt-6-sol").expect("listed");
     model.reasoning = Some(ReasoningFacts {
         efforts: Some(vec![ReasoningEffort::Low, ReasoningEffort::Medium, ReasoningEffort::High]),

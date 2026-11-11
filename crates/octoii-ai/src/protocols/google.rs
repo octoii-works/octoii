@@ -817,7 +817,7 @@ impl Driver for GoogleDriver {
                 .map_err(|error| Failure::new(FailureKind::InvalidRequest, error.to_string()))?;
             let response = wire::send(call, made).await?;
             if !response.status().is_success() {
-                return Err(wire::failure_of(call, response, &|_: &http::HeaderMap, body: &str| {
+                return Err(wire::failure_of(call, response, &|body: &str| {
                     serde_json::from_str::<Value>(body).ok().map(|value| detail_of(&value["error"]))
                 })
                 .await);

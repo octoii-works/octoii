@@ -9,7 +9,10 @@ use std::sync::{Arc, Mutex};
 use bytes::Bytes;
 use futures::future::BoxFuture;
 use octoii_ai::driver::{Driver, SignInOptions};
-use octoii_ai::drivers::CHATGPT;
+use octoii_ai::drivers::ChatGpt;
+
+/// ChatGPT's driver, one for the tests, as a host holds one.
+static CHATGPT: std::sync::LazyLock<ChatGpt> = std::sync::LazyLock::new(ChatGpt::new);
 use octoii_ai::host::{Credential, Credentials, OAuth, Tokens};
 use octoii_ai::transport::{Body, Transport, TransportError};
 use octoii_ai::vocabulary::{FailureKind, InputContent, Item, Message, Request};

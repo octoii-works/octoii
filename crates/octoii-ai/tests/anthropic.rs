@@ -10,7 +10,7 @@ use bytes::Bytes;
 use futures::future::BoxFuture;
 use octoii_ai::catalogue::{Model, ModelReasoning as ReasoningFacts};
 use octoii_ai::driver::Driver;
-use octoii_ai::drivers::{ANTHROPIC, CLAUDE};
+use octoii_ai::drivers::ANTHROPIC;
 use octoii_ai::protocols::anthropic;
 use octoii_ai::stream::TextStream;
 use octoii_ai::transport::{Body, Transport, TransportError};
@@ -218,30 +218,4 @@ async fn a_stream_is_read_back_and_a_paused_answer_goes_on_from_its_blocks() {
         json!({ "type": "thinking", "thinking": "search first", "signature": "sig" })
     );
     assert_eq!(last["content"][1]["input"], json!({ "query": "rust" }));
-}
-
-#[tokio::test]
-async fn an_account_whose_unified_limits_are_spent_has_used_its_quota_till_their_reset() {
-    let answers = Arc::new(Answers {
-        left: Mutex::new(VecDeque::from([(
-            429,
-            vec![
-                ("anthropic-ratelimit-unified-status", "rejected"),
-                ("anthropic-ratelimit-unified-reset", "1800000000"),
-                ("anthropic-ratelimit-unified-representative-claim", "five_hour"),
-            ],
-            r#"{"type":"error","error":{"type":"rate_limit_error","message":"limit reached"}}"#.to_owned(),
-        )])),
-        sent: Mutex::new(Vec::new()),
-    });
-    let mut call = support::call(support::Provider::streaming(&[]));
-    call.transport = answers;
-    call.credentials = Arc::new(support::Store::default());
-    let Err(failure) = CLAUDE.stream(&call, &claude(), &conversation()).await else {
-        panic!("refused")
-    };
-    assert_eq!(
-        (failure.kind, failure.reset_at_ms, failure.window_minutes),
-        (FailureKind::Quota, Some(1_800_000_000_000), Some(300))
-    );
 }

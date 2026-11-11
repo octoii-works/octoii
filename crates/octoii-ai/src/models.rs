@@ -23,7 +23,7 @@ use crate::vocabulary::{Failure, FailureKind, FunctionCall, InputContent, Item, 
 pub struct Provider {
     pub id: String,
     pub name: String,
-    pub driver: &'static dyn Driver,
+    pub driver: Arc<dyn Driver>,
     pub settings: Settings,
     pub catalogue: String,
 }
@@ -40,13 +40,13 @@ impl std::fmt::Debug for Provider {
 impl Provider {
     /// The provider of `driver` under the driver's own id and name, its catalogue entries the driver's.
     #[must_use]
-    pub fn of(driver: &'static dyn Driver) -> Self {
+    pub fn of(driver: Arc<dyn Driver>) -> Self {
         Self {
             id: driver.id().to_owned(),
             name: driver.name().to_owned(),
-            driver,
             settings: Settings::default(),
             catalogue: driver.id().to_owned(),
+            driver,
         }
     }
 }

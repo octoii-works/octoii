@@ -148,8 +148,6 @@ impl Files for Nothing {
 }
 
 fn models(script: &Arc<Script>) -> Arc<Models> {
-    // A driver lives as long as the models do, which a test's runtime keeps to its end.
-    let driver: &'static Scripted = Box::leak(Box::new(Scripted(Arc::clone(script))));
     let host = Host {
         credentials: Arc::new(Nothing),
         transport: Arc::new(octoii_ai::transport::Network::default()),
@@ -159,7 +157,7 @@ fn models(script: &Arc<Script>) -> Arc<Models> {
     let provider = Provider {
         id: "test".into(),
         name: "Test".into(),
-        driver,
+        driver: Arc::new(Scripted(Arc::clone(script))),
         settings: Settings::default(),
         catalogue: "test".into(),
     };

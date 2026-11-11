@@ -11,7 +11,7 @@ use siphon_runtime::{Changes, Options, Runtime};
 async fn an_account_is_another_instance_of_a_host_s_provider_and_a_quota_used_up_stands_on_its_directory() {
     let beak = Beak::new().expect("Beak");
     let runtime = Runtime::builder().start(&beak, Options::default()).expect("started");
-    let host = [Provider::of(&OPENAI), Provider::of(&OLLAMA)];
+    let host = [Provider::of(std::sync::Arc::new(OPENAI)), Provider::of(std::sync::Arc::new(OLLAMA))];
     let work = add(&runtime, &host, "openai", "  Work  ", "add-1").await.expect("added");
     assert_eq!(
         add(&runtime, &host, "openai", "Other", "add-1").await.expect("added"),
