@@ -590,7 +590,11 @@ async fn a_task_delegated_is_worked_on_by_a_sub_thread_and_what_it_said_last_giv
     let children = others(&threads, &id);
     assert_eq!(children.len(), 1);
     let child = &children[0];
-    assert_eq!(child.parent.as_ref().map(|parent| parent.thread.as_str()), Some(id.as_str()));
+    assert_eq!(
+        child.parent.as_ref().map(|parent| (parent.thread.as_str(), parent.call.as_str())),
+        Some((id.as_str(), "c1")),
+        "its parent the thread, and the call by the model's id of it"
+    );
     assert_eq!(child.config.title.as_deref(), Some("Helper"));
     let result = entries(&threads, &id).into_iter().find_map(|entry| match entry {
         Entry::Result { status, output, .. } => Some((status, output.output)),

@@ -600,7 +600,7 @@ export type PageOpened = { page: string, };
 export type PairWith = { label?: string, scopes?: Array<Scope>, };
 
 /**
- * Where a sub-thread came from: the thread that delegated it, and its call that did.
+ * Where a sub-thread came from: the thread that delegated it, and its call that did, by the model's id of it.
  */
 export type Parent = { thread: string, call: string, };
 

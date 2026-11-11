@@ -8,7 +8,6 @@
 
 use std::fmt::Write as _;
 
-use bytes::Bytes;
 use octoii_ai::vocabulary::InputContent;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -22,7 +21,7 @@ use siphon_threads::CallStatus;
 use crate::calls::{Calls, Setting, State};
 use crate::declarations::declarations;
 use crate::effect::Effect;
-use crate::tool::{Context, Refusal, Tool, Tools};
+use crate::tool::{Context, Refusal, Started, Tool, Tools};
 
 /// The arguments of `execute`.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -102,8 +101,7 @@ impl Tool for ExecuteTool {
     fn start(
         &self,
         changes: &mut Changes,
-        parent: &Bytes,
-        key: &str,
+        started: &Started<'_>,
         args: &ExecuteArgs,
         setting: &Setting<'_>,
     ) -> Option<serde_json::Result<()>> {
@@ -117,7 +115,11 @@ impl Tool for ExecuteTool {
             mode: setting.mode,
             confines: setting.confines,
         };
-        Some(changes.start::<ScriptProgram>(parent.clone(), key, &input).map(|_| ()))
+        Some(
+            changes
+                .start::<ScriptProgram>(started.parent.clone(), started.key, &input)
+                .map(|_| ()),
+        )
     }
 
     fn finished(&self, outcome: &beak::Outcome) -> Vec<InputContent> {

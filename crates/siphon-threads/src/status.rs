@@ -140,7 +140,7 @@ pub struct Status {
     pub asks: Vec<Ask>,
 }
 
-/// Where a sub-thread came from: the thread that delegated it, and its call that did.
+/// Where a sub-thread came from: the thread that delegated it, and its call that did, by the model's id of it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct Parent {
     pub thread: String,

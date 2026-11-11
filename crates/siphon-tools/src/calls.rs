@@ -14,7 +14,7 @@ use crate::effect::{Effect, Line};
 use crate::permissions::{Bounds, Grants, Verdict, Writes, patterns_of, weigh};
 use crate::projects;
 use crate::requests::{Asks, Decision, Exec, Judgment, Permission, Review, Shown};
-use crate::tool::Tools;
+use crate::tool::{Started, Tools};
 
 /// Where a call stands.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -348,10 +348,12 @@ impl Calls {
         let call = &self.0[at];
         let arguments: serde_json::Value = serde_json::from_str(&call.arguments)?;
         let parent = bytes::Bytes::copy_from_slice(run.path());
-        if let Some(started) = setting
-            .tools
-            .start(&mut run.changes, &parent, &call.key, &call.tool, &arguments, setting)
-        {
+        let placed = Started {
+            parent: &parent,
+            key: &call.key,
+            call_id: &call.id,
+        };
+        if let Some(started) = setting.tools.start(&mut run.changes, &placed, &call.tool, &arguments, setting) {
             started?;
             return Ok(State::Program);
         }

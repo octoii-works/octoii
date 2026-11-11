@@ -128,8 +128,8 @@ pub trait Tool: Send + Sync + 'static {
     }
 
     /// For a tool that runs as a program of its own: adds to `changes` the start of its process for a call with
-    /// `args`, keyed `key`, under `parent`, the caller, its calls weighed as `setting` says; none for a tool exec'd.
-    fn start(&self, _: &mut Changes, _: &Bytes, _: &str, _: &Self::Args, _: &Setting<'_>) -> Option<serde_json::Result<()>> {
+    /// `args`, as `started` places it, its calls weighed as `setting` says; none for a tool exec'd.
+    fn start(&self, _: &mut Changes, _: &Started<'_>, _: &Self::Args, _: &Setting<'_>) -> Option<serde_json::Result<()>> {
         None
     }
 
@@ -137,6 +137,15 @@ pub trait Tool: Send + Sync + 'static {
     fn finished(&self, outcome: &beak::Outcome) -> Vec<InputContent> {
         vec![InputContent::text(format!("{outcome:?}"))]
     }
+}
+
+/// Where a call's program starts: under `parent`, its caller, keyed by the call's key, for the call the model made by
+/// its id, `call_id`.
+#[derive(Debug, Clone, Copy)]
+pub struct Started<'a> {
+    pub parent: &'a Bytes,
+    pub key: &'a str,
+    pub call_id: &'a str,
 }
 
 type Execing = Pin<Box<dyn Future<Output = Result<Vec<InputContent>, Refusal>> + Send>>;
@@ -150,8 +159,7 @@ trait Erased: Send + Sync {
     fn start(
         &self,
         changes: &mut Changes,
-        parent: &Bytes,
-        key: &str,
+        started: &Started<'_>,
         arguments: &serde_json::Value,
         setting: &Setting<'_>,
     ) -> Option<serde_json::Result<()>>;
@@ -179,13 +187,12 @@ impl<T: Tool> Erased for T {
     fn start(
         &self,
         changes: &mut Changes,
-        parent: &Bytes,
-        key: &str,
+        started: &Started<'_>,
         arguments: &serde_json::Value,
         setting: &Setting<'_>,
     ) -> Option<serde_json::Result<()>> {
         let args: T::Args = serde_json::from_value(arguments.clone()).ok()?;
-        Tool::start(self, changes, parent, key, &args, setting)
+        Tool::start(self, changes, started, &args, setting)
     }
 
     fn finished(&self, outcome: &beak::Outcome) -> Vec<InputContent> {
@@ -332,18 +339,17 @@ impl Tools {
         }
     }
 
-    /// Adds to `changes` the start of the process of a call of `name` with `arguments`, keyed `key`, under `parent`,
-    /// where its tool runs as a program; none where it is exec'd.
+    /// Adds to `changes` the start of the process of a call of `name` with `arguments`, as `started` places it, where
+    /// its tool runs as a program; none where it is exec'd.
     pub fn start(
         &self,
         changes: &mut Changes,
-        parent: &Bytes,
-        key: &str,
+        started: &Started<'_>,
         name: &str,
         arguments: &serde_json::Value,
         setting: &Setting<'_>,
     ) -> Option<serde_json::Result<()>> {
-        self.entries.get(name)?.tool.start(changes, parent, key, arguments, setting)
+        self.entries.get(name)?.tool.start(changes, started, arguments, setting)
     }
 
     /// The end `outcome` of the process of a call of `name`, as the model reads it.
