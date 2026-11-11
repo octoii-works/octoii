@@ -1,7 +1,7 @@
 [package]
 name = "siphon-accounts"
 description = "The providers models are reached through: the host's, then the accounts a person added of them — another key, sign-in or login — each a directory of the volume's, with a provider's quota used up kept till it is given again"
-version = "0.1.0"
+version = "0.0.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

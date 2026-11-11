@@ -1,7 +1,7 @@
 [package]
 name = "siphon-agent"
 description = "The agent: a thread's main process and its turns, what its model is told and asked, the calls its replies make taken on, and the second model that judges them"
-version = "0.1.0"
+version = "0.0.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

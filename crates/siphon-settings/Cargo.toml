@@ -1,7 +1,7 @@
 [package]
 name = "siphon-settings"
 description = "The settings a person sets: the environment's, on one directory's annotations, which every client shares and Siphon reads; and each device's, a document its client keeps, merged as a JSON merge patch"
-version = "0.1.0"
+version = "0.0.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

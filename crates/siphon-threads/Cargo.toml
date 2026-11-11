@@ -1,7 +1,7 @@
 [package]
 name = "siphon-threads"
 description = "Siphon's threads on Beak: each a directory of its run settings, its inbox, its log in segments and its processes; what changes how a thread runs logged by its main process alone, how a person keeps it marked on its directory"
-version = "0.1.0"
+version = "0.0.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

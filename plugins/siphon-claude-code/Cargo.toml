@@ -1,7 +1,7 @@
 [package]
 name = "siphon-claude-code"
 description = "Claude through the person's own Claude Code, as Siphon's plugin: each account a provider whose driver talks to `claude` over its stream-json control protocol — Claude thinks, the thread's tools are an MCP server of each session's whose calls are held for the thread to make — the thread's log the master and Claude Code's sessions its replicas"
-version = "0.1.0"
+version = "0.0.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

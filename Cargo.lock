@@ -455,7 +455,7 @@ checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 
 [[package]]
 name = "beak"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "beak-sys",
  "bytes",
@@ -467,7 +467,7 @@ dependencies = [
 
 [[package]]
 name = "beak-sys"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "bindgen",
 ]
@@ -3896,7 +3896,7 @@ dependencies = [
 
 [[package]]
 name = "octoii"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -3946,7 +3946,7 @@ dependencies = [
 
 [[package]]
 name = "octoii-ai"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "async-stream",
  "base64 0.23.1",
@@ -5541,7 +5541,7 @@ dependencies = [
 
 [[package]]
 name = "siphon"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "beak",
  "bytes",
@@ -5567,7 +5567,7 @@ dependencies = [
 
 [[package]]
 name = "siphon-accounts"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "beak",
  "bytes",
@@ -5583,7 +5583,7 @@ dependencies = [
 
 [[package]]
 name = "siphon-agent"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "anyhow",
  "beak",
@@ -5608,7 +5608,7 @@ dependencies = [
 
 [[package]]
 name = "siphon-browser"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "base64 0.23.1",
  "beak",
@@ -5631,7 +5631,7 @@ dependencies = [
 
 [[package]]
 name = "siphon-claude-code"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "beak",
  "futures",
@@ -5650,7 +5650,7 @@ dependencies = [
 
 [[package]]
 name = "siphon-image"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "fast_image_resize",
  "image",
@@ -5659,7 +5659,7 @@ dependencies = [
 
 [[package]]
 name = "siphon-machine"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "beak",
  "bytes",
@@ -5681,7 +5681,7 @@ dependencies = [
 
 [[package]]
 name = "siphon-mcp"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -5709,7 +5709,7 @@ dependencies = [
 
 [[package]]
 name = "siphon-protocol"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "octoii-ai",
  "serde",
@@ -5725,7 +5725,7 @@ dependencies = [
 
 [[package]]
 name = "siphon-runtime"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "anyhow",
  "beak",
@@ -5743,7 +5743,7 @@ dependencies = [
 
 [[package]]
 name = "siphon-script"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "cc",
  "thiserror 2.0.21",
@@ -5751,7 +5751,7 @@ dependencies = [
 
 [[package]]
 name = "siphon-settings"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "beak",
  "bytes",
@@ -5768,7 +5768,7 @@ dependencies = [
 
 [[package]]
 name = "siphon-shell"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "thiserror 2.0.21",
  "tree-sitter",
@@ -5777,7 +5777,7 @@ dependencies = [
 
 [[package]]
 name = "siphon-terminals"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "beak",
  "bytes",
@@ -5794,7 +5794,7 @@ dependencies = [
 
 [[package]]
 name = "siphon-text"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "similar 3.2.1",
  "thiserror 2.0.21",
@@ -5802,7 +5802,7 @@ dependencies = [
 
 [[package]]
 name = "siphon-threads"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "anyhow",
  "beak",
@@ -5821,7 +5821,7 @@ dependencies = [
 
 [[package]]
 name = "siphon-tools"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "anyhow",
  "beak",

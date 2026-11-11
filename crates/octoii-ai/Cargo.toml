@@ -1,7 +1,7 @@
 [package]
 name = "octoii-ai"
 description = "Octoii's access to models: one vocabulary of conversations in and out, the catalogue of models, and each provider's driver"
-version = "0.1.0"
+version = "0.0.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

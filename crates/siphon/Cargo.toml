@@ -1,7 +1,7 @@
 [package]
 name = "siphon"
 description = "Siphon whole: the runtime on Beak with every program and handler of the agent, its tools, the MCP servers, the terminals and the browser, started as one"
-version = "0.1.0"
+version = "0.0.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

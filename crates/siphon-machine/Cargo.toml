@@ -1,7 +1,7 @@
 [package]
 name = "siphon-machine"
 description = "The machine a piece of work reaches through a namespace of Beak's: paths as the model writes them, files read, written and edited, folders paged, programs run to their end, the repositories git tells of, and search over what the namespace shows"
-version = "0.1.0"
+version = "0.0.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

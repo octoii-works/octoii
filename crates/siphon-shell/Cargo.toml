@@ -1,7 +1,7 @@
 [package]
 name = "siphon-shell"
 description = "The shell's language read: a command line's simple commands as Bash reads them, by tree-sitter's grammar, or why no reading knows them"
-version = "0.1.0"
+version = "0.0.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

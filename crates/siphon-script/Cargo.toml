@@ -1,7 +1,7 @@
 [package]
 name = "siphon-script"
 description = "Scripts: JavaScript run on QuickJS, each on an engine of its own, with the host's functions under a global object it names, a call of one a promise the host settles; bounded by steps and memory, its clock and its random numbers the host's, so a replay runs alike"
-version = "0.1.0"
+version = "0.0.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

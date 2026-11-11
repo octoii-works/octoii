@@ -1,7 +1,7 @@
 [package]
 name = "siphon-runtime"
 description = "Siphon's runtime on Beak: programs run as Beak's processes, a phase at a time; the requests they make answered by handlers in tasks of their own or by a person; what streams while a request is answered, followed by topic"
-version = "0.1.0"
+version = "0.0.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

@@ -1,7 +1,7 @@
 [package]
 name = "siphon-protocol"
 description = "Siphon's protocol as a client speaks it over its WebSocket: the calls it makes, each answered once, and the events of what it subscribed to — its types the threads', the settings' and the vocabulary's own, described in TypeScript for the client"
-version = "0.1.0"
+version = "0.0.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

@@ -1,7 +1,7 @@
 [package]
 name = "siphon-image"
 description = "Images as models and a person's view are given them: an image of any format read fitted within bounds — kept as it is where it fits them, else resized and written again"
-version = "0.1.0"
+version = "0.0.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

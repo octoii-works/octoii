@@ -1,7 +1,7 @@
 [package]
 name = "beak-sys"
 description = "Beak's C ABI as Rust declares it, from include/beak.h: linked with the beak-c crate in its workspace, or with a distribution's built libbeak where `prebuilt` says so"
-version = "0.1.0"
+version = "0.0.1"
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
