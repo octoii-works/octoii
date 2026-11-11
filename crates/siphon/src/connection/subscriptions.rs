@@ -130,39 +130,22 @@ fn entries_told(subscription: &Subscription, thread: &str, cursor: &mut Option<l
     Ok(Some(read.more))
 }
 
-/// The threads: each as it stands first; then, after each commit, each it changed as it now stands, and each it
-/// deleted gone — all of them read again where the journal no longer holds every commit since.
+/// The threads: all of them as they stand first; then, after each commit, each it changed as it now stands, and each
+/// it deleted gone — all of them read again where the journal no longer holds every commit since.
 async fn threads_told(subscription: &Subscription) -> Result<(), Full> {
     let (siphon, sink) = (&subscription.caller.siphon, &subscription.sink);
     let mut committed = siphon.runtime.committed();
     let Ok(mut followed) = siphon.runtime.snapshot().map(|snapshot| Followed::at(&snapshot)) else {
         return Ok(());
     };
-    let mut shown: HashMap<String, Listed> = HashMap::new();
     let Ok(all) = siphon.threads.list() else { return Ok(()) };
-    let mut ids: BTreeSet<String> = all.iter().map(|listed| listed.id.clone()).collect();
+    let mut shown: HashMap<String, Listed> = all.iter().map(|listed| (listed.id.clone(), listed.clone())).collect();
+    sink.offer(&SiphonEvent::Threads {
+        subscription: sink.id().to_owned(),
+        threads: all,
+    })?;
     loop {
-        for id in &ids {
-            match siphon.threads.listed(id) {
-                Ok(listed) => {
-                    if shown.get(id) != Some(&listed) {
-                        sink.offer(&SiphonEvent::Thread {
-                            subscription: sink.id().to_owned(),
-                            thread: Box::new(listed.clone()),
-                        })?;
-                        shown.insert(id.clone(), listed);
-                    }
-                }
-                Err(_) if shown.remove(id).is_some() => {
-                    sink.offer(&SiphonEvent::ThreadGone {
-                        subscription: sink.id().to_owned(),
-                        thread: id.clone(),
-                    })?;
-                }
-                Err(_) => {}
-            }
-        }
-        ids = loop {
+        let ids = loop {
             tokio::select! {
                 () = subscription.stop.cancelled() => return Ok(()),
                 changed = committed.changed() => if changed.is_err() { return Ok(()) },
@@ -181,7 +164,36 @@ async fn threads_told(subscription: &Subscription) -> Result<(), Full> {
                 }
             }
         };
+        threads_changed(sink, &mut shown, |id| siphon.threads.listed(id).ok(), &ids)?;
     }
+}
+
+/// Each of `ids` told as it now stands where `shown` shows it otherwise, or gone where it is gone; `shown` kept as told.
+fn threads_changed(
+    sink: &crate::plugin::Sink,
+    shown: &mut HashMap<String, Listed>,
+    listed: impl Fn(&str) -> Option<Listed>,
+    ids: &BTreeSet<String>,
+) -> Result<(), Full> {
+    for id in ids {
+        match listed(id) {
+            Some(listed) if shown.get(id) != Some(&listed) => {
+                sink.offer(&SiphonEvent::Thread {
+                    subscription: sink.id().to_owned(),
+                    thread: Box::new(listed.clone()),
+                })?;
+                shown.insert(id.clone(), listed);
+            }
+            None if shown.remove(id).is_some() => {
+                sink.offer(&SiphonEvent::ThreadGone {
+                    subscription: sink.id().to_owned(),
+                    thread: id.clone(),
+                })?;
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 /// The settings — the environment's, and the session's device's — as they stand first, then after each commit that

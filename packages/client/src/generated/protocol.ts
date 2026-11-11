@@ -766,9 +766,10 @@ export type SignInBegun = { url: string, };
 /**
  * An event of a subscription to Siphon's, by the subscription's id: a thread's entries appended, with where its
  * reader then stands; its status as it changed; what streams of a request as its model answers, by its offset in the
- * request's stream; a thread of the list as it changed, or gone; the settings as they changed.
+ * request's stream; the threads as they stand, first, then a thread of the list as it changed, or gone; the settings
+ * as they changed.
  */
-export type SiphonEvent = { "event": "entries", subscription: string, entries: Array<Entry>, cursor: Cursor, } | { "event": "status", subscription: string, status: Status, } | { "event": "stream", subscription: string, request: string, offset: number, data: Streamed, } | { "event": "thread", subscription: string, thread: Listed, } | { "event": "thread_gone", subscription: string, thread: string, } | { "event": "settings", subscription: string, settings: Settings, };
+export type SiphonEvent = { "event": "entries", subscription: string, entries: Array<Entry>, cursor: Cursor, } | { "event": "status", subscription: string, status: Status, } | { "event": "stream", subscription: string, request: string, offset: number, data: Streamed, } | { "event": "threads", subscription: string, threads: Array<Listed>, } | { "event": "thread", subscription: string, thread: Listed, } | { "event": "thread_gone", subscription: string, thread: string, } | { "event": "settings", subscription: string, settings: Settings, };
 
 /**
  * What a client subscribes to of Siphon's: a thread — its entries from where the client stood, none for from the start, then its

@@ -107,6 +107,8 @@ async fn a_client_is_welcomed_its_calls_checked_and_answered() {
         .as_str()
         .expect("an id")
         .to_owned();
+    let all = client.event(&listed, |event| event["event"] == "threads").await.0;
+    assert_eq!(all["threads"], json!([]), "the threads as they stand, first: none yet");
     let id = client
         .call("threads.create", json!({ "config": { "title": "first" }, "key": "k1" }))
         .await;
