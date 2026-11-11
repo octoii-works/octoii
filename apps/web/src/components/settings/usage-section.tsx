@@ -6,7 +6,7 @@
  * again — its details on hovering it. Asked again on asking.
  */
 import type { CSSProperties, ReactNode } from "react";
-import type { Provider, ProviderStatus } from "@octoii-works/octoii-client";
+import type { ProviderShown as Provider, ProviderStatus } from "@octoii-works/octoii-client";
 import { Gauge, RefreshCw, TrendingDown, TrendingUp } from "lucide-react";
 import { wakeLabel } from "../../core/time.ts";
 import { countdown, type Pace, type UsageSegment, type UsageWindow, usageOf } from "../../core/usage.ts";

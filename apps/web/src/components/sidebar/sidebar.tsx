@@ -141,7 +141,7 @@ function ThreadList(props: {
 		row,
 		standing: standingOf(row),
 		subThreads: delegated.get(row.id)?.length ?? 0,
-		vendor: row.manifest.model === undefined ? undefined : vendorOfReference(directory, row.manifest.model),
+		vendor: row.config.model === undefined || row.config.model === null ? undefined : vendorOfReference(directory, row.config.model),
 		current: props.current.includes(row.id),
 		now: props.now,
 		onFilter: props.onFilter,

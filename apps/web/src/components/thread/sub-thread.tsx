@@ -79,7 +79,7 @@ function DelegationRow(props: { readonly call: CallLine; readonly row: Listed | 
 	const worked = workedOf([row]);
 	return (
 		<SubThreadRow
-			title={row?.manifest.title ?? call.subject ?? callWords(call)}
+			title={row?.config.title ?? call.subject ?? callWords(call)}
 			standing={standing}
 			detail={undefined}
 			label={STANDINGS[standing].label}
@@ -99,7 +99,7 @@ export function SubThreadTold(props: { readonly said: Said }): ReactNode {
 	return (
 		<div>
 			<SubThreadRow
-				title={row?.manifest.title ?? "Sub-thread"}
+				title={row?.config.title ?? "Sub-thread"}
 				standing={standing}
 				detail={detail === "" ? undefined : detail}
 				label={row === undefined ? "Deleted" : TOLD[standing]}

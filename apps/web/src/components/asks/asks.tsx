@@ -12,11 +12,13 @@ import { useClient, useThreads } from "@octoii-works/octoii-client/react";
 import { FilePen, MessageCircleQuestion, ShieldAlert, ShieldQuestion, SquareTerminal, Wrench, X } from "lucide-react";
 import {
 	type Access,
+	allowed,
 	alwaysText,
 	type Choice,
 	choiceAnswer,
 	choose,
 	type DetailLine,
+	denied,
 	DISMISSED,
 	type Draft,
 	type Field as AskField,
@@ -51,14 +53,14 @@ import { Switch } from "../ui/switch.tsx";
  * folder the thread works in and its project's read from its row.
  */
 export function AskDock(props: { readonly thread: string; readonly asks: readonly Ask[] }): ReactNode {
-	const manifest = useThreads()?.find((row) => row.id === props.thread)?.manifest;
-	const [first] = props.asks.toSorted((a, b) => (a.request.key < b.request.key ? -1 : 1));
+	const row = useThreads()?.find((each) => each.id === props.thread);
+	const [first] = props.asks.toSorted((a, b) => (a.key < b.key ? -1 : 1));
 	if (first === undefined) return null;
 	return (
 		<section aria-label="Waiting for you">
 			{props.asks.length > 1 ? <p className="mb-1.5 px-1 text-end text-xs text-muted-foreground tabular-nums">1 of {props.asks.length}</p> : null}
 			<div className="max-h-[70dvh] overflow-y-auto rounded-lg border border-border bg-card p-4 shadow-raised">
-				<AskForm key={first.request.key} thread={props.thread} workspace={manifest?.workspace} project={manifest?.project} ask={first} />
+				<AskForm key={first.key} thread={props.thread} workspace={row?.config.workspace ?? undefined} project={row?.project ?? undefined} ask={first} />
 			</div>
 		</section>
 	);
@@ -77,7 +79,7 @@ function AskForm(props: {
 	const answer = (value: Json): void =>
 		startAnswering(async () => {
 			try {
-				await client.answer(props.thread, props.ask.request.key, value);
+				await client.answer(props.thread, props.ask.key, value);
 			} catch (error) {
 				setRefused(error instanceof Error ? error.message : String(error));
 			}
@@ -88,19 +90,11 @@ function AskForm(props: {
 		<fieldset disabled={answering} className="contents">
 			{form.kind === "trust" ? <Trust folder={form.folder} servers={form.servers} onAnswer={answer} /> : null}
 			{form.kind === "permission" ? (
-				<Permission
-					tool={form.tool}
-					arguments={form.arguments}
-					access={form.access}
-					doubt={form.doubt}
-					workspace={props.workspace}
-					project={props.project}
-					onAnswer={answer}
-				/>
+				<Permission tool={form.tool} arguments={form.arguments} access={form.access} workspace={props.workspace} project={props.project} onAnswer={answer} />
 			) : null}
 			{form.kind === "question" ? <Questions questions={form.questions} onAnswer={answer} /> : null}
-			{form.kind === "choices" ? <Choices name={props.ask.request.name} property={form.key} choices={form.choices} onAnswer={answer} /> : null}
-			{form.kind === "fields" ? <Fields name={props.ask.request.name} fields={form.fields} onAnswer={answer} /> : null}
+			{form.kind === "choices" ? <Choices name={props.ask.name} property={form.key} choices={form.choices} onAnswer={answer} /> : null}
+			{form.kind === "fields" ? <Fields name={props.ask.name} fields={form.fields} onAnswer={answer} /> : null}
 			{form.kind === "shown" ? <Shown ask={props.ask} /> : null}
 			{refused === undefined ? null : <p className="mt-2 text-xs text-error-foreground">{refused}</p>}
 		</fieldset>
@@ -130,7 +124,7 @@ function Trust(props: { readonly folder: string; readonly servers: readonly Serv
 				{props.servers.map((server) => (
 					<li key={server.name} className="truncate">
 						<span className="text-foreground">{server.name}</span>
-						<span className="text-muted-foreground"> — {[server.command, ...(server.args ?? [])].join(" ")}</span>
+						<span className="text-muted-foreground"> — {server.runs}</span>
 					</li>
 				))}
 			</ul>
@@ -150,9 +144,9 @@ function Trust(props: { readonly folder: string; readonly servers: readonly Serv
 const ACTION_ICONS: Readonly<Record<Access["action"], typeof Wrench>> = { command: SquareTerminal, edit: FilePen, tool: Wrench };
 
 /**
- * A call's permission, as a request to the person: what it asks to do, and a mark where it must go beyond the sandbox
- * or the model that judged it doubted it; what will happen, line by line; why it must go further, and what the judge
- * doubted. Then how long the person lets it — just once, or always in the thread's project as its patterns say — and
+ * A call's permission, as a request to the person: what it asks to do, and a mark where it must go beyond the sandbox;
+ * what will happen, line by line; why it must go further. Then how long the person lets it — just once, or always in
+ * the thread's project as its patterns say — and
  * allowed, ⌘↵ wherever the focus is, or denied, Esc within it — with what they write for the model of what to do
  * instead, where they write any, which Enter denies with.
  */
@@ -160,7 +154,6 @@ function Permission(props: {
 	readonly tool: string;
 	readonly arguments: unknown;
 	readonly access: Access;
-	readonly doubt: string | undefined;
 	readonly workspace: string | undefined;
 	readonly project: string | undefined;
 	readonly onAnswer: (value: Json) => void;
@@ -169,8 +162,8 @@ function Permission(props: {
 	const [message, setMessage] = useState("");
 	const Icon = ACTION_ICONS[props.access.action];
 	const always = alwaysText(props.access, props.project);
-	const allow = (): void => props.onAnswer({ reply: always !== undefined && scope === "always" ? "always" : "once" });
-	const deny = (): void => props.onAnswer(message.trim() === "" ? { reply: "reject" } : { reply: "reject", message: message.trim() });
+	const allow = (): void => props.onAnswer(allowed(always !== undefined && scope === "always"));
+	const deny = (): void => props.onAnswer(denied(message));
 	useShortcut("mod+Enter", allow);
 	const keys = (event: KeyboardEvent): void => {
 		if (event.key !== "Escape") return;
@@ -184,21 +177,15 @@ function Permission(props: {
 					<Icon />
 				</IconTile>
 				<span className="min-w-0 flex-1 truncate text-ui font-medium">{permissionTitle(props.tool, props.access)}</span>
-				{props.access.escalate === true ? (
+				{props.access.escalate ? (
 					<Pill tone="waiting" icon={<ShieldAlert />}>
 						Beyond the sandbox
 					</Pill>
 				) : null}
-				{props.doubt === undefined ? null : (
-					<Pill tone="waiting" icon={<ShieldAlert />}>
-						Doubted
-					</Pill>
-				)}
 			</div>
 			<p className="mb-1 text-xs text-muted-foreground">What will happen</p>
 			<Detail lines={permissionDetail(props.tool, props.arguments, props.access, props.workspace)} />
 			{props.access.justification === undefined ? null : <p className="mt-2 text-ui text-muted-foreground">{props.access.justification}</p>}
-			{props.doubt === undefined ? null : <p className="mt-2 text-ui text-warning-foreground">{props.doubt}</p>}
 			{always === undefined ? null : (
 				<div className="mt-3 flex flex-col gap-1">
 					<Segmented
@@ -293,7 +280,7 @@ function Questions(props: { readonly questions: readonly Question[]; readonly on
 	return (
 		<Asked
 			icon={<MessageCircleQuestion className="size-4" />}
-			title={question.header}
+			title={question.header ?? "A question"}
 			aside={
 				<>
 					{props.questions.length > 1 ? (
@@ -403,7 +390,9 @@ function OptionWords(props: { readonly option: Option; readonly place: number })
 		<>
 			<span className="flex min-w-0 flex-1 flex-col gap-0.5">
 				<span className="text-ui font-medium">{props.option.label}</span>
-				{props.option.description === undefined ? null : <span className="text-xs text-muted-foreground">{props.option.description}</span>}
+				{props.option.description === undefined || props.option.description === null ? null : (
+					<span className="text-xs text-muted-foreground">{props.option.description}</span>
+				)}
 			</span>
 			{props.place < DIGITS.length ? <Kbd className="pointer-coarse:hidden">{DIGITS[props.place]}</Kbd> : null}
 		</>
@@ -494,10 +483,8 @@ function FieldRows(props: { readonly fields: readonly AskField[]; readonly given
 /** A request this page cannot ask: its name and what it was made with, as they came. */
 function Shown(props: { readonly ask: Ask }): ReactNode {
 	return (
-		<Asked icon={<MessageCircleQuestion className="size-4" />} title={props.ask.request.name}>
-			<pre className="max-h-40 overflow-auto rounded-md border border-border px-3 py-2 font-mono text-xs">
-				{JSON.stringify(props.ask.request.payload ?? null, null, 2)}
-			</pre>
+		<Asked icon={<MessageCircleQuestion className="size-4" />} title={props.ask.name}>
+			<pre className="max-h-40 overflow-auto rounded-md border border-border px-3 py-2 font-mono text-xs">{JSON.stringify(props.ask.payload, null, 2)}</pre>
 			<p className="mt-2 text-xs text-muted-foreground">This page cannot answer this request.</p>
 		</Asked>
 	);

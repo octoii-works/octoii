@@ -3,7 +3,7 @@
  * image files a message names in Markdown — the model's, mostly — read from the machine as they are now. Each is drawn
  * small fitted to one box, and read whole once it is opened.
  */
-import { matches } from "@octoii-works/octoii-client";
+import { matches } from "./schema.ts";
 import { Type } from "typebox";
 import { type Attachment, fileAddress, isImage } from "./attachments.ts";
 import { nameOf } from "./files.ts";
@@ -48,7 +48,7 @@ export function picturesOfParagraph(children: readonly unknown[]): readonly Pict
 /** The box a picture is drawn small in, in pixels: twice a tile's height, and three times that across — the widest a tile goes — for a screen of twice the pixels. */
 export const PICTURE_BOX = { width_max: 768, height_max: 256 } as const;
 
-/** Where the picture of the kept image `ref` is read drawn small: fitted by the node to the box. */
-export function pictureAddress(ref: string): string {
-	return `${fileAddress(ref)}?width_max=${String(PICTURE_BOX.width_max)}&height_max=${String(PICTURE_BOX.height_max)}`;
+/** Where the picture of the image the thread `thread` keeps by `ref` is read drawn small: fitted by the node to the box. */
+export function pictureAddress(thread: string, ref: string): string {
+	return `${fileAddress(thread, ref)}?width_max=${String(PICTURE_BOX.width_max)}&height_max=${String(PICTURE_BOX.height_max)}`;
 }

@@ -30,7 +30,7 @@ export type ModeControlProps = { readonly mode: Mode; readonly onChoose: (mode: 
 export function ModeControl(props: ModeControlProps): ReactNode {
 	const [open, setOpen] = useState(false);
 	const route = useRoute();
-	const reviewModel = useSettings()?.environment.review_model;
+	const reviewModel = useSettings()?.environment.review_model ?? undefined;
 	useShortcut(CHOOSE_MODE, () => setOpen(!open));
 	const Icon = ICONS[props.mode];
 	return (

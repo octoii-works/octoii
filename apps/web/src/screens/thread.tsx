@@ -8,10 +8,11 @@
  */
 import { type ReactNode, useRef, useState } from "react";
 import type { Conversation, Listed } from "@octoii-works/octoii-client";
-import { useClient, useConversation, useThreads } from "@octoii-works/octoii-client/react";
+import { useClient, useConversation, usePages, useTerminals, useThreads } from "@octoii-works/octoii-client/react";
 import type { Device } from "../core/device.ts";
 import { projectOf, statusOf, titleOf } from "../core/threads.ts";
 import { contentOf } from "../core/attachments.ts";
+import { limitedOf } from "../core/limits.ts";
 import { firstSaid, itemsOf, withLimited } from "../core/timeline.ts";
 import { AskDock } from "../components/asks/asks.tsx";
 import { Composer } from "../components/composer/composer.tsx";
@@ -24,6 +25,7 @@ import { RightPanel } from "../components/panel/right-panel.tsx";
 import { MessageThreadContext } from "../components/thread/message-thread.ts";
 import { failed } from "../components/state/notices.ts";
 import { useSeen } from "../components/effects/seen.ts";
+import { useDirectory } from "../components/composer/directory.ts";
 
 /** What a thread's page is given: its thread, and the device's settings. */
 export type ThreadScreenProps = {
@@ -37,23 +39,26 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 	const client = useClient();
 	const conversation = useConversation(thread);
 	const row = useThreads()?.find((each) => each.id === thread);
+	const terminals = useTerminals(thread) ?? [];
+	const pages = usePages(thread) ?? [];
+	const providers = useDirectory()?.providers;
 	useSeen(thread);
 	// The input the person last sent from here, by the id it was delivered by, which the timeline keeps near its top as
 	// the reply grows under it.
 	const [sent, setSent] = useState<string | undefined>(undefined);
 	const timeline = useRef<TimelineHandle>(null);
-	const items = withLimited(itemsOf(conversation), row?.standing);
+	const items = withLimited(itemsOf(conversation), limitedOf(row, providers), conversation.status?.resuming_at ?? undefined);
 	const project = row === undefined ? undefined : projectOf(row);
-	const workspace = row?.manifest.workspace;
+	const workspace = row?.config.workspace ?? undefined;
 	const said = firstSaid(items);
 	// Where the thread's turns stand, which its repository and its changes are read again at.
-	const revision = conversation.status ?? "";
+	const revision = `${conversation.status?.turn ?? ""} ${String(conversation.status?.ended_at ?? "")}`;
 	const details: DetailsProps = { thread, row, turns: conversation.turns, compactions: conversation.compactions, revision };
 	return (
 		<>
 			<Pane>
 				<ChatHeader
-					title={row?.manifest.title ?? (said === undefined ? "New thread" : titleOf(said))}
+					title={row?.config.title ?? (said === undefined ? "New thread" : titleOf(said))}
 					status={row === undefined ? undefined : statusOf(row)}
 					{...(project === undefined ? {} : { project })}
 					actions={
@@ -65,15 +70,15 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 				/>
 				{/* The timeline's room, between the header and the dock, its details floating at its top right. */}
 				<div className="relative flex min-h-0 flex-1 flex-col">
-					<MessageThreadContext value={{ thread, workspace, pages: conversation.pages }}>
+					<MessageThreadContext value={{ thread, workspace, pages }}>
 						<Timeline
 							ref={timeline}
 							thread={thread}
-							parent={row?.manifest.parent?.thread}
+							parent={row?.parent?.thread}
 							items={items}
 							read={conversation.read}
 							complete={conversation.complete}
-							working={conversation.status === "running"}
+							working={conversation.status?.turn === "running"}
 							waiting={conversation.asks.length}
 							sent={sent}
 							onEarlier={() => void client.readOlder(thread).catch((error: unknown) => failed("Earlier messages could not be read", error))}
@@ -93,7 +98,7 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 				/>
 			</Pane>
 			<PanelFrame>
-				<RightPanel thread={thread} folder={workspace} terminals={conversation.terminals} pages={conversation.pages} revision={revision} />
+				<RightPanel thread={thread} folder={workspace} terminals={terminals} pages={pages} revision={revision} />
 			</PanelFrame>
 		</>
 	);
@@ -114,7 +119,7 @@ function Dock(props: {
 }): ReactNode {
 	const { thread, row, conversation } = props;
 	const client = useClient();
-	const working = conversation.status === "running" || conversation.inbox.length > 0;
+	const working = conversation.status?.turn === "running" || conversation.inbox.length > 0;
 	return (
 		<div className="relative shrink-0 bg-background pb-[max(--spacing(4),env(safe-area-inset-bottom))]">
 			<div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-full h-6 bg-linear-to-t from-background to-transparent" />
@@ -122,24 +127,24 @@ function Dock(props: {
 			<div className="overflow-hidden scrollbar-even">
 				<div className="chat-column">
 					{/* What waits steers a turn that works, docked till its next step; sent to a thread at rest, it begins the next turn, shown in the timeline as it does. */}
-					<Queued thread={thread} inbox={conversation.status === "running" ? conversation.inbox : []} />
+					<Queued thread={thread} inbox={conversation.status?.turn === "running" ? conversation.inbox : []} />
 					{conversation.asks.length > 0 ? (
 						<AskDock thread={thread} asks={conversation.asks} />
 					) : (
 						<Composer
-							model={row?.manifest.model}
+							model={row?.config.model ?? undefined}
 							onModel={(model) => void client.configure(thread, { model }).catch((error: unknown) => failed("The model could not be changed", error))}
-							mode={row?.manifest.mode}
+							mode={row?.config.mode ?? undefined}
 							onMode={(mode) => void client.configure(thread, { mode }).catch((error: unknown) => failed("The mode could not be changed", error))}
-							effort={row?.manifest.effort}
+							effort={row?.config.effort ?? undefined}
 							onEffort={(effort) => void client.configure(thread, { effort }).catch((error: unknown) => failed("The effort could not be changed", error))}
 							working={working}
 							sendShortcut={props.device.send_shortcut}
 							{...(working ? { placeholder: "Steer the work: your message joins at its next step" } : {})}
 							draft={{ thread }}
-							folder={row?.manifest.workspace}
+							folder={row?.config.workspace ?? undefined}
 							onSend={async ({ text, attachments }) => {
-								props.onSent((await client.deliver(thread, { message: { role: "user", content: contentOf(text, attachments) } })).delivery);
+								props.onSent(await client.deliver(thread, contentOf(text, attachments)));
 							}}
 							onStop={() => void client.stop(thread).catch((error: unknown) => failed("The thread could not be stopped", error))}
 						/>

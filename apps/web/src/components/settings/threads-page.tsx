@@ -4,7 +4,7 @@
  * person always allowed in each project, each taken back on its own — and the threads the person archived.
  */
 import { type ReactNode, useState, useTransition } from "react";
-import type { Action, Grants, Mode } from "@octoii-works/octoii-client";
+import type { Granted, Mode } from "@octoii-works/octoii-client";
 import { useClient, useSettings } from "@octoii-works/octoii-client/react";
 import { ChevronsUpDown, FilePen, FolderGit2, SquareTerminal, Wrench, X } from "lucide-react";
 import { MODES, modeOffered, modeShown } from "../../core/modes.ts";
@@ -40,7 +40,7 @@ export function ThreadsPage(): ReactNode {
 							label="Mode"
 							value={environment.thread_mode}
 							onValueChange={choose}
-							items={MODES.filter((each) => modeOffered(each, environment.review_model) || each === environment.thread_mode).map((each) => ({
+							items={MODES.filter((each) => modeOffered(each, environment.review_model ?? undefined) || each === environment.thread_mode).map((each) => ({
 								value: each,
 								label: modeShown(each).label,
 							}))}
@@ -51,7 +51,7 @@ export function ThreadsPage(): ReactNode {
 						description="Judges a call in Auto before it runs, where the thread would otherwise ask you. Auto is offered once one is named."
 						anchor="setting-review-model"
 					>
-						<ReviewModel model={environment.review_model} />
+						<ReviewModel model={environment.review_model ?? undefined} />
 					</Row>
 				</Section>
 			)}
@@ -105,6 +105,28 @@ function ReviewModel(props: { readonly model: string | undefined }): ReactNode {
 }
 
 /** Each action's icon: a pen for an edit, a terminal for a command, a wrench for a server's tool. */
+/** What a grant lets go ahead: commands, edits of files, or a tool. */
+type Action = "command" | "edit" | "tool";
+
+/** A grant of a project's, as a line shows it: what it lets go ahead, and its pattern. */
+type Grant = { readonly action: Action; readonly pattern: string };
+
+/** The grants of a project, each a line: its commands, then its edits, then its tools. */
+function grantsOf(granted: Granted): readonly Grant[] {
+	const { commands, paths, tools } = granted.grants;
+	return [
+		...commands.map((pattern): Grant => ({ action: "command", pattern })),
+		...paths.map((pattern): Grant => ({ action: "edit", pattern })),
+		...tools.map((pattern): Grant => ({ action: "tool", pattern })),
+	];
+}
+
+/** The grant `grant` of the project at `folder`, alone, as what is taken back names it. */
+function grantedAlone(folder: string, grant: Grant): Granted {
+	const only = (action: Action): string[] => (grant.action === action ? [grant.pattern] : []);
+	return { folder, grants: { commands: only("command"), paths: only("edit"), tools: only("tool") } };
+}
+
 const ACTION_ICONS: Readonly<Record<Action, typeof Wrench>> = { edit: FilePen, command: SquareTerminal, tool: Wrench };
 
 /** What a grant lets go ahead, in words. */
@@ -121,11 +143,11 @@ function ProjectGrants(): ReactNode {
 	const outcome = useOutcome("grants.list", {}, revision);
 	if (outcome === undefined) return null;
 	if ("failure" in outcome) return <p className="px-4 text-ui text-error-foreground">{outcome.failure}</p>;
-	const projects = outcome.result.grants.filter((each) => each.allow.length > 0);
-	const revoke = (grants: Grants, action: Action, pattern: string): void =>
+	const projects = outcome.result.projects.filter((each) => grantsOf(each).length > 0);
+	const revoke = (granted: Granted, grant: Grant): void =>
 		startRevoking(async () => {
 			try {
-				await client.revokeGrant(grants.folder, action, pattern);
+				await client.revokeGrant(grantedAlone(granted.folder, grant));
 				setRevision((count) => count + 1);
 			} catch (error) {
 				failed("The grant could not be taken back", error);
@@ -144,13 +166,13 @@ function ProjectGrants(): ReactNode {
 							<span className="min-w-0 truncate text-xs font-normal text-muted-foreground">{grants.folder}</span>
 						</p>
 						<ul className="flex flex-col">
-							{grants.allow.map((grant) => {
+							{grantsOf(grants).map((grant) => {
 								const Icon = ACTION_ICONS[grant.action];
 								return (
 									<li key={`${grant.action}:${grant.pattern}`} className="flex h-control items-center gap-2 ps-6">
 										<Icon className="size-3.5 shrink-0 text-muted-foreground" />
 										<span className="min-w-0 flex-1 truncate font-mono text-xs">{grantText(grant.action, grant.pattern)}</span>
-										<Button variant="ghost-muted" size="xs" disabled={revoking} onClick={() => revoke(grants, grant.action, grant.pattern)}>
+										<Button variant="ghost-muted" size="xs" disabled={revoking} onClick={() => revoke(grants, grant)}>
 											Take back
 										</Button>
 									</li>

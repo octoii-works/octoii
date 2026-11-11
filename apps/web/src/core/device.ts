@@ -5,7 +5,7 @@
  * its default where nothing is set. What is kept is read through the schema of what it may hold; whatever else it holds
  * is left.
  */
-import { matches } from "@octoii-works/octoii-client";
+import { matches } from "./schema.ts";
 import { type Static, Type } from "typebox";
 
 /** What a device may have set, each field on its own. */

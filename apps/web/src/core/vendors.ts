@@ -4,7 +4,7 @@
  * alone; or the family its id names, as a server on the person's own machine names what it runs — and a provider by the
  * service it is, or the one an account the person added is another of.
  */
-import type { Provider } from "@octoii-works/octoii-client";
+import type { ProviderShown as Provider } from "@octoii-works/octoii-client";
 import { baseProviderOf, type Directory, providerOf } from "./models.ts";
 
 /** A vendor the page has a mark for. */
@@ -122,7 +122,7 @@ export function vendorOfModel(provider: string, id: string): Vendor | undefined 
 
 /** The vendor of `provider`: the service it is, or the one an account the person added is another of; none the page knows. */
 export function vendorOfProvider(provider: Provider): Vendor | undefined {
-	return PROVIDERS[provider.account?.of ?? provider.id];
+	return PROVIDERS[provider.account?.provider ?? provider.id];
 }
 
 /** The vendor of the model a thread names by `reference`, its provider's own read from `directory`. */

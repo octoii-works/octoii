@@ -4,7 +4,7 @@
  * by side, its context widened by its two versions where the person asks for more.
  */
 import type { ReactNode } from "react";
-import type { Changed, ChangedFile, Comparison } from "@octoii-works/octoii-client";
+import type { ChangedFile as Changed, ChangedFile, Comparison } from "@octoii-works/octoii-client";
 import { useClient } from "@octoii-works/octoii-client/react";
 import { PatchDiff } from "@pierre/diffs/react";
 import type { FileDiffLoadedFiles, FileDiffMetadata } from "@pierre/diffs";
@@ -79,7 +79,12 @@ function StatusIcon(props: { readonly file: Changed }): ReactNode {
 function FilePatch(props: FileChangeProps): ReactNode {
 	const client = useClient();
 	const { folder, comparison, file, layout } = props;
-	const named: ChangedFile = { path: file.path, status: file.status, ...(file.old_path === undefined ? {} : { old_path: file.old_path }) };
+	const named: ChangedFile = {
+		path: file.path,
+		status: file.status,
+		binary: file.binary,
+		...(file.old_path === undefined ? {} : { old_path: file.old_path }),
+	};
 	const outcome = useOutcome("git.patch", file.binary ? undefined : { path: folder, comparison, file: named }, props.revision);
 	if (file.binary) return <Note>A binary file: its lines are not shown.</Note>;
 	if (outcome === undefined) return <Note>Reading its changes…</Note>;

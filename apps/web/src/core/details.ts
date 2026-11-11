@@ -2,13 +2,10 @@
  * A thread's details as its card tells them: how full its window is — the tokens its model's latest request held
  * against the window its model takes — and what its requests cost and how much of what they read was cached.
  */
-import { matches, type Turn, type Usage } from "@octoii-works/octoii-client";
-import { Type } from "typebox";
+import type { ThreadUsage as Usage, Turn } from "@octoii-works/octoii-client";
 
 /** How full a window is: the tokens it holds now, and the most its model takes. */
 export type Context = { readonly used: number; readonly window: number };
-
-const RepliedSchema = Type.Object({ usage: Type.Object({ input_tokens: Type.Number(), output_tokens: Type.Number() }) });
 
 /**
  * How full the window is that the thread's next request asks on, its model taking `window` tokens: what its latest
@@ -20,7 +17,10 @@ export function contextOf(turns: readonly Turn[], window: number | undefined): C
 	for (const turn of turns.toReversed()) {
 		for (const step of turn.steps.toReversed()) {
 			const response = step.reply?.response;
-			if (matches(RepliedSchema, response)) return { used: response.usage.input_tokens + response.usage.output_tokens, window };
+			const used = response?.usage;
+			if (response !== undefined && used !== undefined && used !== null) {
+				return { used: (response.context_tokens ?? used.input_tokens) + used.output_tokens, window };
+			}
 		}
 	}
 	return undefined;

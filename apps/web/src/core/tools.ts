@@ -6,7 +6,7 @@
  * it is, its arguments shown as their fields; and a call that did not go through is shown as what it was given and
  * what it was told, whatever its tool.
  */
-import { matches } from "@octoii-works/octoii-client";
+import { matches } from "./schema.ts";
 import { type Static, Type } from "typebox";
 import {
 	type CallState,

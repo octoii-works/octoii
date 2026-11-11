@@ -15,10 +15,10 @@ export function useSeen(thread: string): void {
 	const shown = useSyncExternalStore(subscribe, () => document.visibilityState === "visible");
 	const row = rows?.find((each) => each.id === thread);
 	const arrived = row === undefined || rows === undefined ? 0 : arrivedAt(row, standingsOf(rows)(row));
-	const seen = row?.manifest.seen_until ?? 0;
+	const seen = row?.marks.seen_until ?? 0;
 	useEffect(() => {
 		if (!shown || arrived <= seen) return;
-		client.configure(thread, { seen_until: arrived }).catch((error: unknown) => failed("The thread could not be marked seen", error));
+		client.mark(thread, { seen_until: arrived }).catch((error: unknown) => failed("The thread could not be marked seen", error));
 	}, [client, thread, shown, arrived, seen]);
 }
 

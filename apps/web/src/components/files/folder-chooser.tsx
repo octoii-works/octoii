@@ -48,7 +48,7 @@ function Chooser({ ref, ...props }: FolderChooserProps & { readonly ref: Ref<HTM
 	const [at, setAt] = useState(props.start ?? HOME);
 	const [picked, setPicked] = useState<string | undefined>(undefined);
 	const [hidden, setHidden] = useState(false);
-	const home = useRead("files.list", { path: HOME })?.path;
+	const home = useRead("files.list", { path: HOME, limit: 1 })?.path;
 	const folder = useFolder(at);
 	const open = folder !== undefined && "path" in folder ? folder.path : undefined;
 	const go = (path: string): void => {
@@ -236,7 +236,7 @@ function PathField(props: { readonly start: string; readonly onGo: (path: string
 			props.onCancel();
 		} else if (event.key === "Enter") {
 			event.preventDefault();
-			client.call("files.list", { path: typed.trim() }).then(
+			client.call("files.list", { path: typed.trim(), limit: 1 }).then(
 				(page) => props.onGo(page.path),
 				(error: unknown) => setRefused(failureOf(error)),
 			);

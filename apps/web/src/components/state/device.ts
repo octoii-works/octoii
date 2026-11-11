@@ -5,10 +5,18 @@
  * which hears the client's settings as they come, outside any component.
  */
 import { useSyncExternalStore } from "react";
-import type { Client, DeviceSettings, Settings } from "@octoii-works/octoii-client";
+import type { Client, JsonValue, Settings } from "@octoii-works/octoii-client";
 import { useClient } from "@octoii-works/octoii-client/react";
 import { DEVICE_DEFAULTS, type Device, type DeviceChange, deviceOf } from "../../core/device.ts";
 import { failed } from "./notices.ts";
+
+/** What the node keeps for this device: its names and values, which the node reads none of. */
+type DeviceSettings = Readonly<Record<string, JsonValue>>;
+
+/** What the node told of this device, as its names and values: none where it told something else. */
+function deviceSettingsOf(told: JsonValue): DeviceSettings {
+	return typeof told === "object" && told !== null && !Array.isArray(told) ? told : {};
+}
 
 /** Where the browser keeps its copy. */
 const KEY = "octoii.device";
@@ -17,8 +25,8 @@ const KEY = "octoii.device";
 function copied(): DeviceSettings {
 	try {
 		const text = localStorage.getItem(KEY);
-		const kept: unknown = text === null ? undefined : JSON.parse(text);
-		return typeof kept === "object" && kept !== null && !Array.isArray(kept) ? Object.fromEntries(Object.entries(kept)) : {};
+		// SAFETY: what JSON.parse gives is JSON.
+		return text === null ? {} : deviceSettingsOf(JSON.parse(text) as JsonValue);
 	} catch {
 		return {};
 	}
@@ -33,8 +41,8 @@ function copy(kept: DeviceSettings): void {
 }
 
 /** `kept` with each change laid over it: a name given its value, or let go where it is null. */
-function laidOver(kept: DeviceSettings, changes: Readonly<Record<string, unknown>>): DeviceSettings {
-	const over: Record<string, unknown> = { ...kept };
+function laidOver(kept: DeviceSettings, changes: DeviceSettings): DeviceSettings {
+	const over: Record<string, JsonValue> = { ...kept };
 	for (const [name, value] of Object.entries(changes)) {
 		if (value === null) delete over[name];
 		else over[name] = value;
@@ -54,7 +62,7 @@ class DeviceStore {
 	/** What the node told last, else the browser's copy. */
 	#kept: DeviceSettings = copied();
 	/** The changes made here the node has not told of yet: each name's value, or null where it is let go. */
-	#laid: Readonly<Record<string, unknown>> = {};
+	#laid: DeviceSettings = {};
 	#device: Device;
 
 	constructor(client: Client) {
@@ -74,7 +82,7 @@ class DeviceStore {
 	readonly view = (): Device => this.#device;
 
 	/** Sets what `change` sets, laid over what the node holds till it tells of it. */
-	readonly set = (change: Readonly<Record<string, unknown>>): void => {
+	readonly set = (change: Readonly<Record<string, JsonValue>>): void => {
 		this.#laid = { ...this.#laid, ...change };
 		this.#publish();
 		this.#client.setSettings({ device: change }).catch((error: unknown) => failed("The setting could not be kept", error));
@@ -83,9 +91,9 @@ class DeviceStore {
 	/** What the node told: kept, copied for the next page's first paint, and what it now holds of the changes made here its own again. */
 	#heard(settings: Settings | undefined): void {
 		if (settings === undefined) return;
-		this.#kept = settings.device;
-		copy(settings.device);
-		const kept = settings.device;
+		const kept = deviceSettingsOf(settings.device);
+		this.#kept = kept;
+		copy(kept);
 		this.#laid = Object.fromEntries(Object.entries(this.#laid).filter(([name, value]) => !holds(kept, name, value)));
 		this.#publish();
 	}

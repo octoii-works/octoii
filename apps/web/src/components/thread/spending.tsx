@@ -6,7 +6,7 @@
  * line of its own at the end.
  */
 import { type ReactNode, useState } from "react";
-import type { Conversation, Turn, Usage } from "@octoii-works/octoii-client";
+import type { Conversation, ThreadUsage as Usage, Turn } from "@octoii-works/octoii-client";
 import { modelLabel } from "../../core/models.ts";
 import { dollars, tokens } from "../../core/numbers.ts";
 import { amountOf, barsOf, type Measure, mostOf, type Spent, spentOf } from "../../core/spending.ts";

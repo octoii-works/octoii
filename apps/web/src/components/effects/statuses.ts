@@ -3,8 +3,9 @@
  * the usage page — as the component that asks first draws, again as a connection opens, and as it asks again.
  */
 import { useEffect, useState } from "react";
-import type { Provider, ProviderStatus } from "@octoii-works/octoii-client";
+import type { ProviderShown as Provider, ProviderStatus } from "@octoii-works/octoii-client";
 import { useClient, useConnection } from "@octoii-works/octoii-client/react";
+import { refusedStatus } from "../../core/providers.ts";
 import { inTurns } from "../../core/turns.ts";
 import { failureOf } from "./read.ts";
 
@@ -29,8 +30,7 @@ export function useStatuses(providers: readonly Provider[] | undefined, asked: n
 		if (!open || ids === undefined) return undefined;
 		let current = true;
 		const each = ids === "" ? [] : ids.split(" ");
-		const told = async (id: string): Promise<ProviderStatus> =>
-			client.providerStatus(id).catch((error: unknown) => ({ connected: false, problem: failureOf(error) }));
+		const told = async (id: string): Promise<ProviderStatus> => client.providerStatus(id).catch((error: unknown) => refusedStatus(failureOf(error)));
 		void inTurns(each, AT_ONCE, async (id) => [id, await told(id)] as const).then((answered) => {
 			if (current) setRead({ key, statuses: new Map(answered) });
 		});

@@ -1,6 +1,7 @@
 /**
- * Attaching files to a draft: each file the person pastes, drops or picks sent to the node at once, shown as it goes,
- * and added to the draft once the node kept it; one the node refused, or no model reads, told and let go of.
+ * Attaching files to a draft: each file the person pastes, drops or picks sent to the thread at once, shown as it goes,
+ * and added to the draft once the thread kept it — or, where the thread is not made yet, held with the draft, to be
+ * sent as its first message makes it; one the node refused, or no model reads, told and let go of.
  */
 import { useState } from "react";
 import { useClient } from "@octoii-works/octoii-client/react";
@@ -20,8 +21,8 @@ export type Attaching = {
 
 let sent = 0;
 
-/** Attaching files to `draft`. */
-export function useAttaching(draft: DraftHandle): Attaching {
+/** Attaching files to `draft`, of the thread `thread` — none for a thread not made yet. */
+export function useAttaching(draft: DraftHandle, thread: string | undefined): Attaching {
 	const client = useClient();
 	const [sending, setSending] = useState<readonly Sending[]>([]);
 	const [failure, setFailure] = useState<string | undefined>(undefined);
@@ -34,6 +35,10 @@ export function useAttaching(draft: DraftHandle): Attaching {
 				continue;
 			}
 			sent += 1;
+			if (thread === undefined) {
+				draft.attach({ ref: `held-${String(sent)}`, media_type: mediaType, name: file.name, size: file.size, bytes: file });
+				continue;
+			}
 			const going: Sending = {
 				key: `sending-${String(sent)}`,
 				name: file.name,
@@ -44,10 +49,10 @@ export function useAttaching(draft: DraftHandle): Attaching {
 				if (going.preview !== undefined) URL.revokeObjectURL(going.preview);
 				setSending((before) => before.filter((each) => each.key !== going.key));
 			};
-			client.keepFile(file).then(
+			client.keepFile(thread, file, file.name).then(
 				(made) => {
 					done();
-					const attachment: Attachment = { ref: made.ref, media_type: made.media_type ?? mediaType, name: file.name, size: made.size };
+					const attachment: Attachment = { ref: made.ref, media_type: made.media_type, name: made.filename ?? file.name, size: file.size };
 					draft.attach(attachment);
 				},
 				(error: unknown) => {

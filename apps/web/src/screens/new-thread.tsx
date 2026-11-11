@@ -7,7 +7,7 @@
  * message, and goes to the thread.
  */
 import { type ReactNode, useState } from "react";
-import type { Effort, Mode } from "@octoii-works/octoii-client";
+import type { ReasoningEffort as Effort, Mode } from "@octoii-works/octoii-client";
 import { useClient, useSettings, useThreads } from "@octoii-works/octoii-client/react";
 import { ChevronDown, FolderOpen, FolderPlus, FolderX } from "lucide-react";
 import type { Device } from "../core/device.ts";
@@ -78,7 +78,14 @@ export function NewThreadScreen(props: NewThreadScreenProps): ReactNode {
 									...(chosenMode === undefined ? {} : { mode: chosenMode }),
 									...(effort === undefined ? {} : { effort }),
 								});
-								await client.deliver(thread, { message: { role: "user", content: contentOf(text, attachments) } });
+								const kept = await Promise.all(
+									attachments.map(async (attachment) => {
+										if (attachment.bytes === undefined) return attachment;
+										const made = await client.keepFile(thread, attachment.bytes, attachment.name);
+										return { ref: made.ref, media_type: made.media_type, name: made.filename ?? attachment.name, size: attachment.size };
+									}),
+								);
+								await client.deliver(thread, contentOf(text, kept));
 								go({ place: "thread", thread });
 							}}
 							onStop={() => undefined}

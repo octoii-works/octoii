@@ -7,9 +7,12 @@
 import type { ReactNode } from "react";
 import type { FilePage } from "@octoii-works/octoii-client";
 import { File } from "@pierre/diffs/react";
+import { machineAddress } from "../../core/attachments.ts";
 import { bytesText, crumbsOf, nameOf } from "../../core/files.ts";
+import { useFileSource } from "../effects/file-source.ts";
 import { usePages } from "../effects/pages.ts";
 import { CODE_THEMES, useDarkPage } from "../effects/theme.ts";
+import { KeptImage } from "../ui/kept-image.tsx";
 
 /** What the view is given: the file at `path`, under the folder `root` the tree shows; whether its long lines wrap; what stands beside its names. */
 export type FileViewProps = { readonly root: string; readonly path: string; readonly wrap: boolean; readonly actions: ReactNode };
@@ -76,10 +79,12 @@ function Contents(props: {
 					readMore={props.readMore}
 				/>
 			);
-		case "image":
-			return <img className="m-4 max-w-[calc(100%-2rem)]" alt={nameOf(first.path)} src={`data:${first.media_type};base64,${first.data}`} />;
-		case "pdf":
-			return <PdfNote size={first.size} data={first.data} />;
+		case "media":
+			return first.media_type === "application/pdf" ? (
+				<PdfNote size={first.size} path={first.path} />
+			) : (
+				<KeptImage className="m-4 max-w-[calc(100%-2rem)]" alt={nameOf(first.path)} address={machineAddress(first.path)} />
+			);
 		case "binary":
 			return <Note>A binary file, {bytesText(first.size)}.</Note>;
 	}
@@ -112,16 +117,11 @@ function TextFile(props: {
 	);
 }
 
-/** How long the address a PDF opens at lasts: past the time its tab takes to read it. */
-const OPENED_MS = 60_000;
-
 /** A PDF: its length, and what opens it in the browser's own viewer, in a tab of its own. */
-function PdfNote(props: { readonly size: number; readonly data: string }): ReactNode {
+function PdfNote(props: { readonly size: number; readonly path: string }): ReactNode {
+	const source = useFileSource(machineAddress(props.path));
 	const open = (): void => {
-		const bytes = Uint8Array.from(atob(props.data), (char) => char.charCodeAt(0));
-		const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
-		window.open(url, "_blank", "noopener,noreferrer");
-		setTimeout(() => URL.revokeObjectURL(url), OPENED_MS);
+		if (source !== undefined) window.open(source, "_blank", "noopener,noreferrer");
 	};
 	return (
 		<p className="flex items-center gap-2 px-4 py-2 text-xs text-muted-foreground">

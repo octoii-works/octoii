@@ -23,9 +23,9 @@ const send: SendRequest = async ({ method, path, contentType, body }) => {
 
 /** The reach of the page a node serves. */
 export const sameOrigin: Reach = {
-	open: () => new WebSocket(socketAddress()),
+	open: (protocol) => new WebSocket(socketAddress(), protocol),
 	send,
-	linkExample: "http://127.0.0.1:7600/pair#token=…",
+	linkExample: "http://127.0.0.1:7600/pair#…",
 	readsLink: (text) => pairingCredentialOf(text) !== undefined,
 	pair: async (text) => {
 		const credential = pairingCredentialOf(text);

@@ -4,7 +4,7 @@
  * move it; the list scrolls, its last rows fading out where more follow.
  */
 import type { ReactNode } from "react";
-import type { FoundPath } from "@octoii-works/octoii-client";
+import type { FoundPath } from "../../core/mentions.ts";
 import { folderOf, nameOf } from "../../core/files.ts";
 import { PathIcon } from "../files/path-icon.tsx";
 import type { Mentions } from "./mentions.ts";

@@ -4,7 +4,7 @@
  * again, or no more; or the thread put away till then.
  */
 import type { ReactNode } from "react";
-import type { Limited } from "@octoii-works/octoii-client";
+import type { Limited } from "../../core/limits.ts";
 import { useClient, useThreads } from "@octoii-works/octoii-client/react";
 import { Gauge } from "lucide-react";
 import { onwardOf, windowWords } from "../../core/limits.ts";
@@ -22,7 +22,7 @@ const GO_ON = "Continue where you stopped.";
 export function LimitedCard(props: { readonly thread: string; readonly limited: Limited; readonly resumingAt: number | undefined }): ReactNode {
 	const client = useClient();
 	const directory = useDirectory();
-	const model = useThreads()?.find((row) => row.id === props.thread)?.manifest.model;
+	const model = useThreads()?.find((row) => row.id === props.thread)?.config.model ?? undefined;
 	const now = useNow(60_000);
 	const { limited } = props;
 	const provider = directory?.providers.find((each) => each.id === limited.provider)?.name ?? limited.provider;
@@ -32,12 +32,12 @@ export function LimitedCard(props: { readonly thread: string; readonly limited: 
 	const goOnWith = (reference: string): void =>
 		void client
 			.configure(props.thread, { model: reference })
-			.then(() => client.deliver(props.thread, { message: { role: "user", content: GO_ON } }))
+			.then(() => client.deliver(props.thread, [{ type: "input_text", text: GO_ON }]))
 			.catch((error: unknown) => failed("The thread could not go on with that account", error));
 	const resume = (when: number | undefined): void =>
 		void client.resume(props.thread, when).catch((error: unknown) => failed("The thread's resume could not be set", error));
 	const snooze = (): void =>
-		void client.configure(props.thread, { snoozed_until: limited.reset_at_ms }).catch((error: unknown) => failed("The thread could not be snoozed", error));
+		void client.mark(props.thread, { snoozed_until: limited.reset_at_ms }).catch((error: unknown) => failed("The thread could not be snoozed", error));
 	return (
 		<div className="card flex w-full flex-col gap-3 p-4">
 			<div className="flex items-start gap-3">

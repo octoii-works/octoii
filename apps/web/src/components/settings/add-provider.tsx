@@ -5,9 +5,9 @@
  * named first. Once the provider is connected, the dialog closes on it.
  */
 import { type FormEvent, type ReactNode, useState, useTransition } from "react";
-import type { Provider, ProviderStatus } from "@octoii-works/octoii-client";
+import type { ProviderShown as Provider, ProviderStatus } from "@octoii-works/octoii-client";
 import { useClient } from "@octoii-works/octoii-client/react";
-import { catalogueOf, standingOf, takesAccounts } from "../../core/providers.ts";
+import { catalogueOf, connected, refusedStatus, standingOf, takesAccounts } from "../../core/providers.ts";
 import { vendorOfProvider } from "../../core/vendors.ts";
 import { Button } from "../ui/button.tsx";
 import { DialogDescription, DialogTitle } from "../ui/dialog.tsx";
@@ -126,7 +126,7 @@ function NameAccount(props: { readonly of: Provider; readonly onBack: () => void
 				const id = await client.addAccount(props.of.id, named);
 				// The account as the list will tell of it: connected as its provider is, holding nothing yet.
 				const { credential: _credential, ...of } = props.of;
-				props.onAdded({ ...of, id, name: `${props.of.name} · ${named}`, account: { of: props.of.id, name: named } });
+				props.onAdded({ ...of, id, name: `${props.of.name} · ${named}`, account: { id, provider: props.of.id, name: named } });
 			} catch (error) {
 				setRefused(error instanceof Error ? error.message : String(error));
 			}
@@ -253,12 +253,11 @@ function ConnectHere(props: { readonly provider: Provider; readonly onBack: () =
 	const [checking, startChecking] = useTransition();
 	const check = (): void =>
 		startChecking(async () => {
-			const asked = await client.providerStatus(props.provider.id).catch((error: unknown) => ({
-				connected: false,
-				problem: error instanceof Error ? error.message : String(error),
-			}));
+			const asked = await client
+				.providerStatus(props.provider.id)
+				.catch((error: unknown) => refusedStatus(error instanceof Error ? error.message : String(error)));
 			setStatus(asked);
-			if (asked.connected) props.onConnected();
+			if (connected(props.provider, asked) === true) props.onConnected();
 		});
 	const agent = props.provider.connects === "agent";
 	return (

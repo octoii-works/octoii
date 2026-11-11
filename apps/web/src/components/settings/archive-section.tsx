@@ -44,7 +44,7 @@ export function ArchiveSection(): ReactNode {
 							variant="outline"
 							size="xs"
 							onClick={() =>
-								void client.configure(row.id, { archived: false }).catch((error: unknown) => failed("The thread could not be taken out of the archive", error))
+								void client.mark(row.id, { archived: false }).catch((error: unknown) => failed("The thread could not be taken out of the archive", error))
 							}
 						>
 							<ArchiveRestore />

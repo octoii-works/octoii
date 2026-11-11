@@ -3,7 +3,7 @@
  * lines its files gained and lost all told, a count as the toolbar writes it, a file's path as its row writes it, and
  * how each line of a diff reads.
  */
-import type { Changed, ChangesScope, Commit, Repository } from "@octoii-works/octoii-client";
+import type { ChangedFile as Changed, ChangesScope, Commit, Repository } from "@octoii-works/octoii-client";
 
 /** The scope a view asks for where none was chosen: the branch's changes where the repository has a base, else those not yet committed. */
 export function defaultScope(repository: Repository): ChangesScope {

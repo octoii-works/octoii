@@ -7,7 +7,8 @@
  * its path holds.
  */
 import { type ReactNode, useId, useRef, useState, useTransition } from "react";
-import type { Effort, FoundPath, Mode } from "@octoii-works/octoii-client";
+import type { ReasoningEffort as Effort, Mode } from "@octoii-works/octoii-client";
+import type { FoundPath } from "../../core/mentions.ts";
 import { ArrowUp, Square } from "lucide-react";
 import type { Device } from "../../core/device.ts";
 import type { DraftPlace } from "../../core/drafts.ts";
@@ -76,7 +77,7 @@ export function Composer(props: ComposerProps): ReactNode {
 		setCaret(next.caret);
 		setPlacement({ caret: next.caret });
 	};
-	const attaching = useAttaching(draft);
+	const attaching = useAttaching(draft, "thread" in props.draft ? props.draft.thread : undefined);
 	const model = modelOf(useDirectory(), props.model);
 	const empty = draft.text.trim() === "" && draft.attachments.length === 0;
 	const unready = empty || props.model === undefined || attaching.sending.length > 0;
@@ -121,7 +122,12 @@ export function Composer(props: ComposerProps): ReactNode {
 			}}
 		>
 			{mentions.mention === undefined ? null : <MentionMenu id={menu} mentions={mentions} onChoose={mention} />}
-			<Attachments attachments={draft.attachments} attaching={attaching} seesImages={model?.architecture?.input_modalities?.includes("image")} />
+			<Attachments
+				attachments={draft.attachments}
+				attaching={attaching}
+				seesImages={model?.reads_images}
+				thread={"thread" in props.draft ? props.draft.thread : undefined}
+			/>
 			<textarea
 				onPaste={(event) => {
 					const files = filesOf(event.clipboardData);

@@ -12,9 +12,11 @@ import { inputText, threadOfActor } from "../../core/timeline.ts";
 import { failed } from "../state/notices.ts";
 
 /** The person's messages waiting in `thread`'s inbox — not what a thread delivered, which is not theirs to take back; nothing where none waits. */
-export function Queued(props: { readonly thread: string; readonly inbox: readonly Inbound[] }): ReactNode {
+export function Queued(props: { readonly thread: string; readonly inbox: readonly (readonly [string, Inbound])[] }): ReactNode {
 	const client = useClient();
-	const theirs = props.inbox.filter((input) => threadOfActor(input.actor) === undefined);
+	const theirs = props.inbox.flatMap(([id, inbound]) =>
+		inbound.type === "input" && threadOfActor(inbound.actor) === undefined ? [{ id, content: inbound.content }] : [],
+	);
 	if (theirs.length === 0) return null;
 	return (
 		<div className="mx-3 mb-[-1px] flex flex-col gap-0.5 rounded-t-lg border border-b-0 border-border bg-card px-2 py-1.5">
@@ -24,7 +26,7 @@ export function Queued(props: { readonly thread: string; readonly inbox: readonl
 					className="flex h-control-sm items-center gap-2 rounded-md px-1.5 text-ui transition-[opacity,translate] duration-200 hover:bg-accent starting:translate-y-1 starting:opacity-0 motion-reduce:transition-none"
 				>
 					<CornerDownRight className="size-3.5 shrink-0 text-muted-foreground" />
-					<span className="min-w-0 flex-1 truncate text-foreground">{linksAsWords(inputText(input.message)) || "A message"}</span>
+					<span className="min-w-0 flex-1 truncate text-foreground">{linksAsWords(inputText(input.content)) || "A message"}</span>
 					<span className="text-xs text-muted-foreground">Joins at the next step</span>
 					<button
 						type="button"

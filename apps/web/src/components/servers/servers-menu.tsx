@@ -7,7 +7,7 @@
  * it; a group of none says which file names them. Nothing is started for the showing.
  */
 import { type ReactNode, useState } from "react";
-import type { ServerShown, ServersListed } from "@octoii-works/octoii-client";
+import type { ServerListed as ServerShown, ServersListed } from "@octoii-works/octoii-client";
 import { useClient } from "@octoii-works/octoii-client/react";
 import { ChevronDown, Plug, ShieldQuestion, TriangleAlert } from "lucide-react";
 import { countOf, groupsOf, type ProjectGroup } from "../../core/servers.ts";
@@ -121,8 +121,9 @@ function Group(props: {
 /** A server: its monogram and name, the program it runs with its arguments — the whole command its tip — and how it stands. */
 function ServerRow(props: { readonly server: ServerShown; readonly waiting: Waiting }): ReactNode {
 	const { server } = props;
-	const command = [server.command, ...server.args].join(" ");
-	const program = [nameOf(server.command), ...server.args].join(" ");
+	const command = server.runs;
+	const [first = "", ...rest] = command.split(" ");
+	const program = [nameOf(first), ...rest].join(" ");
 	return (
 		<li className="flex min-w-0 items-center gap-2.5 rounded-md px-0.5 py-1.5">
 			<Monogram name={server.name} size="md" />

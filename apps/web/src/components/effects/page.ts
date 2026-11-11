@@ -9,7 +9,7 @@
  * a terminal's hidden field does.
  */
 import { useCallback } from "react";
-import type { PageFrame, PageMouse, PageSize, PageView } from "@octoii-works/octoii-client";
+import type { PageFrame, PageMouse, PageView, View as PageSize } from "@octoii-works/octoii-client";
 import { useClient } from "@octoii-works/octoii-client/react";
 import { editingOf, modifiersOf, typedBy } from "../../core/browser.ts";
 import { isTypedIn } from "./shortcut.ts";
@@ -91,7 +91,7 @@ function mountSurface(element: HTMLElement): Surface {
 		drawing = true;
 		for (let frame = next; frame !== undefined; frame = next) {
 			next = undefined;
-			const image = await createImageBitmap(new Blob([bytesOf(frame.data)], { type: "image/jpeg" })).catch(() => undefined);
+			const image = await createImageBitmap(new Blob([new Uint8Array(frame.jpeg)], { type: "image/jpeg" })).catch(() => undefined);
 			if (image === undefined) continue;
 			if (canvas.width !== image.width || canvas.height !== image.height) Object.assign(canvas, { width: image.width, height: image.height });
 			if (shown.width !== frame.width || shown.height !== frame.height) {
@@ -123,14 +123,6 @@ function mountSurface(element: HTMLElement): Surface {
 	};
 }
 
-/** The bytes base64 writes. */
-function bytesOf(base64: string): Uint8Array<ArrayBuffer> {
-	const text = atob(base64);
-	const bytes = new Uint8Array(text.length);
-	for (let at = 0; at < text.length; at += 1) bytes[at] = text.charCodeAt(at);
-	return bytes;
-}
-
 /** A mouse's button, as the browser's protocol names it. */
 type Button = NonNullable<PageMouse["button"]>;
 
@@ -145,9 +137,9 @@ function takeInput(element: HTMLElement, surface: Surface, send: (sending: (view
 	const { field } = surface;
 	const listening = new AbortController();
 	const on = { signal: listening.signal, passive: false };
-	const mouse = (event: MouseEvent, type: PageMouse["type"], button: Button, clicks: number): void => {
+	const mouse = (event: MouseEvent, motion: PageMouse["motion"], button: Button, clicks: number): void => {
 		const point = surface.pointOf(event.clientX, event.clientY);
-		send((view) => view.mouse({ type, ...point, button, buttons: event.buttons, clicks, modifiers: modifiersOf(event) }));
+		send((view) => view.mouse({ motion, ...point, button, buttons: event.buttons, clicks, modifiers: modifiersOf(event), delta_x: 0, delta_y: 0 }));
 	};
 	let moved: MouseEvent | undefined;
 	let frame = 0;
@@ -179,7 +171,18 @@ function takeInput(element: HTMLElement, surface: Surface, send: (sending: (view
 			event.preventDefault();
 			const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? LINE_PIXELS : 1;
 			const point = surface.pointOf(event.clientX, event.clientY);
-			send((view) => view.mouse({ type: "wheel", ...point, delta_x: event.deltaX * unit, delta_y: event.deltaY * unit, modifiers: modifiersOf(event) }));
+			send((view) =>
+				view.mouse({
+					motion: "wheel",
+					...point,
+					button: "none",
+					buttons: event.buttons,
+					clicks: 0,
+					modifiers: modifiersOf(event),
+					delta_x: event.deltaX * unit,
+					delta_y: event.deltaY * unit,
+				}),
+			);
 		},
 		on,
 	);
@@ -192,8 +195,15 @@ function takeInput(element: HTMLElement, surface: Surface, send: (sending: (view
 			event.preventDefault();
 			const text = event.ctrlKey || event.metaKey ? undefined : typedBy(event.key);
 			const commands = editingOf(event);
-			const pressed = { type: "down", key: event.key, code: event.code, modifiers: modifiersOf(event), key_code: event.keyCode } as const;
-			send((view) => view.key({ ...pressed, ...(text === undefined ? {} : { text }), ...(commands === undefined ? {} : { commands: [...commands] }) }));
+			const pressed = {
+				pressed: true,
+				key: event.key,
+				code: event.code,
+				modifiers: modifiersOf(event),
+				key_code: event.keyCode,
+				commands: [...(commands ?? [])],
+			};
+			send((view) => view.key({ ...pressed, ...(text === undefined ? {} : { text }) }));
 		},
 		on,
 	);
@@ -201,7 +211,7 @@ function takeInput(element: HTMLElement, surface: Surface, send: (sending: (view
 		"keyup",
 		(event) => {
 			if (event.isComposing || event.keyCode === 229) return;
-			send((view) => view.key({ type: "up", key: event.key, code: event.code, modifiers: modifiersOf(event), key_code: event.keyCode }));
+			send((view) => view.key({ pressed: false, key: event.key, code: event.code, modifiers: modifiersOf(event), key_code: event.keyCode, commands: [] }));
 		},
 		on,
 	);

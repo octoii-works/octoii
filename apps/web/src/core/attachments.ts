@@ -1,14 +1,16 @@
 /**
  * The files a message gives its model, as the person attaches them: each kept by the node by its content, named by
  * its reference; an image, a PDF, or text — what a model reads — its type told with it, as its bytes alone may not tell
- * it. A message with files is sent as parts, its words first, then each file; read back, a message's files are those
- * parts that name a kept file.
+ * it. A message is sent as parts, its words first, then each file; read back, a message's files are those parts that
+ * name a kept file.
  */
-import { matches } from "@octoii-works/octoii-client";
-import { Type } from "typebox";
+import type { InputContent } from "@octoii-works/octoii-client";
 
-/** A file given with a message: its reference, what it is, its name and its size in bytes. */
-export type Attachment = { readonly ref: string; readonly media_type: string; readonly name: string; readonly size: number };
+/**
+ * A file given with a message: its reference, what it is, its name and its size in bytes — and, where its thread is not
+ * made yet to keep it, its bytes, sent once it is.
+ */
+export type Attachment = { readonly ref: string; readonly media_type: string; readonly name: string; readonly size: number; readonly bytes?: Blob };
 
 /** The images a model looks at. */
 const IMAGE_TYPES: readonly string[] = ["image/png", "image/jpeg", "image/gif", "image/webp"];
@@ -58,43 +60,33 @@ export function givenTypeOf(file: { readonly type: string; readonly name: string
 	return undefined;
 }
 
-/** A part of a message as it is sent: its words, or a kept file. */
-type Part =
-	| { readonly type: "input_text"; readonly text: string }
-	| { readonly type: "input_image"; readonly detail: "auto"; readonly octoii: FileExtension }
-	| { readonly type: "input_file"; readonly filename: string; readonly octoii: FileExtension };
-
-/** How a part names a kept file: its reference, what it is, and its name. */
-type FileExtension = { readonly ref: string; readonly media_type: string; readonly filename: string };
-
-/** A message's content: its words alone where it gives no file, else its words first, then each file. */
-export function contentOf(text: string, attachments: readonly Attachment[]): string | Part[] {
-	if (attachments.length === 0) return text;
-	const files = attachments.map((attachment): Part => {
-		const octoii = { ref: attachment.ref, media_type: attachment.media_type, filename: attachment.name };
-		return isImage(attachment.media_type) ? { type: "input_image", detail: "auto", octoii } : { type: "input_file", filename: attachment.name, octoii };
+/** A message's content: its words first, where it has any, then each file, as the file the thread keeps. */
+export function contentOf(text: string, attachments: readonly Attachment[]): readonly InputContent[] {
+	const files = attachments.map((attachment): InputContent => {
+		const file = { ref: attachment.ref, media_type: attachment.media_type, filename: attachment.name };
+		return isImage(attachment.media_type) ? { type: "input_image", file, detail: "auto" } : { type: "input_file", file };
 	});
 	return text.trim() === "" ? files : [{ type: "input_text", text }, ...files];
 }
 
-const KeptSchema = Type.Object({
-	octoii: Type.Object({ ref: Type.String(), media_type: Type.Optional(Type.String()), filename: Type.Optional(Type.String()) }),
-});
-const MessagePartsSchema = Type.Object({ content: Type.Array(Type.Unknown()) });
-
 /** The files a message gives: each part of it that names a kept file. */
-export function attachmentsOf(message: unknown): readonly Attachment[] {
-	if (!matches(MessagePartsSchema, message)) return [];
-	return message.content.flatMap((part) => {
-		if (!matches(KeptSchema, part)) return [];
-		const { ref, media_type: mediaType, filename } = part.octoii;
-		return [{ ref, media_type: mediaType ?? "application/octet-stream", name: filename ?? "file", size: 0 }];
+export function attachmentsOf(content: readonly InputContent[]): readonly Attachment[] {
+	return content.flatMap((part) => {
+		if (part.type === "input_text") return [];
+		const { ref, media_type: mediaType, filename } = part.file;
+		return [{ ref, media_type: mediaType, name: filename ?? "file", size: 0 }];
 	});
 }
 
-/** Where a kept file is read back from. */
-export function fileAddress(ref: string): string {
-	return `/files/${ref}`;
+/** Where the file the thread `thread` keeps by `ref` is read back from. */
+export function fileAddress(thread: string, ref: string): string {
+	return `/threads/${encodeURIComponent(thread)}/files/${ref.replace(/^sha256:/, "")}`;
+}
+
+/** Where the machine's file at `path` is read from — fitted to `box`, where it is an image and one is given. */
+export function machineAddress(path: string, box?: { readonly width_max: number; readonly height_max: number }): string {
+	const fitted = box === undefined ? "" : `&width_max=${String(box.width_max)}&height_max=${String(box.height_max)}`;
+	return `/machine?path=${encodeURIComponent(path)}${fitted}`;
 }
 
 /** A file's size as the person reads it. */

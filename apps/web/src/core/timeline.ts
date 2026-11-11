@@ -10,27 +10,37 @@
  * is read once and kept, as the client keeps it the same; a call's line is kept while its call and what it waits on the
  * person for are the same — so a thread that grows is read again only where it grew.
  */
-import { type Ask, type Call, type Conversation, type Entry, type Limited, matches, type Standing, type Step, type Turn } from "@octoii-works/octoii-client";
+import {
+	type Ask,
+	type Call,
+	callOfAsk,
+	type CallStatus,
+	type Conversation,
+	type InputContent,
+	type Item,
+	type Response,
+	type Step,
+	type Streamed,
+	type Turn,
+} from "@octoii-works/octoii-client";
+import { type Attachment, attachmentsOf } from "./attachments.ts";
+import type { CallState } from "./calls.ts";
+import { duration, mintedAt } from "./time.ts";
+import type { Limited } from "./limits.ts";
+import { type Aside, givenOf, summaryOf, toolOf, verbOf, type WorkKind } from "./tools.ts";
 
 /** A compaction of the thread's, as its log holds it. */
 type Compaction = Conversation["compactions"][number];
-import { Type } from "typebox";
-import { type Attachment, attachmentsOf } from "./attachments.ts";
-import { type CallState, printedOf } from "./calls.ts";
-import { duration, mintedAt } from "./time.ts";
-import { type Aside, givenOf, summaryOf, toolOf, verbOf, type WorkKind } from "./tools.ts";
 
 /**
- * A call's line: its id, Siphon's id of it where known, the step it was made in, its tool, its kind of work, how its
- * line says what it does — its verb, what it works on and whether that is code, what it says beside that and at its end
- * where it went wrong though it ran — its arguments and what its tool told, when it began and ended, how it stands, and
- * the calls made under it.
+ * A call's line: its id, the step it was made in, its tool, its kind of work, how its line says what it does — its
+ * verb, what it works on and whether that is code, what it says beside that and at its end where it went wrong though
+ * it ran — its arguments and what its tool told, when it began and ended, how it stands, and the calls made under it.
  */
 export type CallLine = {
 	readonly kind: "call";
+	/** The model's id of it, by which a sub-thread it made names it. */
 	readonly id: string;
-	/** Siphon's id of the call, the key of the fiber that runs it, by which a sub-thread it made names it. */
-	readonly fiber: string | undefined;
 	/** The step it was made in, by its request's key: the calls one reply made share it, and those made under them. */
 	readonly step: string;
 	/** The thread its arguments name: the sub-thread a delegation gives more to do. */
@@ -50,7 +60,7 @@ export type CallLine = {
 	readonly output: string | undefined;
 	/** What its tool has printed so far, while it runs — a command's output, its latest part; none where it printed nothing. */
 	readonly printed: string | undefined;
-	/** When it began and ended, in ms: as Siphon's id of it and its result's were minted; none of either it has not had. */
+	/** When it began and ended, in ms: as the reply that made it and its result were minted; none of either it has not had. */
 	readonly began: number | undefined;
 	readonly ended: number | undefined;
 	readonly state: CallState;
@@ -122,21 +132,6 @@ export type TimelineTurn = {
 	readonly endedAt: number | undefined;
 };
 
-const PartsSchema = Type.Array(Type.Unknown());
-const InputMessageSchema = Type.Object({ content: Type.Union([Type.String(), PartsSchema]) });
-const InputTextSchema = Type.Object({ type: Type.Literal("input_text"), text: Type.String() });
-const OutputSchema = Type.Object({ output: PartsSchema });
-const AssistantMessageSchema = Type.Object({ type: Type.Literal("message"), role: Type.Literal("assistant"), content: PartsSchema });
-const OutputTextSchema = Type.Object({ type: Type.Literal("output_text"), text: Type.String() });
-const ErrorSchema = Type.Object({ error: Type.Object({ message: Type.String() }) });
-const ItemEventSchema = Type.Object({
-	type: Type.Union([Type.Literal("response.output_item.added"), Type.Literal("response.output_item.done")]),
-	output_index: Type.Number(),
-	item: Type.Unknown(),
-});
-const TextDeltaSchema = Type.Object({ type: Type.Literal("response.output_text.delta"), output_index: Type.Number(), delta: Type.String() });
-const FunctionCallSchema = Type.Object({ type: Type.Literal("function_call"), call_id: Type.String(), name: Type.String() });
-
 /**
  * An item of the timeline, at the id it stands at: a turn — a part of one the person steered — or the thread's own
  * between turns: its window summed up, what waits on the person that no call asks, or that its model's quota is used up.
@@ -147,11 +142,10 @@ export type TimelineItem =
 	| { readonly kind: "ask"; readonly key: string; readonly ask: Ask }
 	| { readonly kind: "limited"; readonly key: string; readonly limited: Limited; readonly resumingAt: number | undefined };
 
-/** `items`, and, where the thread its model's quota limits as `standing` says, the card of that at their end. */
-export function withLimited(items: readonly TimelineItem[], standing: Standing | undefined): readonly TimelineItem[] {
-	const limited = standing?.limited;
+/** `items`, and, where the thread's model's quota limits it, the card of that at their end, with when it goes on, where it does. */
+export function withLimited(items: readonly TimelineItem[], limited: Limited | undefined, resumingAt: number | undefined): readonly TimelineItem[] {
 	if (limited === undefined) return items;
-	return [...items, { kind: "limited", key: "limited", limited, resumingAt: standing?.resuming_at }];
+	return [...items, { kind: "limited", key: "limited", limited, resumingAt }];
 }
 
 /**
@@ -168,9 +162,9 @@ export function itemsOf(conversation: Conversation): readonly TimelineItem[] {
 		shownOf(turn, place, { asks, compactions: conversation.compactions.filter((each) => within(spans[place], each.id)) }),
 	);
 	const asked = new Set(shown.flat().flatMap((turn) => askedIn(turn.work)));
-	const unasked = asks.filter((ask) => !asked.has(ask.request.key));
+	const unasked = asks.filter((ask) => !asked.has(ask.key));
 	shown.forEach((parts, place) => {
-		const waiting = unasked.filter((ask) => within(spans[place], ask.request.key));
+		const waiting = unasked.filter((ask) => within(spans[place], ask.key));
 		const last = parts.at(-1);
 		const kept = last === undefined || waiting.length === 0 ? parts : [...parts.slice(0, -1), { ...last, asks: waiting }];
 		placed.push({ at: spans[place]?.from ?? "", items: kept.map((turn) => ({ kind: "turn", key: turn.key, turn })) });
@@ -179,7 +173,7 @@ export function itemsOf(conversation: Conversation): readonly TimelineItem[] {
 	for (const compaction of conversation.compactions) {
 		if (between(compaction.id)) placed.push({ at: compaction.id, items: [{ kind: "summed-up", key: compaction.id }] });
 	}
-	for (const ask of unasked) if (between(ask.request.key)) placed.push({ at: ask.request.key, items: [{ kind: "ask", key: ask.request.key, ask }] });
+	for (const ask of unasked) if (between(ask.key)) placed.push({ at: ask.key, items: [{ kind: "ask", key: ask.key, ask }] });
 	return placed.toSorted((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0)).flatMap((each) => each.items);
 }
 
@@ -228,7 +222,7 @@ function shownOf(turn: Turn, place: number, beside: Beside): readonly TimelineTu
 
 /** The keys of what the calls of `work` wait on the person for, a script's own among them. */
 function askedIn(work: readonly Work[]): readonly string[] {
-	return work.flatMap((step) => (step.kind === "call" ? [...(step.ask === undefined ? [] : [step.ask.request.key]), ...askedIn(step.calls)] : []));
+	return work.flatMap((step) => (step.kind === "call" ? [...(step.ask === undefined ? [] : [step.ask.key]), ...askedIn(step.calls)] : []));
 }
 
 /** Words of the person's a turn took, and the steps from them on: the words it began with, or words that steered it. */
@@ -271,11 +265,11 @@ function partOf(turn: Turn, part: Part, next: Part | undefined, place: number, i
 	const span: Span = { from: index === 0 ? undefined : first, until: steeredAt };
 	const held = beside.compactions.filter((each) => (span.from === undefined || each.id > span.from) && (span.until === undefined || each.id < span.until));
 	const { work, answer } = workOf(turn, part, held, beside.asks);
-	const waiting = part.steps.find((step) => step.reply === undefined && step.failure === undefined);
+	const waiting = part.steps.find((step) => step.reply === undefined);
 	return {
-		// Known by the entry it began with, which it has from the first, not by its fiber's key, which the client may learn
-		// after — so a turn keeps its row as it goes, rather than being drawn anew.
-		key: index === 0 ? (first ?? turn.id ?? turn.end?.id ?? `turn-${String(place)}`) : (first ?? `turn-${String(place)}-${String(index)}`),
+		// Known by the entry it began with, which it has from the first — so a turn keeps its row as it goes, rather than
+		// being drawn anew.
+		key: index === 0 ? (first ?? turn.end?.id ?? `turn-${String(place)}`) : (first ?? `turn-${String(place)}-${String(index)}`),
 		said: part.inputs.flatMap((input) => {
 			const said = saidOf(input);
 			return said === undefined ? [] : [said];
@@ -300,11 +294,11 @@ function saidOf(input: Input): Said | undefined {
 	const known = saids.get(input);
 	if (known !== undefined) return known ?? undefined;
 	const from = threadOfActor(input.actor);
-	const text = from === undefined ? inputText(input.message) : threadText(input.message);
-	const attachments = attachmentsOf(input.message);
+	const text = from === undefined ? inputText(input.content) : threadText(input.content);
+	const attachments = attachmentsOf(input.content);
 	// What a sub-thread told is shown though it holds no words: how its work ended.
 	const shown = text !== "" || attachments.length > 0 || from !== undefined;
-	const said = shown ? { key: input.id, delivery: input.delivery_id, at: mintedAt(input.id), from, text, attachments } : null;
+	const said = shown ? { key: input.id, delivery: input.delivery, at: mintedAt(input.id), from, text, attachments } : null;
 	saids.set(input, said);
 	return said ?? undefined;
 }
@@ -329,8 +323,9 @@ function workOf(
 			work.push({ kind: "compaction", key: compactions[0].id });
 			compactions.shift();
 		}
-		const text = step.reply === undefined ? "" : replyText(step.reply.response);
-		const thought = step.reply === undefined ? "" : reasoningText(step.reply.response);
+		const response = step.reply?.response;
+		const text = response === undefined ? "" : replyText(response);
+		const thought = response === undefined ? "" : reasoningText(response);
 		if (step.reply !== undefined && thought !== "") {
 			work.push({ kind: "thought", key: `${step.reply.id}:thought`, text: thought, took: mintedAt(step.reply.id) - mintedAt(step.request) });
 		}
@@ -340,9 +335,9 @@ function workOf(
 			answer = step.calls.length > 0 ? undefined : { key: step.request, text };
 			if (step.calls.length > 0) work.push({ kind: "words", key: step.request, text });
 		}
-		if (step.failure !== undefined) work.push({ kind: "failure", key: step.failure.id, text: failureText(step.failure.response) });
-		if (step.reply !== undefined) work.push(...searchesOf(step.reply.response));
-		for (const call of step.calls) work.push(callLine(call, turn, step.request, asks));
+		if (step.reply !== undefined && response?.status === "failed") work.push({ kind: "failure", key: step.reply.id, text: failureText(response) });
+		if (response !== undefined) work.push(...searchesOf(response));
+		for (const call of step.calls) work.push(callLine(call, turn, step, asks));
 	}
 	for (const compaction of compactions) work.push({ kind: "compaction", key: compaction.id });
 	return { work, answer };
@@ -350,7 +345,7 @@ function workOf(
 
 /** The id of the entry that says what came of a step's request; none while it is answered. */
 function stepId(step: Step): string | undefined {
-	return step.reply?.id ?? step.failure?.id;
+	return step.reply?.id;
 }
 
 /** Each call's line, by the client's call, with the step it was made in and what it waits on the person for: kept while they are the same. */
@@ -361,30 +356,27 @@ const lines = new WeakMap<Call, { readonly step: string; readonly ask: Ask | und
  * line it had where the call and what it waits for are the same, as a call the client keeps the same is: one with no
  * result when its turn ended was stopped with it, and a turn that ends is put together anew.
  */
-function callLine(call: Call, turn: Turn, step: string, asks: readonly Ask[]): CallLine {
-	const ask = asks.find((each) => each.call === call.id);
+function callLine(call: Call, turn: Turn, step: Step, asks: readonly Ask[]): CallLine {
+	const ask = call.ask ?? asks.find((each) => callOfAsk(each) === call.id);
 	const known = lines.get(call);
-	if (known !== undefined && known.step === step && known.ask === ask) return known.line;
-	const line = lineOf(call, turn, step, asks, ask);
-	lines.set(call, { step, ask, line });
+	if (known !== undefined && known.step === step.request && known.ask === ask) return known.line;
+	const line = lineOf(call, turn, step, ask);
+	lines.set(call, { step: step.request, ask, line });
 	return line;
 }
 
-/** The line of `call`, as `callLine` gives it, read anew: by what the page knows of its tool, the calls made under it its own lines, which a call with any says what did beside its verb. */
-function lineOf(call: Call, turn: Turn, step: string, asks: readonly Ask[], ask: Ask | undefined): CallLine {
+/** The line of `call`, as `callLine` gives it, read anew: by what the page knows of its tool. */
+function lineOf(call: Call, turn: Turn, step: Step, ask: Ask | undefined): CallLine {
 	const tool = toolOf(call.name);
 	const given = givenOf(call.arguments);
-	const fiber = call.result?.call ?? call.fiber?.key;
-	const state = call.result === undefined ? liveState(call, turn, ask) : CALL_STATES[call.result.status];
-	const output = call.result === undefined ? undefined : outputOf(call.result.call_output);
-	const printed = call.result === undefined ? printedOf(call.streaming) : undefined;
-	const told = { tool: call.name, arguments: call.arguments, output, printed, state };
-	const calls = call.calls.map((inner) => callLine(inner, turn, step, asks));
+	const state = call.result === undefined ? liveState(turn, ask) : CALL_STATES[call.result.status];
+	const output = call.result === undefined ? undefined : partsText(call.result.output.output);
+	const told = { tool: call.name, arguments: call.arguments, output, printed: undefined, state };
+	const calls: readonly CallLine[] = [];
 	return {
 		kind: "call",
 		id: call.id,
-		fiber,
-		step,
+		step: step.request,
 		thread: call.name === "delegate" ? given.thread : undefined,
 		tool: call.name,
 		work: tool.work,
@@ -395,8 +387,8 @@ function lineOf(call: Call, turn: Turn, step: string, asks: readonly Ask[], ask:
 		trouble: tool.trouble(told),
 		arguments: call.arguments,
 		output,
-		printed,
-		began: fiber === undefined ? undefined : mintedAt(fiber),
+		printed: undefined,
+		began: step.reply === undefined ? undefined : mintedAt(step.reply.id),
 		ended: call.result === undefined ? undefined : mintedAt(call.result.id),
 		state,
 		ask,
@@ -474,20 +466,19 @@ export function workedText(turn: TimelineTurn): string | undefined {
 	return took === undefined ? undefined : `Worked for ${took}`;
 }
 
-/** How a call with no result stands: stopped with its turn; waiting where the person is asked for it, `ask`, or its fiber waits on them; else running. */
-function liveState(call: Call, turn: Turn, ask: Ask | undefined): CallState {
+/** How a call with no result stands: stopped with its turn; waiting where the person is asked for it, `ask`; else running. */
+function liveState(turn: Turn, ask: Ask | undefined): CallState {
 	if (turn.end !== undefined) return "stopped";
-	return ask !== undefined || call.fiber?.requests.some((request) => request.answer !== undefined) === true ? "waiting" : "running";
+	return ask !== undefined ? "waiting" : "running";
 }
 
 /** How a call stands, by its result's status. */
-const CALL_STATES: Readonly<Record<Extract<Entry, { type: "result" }>["status"], CallState>> = {
+const CALL_STATES: Readonly<Record<CallStatus, CallState>> = {
 	ok: "done",
 	"invalid-arguments": "failed",
 	unavailable: "failed",
 	"tool-error": "failed",
 	interrupted: "stopped",
-	stopped: "stopped",
 	rejected: "rejected",
 };
 
@@ -514,15 +505,17 @@ export function declinedText(call: CallLine): string {
 }
 
 /** What streams of a request, read as the reply being written: each output item by its place, words as they grow. */
-function writingOf(events: readonly unknown[]): Omit<Writing, "request"> {
+function writingOf(events: readonly Streamed[]): Omit<Writing, "request"> {
 	const items = new Map<number, { readonly words: string } | { readonly id: string; readonly tool: string }>();
 	for (const event of events) {
-		if (matches(TextDeltaSchema, event)) {
-			const item = items.get(event.output_index);
-			items.set(event.output_index, { words: `${item !== undefined && "words" in item ? item.words : ""}${event.delta}` });
-		} else if (matches(ItemEventSchema, event)) {
-			if (matches(FunctionCallSchema, event.item)) items.set(event.output_index, { id: event.item.call_id, tool: event.item.name });
-			else if (matches(AssistantMessageSchema, event.item)) items.set(event.output_index, { words: outputText(event.item.content) });
+		if (event.type === "delta") {
+			if (event.part !== "text") continue;
+			const item = items.get(event.index);
+			items.set(event.index, { words: `${item !== undefined && "words" in item ? item.words : ""}${event.text}` });
+		} else if (event.item.type === "function_call") {
+			items.set(event.index, { id: event.item.call_id, tool: event.item.name });
+		} else if (event.item.type === "message" && event.item.role === "assistant" && event.type === "ended") {
+			items.set(event.index, { words: outputText(event.item) });
 		}
 	}
 	const ordered = [...items].toSorted(([a], [b]) => a - b).map(([, item]) => item);
@@ -549,102 +542,69 @@ function endingOf(turn: Turn): Ending {
 	}
 }
 
-const WebSearchSchema = Type.Object({
-	type: Type.Union([Type.Literal("web_search_call"), Type.Literal("openrouter:web_search")]),
-	id: Type.Optional(Type.String()),
-	action: Type.Optional(Type.Object({ query: Type.Optional(Type.String()) })),
-});
-
 /** The searches of the web a reply's provider ran, in the order it gave them, each by what it searched for. */
-function searchesOf(response: unknown): readonly Work[] {
-	if (!matches(OutputSchema, response)) return [];
-	return response.output.flatMap((item, place): Work[] =>
-		matches(WebSearchSchema, item) ? [{ kind: "web-search", key: item.id ?? `search-${String(place)}`, query: item.action?.query }] : [],
+function searchesOf(response: Response): readonly Work[] {
+	return response.output.flatMap((item): Work[] =>
+		item.type === "web_search_call" ? [{ kind: "web-search", key: item.id, query: item.action?.type === "search" ? item.action.query : undefined }] : [],
 	);
 }
 
-const ReasoningSchema = Type.Object({
-	type: Type.Literal("reasoning"),
-	summary: Type.Optional(PartsSchema),
-	content: Type.Optional(PartsSchema),
-});
-const TextPartSchema = Type.Object({ text: Type.String() });
-
 /** What a reply says its model thought: its reasoning's summary, else the reasoning itself, as the provider gave it. */
-function reasoningText(response: unknown): string {
-	if (!matches(OutputSchema, response)) return "";
+function reasoningText(response: Response): string {
 	return response.output
-		.flatMap((item) => (matches(ReasoningSchema, item) ? [partsText(item.summary ?? []) || partsText(item.content ?? [])] : []))
+		.flatMap((item) => (item.type === "reasoning" ? [(item.summary ?? []).join("\n\n").trim() || (item.content ?? []).join("\n\n").trim()] : []))
 		.join("\n\n")
 		.trim();
 }
 
-/** The text of parts that hold text, one after another. */
-function partsText(parts: readonly unknown[]): string {
+/** The text of input parts that hold text, one after another. */
+function partsText(parts: readonly InputContent[]): string {
 	return parts
-		.flatMap((part) => (matches(TextPartSchema, part) ? [part.text] : []))
+		.flatMap((part) => (part.type === "input_text" ? [part.text] : []))
 		.join("\n\n")
 		.trim();
-}
-
-const CallOutputSchema = Type.Object({ output: Type.Unknown() });
-
-/** What a call's result told the model: its output's text, or the text of its parts. */
-function outputOf(callOutput: unknown): string {
-	if (!matches(CallOutputSchema, callOutput)) return "";
-	const { output } = callOutput;
-	if (typeof output === "string") return output;
-	return Array.isArray(output) ? partsText(output) : "";
 }
 
 /** The words of a reply: its assistant messages' text. */
-function replyText(response: unknown): string {
-	if (!matches(OutputSchema, response)) return "";
+function replyText(response: Response): string {
 	return response.output
-		.flatMap((item) => (matches(AssistantMessageSchema, item) ? [outputText(item.content)] : []))
+		.flatMap((item) => (item.type === "message" && item.role === "assistant" ? [outputText(item)] : []))
 		.join("\n\n")
 		.trim();
 }
 
 /** The text of an assistant message's parts. */
-function outputText(parts: readonly unknown[]): string {
-	return parts.flatMap((part) => (matches(OutputTextSchema, part) ? [part.text] : [])).join("");
+function outputText(message: Extract<Item, { role: "assistant" }>): string {
+	return message.content.flatMap((part) => (part.type === "output_text" ? [part.text] : [])).join("");
 }
 
-/** The text of a message delivered: its text, or its text parts. */
-export function inputText(message: unknown): string {
-	if (!matches(InputMessageSchema, message)) return "";
-	const { content } = message;
-	if (typeof content === "string") return content.trim();
+/** The text of a message delivered: its text parts. */
+export function inputText(content: readonly InputContent[]): string {
 	return content
-		.flatMap((part) => (matches(InputTextSchema, part) ? [part.text] : []))
+		.flatMap((part) => (part.type === "input_text" ? [part.text] : []))
 		.join("\n")
 		.trim();
 }
 
-/** The thread whose an input is, by its actor — `thread.<id>`; none for the person's. */
+/** Who gives the person's words, as the threads' logs name them. */
+const PERSON = "person";
+
+/** The thread whose an input is, by its actor — a thread's id; none for the person's. */
 export function threadOfActor(actor: string): string | undefined {
-	return actor.startsWith("thread.") ? actor.slice("thread.".length) : undefined;
+	return actor === PERSON ? undefined : actor;
 }
 
 /**
  * The words of a message a thread delivered: a task, its text; what came of a task given in the background, its parts
  * after the first — Siphon's note, the model's to read — none where the sub-thread said nothing, as it did not finish.
  */
-function threadText(message: unknown): string {
-	if (!matches(InputMessageSchema, message)) return "";
-	const { content } = message;
-	if (typeof content === "string") return content.trim();
-	return content
-		.slice(1)
-		.flatMap((part) => (matches(InputTextSchema, part) ? [part.text] : []))
-		.join("\n")
-		.trim();
+function threadText(content: readonly InputContent[]): string {
+	return inputText(content.slice(1));
 }
 
 /** Why a request came to nothing, as its failed response says. */
-function failureText(response: unknown): string {
-	return matches(ErrorSchema, response) ? response.error.message : "The model's answer came to nothing.";
+function failureText(response: Response): string {
+	return response.failure?.message ?? "The model's answer came to nothing.";
 }
 
 /** The words a turn's reply shows: its answer, and the words being written. */

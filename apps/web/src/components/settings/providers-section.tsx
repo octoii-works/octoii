@@ -5,12 +5,11 @@
  */
 import { type ReactNode, useState, useTransition } from "react";
 import { Tabs } from "@base-ui/react/tabs";
-import type { Provider, ProviderStatus } from "@octoii-works/octoii-client";
+import type { ProviderShown as Provider, ProviderStatus } from "@octoii-works/octoii-client";
 import { useClient } from "@octoii-works/octoii-client/react";
 import { Plus, RefreshCw } from "lucide-react";
 import { inUseOf, standingShortOf, troubled } from "../../core/providers.ts";
 import { vendorOfProvider } from "../../core/vendors.ts";
-import type { Finishing } from "../effects/sign-in.ts";
 import { failed } from "../state/notices.ts";
 import { Button } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
@@ -20,18 +19,17 @@ import { AddProvider, type AddStart } from "./add-provider.tsx";
 import { ProviderDetails } from "./provider-details.tsx";
 import { SectionHeading } from "./layout.tsx";
 
-/** What the section is given: the node's providers and how those whose standing matters stand, the sign-in settings were opened to finish, and who is told of a change. */
+/** What the section is given: the node's providers and how those whose standing matters stand, and who is told of a change. */
 export type ProvidersSectionProps = {
 	readonly providers: readonly Provider[] | undefined;
 	readonly statuses: ReadonlyMap<string, ProviderStatus> | undefined;
-	readonly finishing: Finishing | undefined;
 	readonly onChanged: () => void;
 };
 
 /** The section: the providers in use and the one chosen, the models listed again on asking, and what adds a provider. */
 export function ProvidersSection(props: ProvidersSectionProps): ReactNode {
 	const client = useClient();
-	const { providers, statuses, finishing } = props;
+	const { providers, statuses } = props;
 	const [chosen, setChosen] = useState<string | undefined>(undefined);
 	const [adding, setAdding] = useState<AddStart | undefined>(undefined);
 	const [refreshing, startRefreshing] = useTransition();
@@ -57,20 +55,12 @@ export function ProvidersSection(props: ProvidersSectionProps): ReactNode {
 					</Button>
 				}
 			/>
-			{finishing === undefined ? null : <SignInOutcome finishing={finishing} providers={providers ?? []} />}
 			{used === undefined ? (
 				<p className="card px-4 py-10 text-center text-ui text-muted-foreground">Checking the providers…</p>
 			) : used.length === 0 ? (
 				<NoneInUse onAdd={() => setAdding({ of: undefined })} />
 			) : (
-				<InUse
-					used={used}
-					statuses={statuses}
-					chosen={chosen ?? (finishing?.state === "done" ? finishing.provider : undefined)}
-					onChoose={setChosen}
-					onChanged={changed}
-					onAdd={(start) => setAdding(start)}
-				/>
+				<InUse used={used} statuses={statuses} chosen={chosen} onChoose={setChosen} onChanged={changed} onAdd={(start) => setAdding(start)} />
 			)}
 			<Dialog open={adding !== undefined} onOpenChange={(open) => (open ? undefined : setAdding(undefined))}>
 				<DialogPopup className="w-[40rem] max-w-full p-5">
@@ -162,7 +152,7 @@ function InUse(props: {
 /** A provider in the list: its mark, its name, and how it stands in a line, red with a dot where it does not answer; an account set in under its provider. */
 function ProviderTab(props: { readonly provider: Provider; readonly status: ProviderStatus | undefined }): ReactNode {
 	const { provider } = props;
-	const wrong = troubled(props.status);
+	const wrong = troubled(provider, props.status);
 	const standing = standingShortOf(provider, props.status);
 	return (
 		<Tabs.Tab
@@ -181,22 +171,5 @@ function ProviderTab(props: { readonly provider: Provider; readonly status: Prov
 				</span>
 			</span>
 		</Tabs.Tab>
-	);
-}
-
-/** How the sign-in settings were opened to finish went: under way, done, or failed with the node's words. */
-function SignInOutcome(props: { readonly finishing: Finishing; readonly providers: readonly Provider[] }): ReactNode {
-	const { finishing } = props;
-	return (
-		<p
-			className={cn(
-				"rounded-md border px-4 py-3 text-ui",
-				finishing.state === "failed" ? "border-error text-error-foreground" : "border-border text-muted-foreground",
-			)}
-		>
-			{finishing.state === "finishing" ? "Finishing your sign-in…" : null}
-			{finishing.state === "done" ? `Signed in to ${props.providers.find((each) => each.id === finishing.provider)?.name ?? finishing.provider}.` : null}
-			{finishing.state === "failed" ? `The sign-in did not finish: ${finishing.message}` : null}
-		</p>
 	);
 }

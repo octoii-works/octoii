@@ -10,7 +10,7 @@
  * alone, copy its id, archive it, or delete it once the person says so again.
  */
 import { type MouseEvent, type ReactNode, useState } from "react";
-import type { Configured, Listed } from "@octoii-works/octoii-client";
+import type { Listed, MarksChange } from "@octoii-works/octoii-client";
 import { useClient } from "@octoii-works/octoii-client/react";
 import { AlarmClock, AlarmClockOff, Archive, Bot, Check, CircleDot, Copy, FolderTree, Pencil, Pin, PinOff, Trash2, Undo2 } from "lucide-react";
 import { canMarkUnread, isPinned, isSettled, isSnoozed, isUnread, projectOf, snoozeTimes, threadTitle, type ThreadStanding } from "../../core/threads.ts";
@@ -248,10 +248,10 @@ function SubThreads(props: { readonly count: number }): ReactNode {
 	);
 }
 
-/** How the thread's changes go to the node, what it refused told as a notice. */
-function useChange(row: Listed): (changes: Configured) => void {
+/** How the person's marks of the thread go to the node, what it refused told as a notice. */
+function useChange(row: Listed): (change: MarksChange) => void {
 	const client = useClient();
-	return (changes) => void client.configure(row.id, changes).catch((error: unknown) => failed("The thread could not be changed", error));
+	return (change) => void client.mark(row.id, change).catch((error: unknown) => failed("The thread could not be changed", error));
 }
 
 /** The field a title is written in, over the row's title: Enter keeps it; Escape or leaving drops it. */
@@ -292,8 +292,8 @@ function TitleField(props: { readonly row: Listed; readonly onDone: () => void }
  */
 function StatusSlot(props: { readonly row: Listed; readonly standing: ThreadStanding; readonly now: number }): ReactNode {
 	const { row, standing, now } = props;
-	const until = row.manifest.snoozed_until;
-	if (until !== undefined && until > now) {
+	const until = row.marks.snoozed_until;
+	if (until !== undefined && until !== null && until > now) {
 		return (
 			<span className="flex shrink-0 items-center gap-1 text-muted-foreground tabular-nums">
 				<AlarmClock className="size-3.5" />

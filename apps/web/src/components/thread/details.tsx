@@ -8,7 +8,7 @@
  * which opens where it went, request by request.
  */
 import type { ReactNode } from "react";
-import type { Conversation, Listed, Repository, Turn, Usage } from "@octoii-works/octoii-client";
+import type { Conversation, Listed, Repository, ThreadUsage as Usage, Turn } from "@octoii-works/octoii-client";
 import { useConnection, useThreads } from "@octoii-works/octoii-client/react";
 import { Coins, CornerLeftUp, FileDiff, Folder, FolderX, Gauge, GitBranch, Laptop, SquareMenu } from "lucide-react";
 import { cachedShare, type Context, contextOf, fullnessOf } from "../../core/details.ts";
@@ -83,7 +83,7 @@ export function InlineDetails(props: DetailsProps): ReactNode {
 
 /** The card's sections, a line between each two. */
 function DetailsCard(props: DetailsProps): ReactNode {
-	const folder = props.row?.manifest.workspace;
+	const folder = props.row?.config.workspace ?? undefined;
 	return (
 		<div className="flex flex-col divide-y divide-border text-ui">
 			<Workspace thread={props.thread} folder={folder} />
@@ -136,7 +136,7 @@ function RowContent(props: { readonly icon: ReactNode; readonly label: ReactNode
 /** The machine the thread works on, by the name it goes by; and its folder, opened in the Files view, or that it works in none. */
 function Workspace(props: { readonly thread: string; readonly folder: string | undefined }): ReactNode {
 	const connection = useConnection();
-	const machine = connection.status === "open" ? connection.environment : undefined;
+	const machine = connection.status === "open" ? connection.machine : undefined;
 	const { folder } = props;
 	return (
 		<section className="p-1.5">
@@ -209,7 +209,7 @@ function Changes(props: { readonly thread: string; readonly folder: string; read
 /** The thread the thread came from, and those it delegated to, each opened from its row; nothing where it has none of either. */
 function Lineage(props: { readonly thread: string; readonly row: Listed | undefined }): ReactNode {
 	const rows = useThreads() ?? [];
-	const parent = props.row?.manifest.parent?.thread;
+	const parent = props.row?.parent?.thread;
 	const children = subThreadsOf(rows, props.thread);
 	if (parent === undefined && children.length === 0) return null;
 	const parentRow = rows.find((each) => each.id === parent);
@@ -246,9 +246,9 @@ function Spending(props: {
 	readonly turns: readonly Turn[];
 	readonly compactions: Conversation["compactions"];
 }): ReactNode {
-	const window = modelOf(useDirectory(), props.row?.manifest.model)?.context_length;
+	const window = modelOf(useDirectory(), props.row?.config.model ?? undefined)?.context_length ?? undefined;
 	const context = contextOf(props.turns, window);
-	const usage = props.row?.standing.usage;
+	const usage = props.row?.status.usage ?? undefined;
 	if (context === undefined && usage === undefined) return null;
 	return (
 		<section className="p-1.5">

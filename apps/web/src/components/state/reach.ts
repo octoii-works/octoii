@@ -23,8 +23,8 @@ export type SendRequest = (request: NodeRequest) => Promise<NodeAnswer>;
 
 /** How a page reaches its node. */
 export type Reach = {
-	/** Opens the protocol's socket. */
-	readonly open: () => WebSocketLike;
+	/** Opens the protocol's socket, speaking its version `protocol`. */
+	readonly open: (protocol: string) => WebSocketLike;
 	readonly send: SendRequest;
 	/** What a pairing link looks like here, for the field that takes one. */
 	readonly linkExample: string;
@@ -53,6 +53,11 @@ export function useReach(): Reach {
 /** Whether the node answered `answer` with success. */
 export function succeeded(answer: NodeAnswer): boolean {
 	return answer.status >= 200 && answer.status < 300;
+}
+
+/** The words `answer` holds, as the node writes why it refused: its text, trimmed. */
+export function wordsOf(answer: NodeAnswer): string {
+	return new TextDecoder().decode(answer.bytes).trim();
 }
 
 /** The JSON of `answer`; none where it holds none. */

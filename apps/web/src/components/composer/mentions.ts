@@ -4,8 +4,7 @@
  * by the arrow keys; and whether the person dismissed the menu with Escape, till they begin another mention.
  */
 import { useState } from "react";
-import type { FoundPath } from "@octoii-works/octoii-client";
-import { type Mention, mentionAt } from "../../core/mentions.ts";
+import { type FoundPath, foundPathsOf, type Mention, mentionAt } from "../../core/mentions.ts";
 import { useDebounced } from "../effects/debounced.ts";
 import { useOutcome } from "../effects/read.ts";
 
@@ -31,7 +30,7 @@ export function useMentions(folder: string | undefined, text: string, caret: num
 	const mention = written?.start === dismissed ? undefined : written;
 	const query = useDebounced(mention?.query ?? "", 80);
 	const outcome = useOutcome("files.search", mention === undefined || folder === undefined ? undefined : { path: folder, query, limit: MENTION_CHOICES });
-	const found = outcome === undefined ? undefined : "result" in outcome ? outcome.result.entries : [];
+	const found = outcome === undefined ? undefined : "result" in outcome ? foundPathsOf(outcome.result.found) : [];
 	const [highlight, setHighlight] = useState({ query: "", index: 0 });
 	const count = found?.length ?? 0;
 	const highlighted = highlight.query === query ? Math.min(highlight.index, Math.max(count - 1, 0)) : 0;

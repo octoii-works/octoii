@@ -22,6 +22,6 @@ export function connect(reach: Reach): Client {
 		randomUUID: () => crypto.randomUUID(),
 		clock,
 		report: (error) => failed("Something asked of the node failed", error),
-		keepFile: (bytes) => keepFile(reach.send, bytes),
+		keepFile: (thread, bytes, name) => keepFile(reach.send, thread, bytes, name),
 	});
 }

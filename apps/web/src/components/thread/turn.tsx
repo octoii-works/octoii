@@ -81,7 +81,7 @@ export function TurnEndPart(props: { readonly end: TurnEnd }): ReactNode {
 		<div className="flex flex-col gap-2">
 			<TurnChanges changes={end.changes} />
 			{end.asks.map((ask) => (
-				<AskLine key={ask.request.key} ask={ask} />
+				<AskLine key={ask.key} ask={ask} />
 			))}
 			{end.failure === undefined ? null : <FailureLine text={end.failure} />}
 			{end.doing === undefined ? null : <DoingLine doing={end.doing} />}

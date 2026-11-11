@@ -7,11 +7,11 @@
  * first.
  */
 import { type FormEvent, type ReactNode, useState } from "react";
-import type { Provider, ProviderStatus } from "@octoii-works/octoii-client";
+import type { ProviderShown as Provider, ProviderStatus } from "@octoii-works/octoii-client";
 import { useClient } from "@octoii-works/octoii-client/react";
 import { ChevronLeft } from "lucide-react";
 import { standingOf, takesAccounts, troubled } from "../../core/providers.ts";
-import { isSignInReturn } from "../../core/sign-in.ts";
+import { isSignInReturn, signInReturnOf } from "../../core/sign-in.ts";
 import { vendorOfProvider } from "../../core/vendors.ts";
 import { Button, IconButton } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
@@ -51,12 +51,12 @@ export function ProviderDetails(props: ProviderDetailsProps): ReactNode {
 			<Row
 				title="Status"
 				description={
-					<span className={cn(troubled(props.status) && "text-error-foreground")}>
+					<span className={cn(troubled(provider, props.status) && "text-error-foreground")}>
 						<CodedWords text={standingOf(provider, props.status)} />
 					</span>
 				}
 			>
-				{troubled(props.status) ? (
+				{troubled(provider, props.status) ? (
 					<Button size="sm" variant="outline" onClick={props.onChanged}>
 						Check again
 					</Button>
@@ -126,7 +126,7 @@ function SignInRows(props: { readonly provider: Provider } & Changes): ReactNode
 	const finish = (event: FormEvent): void => {
 		event.preventDefault();
 		if (!isSignInReturn(pasted)) return;
-		client.finishSignIn(pasted.trim()).then(() => {
+		client.finishSignIn(signInReturnOf(pasted) ?? provider.id, pasted.trim()).then(() => {
 			setPasted("");
 			props.onChanged();
 		}, props.onFailed);

@@ -4,7 +4,7 @@
  * provider, the newest first, those whose name or id holds the search; each with its reference and its context; the
  * person's starred models, and the models the newest threads chose.
  */
-import type { Effort, Listed, Model, Provider } from "@octoii-works/octoii-client";
+import type { Listed, Model, ProviderShown as Provider, ReasoningEffort as Effort } from "@octoii-works/octoii-client";
 import { tokens } from "./numbers.ts";
 
 /** What the picker draws on: the models the node lists, and its providers, each with how it is connected. */
@@ -26,7 +26,7 @@ export type ProviderModels = { readonly provider: string; readonly models: reado
 
 /** A model's reference, as a thread names it: its provider and its id there. */
 export function referenceOf(model: Model): string {
-	return `${model.octoii.provider}/${model.id}`;
+	return `${model.provider}/${model.id}`;
 }
 
 /** The provider of a model's reference. */
@@ -40,14 +40,14 @@ export function modelChoices(directory: Directory, search: string): readonly Pro
 	const connected = new Set(directory.providers.flatMap((provider) => (isConnected(provider) ? [provider.id] : [])));
 	const groups = new Map<string, Model[]>();
 	for (const model of directory.models) {
-		const { provider } = model.octoii;
+		const { provider } = model;
 		if (!connected.has(provider)) continue;
 		if (wanted !== "" && !`${model.name} ${model.id}`.toLowerCase().includes(wanted)) continue;
 		groups.set(provider, [...(groups.get(provider) ?? []), model]);
 	}
 	return [...groups].map(([provider, models]) => ({
 		provider,
-		models: models.toSorted((a, b) => (b.octoii.release_date ?? "").localeCompare(a.octoii.release_date ?? "")).map(choiceOf),
+		models: models.toSorted((a, b) => (b.release_date ?? "").localeCompare(a.release_date ?? "")).map(choiceOf),
 	}));
 }
 
@@ -56,7 +56,7 @@ function choiceOf(model: Model): ModelChoice {
 	return {
 		reference: referenceOf(model),
 		name: model.name,
-		...(model.context_length === undefined ? {} : { context: tokens(model.context_length) }),
+		...(model.context_length === null ? {} : { context: tokens(model.context_length) }),
 	};
 }
 
@@ -76,7 +76,7 @@ export function shortName(name: string): string {
 
 /** The provider a provider is: itself, or, for an account the person added, the one it is another of — by its id. */
 export function baseProviderOf(directory: Directory | undefined, provider: string): string {
-	return directory?.providers.find((each) => each.id === provider)?.account?.of ?? provider;
+	return directory?.providers.find((each) => each.id === provider)?.account?.provider ?? provider;
 }
 
 /** A provider's name, as the node gives it; its id where it gives none. */
@@ -119,8 +119,8 @@ export const RECENT_MODELS = 10;
 export function recentModelsOf(rows: readonly Listed[]): readonly string[] {
 	const recent: string[] = [];
 	for (const row of rows) {
-		const { model } = row.manifest;
-		if (model !== undefined && !recent.includes(model)) recent.push(model);
+		const { model } = row.config;
+		if (model !== undefined && model !== null && !recent.includes(model)) recent.push(model);
 		if (recent.length === RECENT_MODELS) break;
 	}
 	return recent;
@@ -145,7 +145,7 @@ const OFFERED: readonly Effort[] = ["high", "medium", "low"];
 
 /** Whether a model reasons: it takes the `reasoning` parameter, or says how it reasons. */
 function reasons(model: Model): boolean {
-	return model.reasoning !== undefined || (model.supported_parameters?.includes("reasoning") ?? false);
+	return model.reasoning !== null || (model.parameters?.includes("reasoning") ?? false);
 }
 
 /**
@@ -154,8 +154,8 @@ function reasons(model: Model): boolean {
  */
 export function effortsOf(model: Model | undefined): readonly Effort[] {
 	if (model === undefined || !reasons(model)) return [];
-	const listed = model.reasoning?.supported_efforts;
-	if (listed !== undefined && listed.length > 0) return EFFORTS.filter((effort) => listed.includes(effort));
+	const listed = model.reasoning?.efforts;
+	if (listed !== undefined && listed !== null && listed.length > 0) return EFFORTS.filter((effort) => listed.includes(effort));
 	return model.reasoning?.mandatory === true ? OFFERED : [...OFFERED, "none"];
 }
 

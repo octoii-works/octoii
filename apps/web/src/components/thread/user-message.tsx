@@ -6,7 +6,7 @@
  * and a button that copies the words as they were written, shown as the message is pointed at or focused, and always
  * where nothing points.
  */
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useContext, useState } from "react";
 import { useThreads } from "@octoii-works/octoii-client/react";
 import { CornerLeftUp, FileText } from "lucide-react";
 import { type Attachment, fileAddress, isImage } from "../../core/attachments.ts";
@@ -18,6 +18,7 @@ import { go } from "../state/navigation.ts";
 import { cn } from "../ui/cn.ts";
 import { CopyButton } from "../ui/copy-button.tsx";
 import { Prose } from "./markdown.tsx";
+import { MessageThreadContext } from "./message-thread.ts";
 import { PictureStrip } from "./pictures.tsx";
 
 /** The person's words, or a task the thread's parent gave it. */
@@ -63,7 +64,7 @@ function Bubble(props: { readonly text: string }): ReactNode {
 
 /** Where a task came from: the thread that gave it, opened from its title. */
 function From(props: { readonly thread: string }): ReactNode {
-	const title = useThreads()?.find((row) => row.id === props.thread)?.manifest.title ?? "its thread";
+	const title = useThreads()?.find((row) => row.id === props.thread)?.config.title ?? "its thread";
 	return (
 		<button
 			type="button"
@@ -97,8 +98,9 @@ function Given(props: { readonly attachments: readonly Attachment[] }): ReactNod
 /** A file the person gave, by its name, opened whole in a tab of its own. */
 function GivenFile(props: { readonly attachment: Attachment }): ReactNode {
 	const { attachment } = props;
+	const thread = useContext(MessageThreadContext)?.thread ?? "";
 	return (
-		<a href={useFileSource(fileAddress(attachment.ref))} target="_blank" rel="noreferrer" title={attachment.name} className="block">
+		<a href={useFileSource(fileAddress(thread, attachment.ref))} target="_blank" rel="noreferrer" title={attachment.name} className="block">
 			<span className="flex h-12 max-w-56 items-center gap-2 rounded-md border border-border bg-muted px-3 text-ui text-foreground">
 				<FileText className="size-4 shrink-0" />
 				<span className="truncate">{attachment.name}</span>

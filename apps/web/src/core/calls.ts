@@ -3,7 +3,7 @@
  * command exited, the lines a read held, what an edit or a write added and took out, an edit's diff, what a search
  * found; and the arguments it was given, as fields.
  */
-import { matches } from "@octoii-works/octoii-client";
+import { matches } from "./schema.ts";
 import { Type } from "typebox";
 import { diffTones } from "./diff.ts";
 
@@ -21,26 +21,6 @@ export type ToolCall = {
 	readonly printed: string | undefined;
 	readonly state: CallState;
 };
-
-const PrintedSchema = Type.Object({ text: Type.String() });
-
-/** How much of what a call printed is read, from its end: what a line shows of it, and what opens under it while it runs. */
-const PRINTED_MAX = 64 * 1024;
-
-/** What a call's tool printed as it ran, by what streamed of its request — its latest part alone; none where it printed nothing. */
-export function printedOf(streamed: readonly unknown[]): string | undefined {
-	const parts: string[] = [];
-	let length = 0;
-	for (let at = streamed.length - 1; at >= 0 && length < PRINTED_MAX; at--) {
-		const part = streamed[at];
-		if (!matches(PrintedSchema, part)) continue;
-		parts.push(part.text);
-		length += part.text.length;
-	}
-	if (parts.length === 0) return undefined;
-	const printed = parts.reverse().join("");
-	return printed.length > PRINTED_MAX ? printed.slice(printed.length - PRINTED_MAX) : printed;
-}
 
 /** What a tool told: its text, and the notes after it, each a line in brackets. */
 export type Told = { readonly text: string; readonly notes: readonly string[] };

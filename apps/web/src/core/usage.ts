@@ -4,7 +4,7 @@
  * together, how they spend it against its time, what the next reset gives back, and a segment for each account that
  * tells limits, in the order the accounts were added, so that an account stands in the same place on every card.
  */
-import type { Limit, Provider, ProviderStatus } from "@octoii-works/octoii-client";
+import type { Limit, ProviderShown as Provider, ProviderStatus } from "@octoii-works/octoii-client";
 import { windowWords } from "./limits.ts";
 import { type Hue, monogramHue } from "./monogram.ts";
 
@@ -38,7 +38,7 @@ export type GivenBack = { readonly percent: number; readonly at: number };
 export type UsageWindow = {
 	readonly key: string;
 	readonly title: string;
-	readonly minutes: number;
+	readonly minutes: number | undefined;
 	readonly leftPercent: number | undefined;
 	readonly pace: Pace | undefined;
 	readonly next: GivenBack | undefined;
@@ -55,10 +55,12 @@ type Told = { readonly limit: Limit; readonly columns: UsageColumn[] };
 export function usageOf(providers: readonly Provider[], statuses: ReadonlyMap<string, ProviderStatus>, now: number): readonly UsageGroup[] {
 	const hosts = providers.filter((each) => each.account === undefined);
 	return hosts.flatMap((host) => {
-		const accounts = providers.filter((each) => (each.id === host.id || each.account?.of === host.id) && (statuses.get(each.id)?.limits?.length ?? 0) > 0);
+		const accounts = providers.filter(
+			(each) => (each.id === host.id || each.account?.provider === host.id) && (statuses.get(each.id)?.standing?.limits.length ?? 0) > 0,
+		);
 		const windows = new Map<string, Told>();
 		for (const [column, account] of accounts.entries()) {
-			for (const limit of statuses.get(account.id)?.limits ?? []) {
+			for (const limit of statuses.get(account.id)?.standing?.limits ?? []) {
 				const key = `${String(limit.window_minutes)} ${limit.scope ?? ""}`;
 				const told = windows.get(key) ?? { limit, columns: accounts.map((each) => ({ id: each.id, segment: undefined })) };
 				told.columns[column] = { id: account.id, segment: segmentOf(account, limit, now) };
@@ -121,9 +123,9 @@ export function paceOf(usedPercent: number, elapsed: number): Pace {
 	return "on";
 }
 
-/** How much of the time of a window of `minutes` given again at `resetsAt` is left at `now`, from 0 to 1; none where its reset is not known. */
-function timeLeftOf(resetsAt: number | undefined, minutes: number, now: number): number | undefined {
-	if (resetsAt === undefined || minutes <= 0) return undefined;
+/** How much of the time of a window of `minutes` given again at `resetsAt` is left at `now`, from 0 to 1; none where its reset or its length is not known. */
+function timeLeftOf(resetsAt: number | undefined, minutes: number | undefined, now: number): number | undefined {
+	if (resetsAt === undefined || minutes === undefined || minutes <= 0) return undefined;
 	return Math.min(1, Math.max(0, (resetsAt - now) / (minutes * 60_000)));
 }
 

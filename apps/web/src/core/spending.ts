@@ -4,12 +4,11 @@
  * provider said, and how long it took; laid as a waterfall, each starting where those before it left the total, by
  * cost or by tokens.
  */
-import { type Call, type Conversation, matches, type Turn } from "@octoii-works/octoii-client";
+import type { Call, Conversation, Response, Turn } from "@octoii-works/octoii-client";
 import { placeOf } from "./timeline.ts";
 
 /** A compaction of the thread's, as its log holds it. */
 type Compaction = Conversation["compactions"][number];
-import { Type } from "typebox";
 import { mintedAt } from "./time.ts";
 import { callWords } from "./tools.ts";
 
@@ -29,16 +28,6 @@ export type Spent = {
 	readonly cost: number | undefined;
 	readonly took: number;
 };
-
-const ResponseSchema = Type.Object({
-	model: Type.Optional(Type.String()),
-	usage: Type.Object({
-		input_tokens: Type.Number(),
-		output_tokens: Type.Number(),
-		input_tokens_details: Type.Optional(Type.Object({ cached_tokens: Type.Optional(Type.Number()) })),
-		cost: Type.Optional(Type.Number()),
-	}),
-});
 
 /** The requests of `turns` and of the thread's `compactions` that told what they used, in the order they were made, each by the turn it falls in. */
 export function spentOf(turns: readonly Turn[], compactions: readonly Compaction[]): readonly Spent[] {
@@ -63,9 +52,9 @@ function stepWords(calls: readonly Call[]): string {
 }
 
 /** The request `key`, answered by the entry `answered` with `response`, as it was spent; none where it told nothing of what it used. */
-function spentAs(key: string, answered: string, response: unknown, turn: number, words: string): readonly Spent[] {
-	if (!matches(ResponseSchema, response)) return [];
+function spentAs(key: string, answered: string, response: Response, turn: number, words: string): readonly Spent[] {
 	const { usage } = response;
+	if (usage === undefined || usage === null) return [];
 	return [
 		{
 			key,
@@ -73,9 +62,9 @@ function spentAs(key: string, answered: string, response: unknown, turn: number,
 			words,
 			model: response.model,
 			input: usage.input_tokens,
-			cached: usage.input_tokens_details?.cached_tokens ?? 0,
+			cached: usage.cached_tokens,
 			output: usage.output_tokens,
-			cost: usage.cost,
+			cost: usage.cost_nanodollars === undefined || usage.cost_nanodollars === null ? undefined : usage.cost_nanodollars / 1e9,
 			took: Math.max(0, mintedAt(answered) - mintedAt(key)),
 		},
 	];

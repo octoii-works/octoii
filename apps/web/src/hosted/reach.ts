@@ -2,7 +2,8 @@
  * The page at the app's address reaches a computer through a tunnel: this browser's key and the computer it is paired
  * with kept in its storage, one session to that computer at a time, lasting as long as the WebSocket on it.
  */
-import { matches, type WebSocketLike } from "@octoii-works/octoii-client";
+import { type WebSocketLike } from "@octoii-works/octoii-client";
+import { matches } from "../core/schema.ts";
 import { Type } from "typebox";
 import { pairBrowser } from "../app/pairing.ts";
 import type { Reach, SendRequest } from "../components/state/reach.ts";
@@ -64,6 +65,7 @@ type SocketListener = (event: { readonly data: unknown }) => void;
 
 /** The protocol's socket as the client takes it, until the tunnel's WebSocket is open behind it. */
 class PageSocket implements WebSocketLike {
+	binaryType = "arraybuffer";
 	readonly #listeners = { open: new Set<SocketListener>(), close: new Set<SocketListener>(), message: new Set<SocketListener>() };
 	#socket: TunnelSocket | undefined;
 	#closed = false;
@@ -139,11 +141,11 @@ export function tunnelReach(about: string): { readonly reach: Reach; readonly pa
 		});
 		return { status: answer.status, contentType: answer.headers.get("content-type") ?? undefined, bytes: answer.body };
 	};
-	const open = (): WebSocketLike => {
+	const open = (protocol: string): WebSocketLike => {
 		const page = new PageSocket();
 		page.addEventListener("close", letGo);
 		tunnel()
-			.then((reached) => reached.socket("/ws", { headers: client }))
+			.then((reached) => reached.socket("/ws", { headers: { ...client, "sec-websocket-protocol": protocol } }))
 			.then(
 				(socket) => {
 					away = undefined;
@@ -176,7 +178,7 @@ export function tunnelReach(about: string): { readonly reach: Reach; readonly pa
 	const reach: Reach = {
 		open,
 		send,
-		linkExample: "https://app.octoii.com/pair#relay=…",
+		linkExample: "https://app.octoii.com/pair#key=…",
 		readsLink: (text) => remotePairingOf(text) !== undefined,
 		pair,
 		fileSource: createFileSources((address) => send({ method: "GET", path: address })),

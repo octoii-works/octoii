@@ -29,10 +29,10 @@ import type {
 	PageListed,
 	ParamsOf,
 	ProviderShown,
+	ProviderStatus,
 	ResultOf,
 	Settings,
 	SettingsChange,
-	Standing,
 	SubscriptionEvent,
 	TerminalListed,
 	Topic,
@@ -106,8 +106,8 @@ export type Client = {
 	revokeGrant(granted: Granted): Promise<void>;
 	/** The node's providers: how each is connected, and the kind of credential the node keeps for it. */
 	providers(): Promise<readonly ProviderShown[]>;
-	/** How the provider `id`'s account stands, as its driver tells it; none where it tells nothing. */
-	providerStatus(id: string): Promise<Standing | undefined>;
+	/** How the provider `id`'s account stands, as its driver tells it. */
+	providerStatus(id: string): Promise<ProviderStatus>;
 	/** Begins a sign-in to the provider `id`: where the person signs in. */
 	signIn(id: string): Promise<string>;
 	/** Finishes the sign-in to the provider `id`, from the address the browser was sent back to. */
@@ -194,7 +194,7 @@ export function createClient(options: ClientOptions): Client {
 		grants: async () => (await connection.call("grants.list", {})).projects,
 		revokeGrant: (granted) => done(connection.call("grants.revoke", granted)),
 		providers: async () => (await connection.call("providers.list", {})).providers,
-		providerStatus: async (id) => (await connection.call("providers.status", { provider: id })).standing,
+		providerStatus: (id) => connection.call("providers.status", { provider: id }),
 		signIn: async (id) => (await connection.call("providers.sign-in", { provider: id })).url,
 		finishSignIn: (id, redirect) => done(connection.call("providers.finish-sign-in", { provider: id, redirect })),
 		refreshModels: () => done(connection.call("models.refresh", {})),

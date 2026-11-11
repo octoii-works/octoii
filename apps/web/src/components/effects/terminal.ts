@@ -23,8 +23,9 @@ export function useTerminalView(terminal: string): (element: HTMLDivElement | nu
 			let gone = false;
 			const follow = (mounted: TerminalSurface, size: GridCells): void => {
 				view = client.terminal(terminal, size, {
-					screen: (drawn, grid) => {
-						mounted.setGrid(grid);
+					// The terminal is at the size its view gives it, as the view resizes it to its own.
+					screen: (drawn) => {
+						mounted.setGrid(size);
 						mounted.replay(drawn);
 					},
 					output: (bytes) => mounted.write(bytes),

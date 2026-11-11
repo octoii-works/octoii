@@ -6,12 +6,13 @@
  * them, each with the fields it takes; an object's own fields are asked one by one; a schema of neither shape is shown,
  * not asked.
  */
-import { type Ask, matches } from "@octoii-works/octoii-client";
+import type { Ask, JsonValue } from "@octoii-works/octoii-client";
+import { matches } from "./schema.ts";
 import { type Static, Type } from "typebox";
 import { folderName } from "./threads.ts";
 
 /** A JSON value, as an answer is made of. */
-export type Json = string | number | boolean | null | readonly Json[] | { readonly [key: string]: Json };
+export type Json = JsonValue;
 
 /**
  * A field an answer takes: where its value goes, such as `["reason"]` or `["content", "email"]`, its label, what it
@@ -32,11 +33,17 @@ export type Choice = { readonly value: string; readonly label: string; readonly 
 export type ServerShown = Static<typeof ServerSchema>;
 
 /**
- * What a call does to the machine, as its permission is asked: its action; what it acts on — the files it edits, the
- * commands it runs, the tool by its name — none where that could not be read; the patterns an always grants the
- * thread's project; and whether it asks to run beyond the sandbox, and why.
+ * What a call does to the machine, as its permission is asked: its action, read from its tool; what it acts on — the
+ * files it edits, the commands it runs, the tool by its name; the patterns an always grants the thread's project; and
+ * whether it asks to run beyond the sandbox, and why.
  */
-export type Access = Static<typeof AccessSchema>;
+export type Access = {
+	readonly action: "edit" | "command" | "tool";
+	readonly resources: readonly string[];
+	readonly save: readonly string[];
+	readonly escalate: boolean;
+	readonly justification: string | undefined;
+};
 
 /** A question a model asks: its words, a short label, the choices it offers, and whether several may be chosen. */
 export type Question = Static<typeof QuestionSchema>;
@@ -44,7 +51,7 @@ export type Question = Static<typeof QuestionSchema>;
 /** What a request asks, by its form. */
 export type AskForm =
 	| { readonly kind: "trust"; readonly folder: string; readonly servers: readonly ServerShown[] }
-	| { readonly kind: "permission"; readonly tool: string; readonly arguments: unknown; readonly access: Access; readonly doubt: string | undefined }
+	| { readonly kind: "permission"; readonly tool: string; readonly arguments: unknown; readonly access: Access }
 	| { readonly kind: "question"; readonly questions: readonly Question[] }
 	| { readonly kind: "choices"; readonly key: string; readonly choices: readonly Choice[] }
 	| { readonly kind: "fields"; readonly fields: readonly Field[] }
@@ -54,30 +61,31 @@ export type AskForm =
 export type Given = Readonly<Record<string, Json>>;
 
 /** The name of Siphon's request for the person's trust in what a folder's configuration names to run. */
-const TRUST = "trust";
+const TRUST = "siphon.trust";
 /** The name of Siphon's request for the person's permission for a call. */
-const PERMISSION = "permission";
-/** The name of the request a `question` call asks the person by. */
-const QUESTION = "question";
+const PERMISSION = "siphon.permission";
+/** The name of Siphon's request for a call the person answers, as the `question` tool's are. */
+const ASKS = "siphon.asks";
+/** The tool whose calls ask the person questions. */
+const QUESTION_TOOL = "question";
 
-const AccessSchema = Type.Object({
-	action: Type.Union([Type.Literal("edit"), Type.Literal("command"), Type.Literal("tool")]),
-	resources: Type.Array(Type.String()),
-	save: Type.Array(Type.String()),
-	escalate: Type.Optional(Type.Boolean()),
-	justification: Type.Optional(Type.String()),
+const Nullable = <Schema extends Parameters<typeof Type.Optional>[0]>(schema: Schema) => Type.Optional(Type.Union([schema, Type.Null()]));
+const GrantsSchema = Type.Object({ commands: Type.Array(Type.String()), paths: Type.Array(Type.String()), tools: Type.Array(Type.String()) });
+const PermissionAskedSchema = Type.Object({
+	call: Type.Object({ tool: Type.String(), arguments: Type.String(), does: Type.Array(Type.String()), justification: Nullable(Type.String()) }),
+	always: GrantsSchema,
 });
-const PermissionAskedSchema = Type.Object({ tool: Type.String(), arguments: Type.Unknown(), access: AccessSchema, doubt: Type.Optional(Type.String()) });
 const QuestionSchema = Type.Object({
 	question: Type.String(),
-	header: Type.String(),
-	options: Type.Optional(Type.Array(Type.Object({ label: Type.String(), description: Type.Optional(Type.String()) }))),
-	multiple: Type.Optional(Type.Boolean()),
+	header: Nullable(Type.String()),
+	options: Nullable(Type.Array(Type.Object({ label: Type.String(), description: Nullable(Type.String()) }))),
+	multiple: Nullable(Type.Boolean()),
 });
-const QuestionsAskedSchema = Type.Object({ questions: Type.Array(QuestionSchema) });
+const QuestionsAskedSchema = Type.Object({ tool: Type.Literal(QUESTION_TOOL), arguments: Type.Object({ questions: Type.Array(QuestionSchema) }) });
 
-const ServerSchema = Type.Object({ name: Type.String(), command: Type.String(), args: Type.Optional(Type.Array(Type.String())) });
-const TrustAskedSchema = Type.Object({ folder: Type.String(), servers: Type.Optional(Type.Array(ServerSchema)) });
+const ServerSchema = Type.Object({ name: Type.String(), runs: Type.String() });
+const TrustAskedSchema = Type.Object({ folder: Type.String(), servers: Type.Array(ServerSchema) });
+const EscalatesSchema = Type.Object({ escalate: Type.Literal(true) });
 const ObjectSchema = Type.Object({ properties: Type.Record(Type.String(), Type.Unknown()), required: Type.Optional(Type.Array(Type.String())) });
 const UnionSchema = Type.Object({ anyOf: Type.Array(Type.Unknown()) });
 const PropertySchema = Type.Object({
@@ -92,17 +100,41 @@ type ObjectShape = Static<typeof ObjectSchema>;
 
 /** The form of what `ask` asks: by its request's name and what it was made with, else by its answer's schema. */
 export function formOf(ask: Ask): AskForm {
-	const { name, payload, answer } = ask.request;
-	if (name === TRUST && matches(TrustAskedSchema, payload)) return { kind: "trust", folder: payload.folder, servers: payload.servers ?? [] };
-	if (name === PERMISSION && matches(PermissionAskedSchema, payload))
-		return { kind: "permission", tool: payload.tool, arguments: payload.arguments, access: payload.access, doubt: payload.doubt };
-	if (name === QUESTION && matches(QuestionsAskedSchema, payload)) return { kind: "question", questions: payload.questions };
+	const { name, payload, answer_schema: answer } = ask;
+	if (name === TRUST && matches(TrustAskedSchema, payload)) return { kind: "trust", folder: payload.folder, servers: payload.servers };
+	if (name === PERMISSION && matches(PermissionAskedSchema, payload)) return permissionOf(payload);
+	if (name === ASKS && matches(QuestionsAskedSchema, payload)) return { kind: "question", questions: payload.arguments.questions };
 	const members = matches(UnionSchema, answer) ? answer.anyOf.filter((member) => matches(ObjectSchema, member)) : [];
 	const offered = members.length > 0 ? members : matches(ObjectSchema, answer) ? [answer] : [];
 	const choices = choicesOf(offered);
 	if (choices !== undefined) return choices;
 	const [only] = offered;
 	return offered.length === 1 && only !== undefined ? { kind: "fields", fields: fieldsOf(only, []) } : { kind: "shown" };
+}
+
+/** A call's permission, from what Siphon asks: its tool and its arguments, what it does, and what an always grants. */
+function permissionOf(asked: Static<typeof PermissionAskedSchema>): AskForm {
+	const { call, always } = asked;
+	const args = argumentsOf(call.arguments);
+	const action = call.tool === "shell" ? "command" : call.tool === "write" || call.tool === "edit" ? "edit" : "tool";
+	const access: Access = {
+		action,
+		// What it does reads as "edits <path>", "runs <command>": what it acts on is past the verb.
+		resources: call.does.map((does) => does.replace(/^\S+\s+/, "")),
+		save: [...always.commands, ...always.paths, ...always.tools],
+		escalate: matches(EscalatesSchema, args),
+		justification: call.justification ?? undefined,
+	};
+	return { kind: "permission", tool: call.tool, arguments: args, access };
+}
+
+/** A call's arguments as the model wrote them, read as JSON where they are; else as they were written. */
+function argumentsOf(written: string): unknown {
+	try {
+		return JSON.parse(written);
+	} catch {
+		return written;
+	}
 }
 
 /** The answers objects offer, each named by a constant of the same property; none for another shape. */
@@ -208,7 +240,7 @@ const WriteArgumentsSchema = Type.Object({ content: Type.String() });
 export function permissionTitle(tool: string, access: Access): string {
 	switch (access.action) {
 		case "command":
-			return access.escalate === true ? "Run this beyond the sandbox?" : "Run this command?";
+			return access.escalate ? "Run this beyond the sandbox?" : "Run this command?";
 		case "edit":
 			return tool === "write" ? "Write this file?" : "Edit this file?";
 		case "tool":
@@ -230,11 +262,11 @@ export function askTitle(ask: Ask): string {
 		case "permission":
 			return permissionTitle(form.tool, form.access);
 		case "question":
-			return form.questions[0]?.header ?? ask.request.name;
+			return form.questions[0]?.header ?? form.questions[0]?.question ?? ask.name;
 		case "choices":
 		case "fields":
 		case "shown":
-			return ask.request.name;
+			return ask.name;
 	}
 }
 
@@ -305,9 +337,25 @@ export function write(question: Question, draft: Draft, own: string): Draft {
 /** The answer of questions the person dismissed, answering none. */
 export const DISMISSED: Json = { dismissed: true };
 
-/** The answer to the questions, from what the person gave of each: the labels chosen, then their own words. */
+/** The answer to the questions, from what the person gave of each: the labels chosen and their own words, none for one left unanswered. */
 export function questionsAnswer(drafts: readonly Draft[]): Json {
-	return { answers: drafts.map((draft) => [...draft.chosen, ...(draft.own.trim() === "" ? [] : [draft.own.trim()])]) };
+	return {
+		answers: drafts.map((draft) => {
+			const own = draft.own.trim();
+			if (draft.chosen.length === 0 && own === "") return null;
+			return { chosen: [...draft.chosen], ...(own === "" ? {} : { text: own }) };
+		}),
+	};
+}
+
+/** The person's permission for a call: just once, or always in the thread's project as its patterns say. */
+export function allowed(always: boolean): Json {
+	return { decision: "allow", always };
+}
+
+/** The person's refusal of a call, with what they wrote for the model of what to do instead, where they wrote any. */
+export function denied(reason: string): Json {
+	return reason.trim() === "" ? { decision: "deny" } : { decision: "deny", reason: reason.trim() };
 }
 
 /** A name as people read it: `not_now` is "Not now". */

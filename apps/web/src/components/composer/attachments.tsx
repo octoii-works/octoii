@@ -15,6 +15,8 @@ export type AttachmentsProps = {
 	readonly attachments: readonly Attachment[];
 	readonly attaching: Attaching;
 	readonly seesImages: boolean | undefined;
+	/** The thread the files are kept by; none for a thread not made yet, whose files the page holds. */
+	readonly thread: string | undefined;
 };
 
 /** The row; nothing where there is nothing to show. */
@@ -26,7 +28,7 @@ export function Attachments(props: AttachmentsProps): ReactNode {
 		<div className="flex flex-col gap-1.5 px-3 pt-3">
 			<div className="flex flex-wrap gap-2">
 				{attachments.map((attachment) => (
-					<Chip key={attachment.ref} attachment={attachment} onRemove={() => attaching.remove(attachment.ref)} />
+					<Chip key={attachment.ref} attachment={attachment} thread={props.thread} onRemove={() => attaching.remove(attachment.ref)} />
 				))}
 				{attaching.sending.map((going) => (
 					<div key={going.key} className="flex h-14 items-center gap-2 rounded-md border border-border bg-muted px-2 text-xs text-muted-foreground opacity-70">
@@ -44,14 +46,17 @@ export function Attachments(props: AttachmentsProps): ReactNode {
 	);
 }
 
-/** A file of the draft's: an image's picture, or a file's name and size; its cross as it is pointed at or focused, and always where nothing points. */
-function Chip(props: { readonly attachment: Attachment; readonly onRemove: () => void }): ReactNode {
-	const { attachment } = props;
+/**
+ * A file of the draft's: an image's picture, where its thread keeps it, or a file's name and size; its cross as it is
+ * pointed at or focused, and always where nothing points.
+ */
+function Chip(props: { readonly attachment: Attachment; readonly thread: string | undefined; readonly onRemove: () => void }): ReactNode {
+	const { attachment, thread } = props;
 	return (
 		<div className="group/chip relative">
-			{isImage(attachment.media_type) ? (
+			{isImage(attachment.media_type) && thread !== undefined && attachment.bytes === undefined ? (
 				<KeptImage
-					address={fileAddress(attachment.ref)}
+					address={fileAddress(thread, attachment.ref)}
 					alt={attachment.name}
 					title={attachment.name}
 					className="size-14 rounded-md border border-border object-cover"

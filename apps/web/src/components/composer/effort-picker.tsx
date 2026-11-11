@@ -4,7 +4,7 @@
  * does not reason.
  */
 import { type ReactNode, useState } from "react";
-import type { Effort } from "@octoii-works/octoii-client";
+import type { ReasoningEffort as Effort } from "@octoii-works/octoii-client";
 import { Brain, ChevronDown } from "lucide-react";
 import { effortLabel, effortsOf, modelOf, nextEffort } from "../../core/models.ts";
 import { shortcutLabel } from "../../core/shortcuts.ts";
@@ -25,7 +25,7 @@ export function EffortControl(props: EffortControlProps): ReactNode {
 	const [open, setOpen] = useState(false);
 	const model = modelOf(useDirectory(), props.model);
 	const efforts = effortsOf(model);
-	const fallback = model?.reasoning?.default_effort;
+	const fallback = model?.reasoning?.default_effort ?? undefined;
 	const shown = props.effort ?? fallback;
 	useShortcut(NEXT_EFFORT, () => {
 		const next = nextEffort(efforts, shown);

@@ -5,7 +5,8 @@
  * it leaves above it, by what stands before it in its turn. A row that is the same as it was stays the same object, so
  * the list draws again only the rows that changed.
  */
-import type { Ask, Limited } from "@octoii-works/octoii-client";
+import type { Ask } from "@octoii-works/octoii-client";
+import type { Limited } from "./limits.ts";
 import {
 	type Changed,
 	doingOf,

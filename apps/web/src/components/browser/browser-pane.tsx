@@ -7,7 +7,7 @@
 import { type FormEvent, type ReactNode, useState } from "react";
 import type { PageDialog, PageListed } from "@octoii-works/octoii-client";
 import { useClient } from "@octoii-works/octoii-client/react";
-import { ArrowLeft, ArrowRight, Globe, LoaderCircle, MessageSquareWarning, RotateCw } from "lucide-react";
+import { ArrowLeft, ArrowRight, Globe, MessageSquareWarning, RotateCw } from "lucide-react";
 import { addressOf, shownAddress } from "../../core/browser.ts";
 import { usePageView } from "../effects/page.ts";
 import { Button, IconButton } from "../ui/button.tsx";
@@ -23,14 +23,12 @@ export function BrowserPane(props: { readonly page: PageListed }): ReactNode {
 			<div className="flex h-control-lg shrink-0 items-center gap-0.5 border-b border-border px-2 text-xs">
 				<IconButton
 					label="Go back"
-					disabled={!page.back}
 					onClick={() => void client.call("browser.back", { page: page.id }).catch((error: unknown) => failed("The page could not go back", error))}
 				>
 					<ArrowLeft className="size-3.5" />
 				</IconButton>
 				<IconButton
 					label="Go forward"
-					disabled={!page.forward}
 					onClick={() => void client.call("browser.forward", { page: page.id }).catch((error: unknown) => failed("The page could not go forward", error))}
 				>
 					<ArrowRight className="size-3.5" />
@@ -39,7 +37,7 @@ export function BrowserPane(props: { readonly page: PageListed }): ReactNode {
 					label="Load the page again"
 					onClick={() => void client.call("browser.reload", { page: page.id }).catch((error: unknown) => failed("The page could not be loaded again", error))}
 				>
-					{page.loading ? <LoaderCircle className="size-3.5 animate-spin" /> : <RotateCw className="size-3.5" />}
+					<RotateCw className="size-3.5" />
 				</IconButton>
 				<AddressBar
 					page={page}

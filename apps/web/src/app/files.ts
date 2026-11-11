@@ -1,24 +1,23 @@
 /**
- * Files sent to the node with a message: a file's bytes posted to the node's `/files`, which keeps them by their content
- * and answers with the reference the message names them by, as JSON carries bytes badly.
+ * Files a thread keeps for its messages: a file's bytes posted to the node's `/threads/{thread}/files`, which keeps
+ * them by their content and answers with the file as the thread keeps it, which a message names, as JSON carries bytes
+ * badly.
  */
-import { type KeptFile, matches } from "@octoii-works/octoii-client";
+import type { FileRef } from "@octoii-works/octoii-client";
+import { matches } from "../core/schema.ts";
 import { Type } from "typebox";
-import { jsonOf, type SendRequest, succeeded } from "../components/state/reach.ts";
+import { jsonOf, type SendRequest, succeeded, wordsOf } from "../components/state/reach.ts";
 
-/** Where the node keeps files. */
-const FILES_PATH = "/files";
-
-const KeptSchema = Type.Object({ ref: Type.String(), size: Type.Number(), media_type: Type.Optional(Type.String()) });
-const RefusalSchema = Type.Object({ message: Type.String() });
+const KeptSchema = Type.Object({ ref: Type.String(), media_type: Type.String(), filename: Type.Optional(Type.Union([Type.String(), Type.Null()])) });
 
 /**
- * Sends `bytes` to the node to keep: its reference, its size and what an image became; rejects with the node's words
- * where it refuses them.
+ * Sends `bytes`, named `name`, to the thread `thread` to keep: the file as it keeps it, an image fitted to what models
+ * read; rejects with the node's words where it refuses them.
  */
-export async function keepFile(send: SendRequest, bytes: Blob): Promise<KeptFile> {
-	const answer = await send({ method: "POST", path: FILES_PATH, body: bytes });
+export async function keepFile(send: SendRequest, thread: string, bytes: Blob, name: string): Promise<FileRef> {
+	const path = `/threads/${encodeURIComponent(thread)}/files?name=${encodeURIComponent(name)}`;
+	const answer = await send({ method: "POST", path, contentType: bytes.type === "" ? "application/octet-stream" : bytes.type, body: bytes });
 	const told = jsonOf(answer);
 	if (succeeded(answer) && matches(KeptSchema, told)) return told;
-	throw new Error(matches(RefusalSchema, told) ? told.message : `The node did not keep the file (${String(answer.status)}).`);
+	throw new Error(wordsOf(answer) || `The node did not keep the file (${String(answer.status)}).`);
 }

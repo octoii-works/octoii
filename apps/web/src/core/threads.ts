@@ -21,18 +21,18 @@ export type ThreadStatus = "asks" | "working" | "failed" | "ready";
 /** How a thread stands: what waits on the person first, then a turn that runs or inputs that wait, then how the last ended. */
 export function statusOf(row: Listed): ThreadStatus {
 	if (asksOf(row).length > 0) return "asks";
-	if (row.standing.status === "running" || row.standing.inbox.length > 0) return "working";
-	return row.standing.status === "failed" ? "failed" : "ready";
+	if (row.status.turn === "running" || row.status.inbox.length > 0) return "working";
+	return row.status.turn === "failed" ? "failed" : "ready";
 }
 
-/** What a thread waits on the person for, each as its fiber asks it. */
+/** What a thread waits on the person for. */
 export function asksOf(row: Listed): readonly Ask[] {
-	return row.standing.asks.map((ask) => ({ fiber: ask.fiber, call: undefined, request: ask.request }));
+	return row.status.asks;
 }
 
 /** When a thread asked the person last, in ms, as the key of its newest request was minted; none where it asks nothing. */
 export function askedAt(row: Listed): number {
-	return Math.max(0, ...asksOf(row).map((ask) => mintedAt(ask.request.key)));
+	return Math.max(0, ...asksOf(row).map((ask) => mintedAt(ask.key)));
 }
 
 /** How a thread stands with the sub-threads it delegated to, and since when. */
@@ -64,7 +64,7 @@ export function standingsOf(rows: readonly Listed[]): (row: Listed) => ThreadSta
 function sinceOf(row: Listed, status: ThreadStatus): number {
 	if (status === "asks") return askedAt(row);
 	if (status === "working") return activeAt(row);
-	return row.standing.ended_at ?? activeAt(row);
+	return row.status.ended_at ?? activeAt(row);
 }
 
 /**
@@ -75,12 +75,12 @@ function sinceOf(row: Listed, status: ThreadStatus): number {
 export function arrivedAt(row: Listed, standing: ThreadStanding): number {
 	if (standing.status === "asks") return standing.since;
 	if (standing.status === "working") return 0;
-	return row.standing.ended_at ?? 0;
+	return row.status.ended_at ?? 0;
 }
 
 /** Whether a thread brought the person something they have not seen yet. */
 export function isUnread(row: Listed, standing: ThreadStanding): boolean {
-	return arrivedAt(row, standing) > (row.manifest.seen_until ?? 0);
+	return arrivedAt(row, standing) > (row.marks.seen_until ?? 0);
 }
 
 /** How long a thread nothing came of stays among the active before it settles by itself: a week. */
@@ -98,8 +98,8 @@ export function lastActiveAt(row: Listed, standing: ThreadStanding): number {
  */
 export function isSettled(row: Listed, standing: ThreadStanding, now: number): boolean {
 	if (standing.status === "asks" || standing.status === "working") return false;
-	const last = Math.max(lastActiveAt(row, standing), row.manifest.unsettled_at ?? 0);
-	if ((row.manifest.settled_at ?? 0) > last) return true;
+	const last = Math.max(lastActiveAt(row, standing), row.marks.unsettled_at ?? 0);
+	if ((row.marks.settled_at ?? 0) > last) return true;
 	return now - last > SETTLES_AFTER_MS;
 }
 
@@ -121,7 +121,7 @@ function standingOfAll(standings: readonly ThreadStanding[]): ThreadStanding | u
 export function subThreadsBy(rows: readonly Listed[]): ReadonlyMap<string, readonly Listed[]> {
 	const delegated = new Map<string, Listed[]>();
 	for (const row of rows) {
-		const parent = row.manifest.parent?.thread;
+		const parent = row.parent?.thread;
 		if (parent === undefined || isArchived(row)) continue;
 		const siblings = delegated.get(parent);
 		if (siblings === undefined) delegated.set(parent, [row]);
@@ -132,7 +132,7 @@ export function subThreadsBy(rows: readonly Listed[]): ReadonlyMap<string, reado
 
 /** The thread `id` and those above it among `rows`, nearest first: the thread that delegated to it, that one's, and on up. */
 export function lineOf(rows: readonly Listed[], id: string): readonly string[] {
-	const parents = new Map(rows.map((row) => [row.id, row.manifest.parent?.thread]));
+	const parents = new Map(rows.map((row) => [row.id, row.parent?.thread]));
 	const line = [id];
 	for (let parent = parents.get(id); parent !== undefined && !line.includes(parent); parent = parents.get(parent)) line.push(parent);
 	return line;
@@ -155,18 +155,18 @@ export function titleOf(message: string): string {
 
 /** A thread's title in a list: the one it was given, else what a new one is called. */
 export function threadTitle(row: Listed): string {
-	return row.manifest.title ?? "New thread";
+	return row.config.title ?? "New thread";
 }
 
 /** When a thread last set to work, in ms: its latest turn's beginning, else its making, as its id was minted. */
 export function activeAt(row: Listed): number {
-	return row.standing.began_at ?? mintedAt(row.id);
+	return row.status.began_at ?? mintedAt(row.id);
 }
 
 /** A thread's project: the folder of the repository it works in, else the folder it works in; none for one that works in no folder. */
 export function projectOf(row: Listed): Project | undefined {
-	const folder = row.manifest.project;
-	return folder === undefined ? undefined : { folder, name: folderName(folder) };
+	const folder = row.project;
+	return folder === undefined || folder === null ? undefined : { folder, name: folderName(folder) };
 }
 
 /**
@@ -216,17 +216,17 @@ export function matchingRows(rows: readonly Listed[], query: string): readonly L
 
 /** Whether the person pinned the thread, which keeps it atop their threads. */
 export function isPinned(row: Listed): boolean {
-	return row.manifest.pinned === true;
+	return row.marks.pinned;
 }
 
 /** Whether the person archived the thread, which keeps it out of their threads. */
 export function isArchived(row: Listed): boolean {
-	return row.manifest.archived === true;
+	return row.marks.archived;
 }
 
 /** Whether the person snoozed the thread till a time that has not come by `now`. */
 export function isSnoozed(row: Listed, now: number): boolean {
-	return (row.manifest.snoozed_until ?? 0) > now;
+	return (row.marks.snoozed_until ?? 0) > now;
 }
 
 /** The sidebar's sections of threads. */
@@ -245,22 +245,17 @@ export type Sections = {
 
 /** The sub-threads of the thread `id` among `rows`, those it delegated to, newest first as the rows are. */
 export function subThreadsOf(rows: readonly Listed[], id: string): readonly Listed[] {
-	return rows.filter((row) => row.manifest.parent?.thread === id);
+	return rows.filter((row) => row.parent?.thread === id);
 }
 
 /**
  * The sub-thread of the thread `id` among `rows` a delegating call gave its task to, where there is one: the one its
- * arguments name, or else the one it made, which names the call by Siphon's id of it, which no other call has.
+ * arguments name, or else the one it made, which names the call by the model's id of it.
  */
-export function subThreadOf(
-	rows: readonly Listed[],
-	id: string,
-	call: { readonly fiber: string | undefined; readonly thread: string | undefined },
-): Listed | undefined {
+export function subThreadOf(rows: readonly Listed[], id: string, call: { readonly id: string; readonly thread: string | undefined }): Listed | undefined {
 	const ours = subThreadsOf(rows, id);
 	if (call.thread !== undefined) return ours.find((row) => row.id === call.thread);
-	if (call.fiber === undefined) return undefined;
-	return ours.find((row) => row.manifest.parent?.call === call.fiber);
+	return ours.find((row) => row.parent?.call === call.id);
 }
 
 /**
@@ -269,7 +264,7 @@ export function subThreadOf(
  */
 export function rowsBySection(rows: readonly Listed[], now: number, standingOf: (row: Listed) => ThreadStanding): Sections {
 	const ids = new Set(rows.map((row) => row.id));
-	const listed = rows.filter((row) => !isArchived(row) && !ids.has(row.manifest.parent?.thread ?? ""));
+	const listed = rows.filter((row) => !isArchived(row) && !ids.has(row.parent?.thread ?? ""));
 	const snoozed = listed.filter((row) => isSnoozed(row, now));
 	const awake = listed.filter((row) => !isSnoozed(row, now));
 	const pinned = awake.filter(isPinned);

@@ -8,10 +8,9 @@
  */
 import { type KeyboardEvent, type ReactNode, useContext, useState } from "react";
 import { ChevronLeft, ChevronRight, ImageOff } from "lucide-react";
-import { fileAddress } from "../../core/attachments.ts";
+import { fileAddress, machineAddress } from "../../core/attachments.ts";
 import { childPath, isWholePath } from "../../core/files.ts";
 import { PICTURE_BOX, type Picture, pictureAddress } from "../../core/pictures.ts";
-import { useOutcome } from "../effects/read.ts";
 import { IconButton } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
 import { Dialog, DialogPopup, DialogTitle } from "../ui/dialog.tsx";
@@ -24,6 +23,7 @@ const TILE = "block h-32 w-auto max-w-96 min-w-16 object-cover object-top";
 /** The strip of `pictures`, and the one opened. */
 export function PictureStrip(props: { readonly pictures: readonly Picture[]; readonly className?: string }): ReactNode {
 	const [opened, setOpened] = useState<number | undefined>(undefined);
+	const thread = useContext(MessageThreadContext)?.thread ?? "";
 	return (
 		<>
 			<div className={cn("flex snap-x snap-mandatory gap-2 overflow-x-auto px-1 py-1 [scrollbar-width:thin]", props.className)}>
@@ -36,7 +36,7 @@ export function PictureStrip(props: { readonly pictures: readonly Picture[]; rea
 						className="shrink-0 snap-start overflow-hidden rounded-md border border-border bg-muted outline-none focus-visible:ring-2 focus-visible:ring-ring"
 					>
 						{picture.kind === "kept" ? (
-							<KeptImage address={pictureAddress(picture.ref)} alt={picture.name} loading="lazy" decoding="async" className={TILE} />
+							<KeptImage address={pictureAddress(thread, picture.ref)} alt={picture.name} loading="lazy" decoding="async" className={TILE} />
 						) : (
 							<FilePicture path={picture.path} name={picture.name} box={PICTURE_BOX} className={TILE} />
 						)}
@@ -55,8 +55,8 @@ function keyOf(picture: Picture): string {
 
 /**
  * The machine's image at `path`, from the thread's folder or whole — fitted to `box` where it is given, else whole — as
- * the thread's machine reads it now: while it is read, a tile's room; where it is no image or cannot be read, a mark of
- * that. `onSize` is told its size once it loads.
+ * the thread's machine reads it now: where it is no image or cannot be read, a mark of that. `onSize` is told its size
+ * once it loads.
  */
 function FilePicture(props: {
 	readonly path: string;
@@ -67,22 +67,21 @@ function FilePicture(props: {
 }): ReactNode {
 	const workspace = useContext(MessageThreadContext)?.workspace;
 	const whole = isWholePath(props.path) ? props.path : workspace === undefined ? undefined : childPath(workspace, props.path);
-	const outcome = useOutcome("files.read", whole === undefined ? undefined : props.box === undefined ? { path: whole } : { path: whole, box: props.box });
-	if (whole !== undefined && outcome === undefined) return <span className={cn(props.className, "w-24")} />;
-	if (outcome === undefined || "failure" in outcome || outcome.result.type !== "image") {
-		const why = outcome === undefined ? "No folder to read it from" : "failure" in outcome ? outcome.failure : "Not an image";
+	const [failed, setFailed] = useState(false);
+	if (whole === undefined || failed) {
+		const why = whole === undefined ? "No folder to read it from" : "Not an image that can be read";
 		return (
 			<span title={`${props.path}: ${why}`} className={cn(props.className, "flex w-24 items-center justify-center text-muted-foreground")}>
 				<ImageOff className="size-5" />
 			</span>
 		);
 	}
-	const page = outcome.result;
 	return (
-		<img
+		<KeptImage
+			address={machineAddress(whole, props.box)}
 			alt={props.name}
-			src={`data:${page.media_type};base64,${page.data}`}
 			onLoad={(event) => props.onSize?.(sizeOf(event.currentTarget))}
+			onError={() => setFailed(true)}
 			className={props.className}
 		/>
 	);
@@ -136,12 +135,13 @@ function Viewer(props: {
 /** A picture whole, and under it its words, its size once it loaded, and `children`, the way through the others. */
 function Whole(props: { readonly picture: Picture; readonly children: ReactNode }): ReactNode {
 	const { picture } = props;
+	const thread = useContext(MessageThreadContext)?.thread ?? "";
 	const [size, setSize] = useState<string | undefined>(undefined);
 	const look = "max-h-[78vh] max-w-[90vw] rounded-md object-contain shadow-floating";
 	return (
 		<>
 			{picture.kind === "kept" ? (
-				<KeptImage address={fileAddress(picture.ref)} alt={picture.name} onLoad={(event) => setSize(sizeOf(event.currentTarget))} className={look} />
+				<KeptImage address={fileAddress(thread, picture.ref)} alt={picture.name} onLoad={(event) => setSize(sizeOf(event.currentTarget))} className={look} />
 			) : (
 				<FilePicture path={picture.path} name={picture.name} onSize={setSize} className={look} />
 			)}

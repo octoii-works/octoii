@@ -3,7 +3,7 @@
  * where the person trusts it, else those it names, as they would be run — with how the person stands on it; and what
  * the menu's chip counts.
  */
-import type { ServerShown, ServersListed } from "@octoii-works/octoii-client";
+import type { ServerListed as ServerShown, ServersListed } from "@octoii-works/octoii-client";
 import { folderName } from "./threads.ts";
 
 /** A project's servers, as the person decides on them: its folder, its name, its file and its digest, what they decided — none where nothing — and its servers. */
