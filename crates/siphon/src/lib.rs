@@ -2,6 +2,8 @@
 //! model calls, the MCP servers they reach, and the terminals and the browser the person and the model share — started
 //! as one on a volume, for a node to serve.
 
+pub mod connection;
+
 use std::path::PathBuf;
 use std::sync::Arc;
 

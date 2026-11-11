@@ -1,10 +1,9 @@
 // Siphon's protocol, generated from its Rust types by `siphon-protocol`'s test — not to be edited by hand.
 
 /**
- * What a thread asks the person, by the process that asks and its request's key, answered with `answer`, which fits
- * the schema the ask gives.
+ * What a thread asks the person, by its request's key, answered with `answer`, which fits the schema the ask gives.
  */
-export type AnswerThread = { thread: string, process: string, key: string, answer: JsonValue, };
+export type AnswerThread = { thread: string, key: string, answer: JsonValue, };
 
 /**
  * A request a process of the thread waits on a person's answer to: the process, by its path, the request's key and

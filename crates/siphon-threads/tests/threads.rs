@@ -335,5 +335,22 @@ async fn a_log_is_read_on_a_page_at_a_time_each_line_once() {
     assert_eq!(read, whole);
     let after = log::read_after(&snapshot, &id, cursor.as_ref(), 200).expect("read");
     assert!(after.lines.is_empty() && !after.more, "nothing past the end");
+    let back = |before: Option<&str>, limit| {
+        let (lines, complete) = log::read_before(&snapshot, &id, before, limit).expect("read");
+        let ids: Vec<String> = lines
+            .iter()
+            .map(|line| log::entry_of(line).expect("an entry").id().to_owned())
+            .collect();
+        (ids, complete)
+    };
+    let ids: Vec<String> = whole.iter().map(|entry| entry.id().to_owned()).collect();
+    assert_eq!(back(None, 5), (ids[16..].to_vec(), false), "the latest five");
+    assert_eq!(back(Some(&ids[16]), 5), (ids[11..16].to_vec(), false), "the five before them");
+    assert_eq!(
+        back(Some(&ids[3]), 5),
+        (ids[..3].to_vec(), true),
+        "the first three, the log's start reached"
+    );
+    assert_eq!(back(None, 100), (ids.clone(), true), "all of it");
     threads.runtime().close().await;
 }

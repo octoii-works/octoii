@@ -3015,15 +3015,21 @@ name = "siphon"
 version = "0.1.0"
 dependencies = [
  "beak",
+ "bytes",
  "octoii-ai",
+ "serde",
+ "serde_json",
  "siphon-agent",
  "siphon-browser",
  "siphon-machine",
+ "siphon-protocol",
  "siphon-runtime",
+ "siphon-settings",
  "siphon-terminals",
  "siphon-threads",
  "siphon-tools",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]

@@ -305,6 +305,46 @@ pub fn read_after(snapshot: &Snapshot, id: &str, from: Option<&Cursor>, bytes_ma
     })
 }
 
+/// The latest `limit` lines of the log of the thread `id` before the entry `before` — the latest of all, where none —
+/// oldest first, as `snapshot` left it, and whether they reach the log's first. Entries' ids grow as they are made, and
+/// each segment is named by its first's, so a segment begun after `before` is passed over unread.
+///
+/// # Errors
+/// The volume's failure; a line that is no entry.
+pub fn read_before(snapshot: &Snapshot, id: &str, before: Option<&str>, limit: usize) -> Result<(Vec<Bytes>, bool), Error> {
+    #[derive(Deserialize)]
+    struct Head<'a> {
+        #[serde(borrow)]
+        id: std::borrow::Cow<'a, str>,
+    }
+    let all = segments(snapshot, id)?;
+    let mut pages: Vec<Vec<Bytes>> = Vec::new();
+    let mut taken = 0;
+    for (index, (name, length)) in all.iter().enumerate().rev() {
+        let first = name.strip_suffix(SEGMENT_EXTENSION).unwrap_or(name);
+        if before.is_some_and(|before| first >= before) {
+            continue;
+        }
+        let whole = snapshot.read(&segment(id, name), 0, *length)?.unwrap_or_default();
+        let mut lines = Vec::new();
+        for line in whole.split(|&byte| byte == b'\n').filter(|line| !line.is_empty()) {
+            let head: Head<'_> = serde_json::from_slice(line)?;
+            if before.is_none_or(|before| *head.id < *before) {
+                lines.push(whole.slice_ref(line));
+            }
+        }
+        let wanted = limit - taken;
+        let reached_first = index == 0 && lines.len() <= wanted;
+        let keep = lines.split_off(lines.len().saturating_sub(wanted));
+        taken += keep.len();
+        pages.push(keep);
+        if reached_first || taken == limit {
+            return Ok((pages.into_iter().rev().flatten().collect(), reached_first));
+        }
+    }
+    Ok((pages.into_iter().rev().flatten().collect(), true))
+}
+
 /// The whole lines of the segment at `path`, `length` long, from `offset`: about `budget` bytes of them, up to the
 /// last newline within, or the whole line it begins where none ends within.
 fn whole_lines(snapshot: &Snapshot, path: &[u8], offset: u64, length: u64, budget: u64) -> beak::Result<Bytes> {

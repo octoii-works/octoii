@@ -7,11 +7,13 @@ use siphon_settings::SettingsChange;
 use siphon_threads::{Config, ConfigChange, Entry, Listed, MarksChange};
 use ts_rs::TS;
 
+use crate::Scope;
 use crate::events::Topic;
 
-/// The methods: each its name, the variant of `Method` it is read as, its params and its result.
+/// The methods: each its name, the variant of `Method` it is read as, its params, its result and the scope a session
+/// needs to call it — none where its params decide, as a subscription's topic does.
 macro_rules! methods {
-    ($($(#[$doc:meta])* $name:literal $variant:ident($params:ty) -> $result:ty;)*) => {
+    ($($(#[$doc:meta])* $name:literal $variant:ident($params:ty) -> $result:ty, $scope:expr;)*) => {
         /// A call's method, with its params.
         #[derive(Debug, Clone, PartialEq, Deserialize)]
         #[serde(tag = "method", content = "params")]
@@ -25,6 +27,16 @@ macro_rules! methods {
             pub fn name(&self) -> &'static str {
                 match self {
                     $(Self::$variant(_) => $name,)*
+                }
+            }
+        }
+
+        impl Method {
+            /// The scope a session needs to call it; none where its params decide.
+            #[must_use]
+            pub fn scope(&self) -> Option<Scope> {
+                match self {
+                    $(Self::$variant(_) => $scope,)*
                 }
             }
         }
@@ -43,31 +55,31 @@ macro_rules! methods {
 
 methods! {
     /// The threads, each as a list shows it.
-    "threads.list" ListThreads(Nothing) -> ThreadsListed;
+    "threads.list" ListThreads(Nothing) -> ThreadsListed, Some(Scope::ThreadsRead);
     /// A thread made as `config` says, once for its idempotency key `key`: the id it has.
-    "threads.create" CreateThread(CreateThread) -> Created;
+    "threads.create" CreateThread(CreateThread) -> Created, Some(Scope::ThreadsOperate);
     /// How a thread runs changed, from its next model request.
-    "threads.configure" ConfigureThread(ConfigureThread) -> Nothing;
+    "threads.configure" ConfigureThread(ConfigureThread) -> Nothing, Some(Scope::ThreadsOperate);
     /// How the person keeps a thread changed.
-    "threads.mark" MarkThread(MarkThread) -> Nothing;
+    "threads.mark" MarkThread(MarkThread) -> Nothing, Some(Scope::ThreadsOperate);
     /// What a message gives a thread delivered to its inbox, once for its idempotency key: its delivery's id.
-    "threads.deliver" Deliver(Deliver) -> Delivered;
+    "threads.deliver" Deliver(Deliver) -> Delivered, Some(Scope::ThreadsOperate);
     /// A delivery taken back, where its thread has not taken it yet: whether it was.
-    "threads.withdraw" Withdraw(Withdraw) -> Withdrawn;
+    "threads.withdraw" Withdraw(Withdraw) -> Withdrawn, Some(Scope::ThreadsOperate);
     /// A thread's turn stopped.
-    "threads.stop" StopThread(OfThread) -> Nothing;
+    "threads.stop" StopThread(OfThread) -> Nothing, Some(Scope::ThreadsOperate);
     /// A thread deleted, and its sub-threads with it.
-    "threads.delete" DeleteThread(OfThread) -> Nothing;
+    "threads.delete" DeleteThread(OfThread) -> Nothing, Some(Scope::ThreadsOperate);
     /// What a thread asks the person answered.
-    "threads.answer" AnswerThread(AnswerThread) -> Nothing;
+    "threads.answer" AnswerThread(AnswerThread) -> Nothing, Some(Scope::ThreadsOperate);
     /// A page of a thread's entries, the latest before an entry, or the latest of all.
-    "threads.read" ReadThread(ReadThread) -> ThreadRead;
+    "threads.read" ReadThread(ReadThread) -> ThreadRead, Some(Scope::ThreadsRead);
     /// The settings changed: the environment's each given, the device's merged.
-    "settings.set" SetSettings(SettingsChange) -> Nothing;
+    "settings.set" SetSettings(SettingsChange) -> Nothing, Some(Scope::ThreadsOperate);
     /// A subscription to a topic: its id, which its events carry.
-    "subscribe" Subscribe(Subscribe) -> Subscribed;
+    "subscribe" Subscribe(Subscribe) -> Subscribed, None;
     /// A subscription let go.
-    "unsubscribe" Unsubscribe(Unsubscribe) -> Nothing;
+    "unsubscribe" Unsubscribe(Unsubscribe) -> Nothing, None;
 }
 
 /// Nothing: what a method takes or answers where it takes or answers nothing.
@@ -131,12 +143,10 @@ pub struct Withdrawn {
     pub withdrawn: bool,
 }
 
-/// What a thread asks the person, by the process that asks and its request's key, answered with `answer`, which fits
-/// the schema the ask gives.
+/// What a thread asks the person, by its request's key, answered with `answer`, which fits the schema the ask gives.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 pub struct AnswerThread {
     pub thread: String,
-    pub process: String,
     pub key: String,
     pub answer: serde_json::Value,
 }
