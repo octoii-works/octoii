@@ -10,6 +10,7 @@ import {
 	fieldsAnswer,
 	formOf,
 	missingField,
+	permissionBody,
 	permissionDetail,
 	permissionTitle,
 	type Question,
@@ -131,6 +132,8 @@ describe("a call's permission", () => {
 			{ text: "/w/app/a.zig" },
 			{ kind: "added", text: "x" },
 		]);
+		// Under a line that names the file, the change alone.
+		expect(permissionBody({ path: "a.zig", content: "x\n" }, edit)).toEqual([{ number: 0, kind: "added", text: "x" }]);
 		expect(shownPath("/w/application/b.zig", "/w/app")).toBe("/w/application/b.zig");
 		expect(shownPath("/w/app", "/w/app")).toBe(".");
 		expect(permissionTitle("write", edit)).toBe("Write this file?");

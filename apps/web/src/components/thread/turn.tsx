@@ -132,7 +132,8 @@ export function TurnEndPart(props: { readonly end: TurnEnd }): ReactNode {
 				<AskLine key={ask.key} ask={ask} />
 			))}
 			{end.failure === undefined ? null : <FailureLine text={end.failure} />}
-			{end.doing === undefined ? null : <DoingLine doing={end.doing} />}
+			{/* What waits on the person says so where it stands, a call or a request of its own, which it answers. */}
+			{end.doing === undefined || end.doing.waits ? null : <DoingLine doing={end.doing} />}
 			{end.foot === undefined ? null : <TurnFoot foot={end.foot} />}
 		</div>
 	);

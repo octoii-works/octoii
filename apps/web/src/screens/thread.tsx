@@ -15,6 +15,7 @@ import { contentOf } from "../core/attachments.ts";
 import { limitedOf } from "../core/limits.ts";
 import { inBackground, waitingOn } from "../core/sub-threads.ts";
 import { firstSaid, itemsOf, withLimited, withNow } from "../core/timeline.ts";
+import { useApproval } from "../components/asks/approval.tsx";
 import { AskDock } from "../components/asks/asks.tsx";
 import { Composer } from "../components/composer/composer.tsx";
 import { Queued } from "../components/composer/queued.tsx";
@@ -135,6 +136,8 @@ function Dock(props: {
 	const client = useClient();
 	const workspace = useFolder(row);
 	const working = conversation.status?.turn === "running" || conversation.inbox.length > 0;
+	// A call's permission, the oldest of what waits, is answered in the composer; anything else waits docked in its place.
+	const approval = useApproval(thread, conversation.asks.toSorted((a, b) => (a.key < b.key ? -1 : 1))[0]);
 	return (
 		<div className="relative shrink-0 bg-background pb-[max(--spacing(4),env(safe-area-inset-bottom))]">
 			<div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-full h-6 bg-linear-to-t from-background to-transparent" />
@@ -143,7 +146,7 @@ function Dock(props: {
 				<div className="chat-column">
 					{/* What waits steers a turn that works, docked till its next step; sent to a thread at rest, it begins the next turn, shown in the timeline as it does. */}
 					<Queued thread={thread} inbox={conversation.status?.turn === "running" ? conversation.inbox : []} />
-					{conversation.asks.length > 0 ? (
+					{conversation.asks.length > 0 && approval === undefined ? (
 						<AskDock thread={thread} asks={conversation.asks} />
 					) : (
 						<Composer
@@ -162,6 +165,7 @@ function Dock(props: {
 								props.onSent(await client.deliver(thread, contentOf(text, attachments)));
 							}}
 							onStop={() => void client.stop(thread).catch((error: unknown) => failed("The thread could not be stopped", error))}
+							approval={approval}
 						/>
 					)}
 				</div>

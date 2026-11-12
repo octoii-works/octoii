@@ -24,6 +24,7 @@ import { CallDetail } from "./call-detail.tsx";
 import { ChangeCount } from "./changes.tsx";
 import { Prose } from "./markdown.tsx";
 import { usePlaces } from "./message-thread.ts";
+import { type Approval, ApprovalLine, PermissionDetail, useApproval } from "../asks/approval.tsx";
 import { CallMark, Mark } from "./marks.tsx";
 
 /** What a stretch's line is given: the thread whose work it is, its steps — its calls and what was thought between them — and its calls. */
@@ -46,9 +47,11 @@ export const Calls = memo(function Calls(props: StretchProps): ReactNode {
 	return <StretchLine thread={props.thread} steps={props.steps} calls={props.calls} one={one} />;
 }, sameStretch);
 
-/** The line of a stretch: its mark, its words, how it ends and its time; opened, what it holds. */
+/** The line of a stretch: its mark, its words, how it ends and its time; opened, what it holds. A call whose permission waits stands open, answered under it. */
 function StretchLine(props: StretchProps & { readonly one: CallLine | undefined }): ReactNode {
 	const { one } = props;
+	const approval = useApproval(props.thread, one?.state === "waiting" ? one.ask : undefined);
+	if (one !== undefined && approval !== undefined) return <WaitingCall call={one} approval={approval} />;
 	const lead = one ?? leadOf(props.calls);
 	return (
 		<Collapsible>
@@ -80,6 +83,23 @@ function StretchLine(props: StretchProps & { readonly one: CallLine | undefined 
 				)}
 			</CollapsiblePanel>
 		</Collapsible>
+	);
+}
+
+/** A call whose permission waits on the person: its line, what it would do in full under it, and the answers. */
+function WaitingCall(props: { readonly call: CallLine; readonly approval: Approval }): ReactNode {
+	const { call } = props;
+	return (
+		<div data-state="waiting" className="group/call">
+			<div className="work-line">
+				<CallMark call={call} />
+				<CallWords call={call} />
+			</div>
+			<div className="work-indent flex flex-col gap-1.5 pb-2">
+				<PermissionDetail lines={props.approval.lines} />
+				<ApprovalLine approval={props.approval} />
+			</div>
+		</div>
 	);
 }
 

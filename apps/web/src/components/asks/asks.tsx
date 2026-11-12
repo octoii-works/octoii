@@ -1,15 +1,15 @@
 /**
- * What waits for the person's answer, docked in the composer's place while it waits, one at a time, the oldest first:
- * trust in what a folder's configuration would run, with the servers it names; a call's permission, with what it does —
- * allowed once or always, or denied, with what the person writes for the model where they write any; a model's
- * questions, one at a time, each with its choices and the person's own words, or dismissed all at once; one of some
- * answers, with the fields each takes; an object's own fields; or what this page cannot ask, shown as it came. While an
- * answer goes to the node nothing more is answered; what the node refused is said.
+ * What waits for the person's answer, docked in the composer's place while it waits, one at a time, the oldest first —
+ * but a call's permission, which the composer answers as it stays itself: trust in what a folder's configuration would
+ * run, with the servers it names; a model's questions, one at a time, each with its choices and the person's own words,
+ * or dismissed all at once; one of some answers, with the fields each takes; an object's own fields; or what this page
+ * cannot ask, shown as it came. Another thread's permission is reviewed in a card: what it would do, and the composer's
+ * answers. While an answer goes to the node nothing more is answered; what the node refused is said.
  */
-import { type KeyboardEvent, type ReactNode, useState, useTransition } from "react";
+import { type ReactNode, useState, useTransition } from "react";
 import type { Ask } from "@octoii-works/octoii-client";
 import { useClient, useThreads } from "@octoii-works/octoii-client/react";
-import { FilePen, MessageCircleQuestion, ShieldAlert, ShieldQuestion, SquareTerminal, Wrench, X } from "lucide-react";
+import { MessageCircleQuestion, ShieldQuestion, X } from "lucide-react";
 import {
 	type Access,
 	allowed,
@@ -17,7 +17,6 @@ import {
 	type Choice,
 	choiceAnswer,
 	choose,
-	type DetailLine,
 	denied,
 	DISMISSED,
 	type Draft,
@@ -36,17 +35,14 @@ import {
 	UNANSWERED,
 	write,
 } from "../../core/asks.ts";
-import { folderName } from "../../core/threads.ts";
-import { useShortcut, useShortcuts } from "../effects/shortcut.ts";
+import { useShortcuts } from "../effects/shortcut.ts";
 import { Button, IconButton } from "../ui/button.tsx";
 import { CheckboxBox, CheckboxChoice, CheckboxGroup, RadioChoice, RadioDot, RadioGroup } from "../ui/choices.tsx";
-import { IconTile } from "../ui/icon-tile.tsx";
 import { Field } from "../ui/input.tsx";
 import { Kbd } from "../ui/kbd.tsx";
-import { Pill } from "../ui/pill.tsx";
-import { Segmented } from "../ui/segmented.tsx";
 import { Switch } from "../ui/switch.tsx";
 import { useFolder } from "../state/folder.ts";
+import { type Approval, ApprovalActions, PermissionDetail } from "./approval.tsx";
 
 /**
  * What waits on the person in `thread`, docked in the composer's place while it waits: the oldest of `asks`, in the
@@ -150,72 +146,41 @@ function Trust(props: { readonly folder: string; readonly servers: readonly Serv
 	);
 }
 
-/** Each action's icon: a terminal for a command, a pen for an edit, a wrench for a tool. */
-const ACTION_ICONS: Readonly<Record<Access["action"], typeof Wrench>> = { command: SquareTerminal, edit: FilePen, tool: Wrench };
-
 /**
- * A call's permission, as a request to the person: what it asks to do, and a mark where it must go beyond the sandbox;
- * what will happen, line by line; why it must go further. Then how long the person lets it — just once, or always in
- * the thread's project as its patterns say — and
- * allowed, ⌘↵ wherever the focus is, or denied, Esc within it — with what they write for the model of what to do
- * instead, where they write any, which Enter denies with.
+ * A call's permission, as another thread's is reviewed in a card: what it would do, line by line; why it must go
+ * further, where the model said; then a denial's words for the model, and Deny, Allow and, behind More, always — the
+ * composer's answers, in the card.
  */
 function Permission(props: {
-	readonly tool: string;
 	readonly arguments: unknown;
+	readonly tool: string;
 	readonly access: Access;
 	readonly workspace: string | undefined;
 	readonly project: string | undefined;
 	readonly onAnswer: (value: Json) => void;
 }): ReactNode {
-	const [scope, setScope] = useState<"once" | "always">("once");
 	const [message, setMessage] = useState("");
-	const Icon = ACTION_ICONS[props.access.action];
-	const always = alwaysText(props.access, props.project);
-	const allow = (): void => props.onAnswer(allowed(always !== undefined && scope === "always"));
-	const deny = (): void => props.onAnswer(denied(message));
-	useShortcut("mod+Enter", allow);
-	const keys = (event: KeyboardEvent): void => {
-		if (event.key !== "Escape") return;
-		event.preventDefault();
-		deny();
+	const approval: Approval = {
+		key: "",
+		lines: permissionDetail(props.tool, props.arguments, props.access, props.workspace),
+		always: alwaysText(props.access, props.project),
+		escalate: props.access.escalate,
+		justification: props.access.justification,
+		answering: false,
+		allow: (always) => props.onAnswer(allowed(always)),
+		deny: (reason) => props.onAnswer(denied(reason)),
 	};
 	return (
-		<div onKeyDown={keys} className="outline-none">
-			<div className="mb-2 flex items-center gap-2">
-				<IconTile>
-					<Icon />
-				</IconTile>
-				<span className="min-w-0 flex-1 truncate text-ui font-medium">{permissionTitle(props.tool, props.access)}</span>
-				{props.access.escalate ? (
-					<Pill tone="waiting" icon={<ShieldAlert />}>
-						Beyond the sandbox
-					</Pill>
-				) : null}
-			</div>
-			<p className="mb-1 text-xs text-muted-foreground">What will happen</p>
-			<Detail lines={permissionDetail(props.tool, props.arguments, props.access, props.workspace)} />
-			{props.access.justification === undefined ? null : <p className="mt-2 text-ui text-muted-foreground">{props.access.justification}</p>}
-			{always === undefined ? null : (
-				<div className="mt-3 flex flex-col gap-1">
-					<Segmented
-						label="How long to allow it"
-						value={scope}
-						onValueChange={setScope}
-						items={[
-							{ value: "once", label: "Just once" },
-							{ value: "always", label: `Always in ${props.project === undefined ? "the project" : folderName(props.project)}` },
-						]}
-					/>
-					{scope === "always" ? <p className="truncate px-0.5 text-xs text-muted-foreground">{always}</p> : null}
-				</div>
-			)}
+		<div className="flex flex-col gap-2">
+			<p className="text-ui text-foreground">{permissionTitle(props.tool, props.access)}</p>
+			<PermissionDetail lines={approval.lines} />
+			{props.access.justification === undefined ? null : <p className="text-xs text-muted-foreground">{props.access.justification}</p>}
 			<form
 				onSubmit={(event) => {
 					event.preventDefault();
-					if (message.trim() !== "") deny();
+					if (message.trim() !== "") approval.deny(message.trim());
 				}}
-				className="mt-3 flex flex-wrap items-center gap-2"
+				className="flex flex-wrap items-center gap-2"
 			>
 				<Field
 					label="What to do instead"
@@ -224,39 +189,11 @@ function Permission(props: {
 					onValueChange={setMessage}
 					className="min-w-48 flex-1"
 				/>
-				<span className="flex shrink-0 items-center gap-2 max-sm:ms-auto">
-					<Button size="sm" variant="outline" onClick={deny}>
-						Deny <Kbd className="pointer-coarse:hidden">Esc</Kbd>
-					</Button>
-					<Button size="sm" variant="default" onClick={allow}>
-						Allow <Kbd className="bg-transparent text-primary-foreground opacity-75 pointer-coarse:hidden">⌘↵</Kbd>
-					</Button>
-				</span>
+				<ApprovalActions approval={approval} look="buttons" reason={() => message.trim()} />
 			</form>
 		</div>
 	);
 }
-
-/** What a call does, line by line, an edit's lines taken out and put in marked as a diff marks them. */
-function Detail(props: { readonly lines: readonly DetailLine[] }): ReactNode {
-	return (
-		<pre className="well max-h-48 overflow-auto px-3 py-2 font-mono text-xs leading-5 whitespace-pre-wrap [overflow-wrap:anywhere]">
-			{props.lines.map((line) => (
-				<div key={line.number} className={LINE_CLASSES[line.kind]}>
-					{line.kind === "removed" ? "- " : line.kind === "added" ? "+ " : ""}
-					{line.text}
-				</div>
-			))}
-		</pre>
-	);
-}
-
-/** How each line of a call's detail reads. */
-const LINE_CLASSES: Readonly<Record<DetailLine["kind"], string>> = {
-	text: "text-foreground",
-	removed: "bg-error-surface text-error-foreground",
-	added: "bg-success-surface text-success-foreground",
-};
 
 /** The keys that choose a question's choices, as they are numbered. */
 const DIGITS: readonly string[] = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];

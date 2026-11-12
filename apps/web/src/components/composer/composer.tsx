@@ -4,7 +4,8 @@
  * while it works and the box is empty; over the box, the files the message gives, pasted, dropped or picked. Enter sends, or Cmd/Ctrl+Enter where the device says so; a message sent while
  * the turn works waits in the thread's inbox till the turn's next step takes it in, which it steers. Nothing is sent
  * before a model is chosen: a thread's turns ask it. `@` mentions a file of the thread's folder, from a menu of those
- * its path holds.
+ * its path holds. While a call's permission waits, the composer stays itself and answers it: what is written denies the
+ * call, telling the model what to do instead — Enter, or Esc — and Deny, Allow (⌘↵) and More stand where it sends.
  */
 import { type ReactNode, useId, useRef, useState, useTransition } from "react";
 import type { ReasoningEffort as Effort, Mode } from "@octoii-works/octoii-client";
@@ -26,6 +27,7 @@ import { useDirectory } from "./directory.ts";
 import { EffortControl } from "./effort-picker.tsx";
 import { ModelControl } from "./model-picker.tsx";
 import { failed } from "../state/notices.ts";
+import { type Approval, ApprovalActions, useAllowShortcut } from "../asks/approval.tsx";
 
 /**
  * What the composer is given: the model and the mode, whether a turn works, whose draft it edits, the folder whose files
@@ -50,6 +52,8 @@ export type ComposerProps = {
 	/** Sends the words and the files; resolves once the node took them, so the box empties then. */
 	readonly onSend: (message: Outgoing) => Promise<void>;
 	readonly onStop: () => void;
+	/** The call's permission that waits on the person, answered here; none while none waits. */
+	readonly approval?: Approval | undefined;
 };
 
 /** A message as the composer sends it: its words, and the files it gives its model. */
@@ -58,6 +62,13 @@ export type Outgoing = { readonly text: string; readonly attachments: readonly A
 /** The words a box says it takes, and what it says where it mentions files. */
 const PLACEHOLDER = "Ask anything";
 const PLACEHOLDER_MENTIONING = "Ask anything. @ files";
+
+/** What the box says it takes: a denial while a permission waits; a model, before one is chosen; else what it is given, or asking anything. */
+function placeholderOf(props: ComposerProps): string {
+	if (props.approval !== undefined) return "Deny, telling the model what to do instead";
+	if (props.model === undefined) return "Choose a model to begin";
+	return props.placeholder ?? (props.folder === undefined ? PLACEHOLDER : PLACEHOLDER_MENTIONING);
+}
 
 /** The composer. */
 export function Composer(props: ComposerProps): ReactNode {
@@ -81,6 +92,10 @@ export function Composer(props: ComposerProps): ReactNode {
 	const model = modelOf(useDirectory(), props.model);
 	const empty = draft.text.trim() === "" && draft.attachments.length === 0;
 	const unready = empty || props.model === undefined || attaching.sending.length > 0;
+	const deny = (approval: Approval): void => {
+		approval.deny(draft.text.trim());
+		draft.clear();
+	};
 	const send = (): void => {
 		if (unready || sending) return;
 		const message = { text: draft.text.trim(), attachments: draft.attachments };
@@ -102,11 +117,20 @@ export function Composer(props: ComposerProps): ReactNode {
 			if (taken.chosen !== undefined) mention(taken.chosen);
 			return;
 		}
+		if (event.key === "Escape" && props.approval !== undefined) {
+			event.preventDefault();
+			deny(props.approval);
+			return;
+		}
 		if (event.key !== "Enter" || event.shiftKey || event.altKey) return;
+		// While a permission waits, ⌘↵ allows it, wherever the focus is.
+		if (props.approval !== undefined && (event.metaKey || event.ctrlKey)) return;
 		// Enter sends unless the device sends with Cmd/Ctrl+Enter, where Enter alone makes a new line.
 		if (props.sendShortcut === "mod-enter" && !(event.metaKey || event.ctrlKey)) return;
 		event.preventDefault();
-		send();
+		// While a permission waits, what is written denies it.
+		if (props.approval === undefined) send();
+		else if (draft.text.trim() !== "") deny(props.approval);
 	};
 	return (
 		<div
@@ -150,9 +174,7 @@ export function Composer(props: ComposerProps): ReactNode {
 					mentions.mention === undefined || mentions.found === undefined || mentions.found.length === 0 ? undefined : optionId(menu, mentions.highlighted)
 				}
 				rows={2}
-				placeholder={
-					props.model === undefined ? "Choose a model to begin" : (props.placeholder ?? (props.folder === undefined ? PLACEHOLDER : PLACEHOLDER_MENTIONING))
-				}
+				placeholder={placeholderOf(props)}
 				className="block field-sizing-content max-h-[40vh] min-h-16 w-full resize-none bg-transparent px-4 pt-4 pb-1 text-ui leading-relaxed outline-none placeholder:text-faint-foreground"
 			/>
 			<div className="@container flex items-center gap-0.5 px-3 pb-3">
@@ -163,10 +185,27 @@ export function Composer(props: ComposerProps): ReactNode {
 					<EffortControl model={props.model} effort={props.effort} onChoose={props.onEffort} />
 					{props.mode === undefined ? null : <ModeControl mode={props.mode} onChoose={props.onMode} />}
 				</div>
-				<SendButton working={props.working} empty={empty} unready={unready || sending} onSend={send} onStop={props.onStop} />
+				{props.approval === undefined ? (
+					<SendButton working={props.working} empty={empty} unready={unready || sending} onSend={send} onStop={props.onStop} />
+				) : (
+					<ComposerApproval approval={props.approval} reason={() => draft.text.trim()} onDenied={draft.clear} />
+				)}
 			</div>
 		</div>
 	);
+}
+
+/** The answers to a call's permission where the composer sends, ⌘↵ allowing it wherever the focus is; a denial takes what the box holds, which then empties. */
+function ComposerApproval(props: { readonly approval: Approval; readonly reason: () => string; readonly onDenied: () => void }): ReactNode {
+	useAllowShortcut(props.approval);
+	const approval = {
+		...props.approval,
+		deny: (reason: string) => {
+			props.approval.deny(reason);
+			props.onDenied();
+		},
+	};
+	return <ApprovalActions approval={approval} look="buttons" reason={props.reason} />;
 }
 
 /** Send, or steer the turn while it works; stop where it works and the box is empty; nothing while nothing can be sent. */

@@ -277,18 +277,34 @@ export function askTitle(ask: Ask): string {
  * tool it calls, then its arguments.
  */
 export function permissionDetail(tool: string, args: unknown, access: Access, workspace: string | undefined): readonly DetailLine[] {
-	return detailOf(tool, args, access, workspace).map((line, number) => ({ ...line, number }));
+	const head = access.action === "edit" ? shownPath(access.resources[0] ?? "", workspace) : access.action === "tool" ? tool : undefined;
+	return numbered([...(head === undefined ? [] : [plain(head)]), ...bodyOf(args, access)]);
 }
 
-function detailOf(tool: string, args: unknown, access: Access, workspace: string | undefined): readonly Unnumbered[] {
-	const text = (line: string): Unnumbered => ({ kind: "text", text: line });
+/** What a call asks to do, line by line, under the line that names what it acts on: its command line, its change, or its arguments. */
+export function permissionBody(args: unknown, access: Access): readonly DetailLine[] {
+	return numbered(bodyOf(args, access));
+}
+
+/** `lines`, numbered from nought. */
+function numbered(lines: readonly Unnumbered[]): readonly DetailLine[] {
+	return lines.map((line, number) => ({ ...line, number }));
+}
+
+/** A line of text, as a detail shows it. */
+function plain(line: string): Unnumbered {
+	return { kind: "text", text: line };
+}
+
+/** What a call asks to do, past what it acts on: the command line it runs, an edit's change, or a tool's arguments. */
+function bodyOf(args: unknown, access: Access): readonly Unnumbered[] {
 	switch (access.action) {
 		case "command":
-			return (matches(CommandArgumentsSchema, args) ? args.command : access.resources.join("\n")).split("\n").map(text);
+			return (matches(CommandArgumentsSchema, args) ? args.command : access.resources.join("\n")).split("\n").map(plain);
 		case "edit":
-			return [text(shownPath(access.resources[0] ?? "", workspace)), ...changeOf(args)];
+			return changeOf(args);
 		case "tool":
-			return [text(tool), ...JSON.stringify(args, null, 2).split("\n").map(text)];
+			return JSON.stringify(args, null, 2).split("\n").map(plain);
 	}
 }
 

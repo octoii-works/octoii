@@ -9,7 +9,8 @@ import { shortCount } from "../../core/diff.ts";
 import type { Changed } from "../../core/timeline.ts";
 import { PathLink } from "../files/path-link.tsx";
 import { showSurface } from "../state/panel.ts";
-import { MessageThreadContext } from "./message-thread.ts";
+import { MessageThreadContext, usePlaces } from "./message-thread.ts";
+import { spokenPath } from "../../core/files.ts";
 
 /** The lines a change added and took out, a side that is nought left out — the added, nought, where both are. */
 export function ChangeCount(props: { readonly added: number; readonly removed: number }): ReactNode {
@@ -40,6 +41,7 @@ export function OpenDiff(props: { readonly children: ReactNode }): ReactNode {
 /** The files a turn changed, in a well after its answer; nothing where it changed none. */
 export function TurnChanges(props: { readonly changes: readonly Changed[] }): ReactNode {
 	const { changes } = props;
+	const places = usePlaces();
 	if (changes.length === 0) return null;
 	let added = 0;
 	let removed = 0;
@@ -59,7 +61,7 @@ export function TurnChanges(props: { readonly changes: readonly Changed[] }): Re
 			{changes.map((change) => (
 				<div key={change.path} className="flex min-h-control-xs min-w-0 items-center gap-2 text-ui text-muted-foreground">
 					<span className="min-w-0 truncate">
-						<PathLink path={change.path}>{change.path}</PathLink>
+						<PathLink path={change.path}>{places === undefined ? change.path : spokenPath(change.path, places)}</PathLink>
 					</span>
 					<span className="flex-1" />
 					<ChangeCount added={change.added} removed={change.removed} />
