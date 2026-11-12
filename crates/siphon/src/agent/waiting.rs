@@ -30,11 +30,11 @@ pub fn gone(run: &Run<'_>, waiting: &Waiting) -> anyhow::Result<bool> {
 #[must_use]
 pub fn how(ended: Option<&Ended>) -> String {
     match ended {
-        Some(Ended::Replied { .. }) => "finished: what it said last is here, and its whole work is in it".to_owned(),
+        Some(Ended::Replied { .. }) => "finished; its final answer is included, and its full work is in its thread".to_owned(),
         Some(Ended::Failed { reason }) => format!("failed: {reason}"),
-        Some(Ended::Stopped) => "was stopped by the person before it finished".to_owned(),
-        Some(Ended::Withdrawn) => "had the task taken back before it began it".to_owned(),
-        None => "was deleted before it finished".to_owned(),
+        Some(Ended::Stopped) => "was stopped by the person before finishing".to_owned(),
+        Some(Ended::Withdrawn) => "had the task withdrawn before starting it".to_owned(),
+        None => "was deleted before finishing".to_owned(),
     }
 }
 
@@ -82,12 +82,12 @@ impl Program for DelegatedProgram {
             == Some(waiting.thread.as_str());
         let note = if ours {
             format!(
-                "[the sub-thread {}, which you gave a task in the background, {}]",
+                "[sub-thread {}, which you gave a background task, {}]",
                 waiting.child,
                 how(ended.as_ref())
             )
         } else {
-            format!("[the thread {}, which you sent a message, {}]", waiting.child, how(ended.as_ref()))
+            format!("[thread {}, which you sent a message, {}]", waiting.child, how(ended.as_ref()))
         };
         let mut content = vec![InputContent::text(note)];
         if let Some(Ended::Replied { said }) = ended {

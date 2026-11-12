@@ -115,7 +115,7 @@ async fn answered(servers: &Servers, caller: &Caller, method: protocol::Method) 
 fn catalog_told(catalog: &Catalog) -> String {
     let mut out = String::from("<catalog>\n");
     if !catalog.tools.is_empty() {
-        out.push_str("The MCP servers' tools, members of `tools` as a script of `execute` calls them:\n");
+        out.push_str("Tools of MCP servers, called from an execute script on `tools`:\n");
         out.push_str(&siphon::tools::declarations(&catalog.tools));
         out.push('\n');
     }

@@ -12,26 +12,26 @@ use siphon::machine::paths::Base;
 
 use siphon::tools::{Context, Effect, Refusal, Told, Tool};
 
-/// An option a question offers.
+/// An option.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct Choice {
-    /// What the person picks, in a few words.
+    /// The option, in a few words.
     pub label: String,
-    /// What it means, where the label alone does not say.
+    /// What the option means, where the label is not enough.
     pub description: Option<String>,
 }
 
 /// A question.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct Asked {
-    /// The question, as the person reads it.
+    /// The question, as the person will read it.
     pub question: String,
-    /// What it is about, in a word or two, shown above it.
+    /// A label of one or two words, shown above the question.
     pub header: Option<String>,
-    /// The options to choose from; none, the person answers in words.
+    /// Options to choose from; omit for a free-text answer.
     #[serde(default)]
     pub options: Vec<Choice>,
-    /// Whether the person may choose several.
+    /// Allow choosing several options.
     #[serde(default)]
     pub multiple: bool,
 }
@@ -39,7 +39,7 @@ pub struct Asked {
 /// The arguments of `question`.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct QuestionArgs {
-    /// The questions, from one to eight.
+    /// One to eight questions.
     #[schemars(length(min = 1, max = 8))]
     pub questions: Vec<Asked>,
 }
@@ -50,7 +50,7 @@ pub struct QuestionTool;
 
 impl Tool for QuestionTool {
     const NAME: &'static str = "question";
-    const DESCRIPTION: &'static str = "Asks the person some questions at once, each with options to choose one of, or several with `multiple`, or none to answer in words. They may answer in words of their own instead, leave any unanswered, or dismiss them all. Put the option you recommend first, \"(recommended)\" after its label. Ask only what you cannot find out yourself and what changes what you do.";
+    const DESCRIPTION: &'static str = "Ask the person one to eight questions at once. A question can offer options to choose one of, or several with `multiple`, or no options for a free-text answer. The person may answer in their own words, skip questions, or dismiss them all. Put your recommended option first and add \"(recommended)\" to its label. Ask only what you cannot find out yourself and what changes what you do.";
     type Args = QuestionArgs;
 
     fn effect(&self, _: &QuestionArgs, _: &Base) -> Effect {

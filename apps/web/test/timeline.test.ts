@@ -278,7 +278,7 @@ describe("a thread's timeline", () => {
 	});
 
 	it("gives whose words a turn took: a thread's task by its text, what a sub-thread told by its words after Siphon's note, the person's as theirs", () => {
-		const note = { type: "input_text" as const, text: "[the sub-thread C, which you gave a task in the background, finished]" };
+		const note = { type: "input_text" as const, text: "[sub-thread C, which you gave a background task, finished]" };
 		const turns = turnsOf(
 			conversationOf(
 				viewOf([

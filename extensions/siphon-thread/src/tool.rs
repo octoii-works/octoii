@@ -20,26 +20,26 @@ use siphon::tools::{Context, Effect, Plan, Refusal, Report, Spawned, Told, Tool}
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "action", rename_all = "snake_case")]
 pub enum ThreadAction {
-    /// Starts a thread of the person's, in this folder, with your model and mode, `message` its first input.
+    /// Create a thread in this folder with your model and mode; `message` is its first input.
     Start {
-        /// What the new thread is to do: the whole of it, as it sees nothing of this conversation.
+        /// Everything the new thread needs; it does not see this conversation.
         message: String,
-        /// A few words the person knows the thread by.
+        /// A short title, shown to the person.
         title: Option<String>,
-        /// Be told, by a message, how the turn that takes `message` ends.
+        /// Get a message when the turn that takes `message` ends.
         #[serde(default)]
         report: bool,
     },
-    /// Sends a thread a message, which it takes at its next step, or begins a turn with.
+    /// Send a thread a message; it takes it at its next step, or starts a turn with it.
     Send {
         /// The thread's id.
         thread: String,
         message: String,
-        /// Be told, by a message, how the turn that takes `message` ends.
+        /// Get a message when the turn that takes `message` ends.
         #[serde(default)]
         report: bool,
     },
-    /// Stops the turn a thread works on.
+    /// Stop the turn a thread is working on.
     Stop {
         /// The thread's id.
         thread: String,
@@ -53,7 +53,7 @@ pub struct ThreadTool;
 impl Tool for ThreadTool {
     const NAME: &'static str = "thread";
     const REACHES_THREADS: bool = true;
-    const DESCRIPTION: &'static str = "Works with the person's other threads, which they see in their list: start makes a new thread in this folder with your model and mode, `message` its first input; send gives a thread a message, which it takes at its next step or begins a turn with; stop ends the turn a thread works on. Use it only when the person asks for a new thread, or names one to message or stop; never for a sub-agent, delegating or working on things at once. A new thread sees nothing of this conversation: give `message` all it needs. With `report`, you are told by a message how the turn that takes it ends; do not wait for it or poll it. Name a thread in your reply as :thread{id=<its id>}, or ::thread{id=<its id>} for its card.";
+    const DESCRIPTION: &'static str = "Work with the person's other threads, which they see in their thread list.\n- start: create a thread in this folder with your model and mode; `message` is its first input.\n- send: send a thread a message; it takes it at its next step, or starts a turn with it.\n- stop: stop the turn a thread is working on.\nUse it only when the person asks for a new thread, or names a thread to message or stop; never for sub-agents, delegation or parallel work. A new thread does not see this conversation: put everything it needs in `message`. With `report`, you get a message when the turn that takes your message ends; do not wait for it or poll. Link a thread in your reply as :thread{id=<id>}, or as ::thread{id=<id>} on its own line to show its card.";
     type Args = ThreadAction;
 
     fn effect(&self, _: &ThreadAction, _: &Base) -> Effect {
@@ -74,17 +74,17 @@ fn planned(context: &Context, action: ThreadAction) -> Result<Told, Refusal> {
             let started = plan.spawn(&context.runtime, title, Spawned::Thread)?;
             plan.deliver(&context.runtime, &started, from(own, message), Joins::Step, reported(report))?;
             format!(
-                "[the thread {started} started with your message{}]\n[name it to the person as :thread{{id={started}}}]",
+                "[thread {started} started with your message{}]\n[link it for the person as :thread{{id={started}}}]",
                 told_note(report)
             )
         }
         ThreadAction::Send { thread, message, report } => {
             plan.deliver(&context.runtime, &thread, from(own, message), Joins::Step, reported(report))?;
-            format!("[the thread {thread} has your message{}]", told_note(report))
+            format!("[thread {thread} has your message{}]", told_note(report))
         }
         ThreadAction::Stop { thread } => {
             plan.stop(&thread);
-            format!("[the thread {thread} was asked to stop its turn]")
+            format!("[thread {thread} was asked to stop its turn]")
         }
     };
     Ok(Told {
@@ -96,7 +96,7 @@ fn planned(context: &Context, action: ThreadAction) -> Result<Told, Refusal> {
 /// `message` as the thread `own` sends it: saying whose it is.
 fn from(own: &str, message: String) -> Vec<InputContent> {
     vec![
-        InputContent::text(format!("[a message from the thread {own}]")),
+        InputContent::text(format!("[message from thread {own}]")),
         InputContent::text(message),
     ]
 }
@@ -109,7 +109,7 @@ fn reported(report: bool) -> Report {
 /// What a call that asked to be told is answered of it.
 fn told_note(report: bool) -> &'static str {
     if report {
-        "; you will be told by a message how the turn that takes it ends: do not wait for it or poll it"
+        "; you will get a message when the turn that takes it ends: do not wait for it or poll"
     } else {
         ""
     }

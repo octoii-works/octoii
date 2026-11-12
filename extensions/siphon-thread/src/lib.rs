@@ -63,11 +63,10 @@ impl Teller for Folder {
 fn threads_told(folder: &Path, id: &str) -> String {
     format!(
         "<threads>
-Each thread of this machine is a folder in {}, named by its id; this thread's is {id}. Read them with the file tools; nothing writes them.
-- log/: its conversation as JSON Lines, an entry a line, in files that sort in the order they began. An entry has an id, rising along the log; a type — input (what the person sent), reply (the model's response), result (a tool's output), turn-end, config (a change of settings), system (what the model was told), discarded (an answer that came to nothing); and its fields.
-- outputs/: the whole output of a call too long to be given whole.
-- files/: the images and files of its conversation, named by their SHA-256.
-Read them when the person asks about another thread or about work done before.
+Every thread on this machine is a folder in {}, named by its id; this thread is {id}. The folders are read-only: read them with the file tools when the person asks about another thread or earlier work.
+- log/: the conversation as JSON Lines, one entry per line, in files sorted by when they began. Each entry has an increasing id, a type — input (from the person), reply (the model's response), result (a tool's output), turn-end, config (a settings change), system (what the model was told), discarded (a reply that came to nothing) — and its fields.
+- outputs/: the full output of calls too long to return whole.
+- files/: the images and files of the conversation, named by their SHA-256.
 </threads>",
         folder.display()
     )

@@ -119,12 +119,12 @@ pub fn ended_mail(run: &mut siphon_runtime::Run<'_>, key: &str) -> anyhow::Resul
 pub fn told_of(thread: &str, ended: Option<&Ended>) -> String {
     match ended {
         Some(Ended::Replied { said }) => {
-            format!("{said}\n[the thread {thread} finished: what it said last is above, and its whole work is in it]")
+            format!("{said}\n[thread {thread} finished; its final answer is above]")
         }
-        Some(Ended::Failed { reason }) => format!("[the thread {thread} failed: {reason}]"),
-        Some(Ended::Stopped) => format!("[the thread {thread} was stopped by the person before it finished]"),
-        Some(Ended::Withdrawn) => format!("[the thread {thread} had the message taken back before it took it]"),
-        None => format!("[the thread {thread} was deleted before it finished]"),
+        Some(Ended::Failed { reason }) => format!("[thread {thread} failed: {reason}]"),
+        Some(Ended::Stopped) => format!("[thread {thread} was stopped by the person before finishing]"),
+        Some(Ended::Withdrawn) => format!("[thread {thread} had the message withdrawn before taking it]"),
+        None => format!("[thread {thread} was deleted before finishing]"),
     }
 }
 

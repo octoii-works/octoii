@@ -41,19 +41,19 @@ pub fn told(folder: &Path) -> String {
     let cut = std::fs::metadata(&index).is_ok_and(|found| found.len() > INDEX_BYTES_MAX);
     let mut out = format!(
         "<memory path=\"{}\">
-What you remember of this project across threads, a Markdown file a memory, kept as you see fit, without asking.
-- Keep what a later thread will need and cannot read from the code, its history or the instructions: who the person is and how they work (user); what they told you to do or not to do, and why (feedback); the goals, decisions and constraints of the work (project); where things are outside it (reference).
-- A memory's file starts with front matter — name, description (one line, by which a later thread judges whether to read it), type — then the fact; for feedback and project, why and how to apply it. Dates absolute.
-- {INDEX} lists them, a line each: `- [name](file.md) — what it holds`. That list is all you are given at the start: read a memory's file when it bears on the task.
-- Update a memory rather than add one that says the same; delete one that turned out wrong — its file with `rm`, its line from {INDEX}. When the person asks you to remember or to forget something, do so.
-- A memory is what held when it was written: check a file, function or flag it names before you rely on it.
+Your memory of this project, shared by its threads: one Markdown file per memory. Keep it as you see fit, without asking.
+- Save what a later thread will need and cannot get from the code, its history or the instructions: who the person is and how they work (user); what they told you to do or avoid, and why (feedback); the goals, decisions and constraints of the work (project); where things are outside the project (reference).
+- Each file starts with front matter — name, description (one line; a later thread reads it to decide whether to open the file), type — then the fact. For feedback and project, add why and how to apply it. Write dates in full.
+- {INDEX} is the index, one line per memory: `- [name](file.md) — what it holds`. Only the index is given here: read a memory's file when it bears on the task.
+- Update a memory rather than add one that repeats it. Delete one that turned out wrong: its file with `rm`, its line from {INDEX}. When the person asks you to remember or forget something, do it.
+- A memory was true when written: check a file, function or flag it names before relying on it.
 <index>
 ",
         folder.display()
     );
     out.push_str(listed.as_deref().map_or("(none yet)", str::trim_end));
     if cut {
-        let _ = write!(out, "\n[{INDEX} goes on past what is shown; keep it short]");
+        let _ = write!(out, "\n[{INDEX} continues past this point; keep it short]");
     }
     out.push_str("\n</index>\n</memory>");
     out

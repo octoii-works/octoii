@@ -28,29 +28,29 @@ pub const ACTOR: &str = "terminal";
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(tag = "action", rename_all = "snake_case")]
 pub enum Action {
-    /// Runs a command line in a terminal of its own.
+    /// Run a command in a new terminal.
     Open {
-        /// The command line.
+        /// The command to run.
         command: String,
-        /// Run it beyond the sandbox, once the person lets it.
+        /// Run outside the sandbox, once the person approves.
         #[serde(default)]
         escalate: bool,
-        /// Why it must write beyond the sandbox, in a sentence the person reads.
+        /// Why it must write outside the sandbox, in one sentence for the person.
         justification: Option<String>,
     },
-    /// What a terminal of the thread shows, the person's too.
+    /// Return what a terminal shows, the person's terminals included.
     Read {
         /// The terminal's number.
         terminal: u32,
     },
-    /// Types to a terminal the model opened.
+    /// Type into a terminal you opened.
     Write {
         /// The terminal's number.
         terminal: u32,
-        /// The keys, as text: `\u0003` for Ctrl-C, `\r` for Enter.
+        /// Keys as text: `\u0003` for Ctrl-C, `\r` for Enter.
         text: String,
     },
-    /// Closes a terminal the model opened, ending what it runs.
+    /// Close a terminal you opened, ending its command.
     Close {
         /// The terminal's number.
         terminal: u32,
@@ -65,7 +65,7 @@ pub struct TerminalTool {
 
 impl Tool for TerminalTool {
     const NAME: &'static str = "terminal";
-    const DESCRIPTION: &'static str = "Works the thread's terminals, which the person sees beside the chat. open runs a command line that does not end by itself — a server, a watcher — in a terminal of its own, in the workspace, held as the shell's commands are; it gives the terminal's number and its screen after a moment, and when the command ends of itself you are told how, with its last screen: no need to read it to wait for that. read gives what a terminal shows, the person's too; write types to a terminal you opened (`\\u0003` for Ctrl-C, `\\r` for Enter) and gives its screen after; close ends one you opened. For a command that ends by itself, use shell. Name a terminal in your reply as :terminal{id=<its number>}, or ::terminal{id=<its number>} for its card, which shows its last lines.";
+    const DESCRIPTION: &'static str = "Work the thread's terminals, which the person sees beside the chat.\n- open: run a command that does not exit by itself (a server, a watcher) in a new terminal in the workspace, sandboxed as shell commands are. Returns the terminal's number and its screen after a moment. When the command exits you get a message with how it ended and its last screen; do not poll for it.\n- read: return what a terminal shows, the person's terminals included.\n- write: type into a terminal you opened (`\\u0003` for Ctrl-C, `\\r` for Enter); returns the screen after.\n- close: close a terminal you opened, ending its command.\nFor a command that exits by itself, use shell. Link a terminal in your reply as :terminal{id=<number>}, or as ::terminal{id=<number>} on its own line to show its card with its last lines.";
     type Args = Action;
 
     fn effect(&self, action: &Action, _: &Base) -> Effect {

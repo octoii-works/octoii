@@ -773,7 +773,7 @@ async fn a_task_delegated_is_worked_on_by_a_sub_thread_and_what_it_said_last_giv
     let InputContent::InputText { text } = &output[0] else {
         panic!("text")
     };
-    assert!(text.starts_with("the child is done\n[the sub-thread "), "{text}");
+    assert!(text.starts_with("the child is done\n[sub-thread "), "{text}");
     assert!(text.contains(&child.id) && text.contains("finished"), "{text}");
     runtime.close().await;
 }
@@ -823,13 +823,13 @@ async fn a_task_delegated_in_the_background_is_answered_at_once_and_its_end_deli
         _ => None,
     });
     let notice = notice.expect("its end delivered");
-    assert!(matches!(&notice[0], InputContent::InputText { text } if text.contains("which you gave a task in the background, finished")));
+    assert!(matches!(&notice[0], InputContent::InputText { text } if text.contains("which you gave a background task, finished")));
     assert_eq!(notice[1], InputContent::text("the child is done"));
     let first = all.iter().find_map(|entry| match entry {
         Entry::Result { output, .. } => Some(format!("{:?}", output.output)),
         _ => None,
     });
-    assert!(first.expect("a result").contains("works on it in the background"));
+    assert!(first.expect("a result").contains("is working on it in the background"));
     runtime.close().await;
 }
 
@@ -935,7 +935,7 @@ async fn a_thread_started_by_another_takes_its_message_and_its_end_is_told_back(
     });
     let (actor, content) = given.expect("its message");
     assert_eq!(actor, id, "whose the message is");
-    assert!(matches!(&content[0], InputContent::InputText { text } if text.contains(&format!("a message from the thread {id}"))));
+    assert!(matches!(&content[0], InputContent::InputText { text } if text.contains(&format!("message from thread {id}"))));
     let told = entries(&threads, &id).into_iter().find_map(|entry| match entry {
         Entry::Input { actor, content, .. } if actor == started.id => Some(content),
         _ => None,

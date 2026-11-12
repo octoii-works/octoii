@@ -45,15 +45,14 @@ impl Extension for DelegateExtension {
 /// The arguments of `delegate`.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DelegateArgs {
-    /// What the sub-thread is to do: the whole of it, as a new one sees nothing else.
+    /// The complete task. A new sub-thread knows nothing else.
     pub task: String,
-    /// A few words the person knows a new sub-thread by.
+    /// A short title for a new sub-thread, shown to the person.
     pub title: Option<String>,
-    /// The id of a sub-thread of yours, running or finished, to give this task to: it keeps what it did. Omit to start
-    /// a new one.
+    /// Id of one of your sub-threads, running or finished, to continue; it keeps its earlier work. Omit to start a new
+    /// one.
     pub thread: Option<String>,
-    /// Run it in the background and be answered at once: you are told when the sub-thread finishes, by a message. Do
-    /// not wait for it, poll it or ask after its progress.
+    /// Return at once; you get a message when the sub-thread finishes. Do not wait for it or poll.
     #[serde(default)]
     pub background: bool,
 }
@@ -65,7 +64,7 @@ pub struct DelegateTool;
 impl Tool for DelegateTool {
     const NAME: &'static str = "delegate";
     const REACHES_THREADS: bool = true;
-    const DESCRIPTION: &'static str = "Hands a task to a sub-thread of your own, which works on it with the same tools in this folder. Call it only when the person asks you to delegate work, to use sub-agents, or to work on several things at once — never on your own initiative, and never for a new thread the person asks for. A new sub-thread sees nothing of this conversation: give `task` all it needs. You wait for it to finish and are given what it said last, several calls in one reply running at once; or, with `background`, you are answered at once and told when it finishes, for work that does not hold up yours. Every answer names the sub-thread: give it more to do by its id in `thread`. What it says it did is not proof: look at what it changed before you report it done. The person sees each sub-thread, and can follow and steer it.";
+    const DESCRIPTION: &'static str = "Run a task in a sub-thread that has your tools and works in this folder. Use it only when the person asks you to delegate, to use sub-agents, or to work on several things at once; never on your own initiative, and not for a new thread the person asks for.\n- The sub-thread does not see this conversation: put everything it needs in `task`.\n- The call waits and returns the sub-thread's final answer; several calls in one reply run at once. With `background`, it returns at once and you get a message when the sub-thread finishes.\n- Every result names the sub-thread; to give it more work, pass its id in `thread`.\n- Its answer is not proof: check what it changed before you report the work done.\n- The person sees every sub-thread and can steer it.";
     type Args = DelegateArgs;
 
     fn effect(&self, _: &DelegateArgs, _: &Base) -> Effect {
@@ -78,8 +77,8 @@ impl Tool for DelegateTool {
 
     fn awaited(&self, _: &DelegateArgs, child: &str, ended: Option<&Ended>) -> Told {
         let text = match ended {
-            Some(Ended::Replied { said }) => format!("{said}\n[the sub-thread {child} {}]", how(ended)),
-            _ => format!("[the sub-thread {child} {}]", how(ended)),
+            Some(Ended::Replied { said }) => format!("{said}\n[sub-thread {child} {}]", how(ended)),
+            _ => format!("[sub-thread {child} {}]", how(ended)),
         };
         Told::from(vec![InputContent::text(text)])
     }
@@ -103,7 +102,7 @@ fn planned(context: &Context, args: DelegateArgs) -> Result<Told, Refusal> {
     plan.deliver(&context.runtime, &child, vec![InputContent::text(args.task)], Joins::Step, report)?;
     let text = if args.background {
         format!(
-            "[the sub-thread {child} works on it in the background: you will be told when it finishes, by a message with what it said last]\n[do not wait, poll or ask after its progress, and do not do its work or work on what it works on; work on what does not hang on it, or tell the person what you started and end your reply]\n[to give it more to do or change what it does, call delegate with the thread {child}]"
+            "[sub-thread {child} is working on it in the background; you will get a message with its final answer when it finishes]\n[do not wait, poll or ask about its progress, and do not do its work; continue with work that does not depend on it, or tell the person what you started and end your reply]\n[to give it more work, call delegate with thread {child}]"
         )
     } else {
         String::new()

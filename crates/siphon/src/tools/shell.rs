@@ -21,15 +21,15 @@ const TIMEOUT_SECONDS_MAX: u64 = 600;
 /// The arguments of `shell`.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ShellArgs {
-    /// The command line.
+    /// The command to run.
     pub command: String,
-    /// How long it may run, in seconds; 120 unless given.
+    /// Time limit in seconds; 120 by default, at most 600.
     #[schemars(range(min = 1, max = 600))]
     pub timeout_seconds: Option<u64>,
-    /// Run it beyond the sandbox, once the person lets it.
+    /// Run outside the sandbox, once the person approves.
     #[serde(default)]
     pub escalate: bool,
-    /// Why it must write beyond the sandbox, in a sentence the person reads.
+    /// Why it must write outside the sandbox, in one sentence for the person.
     pub justification: Option<String>,
 }
 
@@ -39,7 +39,7 @@ pub struct ShellTool;
 
 impl Tool for ShellTool {
     const NAME: &'static str = "shell";
-    const DESCRIPTION: &'static str = "Runs a command line in bash, its input closed, in the workspace: no need to cd there first. For reading, searching and changing files, the file tools serve better. Gives its output and errors as one stream, then how it ended: [exit N], the signal that ended it, or its time run out. It may run 120 seconds, or up to 600 with `timeout_seconds`; In the default mode it runs in a sandbox that writes only the workspace, the memory, the scratchpad and the temporary folders; one that must write beyond them — installing for the whole machine, writing elsewhere — is run again with `escalate` and a justification, and the person decides.";
+    const DESCRIPTION: &'static str = "Run a bash command in the workspace (no need to cd there). Its input is closed. Returns stdout and stderr together, then how it ended: [exit N], a signal, or a timeout. The time limit is 120 seconds; set `timeout_seconds` for up to 600. For reading, searching and editing files, use read, grep, glob and edit instead. In default mode commands run in a sandbox that can write only the workspace, the memory folder, the scratchpad and the temporary folders; to write anywhere else (such as a global install), run the command again with `escalate` and a `justification`, and the person decides.";
     type Args = ShellArgs;
 
     fn effect(&self, args: &ShellArgs, _: &Base) -> Effect {

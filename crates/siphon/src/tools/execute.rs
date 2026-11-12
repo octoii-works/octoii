@@ -27,7 +27,7 @@ use crate::tools::tool::{Context, Refusal, Tool, Tools};
 /// The arguments of `execute`.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct ExecuteArgs {
-    /// JavaScript, run as the body of an async function: what it returns is what the script gives.
+    /// JavaScript run as the body of an async function; its return value is the result.
     pub code: String,
 }
 
@@ -85,7 +85,7 @@ pub struct ScriptOutput {
 
 impl Tool for ExecuteTool {
     const NAME: &'static str = "execute";
-    const DESCRIPTION: &'static str = "Runs JavaScript as the body of an async function, calling tools through `tools`: `await tools.read({ path: \"a.txt\" })` resolves to what the tool gives, as text, and rejects where the tool refuses. Call them in loops, at once with Promise.all, and work on what they give in code. Gives what the script returned, as JSON, and what it wrote with console.log. Use it for work of many steps: many files read or changed, a page's many actions, a batch extracted. `tools` holds each of your tools by its name — but this one and those that ask the person or start threads — each taking the arguments its function does, and the tools of <catalog>.";
+    const DESCRIPTION: &'static str = "Run JavaScript as the body of an async function, with your tools on `tools`: `await tools.read({ path: \"a.txt\" })` returns the tool's text result and rejects on failure. Use loops, Promise.all and code to work on the results. Returns the script's return value as JSON and anything written with console.log. Use it for work of many steps: reading or changing many files, many browser actions, batch extraction. `tools` has each of your tools by name, except execute and tools that ask the person or start threads, plus the tools listed in <catalog>.";
     type Args = ExecuteArgs;
 
     fn effect(&self, _: &ExecuteArgs, _: &Base) -> Effect {
