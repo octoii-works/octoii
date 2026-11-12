@@ -25,8 +25,8 @@ use siphon_protocol::Scope;
 use siphon_runtime::{Asked, Options, Runtime};
 use siphon_threads::Threads;
 use siphon_tools::{
-    Asks, EditTool, Exec, ExecuteTool, GlobTool, GrepTool, Permission, QuestionTool, ReadTool, Review, ScriptProgram, ShellTool, Tools,
-    WriteTool, answer_exec,
+    Asks, EditTool, Exec, ExecuteTool, GlobTool, GrepTool, Permission, ReadTool, Review, ScriptProgram, ShellTool, Tools, WriteTool,
+    answer_exec,
 };
 
 pub use extension::{Builder, Caller, Extension, Full, Lagged, Sink, Subscription};
@@ -187,7 +187,6 @@ impl Siphon {
                 .with(GrepTool)
                 .with(ShellTool)
                 .with(ExecuteTool)
-                .with(QuestionTool)
                 .with(DelegateTool)
                 .with(ThreadTool),
             owners: HashMap::new(),

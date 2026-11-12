@@ -10,9 +10,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use siphon_machine::paths::Base;
 
-use crate::effect::Effect;
-use crate::told::Told;
-use crate::tool::{Context, Refusal, Tool};
+use siphon_tools::{Context, Effect, Refusal, Told, Tool};
 
 /// An option a question offers.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]

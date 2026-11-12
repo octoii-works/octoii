@@ -15,12 +15,43 @@ use siphon_machine::paths::Base;
 use siphon_runtime::{Asked, Changes, Ending, NotGiven, Options, Program, Run, Runtime};
 use siphon_threads::Mode;
 use siphon_tools::{
-    CallStatus, Calls, Exec, Judgment, Permission, QuestionTool, ReadTool, Review, Setting, ShellTool, Tools, WriteTool, answer_exec,
-    projects,
+    CallStatus, Calls, Context, Effect, Exec, Judgment, Permission, ReadTool, Refusal, Review, Setting, ShellTool, Told, Tool, Tools,
+    WriteTool, answer_exec, projects,
 };
 
 fn tools() -> Tools {
-    Tools::new().with(ReadTool).with(WriteTool).with(ShellTool).with(QuestionTool)
+    Tools::new().with(ReadTool).with(WriteTool).with(ShellTool).with(Pick)
+}
+
+/// The arguments of `pick`: the colours the person picks one of.
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+struct PickArgs {
+    colours: Vec<String>,
+}
+
+/// `pick`: a tool the person answers, by picking one of the colours it offers.
+struct Pick;
+
+impl Tool for Pick {
+    const NAME: &'static str = "pick";
+    const DESCRIPTION: &'static str = "Asks the person to pick a colour.";
+    type Args = PickArgs;
+
+    fn effect(&self, _: &PickArgs, _: &Base) -> Effect {
+        Effect::Reads
+    }
+
+    fn exec(&self, _: &Context, _: PickArgs) -> impl std::future::Future<Output = Result<Told, Refusal>> + Send {
+        std::future::ready(Err(Refusal::new("the person picks")))
+    }
+
+    fn asks(&self, args: &PickArgs) -> Option<serde_json::Value> {
+        Some(json!({ "enum": args.colours }))
+    }
+
+    fn answered(&self, _: &PickArgs, answer: serde_json::Value) -> Vec<InputContent> {
+        vec![InputContent::text(format!("picked {}", answer.as_str().unwrap_or_default()))]
+    }
 }
 
 /// What a caller is given: the thread, how it runs, where it works, and the calls its model made.
@@ -314,36 +345,22 @@ async fn a_call_s_long_output_is_cut_to_its_head_and_tail_the_whole_kept_in_its_
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_question_is_answered_by_the_person_with_what_fits_the_choices_it_offers() {
+async fn a_tool_the_person_answers_is_answered_with_what_fits_what_it_asks() {
     let beak = Beak::new().expect("Beak");
     let runtime = runtime(&beak);
     let (_folder, workspace) = folder();
-    let questions = json!({ "questions": [
-        { "question": "Which database?", "options": [{ "label": "Postgres" }, { "label": "SQLite" }] },
-        { "question": "Anything else?" },
-        { "question": "Which features?", "options": [{ "label": "auth" }, { "label": "search" }], "multiple": true }
-    ] });
     let asking = Asking {
         thread: "t1".into(),
         mode: Mode::Default,
         workspace,
-        calls: vec![call("q", "question", &questions)],
+        calls: vec![call("q", "pick", &json!({ "colours": ["red", "blue"] }))],
     };
     let path = caller(&runtime, "p1", &asking).await;
     let key = asked(&runtime, &path, b"siphon.asks").await;
-    let unfit = runtime
-        .answer(&path, key.as_bytes(), &json!({ "answers": [{ "chosen": ["MySQL"] }] }))
-        .await;
+    let unfit = runtime.answer(&path, key.as_bytes(), &json!("green")).await;
     assert!(matches!(unfit, Err(NotGiven::Unfit(_))), "{unfit:?}");
-    let answer = json!({ "answers": [{ "chosen": ["SQLite"] }, null, { "chosen": ["auth", "search"], "text": "both" }] });
-    runtime.answer(&path, key.as_bytes(), &answer).await.expect("answered");
+    runtime.answer(&path, key.as_bytes(), &json!("blue")).await.expect("answered");
     let said = ended(&runtime, &path).await;
-    assert_eq!(
-        said[0],
-        (
-            CallStatus::Ok,
-            "Which database?\n→ SQLite\nAnything else?\n→ (unanswered)\nWhich features?\n→ auth, search; both".into()
-        )
-    );
+    assert_eq!(said[0], (CallStatus::Ok, "picked blue".into()));
     runtime.close().await;
 }

@@ -3931,6 +3931,7 @@ dependencies = [
  "siphon-machine",
  "siphon-mcp",
  "siphon-protocol",
+ "siphon-question",
  "siphon-runtime",
  "siphon-settings",
  "siphon-terminals",
@@ -5725,6 +5726,20 @@ dependencies = [
  "siphon-threads",
  "siphon-tools",
  "ts-rs",
+]
+
+[[package]]
+name = "siphon-question"
+version = "0.0.1"
+dependencies = [
+ "jsonschema",
+ "octoii-ai",
+ "schemars 1.2.3",
+ "serde",
+ "serde_json",
+ "siphon",
+ "siphon-machine",
+ "siphon-tools",
 ]
 
 [[package]]

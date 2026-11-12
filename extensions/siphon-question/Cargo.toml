@@ -1,0 +1,23 @@
+[package]
+name = "siphon-question"
+description = "Questions the model asks the person, each with options to choose from, the person free to answer in words"
+version = "0.0.1"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+octoii-ai = { path = "../../crates/octoii-ai" }
+schemars = "1.2.3"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+siphon = { path = "../../crates/siphon" }
+siphon-machine = { path = "../../crates/siphon-machine" }
+siphon-tools = { path = "../../crates/siphon-tools" }
+
+[dev-dependencies]
+jsonschema = { version = "0.61.1", default-features = false }
