@@ -52,6 +52,8 @@ pub(crate) async fn answered(caller: Caller, method: Method) -> Result<serde_jso
             crate::settings::set(&siphon.runtime, session, &change)
                 .await
                 .map_err(|error| refusal("bad_settings", &error.to_string()))?;
+            // The extensions switched on and off bring their providers or take them away.
+            crate::providers::refreshed(siphon).map_err(|error| refusal("failed", &error.to_string()))?;
             json(&Nothing {})
         }
         method => threads_answered(siphon, method).await,

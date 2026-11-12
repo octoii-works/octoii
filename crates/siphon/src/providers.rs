@@ -11,6 +11,8 @@ use octoii_ai::driver::{Connection, SignInAttempt, SignInOptions};
 use octoii_ai::host::{Credential, Credentials};
 use octoii_ai::models::{Models, Provider};
 use siphon_runtime::Runtime;
+
+use crate::Siphon;
 use tokio::sync::{mpsc, oneshot};
 
 /// How a host's sign-ins in a browser come back: the address the person's browser is sent back to, `{provider}` in
@@ -164,12 +166,26 @@ pub async fn finish_sign_in(models: &Models, sign_ins: &SignIns, id: &str, redir
         .map_err(|failure| Refused::Provider(failure.message))
 }
 
-/// The models' providers made again: the host's, then an instance of each account the person added.
+/// The models' providers made again: the host's and its extensions' — but those of an extension the person switched
+/// off — then an instance of each account the person added of them.
 ///
 /// # Errors
 /// The volume's failure.
-pub fn refreshed(runtime: &Runtime, models: &Models, host: &[Provider]) -> Result<(), Refused> {
-    let accounts = crate::accounts::accounts(&runtime.snapshot()?)?;
-    models.set_providers(crate::accounts::providers(host, &accounts));
+pub fn refreshed(siphon: &Siphon) -> Result<(), Refused> {
+    let snapshot = siphon.runtime.snapshot()?;
+    let accounts = crate::accounts::accounts(&snapshot)?;
+    let on: Vec<Provider> = siphon
+        .providers
+        .iter()
+        .filter(|provider| {
+            siphon
+                .registry
+                .providers
+                .get(&provider.id)
+                .is_none_or(|extension| crate::extension::Registry::on(&snapshot, extension))
+        })
+        .cloned()
+        .collect();
+    siphon.models.set_providers(crate::accounts::providers(&on, &accounts));
     Ok(())
 }

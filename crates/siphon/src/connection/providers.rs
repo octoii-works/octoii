@@ -33,7 +33,7 @@ fn unavailable(error: &octoii_ai::host::Unavailable) -> Error {
 /// Does the providers' method `method` on `siphon`.
 pub(super) async fn answered(siphon: &Siphon, method: Method) -> Result<serde_json::Value, Error> {
     let models = &siphon.models;
-    let refresh = || providers::refreshed(&siphon.runtime, models, &siphon.providers).map_err(|error| told(&error));
+    let refresh = || providers::refreshed(siphon).map_err(|error| told(&error));
     match method {
         Method::ListProviders(Nothing {}) => json(&ProvidersListed {
             providers: providers::shown(&siphon.runtime, models, siphon.credentials.as_ref()).map_err(|error| told(&error))?,

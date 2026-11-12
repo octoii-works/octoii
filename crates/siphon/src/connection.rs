@@ -82,11 +82,16 @@ pub async fn serve(
             "subscribe" => subscriptions.subscribe(&caller, &access, call.params, &outgoing),
             "unsubscribe" => subscriptions.unsubscribe(call.params),
             name => {
-                let Some((scope, handle)) = caller.siphon.registry.methods.get(name) else {
+                let Some(owned) = caller.siphon.registry.methods.get(name) else {
                     let refused = refusal("no_such_method", &format!("there is no method {name}"));
                     let _ = outgoing.send(text(&answer(call.id, Err(refused)))).await;
                     continue;
                 };
+                if let Some(off) = switched_off(&caller.siphon, &owned.extension) {
+                    let _ = outgoing.send(text(&answer(call.id, Err(off)))).await;
+                    continue;
+                }
+                let (scope, handle) = &owned.item;
                 if let Some(scope) = scope.filter(|scope| !access.scopes.contains(scope)) {
                     let _ = outgoing.send(text(&answer(call.id, Err(forbidden(scope))))).await;
                     continue;
@@ -134,15 +139,18 @@ impl Subscriptions {
     /// held till it is let go.
     fn subscribe(&mut self, caller: &Caller, access: &Access, params: serde_json::Value, outgoing: &mpsc::Sender<Outgoing>) -> Subscribing {
         let subscribe: Subscribe = serde_json::from_value(params).map_err(|error| refusal("bad_params", &error.to_string()))?;
-        let Some((scope, telling)) = caller
+        let Some((scope, telling, extension)) = caller
             .siphon
             .registry
             .topics
             .iter()
-            .find_map(|(scope, teller)| teller(&subscribe.topic).map(|telling| (*scope, telling)))
+            .find_map(|owned| (owned.item.1)(&subscribe.topic).map(|telling| (owned.item.0, telling, owned.extension.clone())))
         else {
             return Err(refusal("no_such_topic", &format!("there is no topic {}", subscribe.topic)));
         };
+        if let Some(off) = switched_off(&caller.siphon, &extension) {
+            return Err(off);
+        }
         if !access.scopes.contains(&scope) {
             return Err(forbidden(scope));
         }
@@ -197,6 +205,15 @@ fn answer(id: String, result: Result<serde_json::Value, Error>) -> Answer {
 }
 
 /// An error of `code`, saying `message`.
+/// The refusal of what the extension `extension` brought, where the person switched it off; none where it is on.
+fn switched_off(siphon: &Siphon, extension: &str) -> Option<Error> {
+    let on = siphon
+        .runtime
+        .snapshot()
+        .is_ok_and(|snapshot| crate::extension::Registry::on(&snapshot, extension));
+    (!on).then(|| refusal("extension_off", &format!("the extension {extension} is switched off")))
+}
+
 #[must_use]
 pub fn refusal(code: &str, message: &str) -> Error {
     Error {

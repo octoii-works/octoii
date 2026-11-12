@@ -21,7 +21,7 @@ use tokio::sync::mpsc::{self, error::TrySendError};
 use tokio_util::sync::CancellationToken;
 
 use crate::Siphon;
-use crate::agent::{OwnedTeller, Shared};
+use crate::agent::{CORE, OwnedTeller, Shared};
 use crate::connection::{Outgoing, text};
 
 /// An extension: its name, which settings switch it by; the words it is shown by and a line of what it brings; and
@@ -55,6 +55,22 @@ type Teller = Arc<dyn Fn(&serde_json::Value) -> Option<Telling> + Send + Sync>;
 /// What an extension does as a thread is deleted: lets go of what it held for it.
 pub(crate) type Deleted = Arc<dyn Fn(&str) + Send + Sync>;
 
+/// What an extension brought, with the extension's name: Siphon's own as `core`.
+#[derive(Clone)]
+pub(crate) struct Owned<T> {
+    pub(crate) extension: String,
+    pub(crate) item: T,
+}
+
+impl Registry {
+    /// Whether what `extension` brought is switched on, as the environment's settings in `snapshot` say: Siphon's own
+    /// always is.
+    pub(crate) fn on(snapshot: &beak::Snapshot, extension: &str) -> bool {
+        extension == CORE
+            || crate::settings::environment(snapshot).is_ok_and(|settings| !settings.disabled_extensions.iter().any(|off| off == extension))
+    }
+}
+
 /// The methods and topics Siphon and its extensions brought, as the connection finds them, what each extension does as
 /// a thread is deleted, and the extensions themselves, as a client is told them.
 #[derive(Default)]
@@ -62,8 +78,10 @@ pub(crate) struct Registry {
     pub(crate) extensions: Vec<ExtensionListed>,
     pub(crate) sets: Vec<Set>,
     pub(crate) deleted: Vec<Deleted>,
-    pub(crate) methods: std::collections::HashMap<&'static str, (Option<Scope>, Handler)>,
-    pub(crate) topics: Vec<(Scope, Teller)>,
+    pub(crate) methods: std::collections::HashMap<&'static str, Owned<(Option<Scope>, Handler)>>,
+    pub(crate) topics: Vec<Owned<(Scope, Teller)>>,
+    /// The extension each provider came from, by the provider's id.
+    pub(crate) providers: HashMap<String, String>,
 }
 
 impl std::fmt::Debug for Registry {
@@ -171,9 +189,14 @@ impl Builder {
         Box::new(extension).build(&mut registrar);
     }
 
-    /// The methods of `set`, each read by `read` and done by `handle`.
-    pub(crate) fn methods<M, F, Done>(&mut self, set: Set, read: fn(&str, serde_json::Value) -> serde_json::Result<M>, handle: F)
-    where
+    /// The methods of `set`, brought by `extension`, each read by `read` and done by `handle`.
+    pub(crate) fn methods<M, F, Done>(
+        &mut self,
+        extension: &str,
+        set: Set,
+        read: fn(&str, serde_json::Value) -> serde_json::Result<M>,
+        handle: F,
+    ) where
         M: Send + 'static,
         F: Fn(Caller, M) -> Done + Send + Sync + 'static,
         Done: Future<Output = Result<serde_json::Value, Error>> + Send + 'static,
@@ -188,13 +211,20 @@ impl Builder {
                     Box::pin(std::future::ready(Err(refused)))
                 }
             });
-            self.registry.methods.insert(name, (*scope, handler));
+            self.registry.methods.insert(
+                name,
+                Owned {
+                    extension: extension.to_owned(),
+                    item: (*scope, handler),
+                },
+            );
         }
         self.registry.sets.push(set);
     }
 
-    /// The topics of the family `T`, which a session needs `scope` to subscribe to, each told by `tell`.
-    pub(crate) fn topics<T, F, Told>(&mut self, scope: Scope, tell: F)
+    /// The topics of the family `T`, brought by `extension`, which a session needs `scope` to subscribe to, each told by
+    /// `tell`.
+    pub(crate) fn topics<T, F, Told>(&mut self, extension: &str, scope: Scope, tell: F)
     where
         T: DeserializeOwned + Send + 'static,
         F: Fn(Subscription, T) -> Told + Send + Sync + 'static,
@@ -208,7 +238,10 @@ impl Builder {
                 Box::pin(tell(subscription, read))
             }))
         });
-        self.registry.topics.push((scope, teller));
+        self.registry.topics.push(Owned {
+            extension: extension.to_owned(),
+            item: (scope, teller),
+        });
     }
 }
 
@@ -279,6 +312,10 @@ impl Registrar<'_> {
 
     /// A provider models are reached through.
     pub fn provider(&mut self, provider: Provider) {
+        self.builder
+            .registry
+            .providers
+            .insert(provider.id.clone(), self.extension.to_owned());
         self.builder.providers.push(provider);
     }
 
@@ -289,7 +326,7 @@ impl Registrar<'_> {
         F: Fn(Caller, M) -> Done + Send + Sync + 'static,
         Done: Future<Output = Result<serde_json::Value, Error>> + Send + 'static,
     {
-        self.builder.methods(set, read, handle);
+        self.builder.methods(self.extension, set, read, handle);
     }
 
     /// The topics of the family `T`, which a session needs `scope` to subscribe to, each told by `tell`.
@@ -299,6 +336,6 @@ impl Registrar<'_> {
         F: Fn(Subscription, T) -> Told + Send + Sync + 'static,
         Told: Future<Output = Result<(), Lagged>> + Send + 'static,
     {
-        self.builder.topics(scope, tell);
+        self.builder.topics(self.extension, scope, tell);
     }
 }

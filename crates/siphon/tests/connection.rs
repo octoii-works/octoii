@@ -306,6 +306,32 @@ async fn a_extension_s_methods_and_topics_are_the_protocol_s_beside_siphon_s() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn an_extension_switched_off_answers_nothing_till_it_is_switched_on() {
+    let beak = Beak::new().expect("Beak");
+    let siphon = siphon(&beak);
+    let mut client = Client::connect(
+        &siphon,
+        vec![Scope::ThreadsRead, Scope::ThreadsOperate, Scope::TerminalsOperate],
+        64,
+    );
+    client.message().await;
+    let switch = |off: &[&str]| json!({ "environment": { "disabled_extensions": off } });
+    let id = client.call("settings.set", switch(&["echo"])).await;
+    assert_eq!(client.answer(&id).await["result"], json!({}));
+    let id = client.call("echo.say", json!({ "words": "hi" })).await;
+    assert_eq!(client.answer(&id).await["error"]["code"], "extension_off");
+    let id = client
+        .call("subscribe", json!({ "topic": { "type": "echo", "words": "hi" } }))
+        .await;
+    assert_eq!(client.answer(&id).await["error"]["code"], "extension_off");
+    let id = client.call("settings.set", switch(&[])).await;
+    client.answer(&id).await;
+    let id = client.call("echo.say", json!({ "words": "hi" })).await;
+    assert_eq!(client.answer(&id).await["result"], json!({ "words": "hi" }));
+    siphon.runtime.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn what_a_project_was_granted_is_listed_and_taken_back_in_part() {
     let beak = Beak::new().expect("Beak");
     let siphon = siphon(&beak);

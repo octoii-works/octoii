@@ -196,11 +196,12 @@ impl Siphon {
         };
         own(&mut builder.registrar(CORE), config.as_deref());
         builder.methods(
+            CORE,
             crate::protocol::siphon::set(),
             crate::protocol::siphon::Method::read,
             connection::answered,
         );
-        builder.topics(Scope::ThreadsRead, connection::told);
+        builder.topics(CORE, Scope::ThreadsRead, connection::told);
         Ok(Building {
             builder,
             sign_in,
@@ -234,7 +235,7 @@ impl Building {
         F: Fn(Caller, M) -> Done + Send + Sync + 'static,
         Done: std::future::Future<Output = Result<serde_json::Value, crate::protocol::Error>> + Send + 'static,
     {
-        self.builder.methods(set, read, handle);
+        self.builder.methods(CORE, set, read, handle);
         self
     }
 
@@ -292,8 +293,8 @@ impl Building {
             registry: Arc::new(registry),
             sources,
         };
-        // The accounts the person added are providers beside the host's.
-        if let Err(providers::Refused::Beak(error)) = providers::refreshed(&siphon.runtime, &siphon.models, &siphon.providers) {
+        // The accounts the person added are providers beside the host's; an extension switched off brings none.
+        if let Err(providers::Refused::Beak(error)) = providers::refreshed(&siphon) {
             return Err(error);
         }
         Ok(siphon)
