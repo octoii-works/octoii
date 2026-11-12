@@ -20,6 +20,8 @@ pub const SEGMENT_BYTES_MAX: u64 = 32 << 20;
 
 /// Whose the person's own inputs and changes are, as the log names them.
 pub const PERSON: &str = "person";
+/// Whose Siphon's own inputs and changes are: a thread's title, a reply cut off at its limit told to go on.
+pub const SIPHON: &str = "siphon";
 
 /// What a segment's name ends in, after the id of the entry that begins it.
 const SEGMENT_EXTENSION: &str = ".jsonl";

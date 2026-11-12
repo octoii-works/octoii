@@ -11,12 +11,14 @@ use std::sync::Arc;
 
 use octoii_ai::models::Models;
 
-use octoii_ai::vocabulary::{Failure, FailureKind, FunctionCallOutput, InputContent, Item, ItemStatus, Response, ResponseStatus};
+use octoii_ai::vocabulary::{
+    Failure, FailureKind, FunctionCallOutput, Incomplete, InputContent, Item, ItemStatus, Response, ResponseStatus,
+};
 use serde::{Deserialize, Serialize};
 use siphon_machine::paths::Base;
 use siphon_runtime::{Answer, Ending, Program, Retries, Run, Wait};
 use siphon_threads::log::Writer;
-use siphon_threads::{CallKey, CallStatus, Config, Entry, ThreadUsage, Window, inbox, thread};
+use siphon_threads::{CallKey, CallStatus, Config, Entry, SIPHON, ThreadUsage, Window, inbox, thread};
 use siphon_tools::projects::Place;
 use siphon_tools::{Calls, Setting, State, Tools};
 
@@ -224,6 +226,7 @@ impl TurnProgram {
         }
         let keys = keyed(run, &response)?;
         let (made, cut) = calls_of(&response, &keys);
+        let at_limit = response.incomplete == Some(Incomplete::MaxOutputTokens);
         let reply = Entry::Reply {
             id: run.new_id()?,
             request: key.to_owned(),
@@ -241,6 +244,18 @@ impl TurnProgram {
             )?;
         }
         if made.is_empty() {
+            // A reply its limit cut off is told to go on, once: where the input before it told so already, it ends.
+            if at_limit && !told_to_go_on(&Window::read(run.snapshot(), id)?) {
+                let entry = Entry::Input {
+                    id: run.new_id()?,
+                    actor: SIPHON.to_owned(),
+                    delivery: run.new_id()?,
+                    content: vec![InputContent::text(GO_ON)],
+                    reply_to: None,
+                };
+                writer.append(&mut run.changes, &entry)?;
+                return Ok(Ending::Next(TurnState::FRESH));
+            }
             return Ok(Ending::Done(None));
         }
         self.calling(run, input, Calls::keyed(made), 0)
@@ -374,6 +389,22 @@ fn calls_of(response: &Response, keys: &[CallKey]) -> (Vec<(CallKey, String, Str
         }
     }
     (made, cut)
+}
+
+/// What a reply its output limit cut off is told, as a system reminder.
+pub const GO_ON: &str = "[the reply was cut off at the output limit: go on from where it stopped]";
+
+/// Whether the last input of `window`'s told a reply cut off at its limit to go on.
+fn told_to_go_on(window: &Window) -> bool {
+    window
+        .conversation
+        .iter()
+        .rev()
+        .find_map(|entry| match entry {
+            Entry::Input { actor, content, .. } => Some(actor == SIPHON && content == &[InputContent::text(GO_ON)]),
+            _ => None,
+        })
+        .unwrap_or(false)
 }
 
 /// Appends with the run's commit the result of each call from `appended` on that ended, while every call before it

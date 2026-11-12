@@ -37,19 +37,19 @@ pub struct Edit<'a> {
     pub all: bool,
 }
 
-/// Why an edit is refused, its reason as a failure tells it: `old` empty, or the same as `new`; no match, with where
+/// Why an edit is refused, in the words a failure tells it in: `old` empty, or the same as `new`; no match, with where
 /// the text came nearest; more than one, not asked to replace every one; or a text the edit leaves as it was.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum Refusal {
-    #[error("empty")]
+    #[error("`old` is empty")]
     Empty,
-    #[error("same")]
+    #[error("`new` is the same as `old`")]
     Same,
-    #[error("not-found")]
+    #[error("`old` is nowhere in the file")]
     NotFound(Nearest),
-    #[error("many")]
+    #[error("`old` matches {0} places: give more of it, or set `all`")]
     Many(usize),
-    #[error("unchanged")]
+    #[error("the edit would leave the file as it is")]
     Unchanged,
 }
 

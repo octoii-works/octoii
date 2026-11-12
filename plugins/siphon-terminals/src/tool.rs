@@ -65,7 +65,7 @@ pub struct TerminalTool {
 
 impl Tool for TerminalTool {
     const NAME: &'static str = "terminal";
-    const DESCRIPTION: &'static str = "Works the thread's terminals, which the person sees beside the chat. open runs a command line that does not end by itself — a server, a watcher — in a terminal of its own, in the workspace, held as the shell's commands are; it gives the terminal's number and its screen after a moment, and when the command ends of itself you are told how, with its last screen. read gives what a terminal shows, the person's too; write types to a terminal you opened (`\\u0003` for Ctrl-C, `\\r` for Enter) and gives its screen after; close ends one you opened. For a command that ends by itself, use shell.";
+    const DESCRIPTION: &'static str = "Works the thread's terminals, which the person sees beside the chat. open runs a command line that does not end by itself — a server, a watcher — in a terminal of its own, in the workspace, held as the shell's commands are; it gives the terminal's number and its screen after a moment, and when the command ends of itself you are told how, with its last screen: no need to read it to wait for that. read gives what a terminal shows, the person's too; write types to a terminal you opened (`\\u0003` for Ctrl-C, `\\r` for Enter) and gives its screen after; close ends one you opened. For a command that ends by itself, use shell.";
     type Args = Action;
 
     fn effect(&self, action: &Action, _: &Base) -> Effect {

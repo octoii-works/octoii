@@ -16,7 +16,8 @@ use octoii_ai::host::{Credential, Credentials, Files, NoSuchFile, Unavailable};
 use octoii_ai::models::{Host, Models, Provider};
 use octoii_ai::stream::{Event, Source};
 use octoii_ai::vocabulary::{
-    Failure, FailureKind, FunctionCall, InputContent, Item, Message, OutputContent, Request, Response, ResponseStatus, Tool, Usage,
+    Failure, FailureKind, FunctionCall, Incomplete, InputContent, Item, Message, OutputContent, Request, Response, ResponseStatus, Tool,
+    Usage,
 };
 use siphon_agent::{
     DelegateProgram, DelegateTool, DelegatedProgram, Gather, ModelRequest, Sources, ThreadProgram, TitleProgram, TurnProgram,
@@ -26,6 +27,9 @@ use siphon_machine::Host as Machine;
 use siphon_runtime::{Asked, Options, Runtime};
 use siphon_threads::{CallStatus, Config, Entry, Mode, NewThread, Outcome, Threads, Turn};
 use siphon_tools::{Asks, Exec, ExecuteTool, Permission, ReadTool, Review, ScriptProgram, ShellTool, Tools, WriteTool, answer_exec};
+
+/// What a scripted reply says to stand for one its output limit cut off.
+const CUT_OFF: &str = "cut off";
 
 /// What the scripted provider answers each request with, in turn — but a request with an input of words it keeps a
 /// reply for, which it answers with that, once — and the requests it was sent.
@@ -96,10 +100,16 @@ impl Driver for Scripted {
                 events.push(Ok(Event::Began { index, item: item.clone() }));
                 events.push(Ok(Event::Ended { index, item: item.clone() }));
             }
+            // A reply that says `cut off` stands for one its output limit cut off.
+            let cut_off = output.contains(&says(CUT_OFF));
             events.push(Ok(Event::Finished(Response {
                 id: "r".into(),
                 model: model.reference(),
-                status: ResponseStatus::Completed,
+                status: if cut_off {
+                    ResponseStatus::Incomplete
+                } else {
+                    ResponseStatus::Completed
+                },
                 output,
                 usage: Some(Usage {
                     input_tokens: 10,
@@ -111,7 +121,7 @@ impl Driver for Scripted {
                     cost_nanodollars: Some(100),
                 }),
                 failure: None,
-                incomplete: None,
+                incomplete: cut_off.then_some(Incomplete::MaxOutputTokens),
                 context_tokens: None,
             })));
             let source: Source = Box::pin(futures::stream::iter(events));
@@ -338,7 +348,7 @@ async fn a_turn_takes_on_the_calls_its_replies_make_and_asks_again_till_one_call
     assert_eq!(threads.listed(&id).expect("listed").config.title.as_deref(), Some("Writing a file"));
     let kinds: Vec<&str> = entries(&threads, &id)
         .iter()
-        .filter(|entry| !matches!(entry, Entry::Config { actor, .. } if actor == siphon_agent::title::ACTOR))
+        .filter(|entry| !matches!(entry, Entry::Config { actor, .. } if actor == siphon_threads::SIPHON))
         .map(|entry| match entry {
             Entry::Config { .. } => "config",
             Entry::System { .. } => "system",
@@ -441,6 +451,29 @@ async fn a_folder_s_instructions_a_read_comes_upon_are_given_once_a_window() {
         outputs[2].contains("Keep it short."),
         "a script's read gives the instructions it came upon with the script's result: {}",
         outputs[2]
+    );
+    runtime.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_reply_its_output_limit_cut_off_is_told_to_go_on_once() {
+    let script = script(vec![Ok(vec![says(CUT_OFF)]), Ok(vec![says(CUT_OFF)])]);
+    let beak = Beak::new().expect("Beak");
+    let runtime = runtime(&beak, &script);
+    let threads = Threads::<ThreadProgram>::new(runtime.clone());
+    let (_folder, workspace) = folder();
+    let id = thread(&threads, &workspace).await;
+    threads
+        .deliver(&id, "person", vec![InputContent::text("write at length")], "d1")
+        .await
+        .expect("delivered");
+    until(&threads, &id, Turn::Replied).await;
+    let asked = script.asked.lock().expect("held").clone();
+    assert_eq!(asked.len(), 2, "asked again once, and no more");
+    assert!(
+        matches!(asked[1].input.last(), Some(Item::Message(Message::Developer { content })) if content == &[InputContent::text(siphon_agent::turn::GO_ON)]),
+        "told to go on as a system reminder: {:?}",
+        asked[1].input.last()
     );
     runtime.close().await;
 }

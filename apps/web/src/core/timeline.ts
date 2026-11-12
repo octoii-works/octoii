@@ -298,7 +298,7 @@ function saidOf(input: Input): Said | undefined {
 	if (known !== undefined) return known ?? undefined;
 	const from = threadOfActor(input.actor);
 	// A task a thread gave is answered to it, and read whole, as a terminal's end is; what came of one given in the background follows Siphon's note.
-	const whole = from === undefined || from === TERMINAL || (input.reply_to !== undefined && input.reply_to !== null);
+	const whole = from === undefined || isNotice(from) || (input.reply_to !== undefined && input.reply_to !== null);
 	const text = whole ? inputText(input.content) : threadText(input.content);
 	const attachments = attachmentsOf(input.content);
 	// What a sub-thread told is shown though it holds no words: how its work ended.
@@ -597,6 +597,13 @@ export function inputText(content: readonly InputContent[]): string {
 const PERSON = "person";
 /** Whose the input is that tells a command line the model ran in a terminal ended. */
 export const TERMINAL = "terminal";
+/** Whose Siphon's own inputs are, as a reply cut off at its limit told to go on. */
+export const SIPHON = "siphon";
+
+/** Whether words from `from` are a notice — a terminal's command ending, Siphon's own — rather than a person's or a thread's. */
+export function isNotice(from: string | undefined): boolean {
+	return from === TERMINAL || from === SIPHON;
+}
 
 /** The thread whose an input is, by its actor — a thread's id; none for the person's. */
 export function threadOfActor(actor: string): string | undefined {

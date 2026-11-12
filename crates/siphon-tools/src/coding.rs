@@ -22,7 +22,7 @@ const GREP_LINE_CHARS_MAX: usize = 500;
 
 fn failed(error: siphon_machine::Error) -> Refusal {
     Refusal(match error {
-        siphon_machine::Error::NotFound => "not-found: nothing is there".into(),
+        siphon_machine::Error::NotFound => "nothing is there".into(),
         siphon_machine::Error::Directory => "it is a directory".into(),
         siphon_machine::Error::NotText => "it holds no text".into(),
         siphon_machine::Error::Beak(error) => error.to_string(),
@@ -36,10 +36,7 @@ fn failed_at(machine: &Machine, path: &str, error: siphon_machine::Error) -> Ref
         return failed(error);
     }
     let Ok(missing) = machine.missing(path) else { return failed(error) };
-    let mut words = format!(
-        "not-found: nothing is there\n[the nearest folder there is {}",
-        machine.shown(&missing.folder)
-    );
+    let mut words = format!("nothing is there\n[the nearest folder there is {}", machine.shown(&missing.folder));
     if !missing.like.is_empty() {
         let _ = write!(words, "; in it, names like the one asked: {}", missing.like.join(", "));
     }
@@ -299,7 +296,7 @@ pub struct EditTool;
 
 impl Tool for EditTool {
     const NAME: &'static str = "edit";
-    const DESCRIPTION: &'static str = "Replaces text in a file: `old` must match one place, or every place with `all`. Give in `old` just the lines that make it unique. It is matched exactly, else with typographic characters (curly quotes, dashes, special spaces) read as plain ones, else line by line ignoring trailing whitespace; a match not exact is noted with how it matched. Gives the change as a unified diff. A refusal gives its reason: empty, same (`new` is `old`), not-found (`old` is nowhere in the file; the lines nearest to it follow, as the file holds them, or a note that `new` is there already), unchanged (the edit would leave the file as it is), many (how many places matched: give more of `old`, or set `all`).";
+    const DESCRIPTION: &'static str = "Replaces text in a file: `old` must match one place, or every place with `all`. Give in `old` just the lines that make it unique. It is matched exactly, else with typographic characters (curly quotes, dashes, special spaces) read as plain ones, else line by line ignoring trailing whitespace; a match not exact is noted with how it matched. Gives the change as a unified diff. A refusal says why; where `old` is nowhere, the lines nearest to it follow, as the file holds them, or a note that `new` is there already.";
     type Args = EditArgs;
 
     fn effect(&self, args: &EditArgs, base: &Base) -> Effect {
@@ -338,9 +335,6 @@ impl Tool for EditTool {
                     Ok(told)
                 }
                 EditOutcome::Refused(siphon_text::Refusal::NotFound(nearest)) => Err(Refusal(not_found(&nearest))),
-                EditOutcome::Refused(siphon_text::Refusal::Many(count)) => {
-                    Err(Refusal(format!("many: {count} places match; give more of old, or set all")))
-                }
                 EditOutcome::Refused(refusal) => Err(Refusal(refusal.to_string())),
             }
         })
@@ -351,11 +345,14 @@ impl Tool for EditTool {
 /// The refusal of an edit whose `old` is nowhere in its file, with where the file came nearest.
 fn not_found(nearest: &siphon_text::Nearest) -> String {
     match nearest {
-        siphon_text::Nearest::Made => "not-found\n[`new` is in the file already: the edit may have been made]".into(),
+        siphon_text::Nearest::Made => "`old` is nowhere in the file\n[`new` is in the file already: the edit may have been made]".into(),
         siphon_text::Nearest::Lines { first, lines } => {
-            format!("not-found\n[the nearest lines, from line {first}:]\n{}", lines.join("\n"))
+            format!(
+                "`old` is nowhere in the file\n[the nearest lines, from line {first}:]\n{}",
+                lines.join("\n")
+            )
         }
-        siphon_text::Nearest::Nowhere => "not-found".into(),
+        siphon_text::Nearest::Nowhere => "`old` is nowhere in the file".into(),
     }
 }
 

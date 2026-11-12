@@ -45,7 +45,7 @@ fn an_edit_refuses_what_it_cannot_make_and_replaces_every_match_only_where_asked
     // Where the two differ in their `\r` alone, the endings are what is edited: matched and replaced as written.
     assert_eq!(edit("one\r\n", "one\n").apply("one\r\ntwo\n").expect("made").text, "one\ntwo\n");
     assert_eq!(edit("a\n", "a  \n").apply("a  \n"), Err(Refusal::Unchanged));
-    assert_eq!(Refusal::NotFound(Nearest::Nowhere).to_string(), "not-found");
+    assert_eq!(Refusal::NotFound(Nearest::Nowhere).to_string(), "`old` is nowhere in the file");
     assert_eq!(Matching::Typographic.name(), "typographic");
 }
 

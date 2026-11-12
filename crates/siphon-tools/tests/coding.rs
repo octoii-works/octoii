@@ -97,7 +97,7 @@ async fn files_are_written_edited_read_a_page_at_a_time_and_found() {
         json!({ "path": "notes/a.txt", "old": "line", "new": "row" }),
     )
     .await;
-    assert!(many.expect_err("many").starts_with("many: 5 places match"));
+    assert_eq!(many.expect_err("many"), "`old` matches 5 places: give more of it, or set `all`");
     assert_eq!(exec(&tools, &context, "read", json!({ "path": "." })).await, Ok("notes/\n".into()));
     assert_eq!(
         exec(&tools, &context, "glob", json!({ "pattern": "**/*.txt" })).await,
@@ -106,7 +106,7 @@ async fn files_are_written_edited_read_a_page_at_a_time_and_found() {
     let found = exec(&tools, &context, "grep", json!({ "pattern": "four" })).await.expect("grepped");
     assert_eq!(found, "notes/a.txt:4: line four\n");
     let missing = exec(&tools, &context, "read", json!({ "path": "nowhere.txt" })).await;
-    assert!(missing.expect_err("missing").starts_with("not-found"));
+    assert!(missing.expect_err("missing").starts_with("nothing is there"));
 }
 
 #[tokio::test(flavor = "multi_thread")]

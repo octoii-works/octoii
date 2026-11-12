@@ -15,7 +15,7 @@ mod threads;
 pub mod window;
 
 pub use config::{Changed, Config, ConfigChange, ConfigChanged, Mode};
-pub use log::{CallKey, CallStatus, Entry, Outcome, PERSON, Section};
+pub use log::{CallKey, CallStatus, Entry, Outcome, PERSON, SIPHON, Section};
 pub use marks::{Marks, MarksChange};
 pub use status::{Ask, BEGAN_AT_ANNOTATION, ENDED_AT_ANNOTATION, Listed, Parent, Status, TURN_ANNOTATION, ThreadUsage, Turn, began, ended};
 pub use threads::{Error, MainInput, NewThread, Threads};

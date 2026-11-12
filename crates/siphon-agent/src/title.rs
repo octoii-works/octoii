@@ -19,9 +19,6 @@ pub const INSTRUCTION: &str = "Do not answer the person or do what they ask. Wri
 /// The most bytes a title is kept to.
 const TITLE_BYTES_MAX: usize = 80;
 
-/// Who the title is changed by, as the log records it.
-pub const ACTOR: &str = "siphon";
-
 /// What a title process is started with: its thread.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TitleInput {
@@ -73,7 +70,7 @@ impl Program for TitleProgram {
             return Ok(Ending::Done(None));
         }
         let inbound = Inbound::Config {
-            actor: ACTOR.to_owned(),
+            actor: siphon_threads::SIPHON.to_owned(),
             change: ConfigChange {
                 title: Some(Some(title.clone())),
                 ..ConfigChange::default()
