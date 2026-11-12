@@ -1,4 +1,2 @@
 # Names clippy takes as words, not code, in documentation; ".." keeps its own.
 doc-valid-idents = ["QuickJS", "OpenAI", "OpenRouter", "DeepSeek", "ChatGPT", "DevTools", "Chromium", "JavaScript", ".."]
-# A function's most lines, blank lines and comments not counted, as the web's lint holds its own.
-too-many-lines-threshold = 120
