@@ -74,6 +74,13 @@ async fn files_are_written_edited_read_a_page_at_a_time_and_found() {
         .await
         .expect("read");
     assert_eq!(page, "line 2\nline 3\n[lines 2-3; more from offset 4]");
+    let past = exec(&tools, &context, "read", json!({ "path": "notes/a.txt", "offset": 9 })).await;
+    assert_eq!(past, Ok("[the file has 5 lines, all before the offset]".into()));
+    exec(&tools, &context, "write", json!({ "path": "notes/empty.md", "content": "" }))
+        .await
+        .expect("written");
+    let empty = exec(&tools, &context, "read", json!({ "path": "notes/empty.md" })).await;
+    assert_eq!(empty, Ok("[the file is empty]".into()));
     let edited = exec(
         &tools,
         &context,

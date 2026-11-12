@@ -183,7 +183,18 @@ async fn shown(context: &Context, name: &str, read: Read) -> Result<Vec<InputCon
                 page.lines.first().map_or(0, |line| line.number),
                 page.lines.last().map_or(0, |line| line.number),
             );
-            if !page.whole {
+            if page.lines.is_empty() {
+                // A page of no lines: the file holds none, or it ends before the offset asked.
+                let _ = write!(
+                    out,
+                    "{}",
+                    if page.seen == 0 {
+                        "[the file is empty]".to_owned()
+                    } else {
+                        format!("[the file has {} lines, all before the offset]", page.seen)
+                    }
+                );
+            } else if !page.whole {
                 let _ = write!(out, "\n[lines {first}-{last}; more from offset {}]", last + 1);
             } else if first > 1 {
                 let _ = write!(out, "\n[lines {first}-{last} of {last}]");
