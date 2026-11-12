@@ -8,6 +8,7 @@
 import type { Ask } from "@octoii-works/octoii-client";
 import type { Limited } from "./limits.ts";
 import {
+	type Background,
 	type Changed,
 	doingOf,
 	type Laid,
@@ -51,7 +52,8 @@ export type TimelineRow =
 	| { readonly kind: "end"; readonly key: string; readonly room: Room; readonly end: TurnEnd }
 	| { readonly kind: "summed-up"; readonly key: string; readonly room: Room }
 	| { readonly kind: "ask"; readonly key: string; readonly room: Room; readonly ask: Ask }
-	| { readonly kind: "limited"; readonly key: string; readonly room: Room; readonly limited: Limited; readonly resumingAt: number | undefined };
+	| { readonly kind: "limited"; readonly key: string; readonly room: Room; readonly limited: Limited; readonly resumingAt: number | undefined }
+	| { readonly kind: "now"; readonly key: string; readonly room: Room; readonly background: Background };
 
 /** The rows of the timeline's items, in their order. */
 export function rowsOf(items: readonly TimelineItem[]): readonly TimelineRow[] {
@@ -65,6 +67,8 @@ export function rowsOf(items: readonly TimelineItem[]): readonly TimelineRow[] {
 				return [{ kind: "ask", key: `ask:${item.key}`, room: "turn", ask: item.ask }];
 			case "limited":
 				return [{ kind: "limited", key: "limited", room: "turn", limited: item.limited, resumingAt: item.resumingAt }];
+			case "now":
+				return [{ kind: "now", key: "now", room: "part", background: item.background }];
 		}
 	});
 }
@@ -163,7 +167,17 @@ function sameRow(a: TimelineRow, b: TimelineRow): boolean {
 			return b.kind === "ask" && a.ask === b.ask;
 		case "limited":
 			return b.kind === "limited" && a.limited === b.limited && a.resumingAt === b.resumingAt;
+		case "now":
+			return b.kind === "now" && sameBackground(a.background, b.background);
 	}
+}
+
+/** Whether two thread's backgrounds hold the same terminals, running the same lines, and the same sub-threads, as they stand. */
+function sameBackground(a: Background, b: Background): boolean {
+	return (
+		sameItems(a.terminals, b.terminals, (x, y) => x.id === y.id && x.line === y.line) &&
+		sameItems(a.threads, b.threads, (x, y) => x.id === y.id && x.config.title === y.config.title && x.status.began_at === y.status.began_at)
+	);
 }
 
 /** Whether two laid-out parts of work are the same: their steps the same, a call's line the same object. */

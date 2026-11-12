@@ -14,6 +14,7 @@ import {
 	leadOf,
 	runsOf,
 	thoughtCalls,
+	withNow,
 	replyOf,
 	itemsOf,
 	type TimelineTurn,
@@ -372,6 +373,12 @@ describe("a thread's timeline", () => {
 			thoughts: [],
 		}));
 		expect(runsOf(shown).map((run) => run.map(({ call }) => call.id))).toEqual([["a", "b", "c"], ["d"], ["e"]]);
+	});
+
+	it("ends the items with what works in the background, where something does", () => {
+		const terminal = { id: "t1", number: 1, size: { rows: 24, cols: 80 }, title: "", line: "bun run dev" };
+		expect(withNow([], { terminals: [], threads: [] })).toEqual([]);
+		expect(withNow([], { terminals: [terminal], threads: [] }).map((item) => item.kind)).toEqual(["now"]);
 	});
 
 	it("leads a stretch's line with the call going on, else the latest of the kind it did most", () => {

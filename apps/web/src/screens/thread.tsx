@@ -13,10 +13,11 @@ import type { Device } from "../core/device.ts";
 import { projectOf, statusOf, titleOf } from "../core/threads.ts";
 import { contentOf } from "../core/attachments.ts";
 import { limitedOf } from "../core/limits.ts";
-import { firstSaid, itemsOf, withLimited, type Work } from "../core/timeline.ts";
+import { inBackground } from "../core/sub-threads.ts";
+import { firstSaid, itemsOf, withLimited, withNow } from "../core/timeline.ts";
 import { AskDock } from "../components/asks/asks.tsx";
 import { Composer } from "../components/composer/composer.tsx";
-import { Docked } from "../components/composer/docked.tsx";
+import { Queued } from "../components/composer/queued.tsx";
 import { Pane, PanelFrame, ShowPanel } from "../components/frame/frame.tsx";
 import { ChatHeader } from "../components/thread/header.tsx";
 import { DetailsButtons, type DetailsProps, InlineDetails } from "../components/thread/details.tsx";
@@ -42,7 +43,8 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 	const { thread } = props;
 	const client = useClient();
 	const conversation = useConversation(thread);
-	const row = useThreads()?.find((each) => each.id === thread);
+	const rows = useThreads() ?? [];
+	const row = rows.find((each) => each.id === thread);
 	const terminals = useTerminals(thread) ?? [];
 	const pages = usePages(thread) ?? [];
 	const now = useNow(LIMITED_CHECKED_MS);
@@ -52,7 +54,10 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 	const [sent, setSent] = useState<string | undefined>(undefined);
 	const timeline = useRef<TimelineHandle>(null);
 	const limited = limitedOf(conversation, row?.config.model ?? undefined, now);
-	const items = withLimited(itemsOf(conversation), limited, conversation.status?.resuming_at ?? undefined);
+	const turnsAndLimit = withLimited(itemsOf(conversation), limited, conversation.status?.resuming_at ?? undefined);
+	// What works in the background stands as the timeline's last line: the model's own command lines in their terminals, and the sub-threads it gave a task in the background.
+	const work = turnsAndLimit.flatMap((item) => (item.kind === "turn" ? item.turn.work : []));
+	const items = withNow(turnsAndLimit, { terminals: terminals.filter((terminal) => terminal.line !== undefined), threads: inBackground(work, rows, thread) });
 	const project = row === undefined ? undefined : projectOf(row);
 	const workspace = useFolder(row);
 	const said = firstSaid(items);
@@ -94,7 +99,6 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 				<Dock
 					thread={thread}
 					row={row}
-					work={items.flatMap((item) => (item.kind === "turn" ? item.turn.work : []))}
 					conversation={conversation}
 					device={props.device}
 					onSent={(delivery) => {
@@ -111,15 +115,13 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 }
 
 /**
- * What docks at the column's foot, opaque, the turns fading out behind its upper edge: what works in the background and
- * the messages waiting in the thread's inbox over the composer, in the chat's column — or, while something waits on the
- * person, over what waits, docked in the composer's place till it is answered.
+ * What docks at the column's foot, opaque, the turns fading out behind its upper edge: the messages waiting in the
+ * thread's inbox over the composer, in the chat's column — or, while something waits on the person, over what waits,
+ * docked in the composer's place till it is answered.
  */
 function Dock(props: {
 	readonly thread: string;
 	readonly row: Listed | undefined;
-	/** The work of the thread's turns, whose calls gave sub-threads their tasks in the background. */
-	readonly work: readonly Work[];
 	readonly conversation: Conversation;
 	readonly device: Device;
 	/** Told the id each input the person sends is delivered by. */
@@ -136,7 +138,7 @@ function Dock(props: {
 			<div className="overflow-hidden scrollbar-even">
 				<div className="chat-column">
 					{/* What waits steers a turn that works, docked till its next step; sent to a thread at rest, it begins the next turn, shown in the timeline as it does. */}
-					<Docked thread={thread} work={props.work} inbox={conversation.status?.turn === "running" ? conversation.inbox : []} />
+					<Queued thread={thread} inbox={conversation.status?.turn === "running" ? conversation.inbox : []} />
 					{conversation.asks.length > 0 ? (
 						<AskDock thread={thread} asks={conversation.asks} />
 					) : (

@@ -19,6 +19,7 @@ import { type Room, rowsOf, steadyRows, type TimelineRow } from "../../core/rows
 import type { TimelineItem } from "../../core/timeline.ts";
 import { AskLine } from "./ask-line.tsx";
 import { LimitedCard } from "./limited.tsx";
+import { NowLine } from "./now.tsx";
 import { Reply } from "./reply.tsx";
 import { useArrived } from "../effects/arrived.ts";
 import { useDebounced } from "../effects/debounced.ts";
@@ -192,6 +193,8 @@ function Row(props: { readonly thread: string; readonly parent: string | undefin
 			return <AskLine ask={row.ask} />;
 		case "limited":
 			return <LimitedCard thread={props.thread} limited={row.limited} resumingAt={row.resumingAt} />;
+		case "now":
+			return <NowLine thread={props.thread} background={row.background} />;
 	}
 }
 

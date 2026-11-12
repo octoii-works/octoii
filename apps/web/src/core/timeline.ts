@@ -18,10 +18,12 @@ import {
 	type Conversation,
 	type InputContent,
 	type Item,
+	type Listed,
 	type Response,
 	type Step,
 	type Streamed,
 	type Structured,
+	type TerminalListed,
 	type Turn,
 } from "@octoii-works/octoii-client";
 import { type Attachment, attachmentsOf } from "./attachments.ts";
@@ -143,7 +145,17 @@ export type TimelineItem =
 	| { readonly kind: "turn"; readonly key: string; readonly turn: TimelineTurn }
 	| { readonly kind: "summed-up"; readonly key: string }
 	| { readonly kind: "ask"; readonly key: string; readonly ask: Ask }
-	| { readonly kind: "limited"; readonly key: string; readonly limited: Limited; readonly resumingAt: number | undefined };
+	| { readonly kind: "limited"; readonly key: string; readonly limited: Limited; readonly resumingAt: number | undefined }
+	| { readonly kind: "now"; readonly key: string; readonly background: Background };
+
+/** What works in a thread's background now: the command lines its model runs in terminals of their own, and the sub-threads it gave a task in the background. */
+export type Background = { readonly terminals: readonly TerminalListed[]; readonly threads: readonly Listed[] };
+
+/** `items`, and, where something works in the background, the line of that at their end, the thread's present. */
+export function withNow(items: readonly TimelineItem[], background: Background): readonly TimelineItem[] {
+	if (background.terminals.length === 0 && background.threads.length === 0) return items;
+	return [...items, { kind: "now", key: "now", background }];
+}
 
 /** `items`, and, where the thread's model's quota limits it, the card of that at their end, with when it goes on, where it does. */
 export function withLimited(items: readonly TimelineItem[], limited: Limited | undefined, resumingAt: number | undefined): readonly TimelineItem[] {
