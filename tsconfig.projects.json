@@ -2,7 +2,7 @@
   "files": [],
   "references": [
     {
-      "path": "oxlint-plugin-octoii"
+      "path": "lint-rules"
     },
     {
       "path": "packages/terminal"

@@ -5,8 +5,8 @@
 	"ignorePatterns": ["apps/web/vendor/**"],
 	// Correctness is on whole; every other rule is chosen one by one below. Rules are only "error" or "off".
 	"categories": { "correctness": "error" },
-	// Octoii's own lint rules, oxlint-plugin-octoii.
-	"jsPlugins": ["./oxlint-plugin-octoii/index.ts"],
+	// Octoii's own lint rules, in lint-rules/.
+	"jsPlugins": ["./lint-rules/index.ts"],
 	"rules": {
 		// ---- Correctness ----
 		// The type checker already checks every member read from a namespace import, computed ones included.

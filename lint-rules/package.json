@@ -1,6 +1,6 @@
 {
 	"$schema": "https://json.schemastore.org/package.json",
-	"name": "@octoii-works/oxlint-plugin",
+	"name": "@octoii-works/lint-rules",
 	"private": true,
 	"description": "Octoii's own lint rules, loaded by oxlint as the JS plugin `octoii`",
 	"type": "module",

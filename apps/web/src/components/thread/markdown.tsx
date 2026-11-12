@@ -93,8 +93,8 @@ function keptUrl(url: string): string {
 	return url.startsWith("file:") ? url : defaultUrlTransform(url);
 }
 
-/** The plugins markdown is read with: GitHub's flavour, and the directives the page knows. */
-const PLUGINS = [remarkGfm, remarkAutolinkEnds, remarkDirective, remarkDirectives];
+/** What markdown is read with: GitHub's flavour, and the directives the page knows. */
+const READ_WITH = [remarkGfm, remarkAutolinkEnds, remarkDirective, remarkDirectives];
 
 /** Whether the code being drawn is still being written: its fence not closed yet. */
 const CodeWritten = createContext(false);
@@ -121,7 +121,7 @@ export function MarkedBlock(props: { readonly text: string; readonly writing: bo
 /** What `text` draws as markdown, read anew. */
 function drawnAnew(text: string): ReactElement {
 	// Markdown reads and draws a text at once, as a function of it alone.
-	return Markdown({ children: text, remarkPlugins: PLUGINS, components: COMPONENTS, urlTransform: keptUrl });
+	return Markdown({ children: text, remarkPlugins: READ_WITH, components: COMPONENTS, urlTransform: keptUrl });
 }
 
 /** How many characters of whole text the drawings kept may hold, about: each holds some twenty bytes a character, so some ten megabytes. */

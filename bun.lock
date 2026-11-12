@@ -49,8 +49,8 @@
         "tailwindcss": "catalog:",
       },
     },
-    "oxlint-plugin-octoii": {
-      "name": "@octoii-works/oxlint-plugin",
+    "lint-rules": {
+      "name": "@octoii-works/lint-rules",
       "dependencies": {
         "@oxlint/plugins": "1.90.0",
       },
@@ -136,13 +136,13 @@
 
     "@number-flow/react": ["@number-flow/react@0.6.2", "", { "dependencies": { "esm-env": "^1.1.4", "number-flow": "0.6.2" }, "peerDependencies": { "react": "^18 || ^19", "react-dom": "^18 || ^19" } }, "sha512-WjZuV4aA+vhRCgCF+adGLgFVVAJ8vdvq6EchRT2FiBIgElTXtDOA3YgkcMr9UHpvpS9v4H70AB5wZv0D9jc3QA=="],
 
+    "@octoii-works/lint-rules": ["@octoii-works/lint-rules@workspace:lint-rules"],
+
     "@octoii-works/octoii-client": ["@octoii-works/octoii-client@workspace:packages/client"],
 
     "@octoii-works/octoii-terminal": ["@octoii-works/octoii-terminal@workspace:packages/terminal"],
 
     "@octoii-works/octoii-web": ["@octoii-works/octoii-web@workspace:apps/web"],
-
-    "@octoii-works/oxlint-plugin": ["@octoii-works/oxlint-plugin@workspace:oxlint-plugin-octoii"],
 
     "@oxc-parser/binding-android-arm-eabi": ["@oxc-parser/binding-android-arm-eabi@0.155.0", "", { "os": "android", "cpu": "arm" }, "sha512-A6xv7hDtnTm+xlZ7utn6rRQpRMJHRhVr3gjRGqlx0RUX84mNk0pAsy6YN/wWhuOTkaZhRrrzaLxf0NfbH77j2w=="],
 
