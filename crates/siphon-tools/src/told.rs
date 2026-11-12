@@ -33,7 +33,7 @@ impl From<Vec<InputContent>> for Told {
 
 /// What a call of one of Siphon's own tools did, as a client reads it: a command that ran, and how it ended; a file a
 /// write or an edit changed, whether it made it, and the lines added and taken out; the lines of a file a read holds,
-/// and how many it has where the read reached its end.
+/// and how many it has where the read reached its end; the todos of a todo list.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Structured {
@@ -53,6 +53,9 @@ pub enum Structured {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         total: Option<usize>,
+    },
+    Todos {
+        todos: Vec<crate::todo::Todo>,
     },
 }
 

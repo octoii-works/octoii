@@ -24,8 +24,8 @@ use siphon_protocol::Scope;
 use siphon_runtime::{Asked, Options, Runtime};
 use siphon_threads::Threads;
 use siphon_tools::{
-    Asks, EditTool, Exec, ExecuteTool, GlobTool, GrepTool, Permission, QuestionTool, ReadTool, Review, ScriptProgram, ShellTool, Tools,
-    WriteTool, answer_exec,
+    Asks, EditTool, Exec, ExecuteTool, GlobTool, GrepTool, Permission, QuestionTool, ReadTool, Review, ScriptProgram, ShellTool, TodoTool,
+    Tools, WriteTool, answer_exec,
 };
 
 pub use kept::{Ends, Kept};
@@ -245,6 +245,7 @@ impl Building {
             .clone()
             .with(ExecuteTool { tools: inner.clone() })
             .with(QuestionTool)
+            .with(TodoTool)
             .with(DelegateTool);
         let hosts = Arc::new(providers);
         let models = Arc::new(Models::new(network, hosts.to_vec(), catalogue));

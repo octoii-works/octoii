@@ -156,6 +156,14 @@ const TOOLS: Readonly<Partial<Record<string, ToolView>>> = {
 		verbs: ["Ask about", "Asking about", "Asked about"],
 		subject: (given) => given.questions?.map((question) => question.header).join(", "),
 	}),
+	todo: toolView({
+		work: "other",
+		verbs: ["Update the plan", "Updating the plan", "Updated the plan"],
+		aside: (call) =>
+			call.structured?.type === "todos"
+				? { kind: "words", text: `${call.structured.todos.filter((todo) => todo.status === "completed").length}/${call.structured.todos.length} done` }
+				: undefined,
+	}),
 	delegate: toolView({ work: "delegate", verbs: ["Delegate", "Delegating", "Delegated"], subject: (given) => given.title ?? given.task?.split("\n")[0] }),
 	browser_navigate: toolView({ work: "browse", verbs: ["Open", "Opening", "Opened"], subject: (given) => given.url ?? given.go }),
 	browser_snapshot: toolView({ work: "browse", verbs: ["Read the page", "Reading the page", "Read the page"] }),

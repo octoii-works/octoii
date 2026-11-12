@@ -847,9 +847,9 @@ export type Streamed = { "type": "began", index: number, item: Item, } | { "type
 /**
  * What a call of one of Siphon's own tools did, as a client reads it: a command that ran, and how it ended; a file a
  * write or an edit changed, whether it made it, and the lines added and taken out; the lines of a file a read holds,
- * and how many it has where the read reached its end.
+ * and how many it has where the read reached its end; the todos of a todo list.
  */
-export type Structured = { "type": "ran", ended: CommandEnd, } | { "type": "changed", path: string, created: boolean, additions: number, deletions: number, } | { "type": "read", path: string, from: number, to: number, total?: number, };
+export type Structured = { "type": "ran", ended: CommandEnd, } | { "type": "changed", path: string, created: boolean, additions: number, deletions: number, } | { "type": "read", path: string, from: number, to: number, total?: number, } | { "type": "todos", todos: Array<Todo>, };
 
 /**
  * A subscription made: its id, which its events carry.
@@ -889,6 +889,20 @@ export type ThreadRead = { entries: Array<Entry>, complete: boolean, end?: Curso
 export type ThreadUsage = { input_tokens: number, cached_tokens: number, output_tokens: number, reasoning_tokens: number, cost_nanodollars: number, };
 
 export type ThreadsListed = { threads: Array<Listed>, };
+
+/**
+ * A step of the work.
+ */
+export type Todo = { 
+/**
+ * What the step is, in a few words.
+ */
+content: string, status: TodoStatus, };
+
+/**
+ * Where a step stands.
+ */
+export type TodoStatus = "pending" | "in_progress" | "completed";
 
 /**
  * A tool a model may call: a function of the caller's, its arguments' JSON Schema given; or the provider's own web

@@ -7,16 +7,18 @@
  * which a path a message names opens in. What the thread brought is seen as it is shown.
  */
 import { type ReactNode, useRef, useState } from "react";
-import type { Conversation, Listed } from "@octoii-works/octoii-client";
+import type { Conversation, Listed, Todo } from "@octoii-works/octoii-client";
 import { useClient, useConversation, usePages, useTerminals, useThreads } from "@octoii-works/octoii-client/react";
 import type { Device } from "../core/device.ts";
 import { projectOf, statusOf, titleOf } from "../core/threads.ts";
 import { contentOf } from "../core/attachments.ts";
 import { limitedOf } from "../core/limits.ts";
 import { firstSaid, itemsOf, withLimited } from "../core/timeline.ts";
+import { completed, latestTodos } from "../core/todos.ts";
 import { AskDock } from "../components/asks/asks.tsx";
 import { Composer } from "../components/composer/composer.tsx";
 import { Queued } from "../components/composer/queued.tsx";
+import { TodoStrip } from "../components/composer/todos.tsx";
 import { Pane, PanelFrame, ShowPanel } from "../components/frame/frame.tsx";
 import { ChatHeader } from "../components/thread/header.tsx";
 import { DetailsButtons, type DetailsProps, InlineDetails } from "../components/thread/details.tsx";
@@ -95,6 +97,7 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 					thread={thread}
 					row={row}
 					conversation={conversation}
+					todos={latestTodos(items)}
 					device={props.device}
 					onSent={(delivery) => {
 						setSent(delivery);
@@ -118,6 +121,8 @@ function Dock(props: {
 	readonly thread: string;
 	readonly row: Listed | undefined;
 	readonly conversation: Conversation;
+	/** The model's latest todo list, where it gave one. */
+	readonly todos: readonly Todo[] | undefined;
 	readonly device: Device;
 	/** Told the id each input the person sends is delivered by. */
 	readonly onSent: (input: string) => void;
@@ -126,12 +131,15 @@ function Dock(props: {
 	const client = useClient();
 	const workspace = useFolder(row);
 	const working = conversation.status?.turn === "running" || conversation.inbox.length > 0;
+	// The list stays while the work goes on or a step of it is left; a list all done goes as its turn ends.
+	const todos = props.todos !== undefined && (working || completed(props.todos) < props.todos.length) ? props.todos : [];
 	return (
 		<div className="relative shrink-0 bg-background pb-[max(--spacing(4),env(safe-area-inset-bottom))]">
 			<div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-full h-6 bg-linear-to-t from-background to-transparent" />
 			{/* The list's bar is given its room here too, so this column stands where the list's does. */}
 			<div className="overflow-hidden scrollbar-even">
 				<div className="chat-column">
+					<TodoStrip todos={todos} />
 					{/* What waits steers a turn that works, docked till its next step; sent to a thread at rest, it begins the next turn, shown in the timeline as it does. */}
 					<Queued thread={thread} inbox={conversation.status?.turn === "running" ? conversation.inbox : []} />
 					{conversation.asks.length > 0 ? (

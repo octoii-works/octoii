@@ -14,6 +14,7 @@ pub mod projects;
 mod question;
 mod requests;
 mod shell;
+mod todo;
 mod told;
 mod tool;
 
@@ -28,5 +29,6 @@ pub use question::{Asked, Choice, QuestionArgs, QuestionTool};
 pub use requests::{Asks, Decision, Exec, Judgment, Permission, Review, Shown};
 pub use shell::ShellTool;
 pub use siphon_threads::CallStatus;
+pub use todo::{Todo, TodoArgs, TodoStatus, TodoTool};
 pub use told::{CommandEnd, Structured, Told};
 pub use tool::{Context, Declared, Refusal, Tool, Tools, Toolset};

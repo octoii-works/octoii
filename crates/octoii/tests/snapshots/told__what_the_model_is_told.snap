@@ -973,6 +973,53 @@ Runs a command line in bash in the workspace, its input closed. Gives its output
   "type": "object"
 }
 
+=== tool todo
+Keeps the list of the steps of your work, which the person sees above the chat. Give the whole list each time: it replaces the one before. Keep one step in_progress, mark each completed as soon as it is done, and add the steps you find on the way. Use it for work of three steps or more, or where the person asks for several things; not for one simple step or a question.
+--- parameters
+{
+  "$defs": {
+    "Todo": {
+      "description": "A step of the work.",
+      "properties": {
+        "content": {
+          "description": "What the step is, in a few words.",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/TodoStatus"
+        }
+      },
+      "required": [
+        "content",
+        "status"
+      ],
+      "type": "object"
+    },
+    "TodoStatus": {
+      "description": "Where a step stands.",
+      "enum": [
+        "pending",
+        "in_progress",
+        "completed"
+      ],
+      "type": "string"
+    }
+  },
+  "properties": {
+    "todos": {
+      "description": "Every step, in order: the list that replaces the one before.",
+      "items": {
+        "$ref": "#/$defs/Todo"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "todos"
+  ],
+  "type": "object"
+}
+
 === tool write
 Writes a file whole, making it and its directories where they are missing. Gives how many lines it added and took out. To change part of a file, use edit.
 --- parameters
