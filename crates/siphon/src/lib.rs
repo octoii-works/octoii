@@ -191,6 +191,7 @@ impl Siphon {
             owners: HashMap::new(),
             providers,
             tellers: Vec::new(),
+            natives: Vec::new(),
             registry: extension::Registry::default(),
         };
         own(&mut builder.registrar(CORE), config.as_deref());
@@ -266,6 +267,7 @@ impl Building {
             owners,
             providers,
             tellers,
+            natives,
             registry,
         } = builder;
         let hosts = Arc::new(providers);
@@ -274,6 +276,7 @@ impl Building {
             tools: tools.clone(),
             owners,
             tellers: Sources::ordered(tellers),
+            natives,
             models: Arc::clone(&models),
         };
         let runtime = programs(runtime, &machine, &models, sources.clone(), tools).start_on((kernel, events), options)?;

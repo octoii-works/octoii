@@ -25,6 +25,7 @@ use siphon_runtime::Options;
 use siphon_skills::SkillsExtension;
 use siphon_terminals::TerminalsExtension;
 use siphon_thread::ThreadExtension;
+use siphon_web_search::WebSearchExtension;
 
 use crate::access::Access;
 use crate::control::{self, Control};
@@ -132,6 +133,7 @@ pub fn building(home: &Home, sign_in: SignInSetup) -> anyhow::Result<siphon::Bui
         .extension(ThreadExtension)
         .extension(MemoryExtension)
         .extension(GitExtension)
+        .extension(WebSearchExtension)
         .extension(SkillsExtension {
             config: Some(home.config()),
         })

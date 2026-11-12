@@ -144,6 +144,7 @@ pub(crate) struct Builder {
     pub(crate) owners: HashMap<String, String>,
     pub(crate) providers: Vec<Provider>,
     pub(crate) tellers: Vec<OwnedTeller>,
+    pub(crate) natives: Vec<(String, octoii_ai::vocabulary::Tool)>,
     pub(crate) registry: Registry,
 }
 
@@ -248,6 +249,11 @@ impl Registrar<'_> {
     /// The toolset `toolset`, whose tools a thread's scripts call by the names a teller tells.
     pub fn toolset(&mut self, toolset: Arc<dyn crate::tools::Toolset>) {
         self.builder.tools = std::mem::take(&mut self.builder.tools).with_toolset(toolset);
+    }
+
+    /// A tool its model's provider runs, given where the model runs it: the web search.
+    pub fn native(&mut self, tool: octoii_ai::vocabulary::Tool) {
+        self.builder.natives.push((self.extension.to_owned(), tool));
     }
 
     /// What tells a thread's model, before each turn, what is `shared` that widely.

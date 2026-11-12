@@ -3936,6 +3936,7 @@ dependencies = [
  "siphon-skills",
  "siphon-terminals",
  "siphon-thread",
+ "siphon-web-search",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -5785,6 +5786,14 @@ dependencies = [
  "serde",
  "siphon",
  "siphon-runtime",
+]
+
+[[package]]
+name = "siphon-web-search"
+version = "0.0.1"
+dependencies = [
+ "octoii-ai",
+ "siphon",
 ]
 
 [[package]]

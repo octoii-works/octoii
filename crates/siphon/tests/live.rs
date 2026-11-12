@@ -93,6 +93,7 @@ fn runtime(beak: &Beak, models: &Arc<Models>) -> Runtime {
                 .collect(),
         ),
         owners: std::collections::HashMap::new(),
+        natives: Vec::new(),
         models: Arc::clone(models),
     };
     let execs = tools.clone();

@@ -1,7 +1,8 @@
 //! What a thread's model is told, gathered before each of its turns by a `siphon.gather` request, in a task of its own:
 //! the sections each teller tells — Siphon's own and its extensions' — the most widely shared first, so a provider's
 //! cache of the beginning serves one thread as well as the next; and the tools it may call, Siphon's and its
-//! extensions', and the web search its provider runs where its model's facts say it does. What an extension the person
+//! extensions', and the tools its provider runs that an extension adds, where its model's facts say it does. What an
+//! extension the person
 //! switched off brings is left out.
 
 use std::collections::HashMap;
@@ -88,6 +89,8 @@ pub struct Sources {
     pub tools: Tools,
     pub owners: HashMap<String, String>,
     pub tellers: Vec<OwnedTeller>,
+    /// The tools a model's provider runs, each with the extension it came from.
+    pub natives: Vec<(String, Tool)>,
     pub models: Arc<Models>,
 }
 
@@ -114,6 +117,14 @@ pub async fn answer_gather(sources: &Sources, asked: Asked<Gather>) -> Result<To
     gathered(sources, &asked.runtime, &asked.payload.thread)
         .await
         .map_err(|error| Unanswered::Failed(error.to_string()))
+}
+
+/// Whether `model`'s provider runs the tool `native` for it, as its facts say.
+fn runs(model: &octoii_ai::catalogue::Model, native: &Tool) -> bool {
+    match native {
+        Tool::WebSearch => model.searches_web,
+        Tool::Function { .. } => false,
+    }
 }
 
 /// What the model of the thread `id` is told now, as `sources` gather it on `runtime`.
@@ -155,13 +166,11 @@ pub async fn gathered(sources: &Sources, runtime: &Runtime, id: &str) -> anyhow:
             parameters: declared.parameters,
         })
         .collect();
-    let searches = config
-        .model
-        .as_deref()
-        .and_then(|model| sources.models.model(model))
-        .is_some_and(|model| model.searches_web);
-    if searches {
-        told.tools.push(Tool::WebSearch);
+    let model = config.model.as_deref().and_then(|model| sources.models.model(model));
+    for (extension, native) in &sources.natives {
+        if on(extension) && model.as_ref().is_some_and(|model| runs(model, native)) {
+            told.tools.push(native.clone());
+        }
     }
     Ok(told)
 }

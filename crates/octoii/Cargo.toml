@@ -45,6 +45,7 @@ siphon-memory = { path = "../../extensions/siphon-memory" }
 siphon-question = { path = "../../extensions/siphon-question" }
 siphon-skills = { path = "../../extensions/siphon-skills" }
 siphon-thread = { path = "../../extensions/siphon-thread" }
+siphon-web-search = { path = "../../extensions/siphon-web-search" }
 siphon-runtime = { path = "../siphon-runtime" }
 siphon-terminals = { path = "../../extensions/siphon-terminals" }
 thiserror = "2.0.21"

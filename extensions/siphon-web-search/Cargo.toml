@@ -1,0 +1,15 @@
+[package]
+name = "siphon-web-search"
+description = "The web search a thread's model's provider runs, given where its model's facts say the provider runs it"
+version = "0.0.1"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+octoii-ai = { path = "../../crates/octoii-ai" }
+siphon = { path = "../../crates/siphon" }
