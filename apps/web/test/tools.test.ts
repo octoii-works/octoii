@@ -7,6 +7,7 @@ import { describe, expect, it } from "bun:test";
 import type { Structured } from "@octoii-works/octoii-client";
 import type { CallState } from "../src/core/calls.ts";
 import { callWords, detailOf, summaryOf, toolOf, verbOf } from "../src/core/tools.ts";
+import "../src/extensions/contributions.ts";
 
 /** A call of `tool` with `given`, standing as `state`, its tool having told `output`, and `structured` typed. */
 const called = (tool: string, given: object, state: CallState = "done", output?: string, structured?: Structured) => ({
@@ -31,7 +32,9 @@ describe("what the page knows of each tool", () => {
 		expect(callWords(called("execute", { code: "return 1" }))).toBe("Ran a script");
 		expect(callWords(called("question", { questions: [{ header: "Stack" }, { header: "Checks" }] }))).toBe("Asked about Stack, Checks");
 		expect(callWords(called("delegate", { title: "Docs" }, "running"))).toBe("Delegating Docs");
-		expect(callWords(called("browser_navigate", { url: "https://example.com" }))).toBe("Opened https://example.com");
+		expect(callWords(called("browser", { action: "open", url: "https://example.com" }))).toBe("Opened https://example.com");
+		expect(callWords(called("browser", { action: "click" }, "running"))).toBe("Clicking on the page");
+		expect(callWords(called("browser", { action: "drag" }))).toBe("Acted on the page");
 		expect(callWords(called("github.create_issue", { title: "x" }))).toBe("github.create_issue");
 		expect(verbOf({ tool: "github.create_issue", state: "done" })).toBeUndefined();
 		expect([toolOf("shell").code, toolOf("read").code, toolOf("github.create_issue").work]).toEqual([true, false, "other"]);

@@ -77,10 +77,10 @@ export function givenOf(text: string): Given {
 }
 
 /** A tool's verbs: as it is asked, as it goes, and as it went — "Write", "Writing", "Wrote". */
-type Verbs = readonly [asked: string, going: string, went: string];
+export type Verbs = readonly [asked: string, going: string, went: string];
 
 /** What the page knows of a tool. */
-type ToolView = {
+export type ToolView = {
 	readonly work: WorkKind;
 	/** None for a tool the page has no words for, which its line names; by what it is given, for a tool of several actions. */
 	readonly verbs: Verbs | ((given: Given) => Verbs) | undefined;
@@ -94,11 +94,11 @@ type ToolView = {
 };
 
 /** A tool's view, what it leaves out as a tool says nothing of it: no subject, words, nothing beside or at its end, its arguments' fields under it. */
-function toolView(view: Pick<ToolView, "work" | "verbs"> & Partial<ToolView>): ToolView {
+export function toolView(view: Pick<ToolView, "work" | "verbs"> & Partial<ToolView>): ToolView {
 	return { subject: () => undefined, code: false, aside: () => undefined, trouble: () => undefined, detail: fieldsDetail, ...view };
 }
 
-/** What each of Siphon's own tools is. */
+/** What each of Siphon's own tools is, Siphon's own core tools. */
 const TOOLS: Readonly<Partial<Record<string, ToolView>>> = {
 	read: toolView({
 		work: "read",
@@ -154,57 +154,22 @@ const TOOLS: Readonly<Partial<Record<string, ToolView>>> = {
 		verbs: ["Run a script", "Running a script", "Ran a script"],
 		detail: (call, given) => ({ shape: "script", code: given.code ?? "", told: toldOfCall(call) }),
 	}),
-	question: toolView({
-		work: "ask",
-		verbs: ["Ask about", "Asking about", "Asked about"],
-		subject: (given) => given.questions?.map((question) => question.header).join(", "),
-	}),
-	terminal: toolView({
-		work: "command",
-		verbs: ["Use a terminal", "Using a terminal", "Used a terminal"],
-		subject: (given) => given.command ?? (given.terminal === undefined ? undefined : `${given.action ?? ""} terminal ${String(given.terminal)}`.trim()),
-		code: true,
-	}),
-	delegate: toolView({ work: "delegate", verbs: ["Delegate", "Delegating", "Delegated"], subject: (given) => given.title ?? given.task?.split("\n")[0] }),
-	thread: toolView({
-		work: "thread",
-		verbs: (given) => THREAD_VERBS[given.action ?? ""] ?? ["Work with a thread", "Working with a thread", "Worked with a thread"],
-		subject: (given) => given.title ?? given.message?.split("\n")[0],
-	}),
-	browser_navigate: toolView({ work: "browse", verbs: ["Open", "Opening", "Opened"], subject: (given) => given.url ?? given.go }),
-	browser_snapshot: toolView({ work: "browse", verbs: ["Read the page", "Reading the page", "Read the page"] }),
-	browser_act: toolView({
-		work: "browse",
-		verbs: ["Act on the page", "Acting on the page", "Acted on the page"],
-		subject: (given) => given.action,
-		code: true,
-	}),
-	browser_evaluate: toolView({
-		work: "browse",
-		verbs: ["Run in the page", "Running in the page", "Ran in the page"],
-		subject: (given) => given.expression,
-		code: true,
-	}),
-	browser_wait: toolView({
-		work: "browse",
-		verbs: ["Wait for the page", "Waiting for the page", "Waited for the page"],
-		subject: (given) => given.text ?? given.url,
-	}),
-};
-
-/** The `thread` tool's verbs, by its action. */
-const THREAD_VERBS: Readonly<Record<string, Verbs>> = {
-	start: ["Start a thread", "Starting a thread", "Started a thread"],
-	send: ["Message a thread", "Messaging a thread", "Messaged a thread"],
-	stop: ["Stop a thread", "Stopping a thread", "Stopped a thread"],
 };
 
 /** A tool the page knows nothing of: named as it is, as code. */
 const UNKNOWN = toolView({ work: "other", verbs: undefined, code: true });
 
-/** What the page knows of the tool `name`. */
+/** What the extensions told the page of their tools, by name, as the app lists them. */
+const REGISTERED = new Map<string, ToolView>();
+
+/** Tells the page what it is to know of an extension's tools, by their names. */
+export function registerTools(views: Readonly<Record<string, ToolView>>): void {
+	for (const [name, view] of Object.entries(views)) REGISTERED.set(name, view);
+}
+
+/** What the page knows of the tool `name`: Siphon's own, or an extension's as it registered it. */
 export function toolOf(name: string): ToolView {
-	return TOOLS[name] ?? UNKNOWN;
+	return TOOLS[name] ?? REGISTERED.get(name) ?? UNKNOWN;
 }
 
 /** A call's verb as it stands — as it is asked while it waits on the person or where it never went ahead, as it goes while it runs, as it went once it ran; none for a tool the page has no verb for. */
