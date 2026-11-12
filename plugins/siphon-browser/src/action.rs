@@ -37,10 +37,13 @@ pub enum Place {
         reference: String,
     },
     Selector {
+        /// A CSS selector.
         selector: String,
     },
     Point {
+        /// Pixels from the view's left.
         x: f64,
+        /// Pixels from the view's top.
         y: f64,
     },
 }
@@ -55,29 +58,37 @@ pub enum MouseButton {
     Right,
 }
 
-/// What the Agent does in the browser, on the thread's current page unless it names one.
+/// What the model does in the browser, on the thread's current page.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "action", rename_all = "snake_case")]
 pub enum Action {
     /// Opens a page, at `url` or blank, and makes it the current one.
     Open {
+        /// The address to open; a blank page where none.
         url: Option<String>,
     },
     /// Lists the thread's pages.
     Tabs,
     /// Makes the page `page` the current one.
     Switch {
+        /// The page's id, as tabs gives it.
         page: String,
     },
     /// Closes the page `page`, or the current one.
     Close {
+        /// The page's id, as tabs gives it; the current page where none.
         page: Option<String>,
     },
+    /// Goes to `url` in the current page.
     Navigate {
+        /// The address to go to.
         url: String,
     },
+    /// Goes back in the page's history.
     Back,
+    /// Goes forward in the page's history.
     Forward,
+    /// Loads the page again.
     Reload,
     /// Reads the page as a screen reader does: a line for each thing on it, nested, its element's ref, refs new since
     /// the last reading marked `*`.
@@ -86,89 +97,125 @@ pub enum Action {
     Look,
     /// Tells the page's address, title, view, scroll and size, or the dialog that holds it.
     Info,
+    /// Clicks `target`, brought into view first.
     Click {
+        /// What to click.
         target: Place,
+        /// The button; left where none.
         #[serde(default)]
         button: MouseButton,
         /// 2 for a double click.
         clicks: Option<u32>,
     },
+    /// Moves the mouse over `target`.
     Hover {
+        /// What to hover over.
         target: Place,
     },
     /// Types `text` at the caret of `target`, focused first, or of what has the focus; `clear` replaces what is there,
     /// `submit` presses Enter after.
     Type {
+        /// Where to type; what has the focus where none.
         target: Option<Place>,
+        /// The text to type.
         text: String,
+        /// Replace what is there.
         #[serde(default)]
         clear: bool,
+        /// Press Enter after.
         #[serde(default)]
         submit: bool,
     },
     /// Presses a key as the DOM names it — `Enter`, `Tab`, `ArrowDown`, `a` — with modifiers: Alt, Control, Meta, Shift.
     Press {
+        /// The key, as the DOM names it.
         key: String,
+        /// The keys held while it is pressed.
         #[serde(default)]
         modifiers: Vec<String>,
     },
     /// Chooses options of a `<select>`, by value or label.
     Select {
+        /// The `<select>`.
         target: Place,
+        /// The options to choose, by value or label.
         values: Vec<String>,
     },
     /// Scrolls by pixels over `target`, or the page's middle.
     Scroll {
+        /// What to scroll over; the page's middle where none.
         target: Option<Place>,
+        /// Pixels to the right; to the left below 0.
         #[serde(default)]
         delta_x: f64,
+        /// Pixels down; up below 0.
         #[serde(default)]
         delta_y: f64,
     },
+    /// Drags from `from` to `to`, the left button held.
     Drag {
+        /// Where the drag begins.
         from: Place,
+        /// Where it ends.
         to: Place,
     },
     /// Gives files of the machine, by absolute paths, to a file input.
     Upload {
+        /// The file input.
         target: Place,
+        /// The files, by absolute paths.
         files: Vec<String>,
     },
     /// Answers the dialog that holds the page; `text` for a prompt.
     Dialog {
+        /// Accept it, or dismiss it.
         accept: bool,
+        /// What to answer a prompt with.
         text: Option<String>,
     },
     /// Runs a JavaScript expression as the page's own script — or a frame's, of another site's process, whose address
     /// holds `frame` — awaiting a promise it gives: its value as JSON, or what it threw.
     Evaluate {
+        /// A JavaScript expression.
         expression: String,
+        /// Part of the address of the frame to run it in; the page where none.
         frame: Option<String>,
     },
     /// Waits till the page shows `text`, no longer shows `gone`, is at an address holding `url`, has an element
     /// `selector` picks — drawn, with `visible` — and its network has been quiet `network_idle_ms`: each given, case
     /// counting; `timeout_ms` at most, 10 s where none.
     Wait {
+        /// Text the page is to show.
         text: Option<String>,
+        /// Text the page is to show no longer.
         gone: Option<String>,
+        /// Part of the address the page is to be at.
         url: Option<String>,
+        /// A CSS selector of an element the page is to have.
         selector: Option<String>,
+        /// The element drawn, not only there.
         #[serde(default)]
         visible: bool,
+        /// How long the network is to have been quiet, in ms.
         network_idle_ms: Option<u64>,
+        /// How long to wait at most, in ms.
         timeout_ms: Option<u64>,
     },
     /// The messages of the page's console and the errors its scripts threw, numbered past `since`.
     Console {
+        /// The number of the last message read already; every message where none.
         since: Option<u64>,
     },
     /// What the page downloaded, or downloads.
     Downloads,
     /// A raw CDP call on the page's target — or a frame's, whose address holds `frame` — where nothing else does.
     Cdp {
+        /// The method, as `DOM.getDocument`.
         method: String,
+        /// Its parameters.
         #[serde(default)]
         params: Value,
+        /// Part of the address of the frame to call on; the page's own where none.
         frame: Option<String>,
     },
 }

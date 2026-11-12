@@ -6,15 +6,12 @@ use std::path::Path;
 use serde::Serialize;
 use siphon_protocol::siphon::{Created, Delivered, Method, ThreadRead, ThreadsListed, Withdrawn};
 use siphon_protocol::{Error, Nothing};
-use siphon_threads::{NewThread, log};
+use siphon_threads::{NewThread, PERSON, log};
 use siphon_tools::projects::Place;
 
 use super::refusal;
 use crate::Siphon;
 use crate::plugin::Caller;
-
-/// Who a person's calls are made as, as the threads' logs name them.
-const PERSON: &str = "person";
 
 /// Does `method` for the client of `caller`, by the group it is of.
 pub(crate) async fn answered(caller: Caller, method: Method) -> Result<serde_json::Value, Error> {

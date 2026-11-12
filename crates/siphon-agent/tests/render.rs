@@ -180,3 +180,35 @@ fn a_model_that_reads_no_images_is_told_of_each_in_words() {
         })
     );
 }
+
+#[test]
+fn what_told_the_thread_of_work_it_began_is_a_system_reminder_and_a_task_given_it_the_words_of_its_giver() {
+    let from = |id: &str, actor: &str, task: bool| Entry::Input {
+        id: id.into(),
+        actor: actor.into(),
+        delivery: id.into(),
+        content: vec![InputContent::text(id)],
+        reply_to: task.then(|| siphon_threads::inbox::ReplyTo {
+            process: "p".into(),
+            started: None,
+            key: "k".into(),
+        }),
+    };
+    let window = Window::of(vec![
+        from("theirs", siphon_threads::PERSON, false),
+        from("a task", "parent-thread", true),
+        from("[terminal 1 ended]", "terminal", false),
+        from("[the sub-thread finished]", "child-thread", false),
+    ]);
+    let asked = request("t", "m", None, &window, None);
+    let kinds: Vec<&str> = asked
+        .input
+        .iter()
+        .map(|item| match item {
+            Item::Message(Message::User { .. }) => "user",
+            Item::Message(Message::Developer { .. }) => "reminder",
+            _ => "other",
+        })
+        .collect();
+    assert_eq!(kinds, ["user", "user", "reminder", "reminder"]);
+}

@@ -288,7 +288,7 @@ pub struct EditTool;
 
 impl Tool for EditTool {
     const NAME: &'static str = "edit";
-    const DESCRIPTION: &'static str = "Replaces text in a file: `old` must match one place, or every place with `all`. Give in `old` just the lines that make it unique. It is matched exactly, else with typographic characters (curly quotes, dashes, special spaces) read as plain ones, else line by line ignoring trailing whitespace; a match not exact is noted with how it matched. Gives the change as a unified diff. A refusal gives its reason: empty, same (`new` is `old`), not-found (`old` is nowhere in the file; the lines nearest to it follow, as the file holds them, or a note that `new` is there already), unchanged, many (how many places matched: give more of `old`, or set `all`).";
+    const DESCRIPTION: &'static str = "Replaces text in a file: `old` must match one place, or every place with `all`. Give in `old` just the lines that make it unique. It is matched exactly, else with typographic characters (curly quotes, dashes, special spaces) read as plain ones, else line by line ignoring trailing whitespace; a match not exact is noted with how it matched. Gives the change as a unified diff. A refusal gives its reason: empty, same (`new` is `old`), not-found (`old` is nowhere in the file; the lines nearest to it follow, as the file holds them, or a note that `new` is there already), unchanged (the edit would leave the file as it is), many (how many places matched: give more of `old`, or set `all`).";
     type Args = EditArgs;
 
     fn effect(&self, args: &EditArgs, base: &Base) -> Effect {

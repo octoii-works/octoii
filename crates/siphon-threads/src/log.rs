@@ -18,6 +18,9 @@ use crate::thread;
 /// Past it, the next entry begins a segment of its own.
 pub const SEGMENT_BYTES_MAX: u64 = 32 << 20;
 
+/// Whose the person's own inputs and changes are, as the log names them.
+pub const PERSON: &str = "person";
+
 /// What a segment's name ends in, after the id of the entry that begins it.
 const SEGMENT_EXTENSION: &str = ".jsonl";
 
@@ -32,8 +35,8 @@ pub enum Entry {
         #[serde(flatten)]
         changed: ConfigChanged,
     },
-    /// An input taken from the inbox: whose it is, the inbox's id of it, what it says, and who is told how the turn that
-    /// took it ends.
+    /// An input taken from the inbox: whose it is — the person's, `PERSON`, a thread's, or what told the thread of work
+    /// it began — the inbox's id of it, what it says, and who is told how the turn that took it ends.
     Input {
         id: String,
         actor: String,

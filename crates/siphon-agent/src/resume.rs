@@ -10,7 +10,7 @@ use siphon_threads::inbox::{self, Inbound};
 use siphon_threads::{Entry, Window, thread};
 
 /// The person's word it goes on with.
-pub const WORD: &str = "Continue where you stopped: the account's limit is given again.";
+pub const WORD: &str = "Continue where you stopped: the account's usage limit has reset.";
 
 /// What a resume is armed with: its thread, when it goes on, in milliseconds since the epoch, whose word it delivers,
 /// and the last entry of the thread's window as it was armed — none for a window with none.

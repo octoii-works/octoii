@@ -26,6 +26,7 @@ pub struct Choice {
 /// A question.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct Asked {
+    /// The question, as the person reads it.
     pub question: String,
     /// What it is about, in a word or two, shown above it.
     pub header: Option<String>,
@@ -40,6 +41,7 @@ pub struct Asked {
 /// The arguments of `question`.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct QuestionArgs {
+    /// The questions, from one to eight.
     #[schemars(length(min = 1, max = 8))]
     pub questions: Vec<Asked>,
 }

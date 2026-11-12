@@ -44,7 +44,7 @@ pub struct TodoTool;
 
 impl Tool for TodoTool {
     const NAME: &'static str = "todo";
-    const DESCRIPTION: &'static str = "Keeps the list of the steps of your work, which the person sees above the chat. Give the whole list each time: it replaces the one before. Keep one step in_progress, mark each completed as soon as it is done, and add the steps you find on the way. Use it for work of three steps or more, or where the person asks for several things; not for one simple step or a question.";
+    const DESCRIPTION: &'static str = "Keeps the list of the steps of your work, which the person sees above the chat. Give the whole list each time: it replaces the one before. Keep one step in_progress, mark each completed as soon as it is done, and add the steps you find on the way.";
     type Args = TodoArgs;
 
     fn effect(&self, _: &TodoArgs, _: &Base) -> Effect {

@@ -43,10 +43,11 @@ pub enum Action {
         /// The terminal's number.
         terminal: u32,
     },
-    /// Types to a terminal the model opened: keys as text, `\u0003` for Ctrl-C, `\r` for Enter.
+    /// Types to a terminal the model opened.
     Write {
         /// The terminal's number.
         terminal: u32,
+        /// The keys, as text: `\u0003` for Ctrl-C, `\r` for Enter.
         text: String,
     },
     /// Closes a terminal the model opened, ending what it runs.

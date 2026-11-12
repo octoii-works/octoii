@@ -1,16 +1,17 @@
 //! A model request rendered from a thread's window, every part of it from the log, so what the window begins with stays
 //! as it was sent and every provider's cache of it holds: the system entries it begins with as developer messages, a
 //! part for each section, their tools the request's tools; its compaction's recap; the effort the window is asked at,
-//! as it began and as the changes before its first reply set it; then its conversation — a later system entry as the sections it changed, a later change of the
-//! effort where it stands, each input as the person's message, each reply as the items its response gave, each result
-//! as the output its call gave, and a turn the person stopped as a note that they stopped it there. It is rendered for
-//! the model asked, where its facts are known: a window that declares a search its model does not run leaves it out,
-//! and a model that reads no images is told of each in words in its place. A request with an instruction asks it after
-//! the window — a title, a recap — the tools declared as ever, so the window's cache holds, but none to be called.
+//! as it began and as the changes before its first reply set it; then its conversation — a later system entry as the
+//! sections it changed, a later change of the effort where it stands, each input as the person's message — or, where it
+//! told of work the thread began, a system reminder — each reply as the items its response gave, each result as the
+//! output its call gave, and a turn the person stopped as a note that they stopped it there. It is rendered for the
+//! model asked, where its facts are known: a window that declares a search its model does not run leaves it out, and a
+//! model that reads no images is told of each in words in its place. A request with an instruction asks it after the
+//! window — a title, a recap — the tools declared as ever, so the window's cache holds, but none to be called.
 
 use octoii_ai::catalogue::Model;
 use octoii_ai::vocabulary::{ConfigurationUpdate, InputContent, Item, Message, ReasoningConfig, Request, Tool, ToolChoice};
-use siphon_threads::{Entry, Outcome, Section, Window};
+use siphon_threads::{Entry, Outcome, PERSON, Section, Window};
 
 /// What the model is told where the person stopped a turn: what came before was cut off there, not finished.
 pub const STOPPED_NOTE: &str = "The person stopped this turn here.";
@@ -55,6 +56,11 @@ pub fn request(thread: &str, reference: &str, served: Option<&Model>, window: &W
                     input.push(Item::ConfigurationUpdate(ConfigurationUpdate { effort: to }));
                 }
             }
+            // What told the thread of work it began — a terminal's command ending, a sub-thread's work in the
+            // background — is a system reminder, not words of the person's, nor a task a thread gave.
+            Entry::Input {
+                actor, content, reply_to, ..
+            } if actor != PERSON && reply_to.is_none() => input.push(developer(content.clone())),
             Entry::Input { content, .. } => input.push(Item::Message(Message::User { content: content.clone() })),
             Entry::System { sections, .. } if !sections.is_empty() => input.push(told_again(sections)),
             Entry::Reply { response, .. } => input.extend(response.output.iter().cloned()),
