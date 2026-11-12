@@ -8,4 +8,7 @@
   need and change the design until the need is a plain case of it; never bolt on a special case, a flag, an override
   layer or a fallback. One concept, one place: where two mechanisms do nearly the same job, make them one.
 - **Code style**: read like the code around it.
+- **Extensions**: an extension reaches Siphon by its public interface alone, never Beak or `siphon-runtime`, and writes
+  the volume only through Siphon's primitives (`Volume`, `machine::Commands`, a plan's spawn and deliver). What an
+  extension needs that Siphon lacks becomes a primitive of Siphon's, never a way around it.
 - **This file** changes only with the user's confirmation.
