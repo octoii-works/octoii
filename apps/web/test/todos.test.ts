@@ -58,11 +58,12 @@ const later: readonly Todo[] = [
 ];
 
 describe("the model's todo list", () => {
-	it("is the latest todo call's, a later turn's before an earlier's and a script's call among them", () => {
+	it("is the latest turn's last todo call's, a script's call among them, and none where the latest turn wrote none", () => {
 		expect(latestTodos([])).toBeUndefined();
 		expect(latestTodos([turn("a", [call("read")])])).toBeUndefined();
-		expect(latestTodos([turn("a", [call("todo", first)]), turn("b", [call("read"), call("todo", later), call("read")])])).toEqual(later);
+		expect(latestTodos([turn("a", [call("todo", first), call("read"), call("todo", later), call("read")])])).toEqual(later);
 		expect(latestTodos([turn("a", [call("todo", first), call("execute", undefined, [call("todo", later)])])])).toEqual(later);
+		expect(latestTodos([turn("a", [call("todo", later)]), turn("b", [call("read")])])).toBeUndefined();
 		expect(completed(later)).toBe(1);
 	});
 });
