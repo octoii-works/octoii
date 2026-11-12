@@ -64,7 +64,7 @@ fn skill(path: &Path, folder: &str) -> Option<Skill> {
 /// `skills` as the model is told of them.
 #[must_use]
 pub fn told(skills: &[Skill]) -> String {
-    let mut out = String::from("<skills>\n");
+    let mut out = String::from("<skills>\nBefore a task a skill is for, read its file and follow it.\n");
     for skill in skills {
         let _ = writeln!(
             out,
