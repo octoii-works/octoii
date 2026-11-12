@@ -123,6 +123,9 @@ pub trait Tool: Send + Sync + 'static {
     /// Its name, as the model calls it: lowercase words joined by `_`.
     const NAME: &'static str;
     const DESCRIPTION: &'static str;
+    /// Whether its calls start threads or reach other threads, which a sub-thread is not given, as it works on its
+    /// task alone.
+    const REACHES_THREADS: bool = false;
     type Args: JsonSchema + DeserializeOwned + Send;
 
     /// What a call with `args` does to the machine, its paths starting at `base`.
@@ -234,12 +237,13 @@ impl<T: Tool> Erased for T {
     }
 }
 
-/// A tool as the model is told of it.
+/// A tool as the model is told of it, and whether it reaches threads.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Declared {
     pub name: String,
     pub description: String,
     pub parameters: serde_json::Value,
+    pub reaches_threads: bool,
 }
 
 #[derive(Clone)]
@@ -301,6 +305,7 @@ impl Tools {
             name: T::NAME.to_owned(),
             description: tool.described(),
             parameters: parameters(schemars::schema_for!(T::Args).to_value()),
+            reaches_threads: T::REACHES_THREADS,
         };
         Arc::make_mut(&mut self.entries).insert(
             T::NAME.to_owned(),

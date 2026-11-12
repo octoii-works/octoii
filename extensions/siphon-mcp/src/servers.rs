@@ -149,6 +149,7 @@ impl Servers {
                     name: format!("{}.{}", server.name, tool.name),
                     description: tool.description.map(String::from).unwrap_or_default(),
                     parameters: serde_json::Value::Object((*tool.input_schema).clone()),
+                    reaches_threads: false,
                 })),
                 Err(why) => catalog.problems.push(format!("the MCP server {}: {why}", server.name)),
             }

@@ -46,6 +46,7 @@ pub struct DelegateTool;
 
 impl Tool for DelegateTool {
     const NAME: &'static str = "delegate";
+    const REACHES_THREADS: bool = true;
     const DESCRIPTION: &'static str = "Hands a task to a sub-thread of your own, which works on it with the same tools in this folder. Call it only when the person asks you to delegate work, to use sub-agents, or to work on several things at once — never on your own initiative, and never for a new thread the person asks for, which `thread` starts. A new sub-thread sees nothing of this conversation: give `task` all it needs. You wait for it to finish and are given what it said last, several calls in one reply running at once; or, with `background`, you are answered at once and told when it finishes, for work that does not hold up yours. Every answer names the sub-thread, which `thread` gives more to do. What it says it did is not proof: look at what it changed before you report it done. The person sees each sub-thread, and can follow and steer it.";
     type Args = DelegateArgs;
 

@@ -16,11 +16,9 @@ use siphon_machine::Host;
 use siphon_runtime::{Asked, Request, Runtime, Unanswered};
 use siphon_threads::{Config, Mode, thread};
 use siphon_tools::projects::Place;
-use siphon_tools::{INSTRUCTIONS_FILE, Instructions, Tool as _, Tools};
+use siphon_tools::{INSTRUCTIONS_FILE, Instructions, Tools};
 
-use crate::delegate::DelegateTool;
 use crate::skills;
-use crate::thread_tool::ThreadTool;
 use crate::told::Told;
 
 /// What a gather request asks: what the model of the thread `thread`, by its id, is told now.
@@ -177,25 +175,22 @@ pub async fn gathered(sources: &Sources, runtime: &Runtime, id: &str) -> anyhow:
     if let Some(folder) = &sources.host.threads {
         add("threads", threads_told(folder, id));
     }
+    // A sub-thread works on its task alone: it starts no thread and reaches none.
+    let sub_thread = directory
+        .label(thread::PARENT_LABEL.as_bytes())
+        .is_some_and(|parent| !parent.is_empty());
     told.tools = sources
         .tools
         .declared()
         .into_iter()
         .filter(|declared| sources.owners.get(&declared.name).is_none_or(|extension| on(extension)))
+        .filter(|declared| !(sub_thread && declared.reaches_threads))
         .map(|declared| Tool::Function {
             name: declared.name,
             description: declared.description,
             parameters: declared.parameters,
         })
         .collect();
-    // A sub-thread delegates no further, and works with no other thread.
-    if directory
-        .label(thread::PARENT_LABEL.as_bytes())
-        .is_some_and(|parent| !parent.is_empty())
-    {
-        told.tools
-            .retain(|tool| !matches!(tool, Tool::Function { name, .. } if name == DelegateTool::NAME || name == ThreadTool::NAME));
-    }
     let searches = config
         .model
         .as_deref()

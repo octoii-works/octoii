@@ -185,7 +185,11 @@ impl Siphon {
                 .with(EditTool)
                 .with(GlobTool)
                 .with(GrepTool)
-                .with(ShellTool),
+                .with(ShellTool)
+                .with(ExecuteTool)
+                .with(QuestionTool)
+                .with(DelegateTool)
+                .with(ThreadTool),
             owners: HashMap::new(),
             providers,
             tellers: Vec::new(),
@@ -262,30 +266,24 @@ impl Building {
             kernel,
             machine,
             runtime,
-            tools: inner,
+            tools,
             owners,
             providers,
             tellers,
             registry,
             ..
         } = builder;
-        let outer = inner
-            .clone()
-            .with(ExecuteTool)
-            .with(QuestionTool)
-            .with(DelegateTool)
-            .with(ThreadTool);
         let hosts = Arc::new(providers);
         let models = Arc::new(Models::new(network, hosts.to_vec(), catalogue));
         let sources = Sources {
-            tools: outer.clone(),
+            tools: tools.clone(),
             tellers,
             owners,
             models: Arc::clone(&models),
             host: machine.clone(),
             config,
         };
-        let runtime = programs(runtime, &machine, &models, sources.clone(), inner, outer).start_on((kernel, events), options)?;
+        let runtime = programs(runtime, &machine, &models, sources.clone(), tools).start_on((kernel, events), options)?;
         let siphon = Siphon {
             machine,
             threads: Threads::new(runtime.clone()),
@@ -313,7 +311,6 @@ fn programs(
     machine: &Host,
     models: &Arc<Models>,
     sources: Sources,
-    inner: Tools,
     tools: Tools,
 ) -> siphon_runtime::Builder {
     let (gathering, asking, reviewing) = (sources, Arc::clone(models), Arc::clone(models));
@@ -321,11 +318,11 @@ fn programs(
     runtime
         .program(ThreadProgram)
         .program(TurnProgram {
-            tools,
+            tools: tools.clone(),
             machine: machine.clone(),
             models: Arc::clone(models),
         })
-        .program(ScriptProgram { tools: inner })
+        .program(ScriptProgram { tools })
         .program(TitleProgram)
         .program(CompactProgram)
         .program(DelegateProgram)
