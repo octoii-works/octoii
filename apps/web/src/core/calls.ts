@@ -7,6 +7,7 @@
 import type { CommandEnd, JsonValue, Structured } from "@octoii-works/octoii-client";
 import { matches } from "./schema.ts";
 import { Type } from "typebox";
+import { partsOf } from "./reminders.ts";
 
 /** How a call stands: running, waiting for the person's approval, done, or not done — failed, stopped, or rejected. */
 export type CallState = "running" | "waiting" | "done" | "failed" | "stopped" | "rejected";
@@ -30,21 +31,22 @@ export function structuredOf(tool: string, structured: JsonValue | null | undefi
 	return structured as Structured;
 }
 
-/** What a tool told: its text, and the notes after it, each a line in brackets. */
+/** What a tool told: its text, and Octoii's notes after it. */
 export type Told = { readonly text: string; readonly notes: readonly string[] };
 
-/** `output` as its text and the notes after it, read from its end, the text left as it is. */
+/**
+ * `output` as its text and Octoii's notes after it, read from its end: a note within the text kept there in its own
+ * words, the line breaks before the notes let go.
+ */
 export function toldOf(output: string): Told {
+	const parts = [...partsOf(output)];
 	const notes: string[] = [];
-	let end = output.length;
-	while (end > 0) {
-		const start = output.lastIndexOf("\n", end - 1) + 1;
-		const note = /^\[(.*)\]$/.exec(output.slice(start, end));
-		if (note === null) break;
-		notes.unshift(note[1] ?? "");
-		end = Math.max(0, start - 1);
+	for (let last = parts.at(-1); last !== undefined && (last.kind === "reminder" || last.text.trim() === ""); last = parts.at(-1)) {
+		if (last.kind === "reminder") notes.unshift(last.text);
+		parts.pop();
 	}
-	return { text: output.slice(0, end), notes };
+	const text = parts.map((part) => part.text).join("");
+	return { text: notes.length > 0 ? text.replace(/\n$/, "") : text, notes };
 }
 
 /** What a command told, but the note that it exited with nought: a command that went well says nothing of how it exited. */

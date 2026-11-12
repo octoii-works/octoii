@@ -398,7 +398,7 @@ fn calls_of(response: &Response, keys: &[CallKey]) -> (Vec<(CallKey, String, Str
 }
 
 /// What a reply its output limit cut off is told, as a system reminder.
-pub const GO_ON: &str = "[your reply was cut off at the output limit: continue from where it stopped]";
+pub const GO_ON: &str = "<system-reminder>your reply was cut off at the output limit: continue from where it stopped</system-reminder>";
 
 /// Whether the last input of `window`'s told a reply cut off at its limit to go on.
 fn told_to_go_on(window: &Window) -> bool {

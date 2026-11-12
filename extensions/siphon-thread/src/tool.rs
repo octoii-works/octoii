@@ -72,19 +72,22 @@ fn planned(context: &Context, action: ThreadAction) -> Result<Told, Refusal> {
     let text = match action {
         ThreadAction::Start { message, title, report } => {
             let started = plan.spawn(&context.runtime, title, Spawned::Thread)?;
-            plan.deliver(&context.runtime, &started, from(own, message), Joins::Step, reported(report))?;
+            plan.deliver(&context.runtime, &started, from(own, &message), Joins::Step, reported(report))?;
             format!(
-                "[thread {started} started with your message{}]\n[link it for the person as :thread{{id={started}}}]",
+                "<system-reminder>thread {started} started with your message{}</system-reminder>\n<system-reminder>link it for the person as :thread{{id={started}}}</system-reminder>",
                 told_note(report)
             )
         }
         ThreadAction::Send { thread, message, report } => {
-            plan.deliver(&context.runtime, &thread, from(own, message), Joins::Step, reported(report))?;
-            format!("[thread {thread} has your message{}]", told_note(report))
+            plan.deliver(&context.runtime, &thread, from(own, &message), Joins::Step, reported(report))?;
+            format!(
+                "<system-reminder>thread {thread} has your message{}</system-reminder>",
+                told_note(report)
+            )
         }
         ThreadAction::Stop { thread } => {
             plan.stop(&thread);
-            format!("[thread {thread} was asked to stop its turn]")
+            format!("<system-reminder>thread {thread} was asked to stop its turn</system-reminder>")
         }
     };
     Ok(Told {
@@ -94,10 +97,10 @@ fn planned(context: &Context, action: ThreadAction) -> Result<Told, Refusal> {
 }
 
 /// `message` as the thread `own` sends it: saying whose it is.
-fn from(own: &str, message: String) -> Vec<InputContent> {
+fn from(own: &str, message: &str) -> Vec<InputContent> {
     vec![
-        InputContent::text(format!("[message from thread {own}]")),
-        InputContent::text(message),
+        InputContent::text(format!("<system-reminder>message from thread {own}</system-reminder>")),
+        InputContent::text(siphon::reminder::escaped(message)),
     ]
 }
 

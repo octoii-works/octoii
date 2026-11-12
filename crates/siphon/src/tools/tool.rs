@@ -181,7 +181,9 @@ const GIVEN_CHARS_MAX: usize = 1000;
 pub(crate) fn invalid(error: &serde_json::Error, given: &str) -> Refusal {
     let shown: String = given.chars().take(GIVEN_CHARS_MAX).collect();
     let cut = if shown.len() < given.len() { " …" } else { "" };
-    Refusal(format!("invalid arguments: {error}\n[given: {shown}{cut}]"))
+    Refusal(format!(
+        "invalid arguments: {error}\n<system-reminder>given: {shown}{cut}</system-reminder>"
+    ))
 }
 
 /// A tool of any kind, as a table holds it: its arguments as JSON.

@@ -38,26 +38,38 @@ describe("what the page knows of each tool", () => {
 	});
 
 	it("says beside a call what came of it, and at its end how a command went wrong though it ran", () => {
-		const read = called("read", { path: "a.md" }, "done", "…\n[lines 1-200; more from offset 201]", { type: "read", path: "a.md", from: 1, to: 200 });
+		const read = called("read", { path: "a.md" }, "done", "…\n<system-reminder>lines 1-200; more from offset 201</system-reminder>", {
+			type: "read",
+			path: "a.md",
+			from: 1,
+			to: 200,
+		});
 		expect(toolOf("read").aside(read)).toEqual({ kind: "words", text: "lines 1–200" });
-		expect(toolOf("grep").aside(called("grep", { pattern: "x" }, "done", "[no match]"))).toEqual({ kind: "words", text: "no match" });
+		expect(toolOf("grep").aside(called("grep", { pattern: "x" }, "done", "<system-reminder>no match</system-reminder>"))).toEqual({
+			kind: "words",
+			text: "no match",
+		});
 		expect(toolOf("glob").aside(called("glob", { pattern: "*" }, "done", "a\nb"))).toEqual({ kind: "words", text: "2 files" });
 		const changed: Structured = { type: "changed", path: "a.md", created: false, additions: 1, deletions: 1 };
 		expect(toolOf("edit").aside(called("edit", {}, "done", "@@ -1 +1 @@\n-a\n+b", changed))).toEqual({ kind: "change", added: 1, removed: 1 });
-		expect(toolOf("shell").trouble(called("shell", {}, "done", "oops\n[exit 2]", exited(2)))).toBe("exit 2");
-		expect(toolOf("shell").trouble(called("shell", {}, "done", "fine\n[exit 0]", exited(0)))).toBeUndefined();
+		expect(toolOf("shell").trouble(called("shell", {}, "done", "oops\n<system-reminder>exit 2</system-reminder>", exited(2)))).toBe("exit 2");
+		expect(toolOf("shell").trouble(called("shell", {}, "done", "fine\n<system-reminder>exit 0</system-reminder>", exited(0)))).toBeUndefined();
 		const timedOut: Structured = { type: "ran", ended: { type: "timed_out", seconds: 120 } };
-		expect(toolOf("shell").trouble(called("shell", {}, "done", "[its 120 s ran out; it was ended]", timedOut))).toBe("timed out");
+		expect(toolOf("shell").trouble(called("shell", {}, "done", "<system-reminder>its 120 s ran out; it was ended</system-reminder>", timedOut))).toBe(
+			"timed out",
+		);
 	});
 
 	it("opens a call by its tool's shape, and one that did not go through as what it was given and told", () => {
 		// A command that went well says nothing of how it exited; one that did not keeps its code among its notes.
-		expect(detailOf(called("shell", { command: "zig build" }, "done", "built\n[exit 0]"))).toEqual({
+		expect(detailOf(called("shell", { command: "zig build" }, "done", "built\n<system-reminder>exit 0</system-reminder>"))).toEqual({
 			shape: "command",
 			command: "zig build",
 			told: { text: "built", notes: [] },
 		});
-		expect(detailOf(called("shell", { command: "zig build" }, "done", "failed\n[exit 1]"))).toMatchObject({ told: { text: "failed", notes: ["exit 1"] } });
+		expect(detailOf(called("shell", { command: "zig build" }, "done", "failed\n<system-reminder>exit 1</system-reminder>"))).toMatchObject({
+			told: { text: "failed", notes: ["exit 1"] },
+		});
 		expect(detailOf(called("edit", { path: "a.md" }, "done", "--- a.md\n+++ a.md\n@@ -1 +1 @@\n-a\n+b"))).toEqual({
 			shape: "diff",
 			hunks: "@@ -1 +1 @@\n-a\n+b",

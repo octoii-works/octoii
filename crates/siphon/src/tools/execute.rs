@@ -126,10 +126,10 @@ impl Tool for ExecuteTool {
         let Some(output) = read else {
             return Told::from(vec![InputContent::text(format!("the script ended as {outcome:?}"))]);
         };
-        let mut text = output.console.join("\n");
+        let mut text = crate::reminder::escaped(&output.console.join("\n")).into_owned();
         match (output.value, output.error) {
             (_, Some(error)) => {
-                let _ = write!(text, "\n[the script threw: {error}]");
+                let _ = write!(text, "\n<system-reminder>the script threw: {error}</system-reminder>");
             }
             (Some(value), None) => {
                 let _ = write!(text, "\n{value}");

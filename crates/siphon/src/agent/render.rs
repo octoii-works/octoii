@@ -135,7 +135,9 @@ fn tell_images(item: &mut Item, reference: &str) {
     };
     for part in content {
         if matches!(part, InputContent::InputImage { .. }) {
-            *part = InputContent::text(format!("[an image, not shown: the model {reference} reads no images]"));
+            *part = InputContent::text(format!(
+                "<system-reminder>an image, not shown: the model {reference} reads no images</system-reminder>"
+            ));
         }
     }
 }

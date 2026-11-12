@@ -67,12 +67,18 @@ async fn bounded(context: &Context, given: Vec<InputContent>) -> Vec<InputConten
     let half = TEXT_CHARS_MAX / 2;
     let head: String = whole.chars().take(half).collect();
     let tail: String = whole.chars().skip(chars - half).collect();
-    let mut cut = format!("{head}\n[… {} characters left out …]\n{tail}", chars - TEXT_CHARS_MAX);
+    let mut cut = format!(
+        "{head}\n<system-reminder>… {} characters left out …</system-reminder>\n{tail}",
+        chars - TEXT_CHARS_MAX
+    );
     match keep(context, Bytes::from(whole)).await {
         Some(place) => {
-            let _ = write!(cut, "\n[the whole of it is kept at {place}; read it a page at a time]");
+            let _ = write!(
+                cut,
+                "\n<system-reminder>the whole of it is kept at {place}; read it a page at a time</system-reminder>"
+            );
         }
-        None => cut.push_str("\n[the whole of it could not be kept]"),
+        None => cut.push_str("\n<system-reminder>the whole of it could not be kept</system-reminder>"),
     }
     let mut out = vec![InputContent::text(cut)];
     out.extend(given.into_iter().filter(|part| !matches!(part, InputContent::InputText { .. })));

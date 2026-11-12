@@ -53,7 +53,10 @@ Your memory of this project, shared by its threads: one Markdown file per memory
     );
     out.push_str(listed.as_deref().map_or("(none yet)", str::trim_end));
     if cut {
-        let _ = write!(out, "\n[{INDEX} continues past this point; keep it short]");
+        let _ = write!(
+            out,
+            "\n<system-reminder>{INDEX} continues past this point; keep it short</system-reminder>"
+        );
     }
     out.push_str("\n</index>\n</memory>");
     out

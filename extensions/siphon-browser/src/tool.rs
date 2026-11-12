@@ -32,9 +32,14 @@ impl Tool for BrowserTool {
             .act(&context.thread, action)
             .await
             .map_err(|refusal| Refusal(refusal.0))?;
-        let mut text = outcome.text;
+        let mut text = siphon::reminder::escaped(&outcome.text).into_owned();
         if let Some(page) = &outcome.page {
-            text = format!("{text}\n[page {}: {} {}]", page.id, serde_json::json!(page.title), page.url);
+            text = format!(
+                "{text}\n<system-reminder>page {}: {} {}</system-reminder>",
+                page.id,
+                serde_json::json!(page.title),
+                page.url
+            );
         }
         if let Some(value) = &outcome.value {
             text = format!("{text}\n{}", serde_json::to_string_pretty(value).unwrap_or_default());

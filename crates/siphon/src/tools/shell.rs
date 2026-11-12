@@ -67,7 +67,7 @@ impl Tool for ShellTool {
                     beak::Exit::Code(code) => CommandEnd::Exited { code },
                     beak::Exit::Signal(signal) => CommandEnd::Signalled { signal },
                 };
-                (String::from_utf8_lossy(&ran.output).into_owned(), end)
+                (crate::reminder::escaped(&String::from_utf8_lossy(&ran.output)).into_owned(), end)
             }
             Err(RunError::TimedOut(_)) => (String::new(), CommandEnd::TimedOut { seconds }),
             Err(RunError::Stopped) => (String::new(), CommandEnd::Stopped),
@@ -76,11 +76,11 @@ impl Tool for ShellTool {
             Err(RunError::Beak(error)) => return Err(Refusal(error.to_string())),
         };
         let ended = match end {
-            CommandEnd::Exited { code } => format!("[exit {code}]"),
-            CommandEnd::Signalled { signal } => format!("[ended by signal {signal}]"),
-            CommandEnd::TimedOut { seconds } => format!("[its {seconds} s ran out; it was ended]"),
-            CommandEnd::Stopped => "[it was stopped]".into(),
-            CommandEnd::TooLarge { bytes } => format!("[it wrote past {bytes} bytes; it was ended]"),
+            CommandEnd::Exited { code } => format!("<system-reminder>exit {code}</system-reminder>"),
+            CommandEnd::Signalled { signal } => format!("<system-reminder>ended by signal {signal}</system-reminder>"),
+            CommandEnd::TimedOut { seconds } => format!("<system-reminder>its {seconds} s ran out; it was ended</system-reminder>"),
+            CommandEnd::Stopped => "<system-reminder>it was stopped</system-reminder>".into(),
+            CommandEnd::TooLarge { bytes } => format!("<system-reminder>it wrote past {bytes} bytes; it was ended</system-reminder>"),
         };
         let separator = if output.is_empty() || output.ends_with('\n') { "" } else { "\n" };
         let words = vec![InputContent::text(format!("{output}{separator}{ended}"))];

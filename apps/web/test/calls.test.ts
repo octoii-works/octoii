@@ -11,9 +11,16 @@ import { changeOf, endOf, fieldsOf, foundOf, hunksOf, prettyArguments, spanOf, s
 const ran = (tool: string, output: string, structured?: Structured): ToolCall => ({ tool, arguments: "{}", output, structured, state: "done" });
 
 describe("a call as its tool told it", () => {
-	it("tells a tool's text from the notes after it, a line each in brackets, the text left as it is", () => {
-		expect(toldOf("a\n[b] c\n[exit 1]\n[timed out after 5 s; killed]")).toEqual({ text: "a\n[b] c", notes: ["exit 1", "timed out after 5 s; killed"] });
-		expect(toldOf("[no match]")).toEqual({ text: "", notes: ["no match"] });
+	it("tells a tool's text from Octoii's notes after it, the text left as it is and a note within it in its own words", () => {
+		expect(toldOf("a\n[b] c\n<system-reminder>exit 1</system-reminder>\n<system-reminder>timed out after 5 s; killed</system-reminder>")).toEqual({
+			text: "a\n[b] c",
+			notes: ["exit 1", "timed out after 5 s; killed"],
+		});
+		expect(toldOf("<system-reminder>no match</system-reminder>")).toEqual({ text: "", notes: ["no match"] });
+		expect(toldOf("head\n<system-reminder>… 9 characters left out …</system-reminder>\ntail\n<system-reminder>exit 0</system-reminder>")).toEqual({
+			text: "head\n… 9 characters left out …\ntail",
+			notes: ["exit 0"],
+		});
 		expect(toldOf("plain\n")).toEqual({ text: "plain\n", notes: [] });
 	});
 

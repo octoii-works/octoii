@@ -773,7 +773,7 @@ async fn a_task_delegated_is_worked_on_by_a_sub_thread_and_what_it_said_last_giv
     let InputContent::InputText { text } = &output[0] else {
         panic!("text")
     };
-    assert!(text.starts_with("the child is done\n[sub-thread "), "{text}");
+    assert!(text.starts_with("the child is done\n<system-reminder>sub-thread "), "{text}");
     assert!(text.contains(&child.id) && text.contains("finished"), "{text}");
     runtime.close().await;
 }

@@ -223,7 +223,10 @@ async fn what_a_script_threw_is_what_it_gives() {
     let (status, said) = ended(&runtime, &path).await;
     assert_eq!(
         (status, said.as_str()),
-        (CallStatus::Ok, "began\n[the script threw: TypeError: no such thing]")
+        (
+            CallStatus::Ok,
+            "began\n<system-reminder>the script threw: TypeError: no such thing</system-reminder>"
+        )
     );
     runtime.close().await;
 }

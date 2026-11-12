@@ -36,11 +36,14 @@ fn failed_at(machine: &Machine, path: &str, error: crate::machine::Error) -> Ref
         return failed(error);
     }
     let Ok(missing) = machine.missing(path) else { return failed(error) };
-    let mut words = format!("nothing is there\n[the nearest folder there is {}", machine.shown(&missing.folder));
+    let mut words = format!(
+        "nothing is there\n<system-reminder>the nearest folder there is {}",
+        machine.shown(&missing.folder)
+    );
     if !missing.like.is_empty() {
         let _ = write!(words, "; in it, names like the one asked: {}", missing.like.join(", "));
     }
-    words.push(']');
+    words.push_str("</system-reminder>");
     Refusal(words)
 }
 
@@ -175,7 +178,8 @@ impl Tool for ReadTool {
 async fn shown(context: &Context, name: &str, read: Read) -> Result<Vec<InputContent>, Refusal> {
     Ok(match read {
         Read::Text { page, .. } => {
-            let mut out = page.lines.iter().map(|line| line.text.as_str()).collect::<Vec<_>>().join("\n");
+            let mut out =
+                crate::reminder::escaped(&page.lines.iter().map(|line| line.text.as_str()).collect::<Vec<_>>().join("\n")).into_owned();
             let (first, last) = (
                 page.lines.first().map_or(0, |line| line.number),
                 page.lines.last().map_or(0, |line| line.number),
@@ -186,19 +190,26 @@ async fn shown(context: &Context, name: &str, read: Read) -> Result<Vec<InputCon
                     out,
                     "{}",
                     if page.seen == 0 {
-                        "[the file is empty]".to_owned()
+                        "<system-reminder>the file is empty</system-reminder>".to_owned()
                     } else {
-                        format!("[the file has {} lines, all before the offset]", page.seen)
+                        format!(
+                            "<system-reminder>the file has {} lines, all before the offset</system-reminder>",
+                            page.seen
+                        )
                     }
                 );
             } else if !page.whole {
-                let _ = write!(out, "\n[lines {first}-{last}; more from offset {}]", last + 1);
+                let _ = write!(
+                    out,
+                    "\n<system-reminder>lines {first}-{last}; more from offset {}</system-reminder>",
+                    last + 1
+                );
             } else if first > 1 {
-                let _ = write!(out, "\n[lines {first}-{last} of {last}]");
+                let _ = write!(out, "\n<system-reminder>lines {first}-{last} of {last}</system-reminder>");
             }
             let cut = page.lines.iter().filter(|line| line.cut).count();
             if cut > 0 {
-                let _ = write!(out, "\n[{cut} lines cut for their length]");
+                let _ = write!(out, "\n<system-reminder>{cut} lines cut for their length</system-reminder>");
             }
             text(out)
         }
@@ -210,7 +221,11 @@ async fn shown(context: &Context, name: &str, read: Read) -> Result<Vec<InputCon
             }
             let last = from + entries.len().saturating_sub(1);
             if entries.len() < total {
-                let _ = write!(out, "[entries {from}-{last} of {total}; more from offset {}]", last + 1);
+                let _ = write!(
+                    out,
+                    "<system-reminder>entries {from}-{last} of {total}; more from offset {}</system-reminder>",
+                    last + 1
+                );
             }
             text(out)
         }
@@ -325,10 +340,10 @@ impl Tool for EditTool {
                     };
                     let mut out = change.diff.unified;
                     if edited.matching.name() != "exact" {
-                        let _ = write!(out, "\n[matched {}]", edited.matching.name());
+                        let _ = write!(out, "\n<system-reminder>matched {}</system-reminder>", edited.matching.name());
                     }
                     if edited.replacements > 1 {
-                        let _ = write!(out, "\n[{} places replaced]", edited.replacements);
+                        let _ = write!(out, "\n<system-reminder>{} places replaced</system-reminder>", edited.replacements);
                     }
                     let mut told = Told::structured(text(out), &changed);
                     told.instructions = on_the_way(machine, &machine.path(&workspace.to_string_lossy()), folder_of(&path));
@@ -345,10 +360,13 @@ impl Tool for EditTool {
 /// The refusal of an edit whose `old` is nowhere in its file, with where the file came nearest.
 fn not_found(nearest: &siphon_text::Nearest) -> String {
     match nearest {
-        siphon_text::Nearest::Made => "`old` is nowhere in the file\n[`new` is in the file already: the edit may have been made]".into(),
+        siphon_text::Nearest::Made => {
+            "`old` is nowhere in the file\n<system-reminder>`new` is in the file already: the edit may have been made</system-reminder>"
+                .into()
+        }
         siphon_text::Nearest::Lines { first, lines } => {
             format!(
-                "`old` is nowhere in the file\n[the nearest lines, from line {first}:]\n{}",
+                "`old` is nowhere in the file\n<system-reminder>the nearest lines, from line {first}:</system-reminder>\n{}",
                 lines.join("\n")
             )
         }
@@ -398,11 +416,11 @@ impl Tool for GlobTool {
             }
             let last = offset + found.files.len();
             if found.total == 0 {
-                out.push_str("[no match]");
+                out.push_str("<system-reminder>no match</system-reminder>");
             } else if last < found.total {
                 let _ = write!(
                     out,
-                    "[files {}-{last} of {}, the newest first; more from offset {}]",
+                    "<system-reminder>files {}-{last} of {}, the newest first; more from offset {}</system-reminder>",
                     offset + 1,
                     found.total,
                     last + 1
@@ -420,7 +438,11 @@ impl Tool for GlobTool {
 fn denied(machine: &Machine, folders: &[String], out: &mut String) {
     if !folders.is_empty() {
         let shown: Vec<String> = folders.iter().map(|folder| machine.shown(folder)).collect();
-        let _ = write!(out, "\n[not searched, as access is denied: {}]", shown.join(", "));
+        let _ = write!(
+            out,
+            "\n<system-reminder>not searched, as access is denied: {}</system-reminder>",
+            shown.join(", ")
+        );
     }
 }
 
@@ -490,27 +512,35 @@ fn grep_text(machine: &Machine, grepped: &crate::machine::Grepped, offset: usize
     for file in &grepped.files {
         let shown = machine.shown(&file.path);
         for line in &file.lines {
-            let _ = writeln!(out, "{shown}:{}{} {}", line.number, if line.matched { ":" } else { "-" }, line.text);
+            let text = crate::reminder::escaped(&line.text);
+            let _ = writeln!(out, "{shown}:{}{} {text}", line.number, if line.matched { ":" } else { "-" });
             matched += usize::from(line.matched);
             cut |= line.cut;
         }
     }
     if matched == 0 {
-        out.push_str("[no match]");
+        out.push_str("<system-reminder>no match</system-reminder>");
     } else if grepped.more {
         let _ = write!(
             out,
-            "[matches {}-{}; more from offset {}]",
+            "<system-reminder>matches {}-{}; more from offset {}</system-reminder>",
             offset + 1,
             offset + matched,
             offset + matched + 1
         );
     }
     if cut {
-        let _ = write!(out, "\n[lines cut at {GREP_LINE_CHARS_MAX} characters]");
+        let _ = write!(
+            out,
+            "\n<system-reminder>lines cut at {GREP_LINE_CHARS_MAX} characters</system-reminder>"
+        );
     }
     if grepped.binary > 0 {
-        let _ = write!(out, "\n[{} binary files passed over]", grepped.binary);
+        let _ = write!(
+            out,
+            "\n<system-reminder>{} binary files passed over</system-reminder>",
+            grepped.binary
+        );
     }
     denied(machine, &grepped.denied, &mut out);
     out

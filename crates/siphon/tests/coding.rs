@@ -73,14 +73,20 @@ async fn files_are_written_edited_read_a_page_at_a_time_and_found() {
     let page = exec(&tools, &context, "read", json!({ "path": "notes/a.txt", "offset": 2, "limit": 2 }))
         .await
         .expect("read");
-    assert_eq!(page, "line 2\nline 3\n[lines 2-3; more from offset 4]");
+    assert_eq!(
+        page,
+        "line 2\nline 3\n<system-reminder>lines 2-3; more from offset 4</system-reminder>"
+    );
     let past = exec(&tools, &context, "read", json!({ "path": "notes/a.txt", "offset": 9 })).await;
-    assert_eq!(past, Ok("[the file has 5 lines, all before the offset]".into()));
+    assert_eq!(
+        past,
+        Ok("<system-reminder>the file has 5 lines, all before the offset</system-reminder>".into())
+    );
     exec(&tools, &context, "write", json!({ "path": "notes/empty.md", "content": "" }))
         .await
         .expect("written");
     let empty = exec(&tools, &context, "read", json!({ "path": "notes/empty.md" })).await;
-    assert_eq!(empty, Ok("[the file is empty]".into()));
+    assert_eq!(empty, Ok("<system-reminder>the file is empty</system-reminder>".into()));
     let edited = exec(
         &tools,
         &context,
@@ -146,11 +152,11 @@ async fn a_command_line_runs_in_the_workspace_held_there_and_tells_how_it_ended(
     .await
     .expect("ran");
     let workspace = context.base.workspace.display().to_string();
-    assert_eq!(ran, format!("out\nerr\n{workspace}\n[exit 3]"));
+    assert_eq!(ran, format!("out\nerr\n{workspace}\n<system-reminder>exit 3</system-reminder>"));
     let slow = exec(&tools, &context, "shell", json!({ "command": "sleep 5", "timeout_seconds": 1 }))
         .await
         .expect("ran");
-    assert_eq!(slow, "[its 1 s ran out; it was ended]");
+    assert_eq!(slow, "<system-reminder>its 1 s ran out; it was ended</system-reminder>");
     if beak::machine_confines() {
         let outside = tempfile::tempdir().expect("a folder");
         let target = outside.path().canonicalize().expect("its real path").join("x");
@@ -162,7 +168,7 @@ async fn a_command_line_runs_in_the_workspace_held_there_and_tells_how_it_ended(
         )
         .await
         .expect("ran");
-        assert!(!held.ends_with("[exit 0]"), "{held}");
+        assert!(!held.ends_with("<system-reminder>exit 0</system-reminder>"), "{held}");
         assert!(!target.exists());
     }
     let effect = tools.effect(
@@ -202,7 +208,7 @@ async fn a_call_writes_the_memory_of_its_project_and_a_command_its_scratchpad_as
     assert!(wrote.is_ok(), "the first memory makes its folder: {wrote:?}");
     let line = format!("echo kept > \"$TMPDIR/note\" && echo remembered > {}/a.md", memory.display());
     let ran = exec(&tools, &context, "shell", json!({ "command": line })).await.expect("ran");
-    assert_eq!(ran, "[exit 0]");
+    assert_eq!(ran, "<system-reminder>exit 0</system-reminder>");
     let note = kept.join("scratch/t1/note");
     assert_eq!(std::fs::read_to_string(note).expect("in the scratchpad"), "kept\n");
     assert_eq!(std::fs::read_to_string(memory.join("a.md")).expect("in the memory"), "remembered\n");

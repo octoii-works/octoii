@@ -119,12 +119,15 @@ pub fn ended_mail(run: &mut siphon_runtime::Run<'_>, key: &str) -> anyhow::Resul
 pub fn told_of(thread: &str, ended: Option<&Ended>) -> String {
     match ended {
         Some(Ended::Replied { said }) => {
-            format!("{said}\n[thread {thread} finished; its final answer is above]")
+            format!(
+                "{}\n<system-reminder>thread {thread} finished; its final answer is above</system-reminder>",
+                crate::reminder::escaped(said)
+            )
         }
-        Some(Ended::Failed { reason }) => format!("[thread {thread} failed: {reason}]"),
-        Some(Ended::Stopped) => format!("[thread {thread} was stopped by the person before finishing]"),
-        Some(Ended::Withdrawn) => format!("[thread {thread} had the message withdrawn before taking it]"),
-        None => format!("[thread {thread} was deleted before finishing]"),
+        Some(Ended::Failed { reason }) => format!("<system-reminder>thread {thread} failed: {reason}</system-reminder>"),
+        Some(Ended::Stopped) => format!("<system-reminder>thread {thread} was stopped by the person before finishing</system-reminder>"),
+        Some(Ended::Withdrawn) => format!("<system-reminder>thread {thread} had the message withdrawn before taking it</system-reminder>"),
+        None => format!("<system-reminder>thread {thread} was deleted before finishing</system-reminder>"),
     }
 }
 

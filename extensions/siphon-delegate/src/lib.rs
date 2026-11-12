@@ -77,8 +77,12 @@ impl Tool for DelegateTool {
 
     fn awaited(&self, _: &DelegateArgs, child: &str, ended: Option<&Ended>) -> Told {
         let text = match ended {
-            Some(Ended::Replied { said }) => format!("{said}\n[sub-thread {child} {}]", how(ended)),
-            _ => format!("[sub-thread {child} {}]", how(ended)),
+            Some(Ended::Replied { said }) => format!(
+                "{}\n<system-reminder>sub-thread {child} {}</system-reminder>",
+                siphon::reminder::escaped(said),
+                how(ended)
+            ),
+            _ => format!("<system-reminder>sub-thread {child} {}</system-reminder>", how(ended)),
         };
         Told::from(vec![InputContent::text(text)])
     }
@@ -102,7 +106,7 @@ fn planned(context: &Context, args: DelegateArgs) -> Result<Told, Refusal> {
     plan.deliver(&context.runtime, &child, vec![InputContent::text(args.task)], Joins::Step, report)?;
     let text = if args.background {
         format!(
-            "[sub-thread {child} is working on it in the background; you will get a message with its final answer when it finishes]\n[do not wait, poll or ask about its progress, and do not do its work; continue with work that does not depend on it, or tell the person what you started and end your reply]\n[to give it more work, call delegate with thread {child}]"
+            "<system-reminder>sub-thread {child} is working on it in the background; you will get a message with its final answer when it finishes</system-reminder>\n<system-reminder>do not wait, poll or ask about its progress, and do not do its work; continue with work that does not depend on it, or tell the person what you started and end your reply</system-reminder>\n<system-reminder>to give it more work, call delegate with thread {child}</system-reminder>"
         )
     } else {
         String::new()

@@ -94,7 +94,11 @@ impl Tool for TerminalTool {
             Action::Read { terminal } => {
                 let shown = self.numbered(&context.thread, terminal).await?;
                 let text = self.terminals.text(&shown.id).await.map_err(|error| Refusal(error.to_string()))?;
-                format!("[terminal {terminal}: {}]\n{}", what(&shown), screen(&text))
+                format!(
+                    "<system-reminder>terminal {terminal}: {}</system-reminder>\n{}",
+                    what(&shown),
+                    screen(&text)
+                )
             }
             Action::Write { terminal, text } => {
                 let shown = self.own(&context.thread, terminal).await?;
@@ -104,12 +108,16 @@ impl Tool for TerminalTool {
                     .map_err(|error| Refusal(error.to_string()))?;
                 tokio::time::sleep(SETTLE).await;
                 let text = self.terminals.text(&shown.id).await.unwrap_or_default();
-                format!("[terminal {terminal}: {}]\n{}", what(&shown), screen(&text))
+                format!(
+                    "<system-reminder>terminal {terminal}: {}</system-reminder>\n{}",
+                    what(&shown),
+                    screen(&text)
+                )
             }
             Action::Close { terminal } => {
                 let shown = self.own(&context.thread, terminal).await?;
                 self.terminals.close(&shown.id);
-                format!("[terminal {terminal} closed]")
+                format!("<system-reminder>terminal {terminal} closed</system-reminder>")
             }
         };
         Ok(Told::from(vec![InputContent::text(words)]))
@@ -148,7 +156,10 @@ impl TerminalTool {
                 let _ = tell(&runtime, &ended).await;
             }
         });
-        Ok(format!("[terminal {number} runs it; you are told when it ends]\n{}", screen(&text)))
+        Ok(format!(
+            "<system-reminder>terminal {number} runs it; you are told when it ends</system-reminder>\n{}",
+            screen(&text)
+        ))
     }
 
     /// The terminal numbered `number` in `thread`.
@@ -232,7 +243,7 @@ fn ended_words(ended: &Ended) -> String {
         beak::Exit::Signal(signal) => format!("ended by signal {signal}"),
     };
     format!(
-        "[terminal {}, which ran `{}`, ended: {how}]\n{}",
+        "<system-reminder>terminal {}, which ran `{}`, ended: {how}</system-reminder>\n{}",
         ended.number,
         ended.line,
         screen(&ended.screen)
@@ -249,6 +260,6 @@ fn what(shown: &Shown) -> String {
 }
 
 /// A screen's text without the blank lines at its end.
-fn screen(text: &str) -> &str {
-    text.trim_end()
+fn screen(text: &str) -> std::borrow::Cow<'_, str> {
+    siphon::reminder::escaped(text.trim_end())
 }

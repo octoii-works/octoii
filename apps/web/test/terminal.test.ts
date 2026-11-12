@@ -13,15 +13,15 @@ describe("a terminal's name", () => {
 
 describe("a command line's end, as its thread is told it", () => {
 	it("is read from the terminals' note, the last screen after it", () => {
-		expect(endedOf("[terminal 2, which ran `npm run dev`, ended: exit 1]\nerror: in use\n[exit 1]")).toEqual({
+		expect(endedOf("<system-reminder>terminal 2, which ran `npm run dev`, ended: exit 1</system-reminder>\nerror: in use")).toEqual({
 			number: 2,
 			line: "npm run dev",
 			how: "exit 1",
 			ok: false,
-			screen: "error: in use\n[exit 1]",
+			screen: "error: in use",
 		});
-		expect(endedOf("[terminal 1, which ran `sleep 1`, ended: exit 0]")?.ok).toBe(true);
-		expect(endedOf("[terminal 3, which ran `x`, ended: ended by signal 15]")?.how).toBe("signal 15");
+		expect(endedOf("<system-reminder>terminal 1, which ran `sleep 1`, ended: exit 0</system-reminder>")?.ok).toBe(true);
+		expect(endedOf("<system-reminder>terminal 3, which ran `x`, ended: ended by signal 15</system-reminder>")?.how).toBe("signal 15");
 		expect(endedOf("Fix it")).toBeUndefined();
 	});
 });

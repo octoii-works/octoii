@@ -120,7 +120,7 @@ fn catalog_told(catalog: &Catalog) -> String {
         out.push('\n');
     }
     for problem in &catalog.problems {
-        let _ = writeln!(out, "[{problem}]");
+        let _ = writeln!(out, "<system-reminder>{problem}</system-reminder>");
     }
     out.push_str("</catalog>");
     out

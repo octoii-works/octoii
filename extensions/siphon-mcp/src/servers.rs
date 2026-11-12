@@ -411,22 +411,36 @@ async fn given(context: &Context, result: CallToolResult) -> Result<Told, Refusa
     let mut images = Vec::new();
     for block in result.content {
         match block {
-            ContentBlock::Text(text) => texts.push(text.text),
+            ContentBlock::Text(text) => texts.push(siphon::reminder::escaped(&text.text).into_owned()),
             ContentBlock::Image(image) => match base64::engine::general_purpose::STANDARD.decode(&image.data) {
                 Ok(bytes) => images.push(bytes),
-                Err(error) => texts.push(format!("[an image of {} that could not be read: {error}]", image.mime_type)),
+                Err(error) => texts.push(format!(
+                    "<system-reminder>an image of {} that could not be read: {error}</system-reminder>",
+                    image.mime_type
+                )),
             },
-            ContentBlock::Audio(audio) => texts.push(format!("[audio of {}, not shown]", audio.mime_type)),
+            ContentBlock::Audio(audio) => texts.push(format!(
+                "<system-reminder>audio of {}, not shown</system-reminder>",
+                audio.mime_type
+            )),
             ContentBlock::Resource(embedded) => match embedded.resource {
-                ResourceContents::TextResourceContents { uri, text, .. } => texts.push(format!("[{uri}]\n{text}")),
+                ResourceContents::TextResourceContents { uri, text, .. } => {
+                    texts.push(format!(
+                        "<system-reminder>{uri}</system-reminder>\n{}",
+                        siphon::reminder::escaped(&text)
+                    ));
+                }
                 ResourceContents::BlobResourceContents { uri, mime_type, blob, .. } => {
                     let kind = mime_type.unwrap_or_else(|| "bytes".into());
-                    texts.push(format!("[{uri}: {kind} of {} base64 characters, not shown]", blob.len()));
+                    texts.push(format!(
+                        "<system-reminder>{uri}: {kind} of {} base64 characters, not shown</system-reminder>",
+                        blob.len()
+                    ));
                 }
-                _ => texts.push("[a resource of a kind not shown]".into()),
+                _ => texts.push("<system-reminder>a resource of a kind not shown</system-reminder>".into()),
             },
-            ContentBlock::ResourceLink(link) => texts.push(format!("[{}: {}]", link.name, link.uri)),
-            _ => texts.push("[content of a kind not shown]".into()),
+            ContentBlock::ResourceLink(link) => texts.push(format!("<system-reminder>{}: {}</system-reminder>", link.name, link.uri)),
+            _ => texts.push("<system-reminder>content of a kind not shown</system-reminder>".into()),
         }
     }
     // Its structured content, a client's to read, is the model's too where the server gave it no content.

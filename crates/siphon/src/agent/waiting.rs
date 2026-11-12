@@ -82,16 +82,20 @@ impl Program for DelegatedProgram {
             == Some(waiting.thread.as_str());
         let note = if ours {
             format!(
-                "[sub-thread {}, which you gave a background task, {}]",
+                "<system-reminder>sub-thread {}, which you gave a background task, {}</system-reminder>",
                 waiting.child,
                 how(ended.as_ref())
             )
         } else {
-            format!("[thread {}, which you sent a message, {}]", waiting.child, how(ended.as_ref()))
+            format!(
+                "<system-reminder>thread {}, which you sent a message, {}</system-reminder>",
+                waiting.child,
+                how(ended.as_ref())
+            )
         };
         let mut content = vec![InputContent::text(note)];
         if let Some(Ended::Replied { said }) = ended {
-            content.push(InputContent::text(said));
+            content.push(InputContent::text(crate::reminder::escaped(&said)));
         }
         let inbound = Inbound::Input {
             actor: waiting.child.clone(),

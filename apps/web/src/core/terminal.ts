@@ -3,6 +3,7 @@
  * for a dark, its font's size, how a terminal is named on its tab, and a command line's end as its thread is told it.
  */
 import type { TerminalListed } from "@octoii-works/octoii-client";
+import { openingReminder } from "./reminders.ts";
 
 /** The sixteen ANSI colours on a light page: black, red, green, yellow, blue, magenta, cyan, white, then their bright forms. */
 export const ANSI_LIGHT: readonly number[] = [
@@ -30,13 +31,17 @@ export function terminalName(terminal: TerminalListed): string {
 export type Ended = { readonly number: number; readonly line: string; readonly how: string; readonly ok: boolean; readonly screen: string };
 
 /**
- * The end the thread was told in `text`, as the terminals write it — `[terminal 2, which ran `npm run dev`, ended: exit
- * 1]`, then the last screen; none where `text` tells no end.
+ * The end the thread was told in `text`, as the terminals write it — Octoii's words `terminal 2, which ran `npm run dev`,
+ * ended: exit 1` opening it, then the last screen; none where `text` tells no end.
  */
 export function endedOf(text: string): Ended | undefined {
-	const [note = "", ...screen] = text.split("\n");
-	const found = /^\[terminal (\d+), which ran `(.*)`, ended: (.+)\]$/.exec(note);
+	const note = openingReminder(text);
+	const found = note === undefined ? null : /^terminal (\d+), which ran `(.*)`, ended: (.+)$/.exec(note);
 	if (found === null) return undefined;
+	const screen = text
+		.slice(text.indexOf("</system-reminder>") + "</system-reminder>".length)
+		.replace(/^\n/, "")
+		.split("\n");
 	const [, number = "0", line = "", how = ""] = found;
 	return { number: Number(number), line, how: how.replace(/^ended by /, ""), ok: how === "exit 0", screen: screen.join("\n") };
 }
