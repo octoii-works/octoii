@@ -24,6 +24,7 @@ export const SETTINGS_ITEMS: readonly SettingsItem[] = [
 	{ section: "threads", title: "Review model", words: "permissions auto reviewer judge", anchor: "setting-review-model" },
 	{ section: "threads", title: "Allowed", words: "permissions always allow grants project commands", anchor: "setting-allowed" },
 	{ section: "threads", title: "Archive", words: "archived threads restore delete", anchor: "setting-archive" },
+	{ section: "extensions", title: "Extensions", words: "extensions plugins browser terminals mcp memory skills git switch off", anchor: "setting-extensions" },
 	{ section: "keybindings", title: "Keybindings", words: "shortcuts keys commands", anchor: "setting-keybindings" },
 ];
 

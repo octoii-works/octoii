@@ -23,6 +23,7 @@ import { useDirectory } from "../composer/directory.ts";
 import { useOutcome } from "../effects/read.ts";
 import { showDetails, useDetailsShown } from "../state/details.ts";
 import { go } from "../state/navigation.ts";
+import { useExtension } from "../state/extensions.ts";
 import { showSurface, terminalKey, useThreadPanel } from "../state/panel.ts";
 import { terminalName } from "../../core/terminal.ts";
 import { IconButton, ToggleButton } from "../ui/button.tsx";
@@ -141,7 +142,7 @@ function RowContent(props: { readonly icon: ReactNode; readonly label: ReactNode
 
 /** The terminals open in the thread, each by the command line the model runs in it or by its name, opened in the panel; nothing where none is. */
 function Terminals(props: { readonly thread: string }): ReactNode {
-	const terminals = useTerminals(props.thread) ?? [];
+	const terminals = useTerminals(useExtension("terminals") ? props.thread : undefined) ?? [];
 	if (terminals.length === 0) return null;
 	return (
 		<section className="p-1.5">
@@ -167,6 +168,7 @@ function Workspace(props: { readonly thread: string; readonly folder: string | u
 	const connection = useConnection();
 	const machine = connection.status === "open" ? connection.machine.name : undefined;
 	const { folder } = props;
+	const memory = useExtension("memory");
 	return (
 		<section className="p-1.5">
 			<DetailRow icon={<Laptop />} label={machine ?? "This machine"} />
@@ -175,7 +177,7 @@ function Workspace(props: { readonly thread: string; readonly folder: string | u
 			) : (
 				<>
 					<DetailRow icon={<Folder />} label={folderName(folder)} title={folder} onOpen={() => showSurface(props.thread, "files")} />
-					<MemoryRow folder={folder} revision={props.revision} />
+					{memory ? <MemoryRow folder={folder} revision={props.revision} /> : null}
 				</>
 			)}
 		</section>

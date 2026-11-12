@@ -17,6 +17,7 @@ import { FileDiff, Files, Globe, Plus, SquareTerminal, X } from "lucide-react";
 import { pageName } from "../../core/browser.ts";
 import { nameOf } from "../../core/files.ts";
 import { terminalName } from "../../core/terminal.ts";
+import { isOn, useExtensions } from "../state/extensions.ts";
 import { closeSurface, pageKey, type SurfaceKey, showSurface, terminalKey, type ThreadPanel, useThreadPanel, type View } from "../state/panel.ts";
 import { PathIcon } from "../files/path-icon.tsx";
 import { FillPanel, HidePanel, ShowSidebarFromPanel } from "../frame/frame.tsx";
@@ -57,8 +58,12 @@ type Opening = { readonly label: string; readonly icon: typeof Files; readonly l
 export function RightPanel(props: RightPanelProps): ReactNode {
 	const client = useClient();
 	const place = useThreadPanel(props.thread);
+	const extensions = useExtensions();
+	const terminals = isOn(extensions, "terminals");
+	const browser = isOn(extensions, "browser");
+	const git = isOn(extensions, "git");
 	const tabs: readonly Tab[] = [
-		...place.views.map((view) => viewTab(view, place)),
+		...place.views.filter((view) => git || view !== "diff").map((view) => viewTab(view, place)),
 		...props.terminals.map((terminal): Tab => ({
 			key: terminalKey(terminal.id),
 			icon: <SquareTerminal />,
@@ -69,30 +74,38 @@ export function RightPanel(props: RightPanelProps): ReactNode {
 	];
 	const shown = tabs.find((tab) => tab.key === place.shown) ?? tabs[0];
 	const openings: readonly Opening[] = [
-		{
-			label: "Terminal",
-			icon: SquareTerminal,
-			letter: "T",
-			open: () => {
-				client.openTerminal(props.thread, OPENED_SIZE).then(
-					(id) => showSurface(props.thread, terminalKey(id)),
-					(error: unknown) => failed("A terminal could not be opened", error),
-				);
-			},
-		},
-		{
-			label: "Browser",
-			icon: Globe,
-			letter: "B",
-			open: () => {
-				client.openPage(props.thread, undefined, OPENED_PAGE).then(
-					(id) => showSurface(props.thread, pageKey(id)),
-					(error: unknown) => failed("A page could not be opened", error),
-				);
-			},
-		},
+		...(terminals
+			? [
+					{
+						label: "Terminal",
+						icon: SquareTerminal,
+						letter: "T",
+						open: () => {
+							client.openTerminal(props.thread, OPENED_SIZE).then(
+								(id) => showSurface(props.thread, terminalKey(id)),
+								(error: unknown) => failed("A terminal could not be opened", error),
+							);
+						},
+					},
+				]
+			: []),
+		...(browser
+			? [
+					{
+						label: "Browser",
+						icon: Globe,
+						letter: "B",
+						open: () => {
+							client.openPage(props.thread, undefined, OPENED_PAGE).then(
+								(id) => showSurface(props.thread, pageKey(id)),
+								(error: unknown) => failed("A page could not be opened", error),
+							);
+						},
+					},
+				]
+			: []),
 		{ label: "Files", icon: Files, letter: "F", open: () => showSurface(props.thread, "files") },
-		{ label: "Diff", icon: FileDiff, letter: "D", open: () => showSurface(props.thread, "diff") },
+		...(git ? [{ label: "Diff", icon: FileDiff, letter: "D", open: () => showSurface(props.thread, "diff") }] : []),
 	];
 	const close = (tab: Tab, index: number): void => {
 		closeSurface(props.thread, tab.key, (tabs[index - 1] ?? tabs[index + 1])?.key);

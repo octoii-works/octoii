@@ -15,6 +15,7 @@ import type { Device } from "../core/device.ts";
 import { recentModelsOf } from "../core/models.ts";
 import { contentOf } from "../core/attachments.ts";
 import { thingsOf } from "../core/mentions.ts";
+import { useExtension } from "../components/state/extensions.ts";
 import { folderName, type Project, projectsOf } from "../core/threads.ts";
 import { Composer } from "../components/composer/composer.tsx";
 import { FolderChooser } from "../components/files/folder-chooser.tsx";
@@ -38,6 +39,7 @@ type Chosen = { readonly folder: string | undefined };
 export function NewThreadScreen(props: NewThreadScreenProps): ReactNode {
 	const client = useClient();
 	const rows = useThreads() ?? [];
+	const reachesThreads = useExtension("thread");
 	const projects = projectsOf(rows);
 	const [chosen, setChosen] = useState<Chosen | undefined>(undefined);
 	const [choosing, setChoosing] = useState(false);
@@ -74,7 +76,7 @@ export function NewThreadScreen(props: NewThreadScreenProps): ReactNode {
 							sendShortcut={props.device.send_shortcut}
 							draft={{ project: folder }}
 							folder={folder}
-							things={thingsOf(rows, [], [], undefined)}
+							things={thingsOf(reachesThreads ? rows : [], [], [], undefined)}
 							onSend={async ({ text, attachments }) => {
 								const thread = await client.create({
 									...(folder === undefined ? {} : { workspace: folder }),
@@ -114,6 +116,7 @@ function FolderStrip(props: {
 	readonly onChoose: (folder: string | undefined) => void;
 	readonly onAnother: () => void;
 }): ReactNode {
+	const mcp = useExtension("mcp");
 	return (
 		<div className="-mt-5 flex items-center justify-between gap-2 rounded-b-lg border border-t-0 border-border bg-muted px-2 pt-6 pb-1.5">
 			<Menu>
@@ -145,7 +148,7 @@ function FolderStrip(props: {
 					</MenuItem>
 				</MenuPopup>
 			</Menu>
-			<ServersMenu folder={props.folder} />
+			{mcp ? <ServersMenu folder={props.folder} /> : null}
 		</div>
 	);
 }

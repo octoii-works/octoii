@@ -1,7 +1,7 @@
 /**
  * The connection: one WebSocket to the node, speaking the protocol's version, opened as the client starts and again
  * after it drops, waiting longer after each drop up to a bound, the socket authenticated as the app opens it. The node
- * welcomes it first, with the session it knows the client by, its scopes and the machine; then what comes is read in
+ * welcomes it first, with the session it knows the client by, its scopes, the machine and its extensions; then what comes is read in
  * order: an answer settles the call of its id; an event goes to the client — with its bytes, where it came as a binary
  * message — which subscribes again to what it follows on each connection that opens.
  */
@@ -9,12 +9,28 @@ import { RECONNECT_MAX_MS, RECONNECT_MIN_MS } from "./constants.ts";
 import { ClientError, clientError, isConnectionError } from "./errors.ts";
 import { Value } from "./followed.ts";
 import type { ClientOptions, WebSocketLike } from "./options.ts";
-import { type Event, type Machine, type MethodName, type ParamsOf, PROTOCOL, type Received, type ResultOf, type Scope } from "./protocol.ts";
+import {
+	type Event,
+	type ExtensionListed,
+	type Machine,
+	type MethodName,
+	type ParamsOf,
+	PROTOCOL,
+	type Received,
+	type ResultOf,
+	type Scope,
+} from "./protocol.ts";
 
 /** Where the connection stands. */
 export type ConnectionStatus =
 	| { readonly status: "connecting"; readonly attempt: number }
-	| { readonly status: "open"; readonly session: string; readonly scopes: readonly Scope[]; readonly machine: Machine }
+	| {
+			readonly status: "open";
+			readonly session: string;
+			readonly scopes: readonly Scope[];
+			readonly machine: Machine;
+			readonly extensions: readonly ExtensionListed[];
+	  }
 	| { readonly status: "waiting"; readonly until: number; readonly error?: ClientError }
 	| { readonly status: "stopped"; readonly error: ClientError };
 
@@ -134,7 +150,7 @@ export class Connection {
 
 	#welcomed(welcome: Extract<Event, { readonly event: "welcome" }>): void {
 		this.#drops = 0;
-		this.status.set({ status: "open", session: welcome.session, scopes: welcome.scopes, machine: welcome.machine });
+		this.status.set({ status: "open", session: welcome.session, scopes: welcome.scopes, machine: welcome.machine, extensions: welcome.extensions });
 		this.#handlers.opened();
 	}
 

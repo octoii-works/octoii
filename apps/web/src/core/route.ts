@@ -9,6 +9,7 @@ export const SETTINGS_SECTIONS = [
 	{ key: "general", label: "General" },
 	{ key: "models", label: "Models" },
 	{ key: "threads", label: "Threads" },
+	{ key: "extensions", label: "Extensions" },
 	{ key: "keybindings", label: "Keybindings" },
 ] as const;
 

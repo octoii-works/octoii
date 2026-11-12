@@ -71,14 +71,29 @@ export function useSettings(): Settings | undefined {
 	return useFollowed("settings", (client) => client.watchSettings());
 }
 
-/** The thread's terminals, in the order they were opened, watched while a component reads them: none until the node told them. */
-export function useTerminals(thread: string): readonly TerminalListed[] | undefined {
-	return useFollowed(`terminals ${thread}`, (client) => client.watchTerminals(thread));
+/**
+ * The thread's terminals, in the order they were opened, watched while a component reads them: none until the node
+ * told them, and none watched where no thread is named, as where the terminals are switched off.
+ */
+export function useTerminals(thread: string | undefined): readonly TerminalListed[] | undefined {
+	return useFollowed(thread === undefined ? "terminals" : `terminals ${thread}`, (client) =>
+		thread === undefined ? nothing<readonly TerminalListed[]>() : client.watchTerminals(thread),
+	);
 }
 
-/** The thread's pages in the browser, in the order they were opened, watched while a component reads them: none until the node told them. */
-export function usePages(thread: string): readonly PageListed[] | undefined {
-	return useFollowed(`pages ${thread}`, (client) => client.watchPages(thread));
+/**
+ * The thread's pages in the browser, in the order they were opened, watched while a component reads them: none until
+ * the node told them, and none watched where no thread is named, as where the browser is switched off.
+ */
+export function usePages(thread: string | undefined): readonly PageListed[] | undefined {
+	return useFollowed(thread === undefined ? "pages" : `pages ${thread}`, (client) =>
+		thread === undefined ? nothing<readonly PageListed[]>() : client.watchPages(thread),
+	);
+}
+
+/** What follows nothing: no value, ever. */
+function nothing<T>(): Followable<T | undefined> {
+	return { view: () => undefined, subscribe: () => () => undefined, release: () => undefined };
 }
 
 function useProvided(): Provided {

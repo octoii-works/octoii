@@ -25,6 +25,7 @@ import { DetailsButtons, type DetailsProps, InlineDetails } from "../components/
 import { Timeline, type TimelineHandle } from "../components/thread/timeline.tsx";
 import { RightPanel } from "../components/panel/right-panel.tsx";
 import { MessageThreadContext } from "../components/thread/message-thread.ts";
+import { useExtension } from "../components/state/extensions.ts";
 import { thingsOf } from "../core/mentions.ts";
 import type { Thing } from "../core/things.ts";
 import { failed } from "../components/state/notices.ts";
@@ -48,8 +49,9 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 	const conversation = useConversation(thread);
 	const rows = useThreads() ?? [];
 	const row = rows.find((each) => each.id === thread);
-	const terminals = useTerminals(thread) ?? [];
-	const pages = usePages(thread) ?? [];
+	const terminals = useTerminals(useExtension("terminals") ? thread : undefined) ?? [];
+	const pages = usePages(useExtension("browser") ? thread : undefined) ?? [];
+	const reachesThreads = useExtension("thread");
 	const now = useNow(LIMITED_CHECKED_MS);
 	useSeen(thread);
 	// The input the person last sent from here, by the id it was delivered by, which the timeline keeps near its top as
@@ -110,7 +112,7 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 				<Dock
 					thread={thread}
 					row={row}
-					things={thingsOf(rows, terminals, pages, thread)}
+					things={thingsOf(reachesThreads ? rows : [], terminals, pages, thread)}
 					sent={theirs}
 					conversation={conversation}
 					device={props.device}

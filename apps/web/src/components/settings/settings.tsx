@@ -6,7 +6,7 @@
  * not beside the page, and the one that closes settings.
  */
 import { type ReactNode, useRef, useState } from "react";
-import { Keyboard, MessagesSquare, Palette, Search, SlidersHorizontal, Sparkles, X } from "lucide-react";
+import { Keyboard, MessagesSquare, Palette, Puzzle, Search, SlidersHorizontal, Sparkles, X } from "lucide-react";
 import { SETTINGS_SECTIONS, type SettingsSection } from "../../core/route.ts";
 import { type SettingsItem, settingsFound } from "../../core/settings-search.ts";
 import { useIntoView } from "../effects/into-view.ts";
@@ -16,6 +16,7 @@ import { useDevice } from "../state/device.ts";
 import { IconButton } from "../ui/button.tsx";
 import { Input } from "../ui/input.tsx";
 import { Kbd } from "../ui/kbd.tsx";
+import { ExtensionsPage } from "./extensions-page.tsx";
 import { GeneralPage } from "./general-page.tsx";
 import { KeybindingsPage } from "./keybindings-page.tsx";
 import { ModelsPage } from "./models-page.tsx";
@@ -26,6 +27,7 @@ const SECTION_ICONS: Readonly<Record<SettingsSection, typeof Palette>> = {
 	general: SlidersHorizontal,
 	models: Sparkles,
 	threads: MessagesSquare,
+	extensions: Puzzle,
 	keybindings: Keyboard,
 };
 
@@ -142,6 +144,8 @@ function SectionPage(props: { readonly section: SettingsSection }): ReactNode {
 			return <ModelsPage />;
 		case "threads":
 			return <ThreadsPage />;
+		case "extensions":
+			return <ExtensionsPage />;
 		case "keybindings":
 			return <KeybindingsPage device={device} />;
 	}
