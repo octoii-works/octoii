@@ -1,10 +1,12 @@
 /**
  * Sub-threads as the thread that delegated to them shows them: how each stands — as it works, or how its work ended —
- * from its own status where it is listed, from the call that gave it its task where it is not; when they worked; and
- * what a sub-thread said, in a line.
+ * from its own status where it is listed, from the call that gave it its task where it is not; when they worked; what
+ * a sub-thread said, in a line; and those that work in the background.
  */
 import type { Listed } from "@octoii-works/octoii-client";
-import type { CallLine } from "./timeline.ts";
+import { subThreadOf } from "./threads.ts";
+import type { CallLine, Work } from "./timeline.ts";
+import { givenOf } from "./tools.ts";
 
 /** How a sub-thread stands. */
 export type Standing = "running" | "completed" | "failed" | "stopped";
@@ -72,4 +74,15 @@ export function plainLine(text: string): string {
 		.replace(/^[ \t]*[-*][ \t]+/gm, "")
 		.replace(/\s+/g, " ")
 		.trim();
+}
+
+/** The sub-threads of the thread `thread` among `rows` that `work`'s calls gave a task in the background, which work on it still. */
+export function inBackground(work: readonly Work[], rows: readonly Listed[], thread: string): readonly Listed[] {
+	const working: Listed[] = [];
+	for (const step of work) {
+		if (step.kind !== "call" || step.work !== "delegate" || givenOf(step.arguments).background !== true) continue;
+		const row = subThreadOf(rows, thread, step);
+		if (row !== undefined && standingOf(row) === "running" && !working.includes(row)) working.push(row);
+	}
+	return working;
 }

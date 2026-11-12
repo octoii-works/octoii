@@ -1,7 +1,7 @@
 /** Sub-threads as the thread that delegated to them shows them: how each stands, a step's gathered, what one said in a line. */
 import { describe, expect, it } from "bun:test";
 import type { Listed, Status } from "@octoii-works/octoii-client";
-import { plainLine, standingOf, standingsSummary, workedOf } from "../src/core/sub-threads.ts";
+import { inBackground, plainLine, standingOf, standingsSummary, workedOf } from "../src/core/sub-threads.ts";
 import type { CallLine } from "../src/core/timeline.ts";
 
 const sub = (turn: Status["turn"], span: Partial<Pick<Status, "began_at" | "ended_at">> = {}): Listed => ({
@@ -36,6 +36,14 @@ const delegation = (id: string, state: CallLine["state"] = "done"): CallLine => 
 });
 
 describe("sub-threads", () => {
+	it("work in the background where a call gave them their task so, while they work", () => {
+		const given = (id: string, background: boolean): CallLine => ({ ...delegation(id), arguments: JSON.stringify({ task: "x", background }) });
+		const working = { ...sub("running"), id: "s1", parent: { thread: "p", call: "ka" } };
+		const done = { ...sub("replied"), id: "s2", parent: { thread: "p", call: "kb" } };
+		const waited = { ...sub("running"), id: "s3", parent: { thread: "p", call: "kc" } };
+		expect(inBackground([given("a", true), given("b", true), given("c", false)], [working, done, waited], "p").map((row) => row.id)).toEqual(["s1"]);
+	});
+
 	it("stand as their status says, and, where they are not listed, as the call that gave them their task stands", () => {
 		expect(standingOf(sub("created"))).toBe("running");
 		expect(standingOf(sub("running"), delegation("c"))).toBe("running");

@@ -59,6 +59,7 @@ const GivenSchema = Type.Object({
 	expression: Type.Optional(Type.String()),
 	text: Type.Optional(Type.String()),
 	terminal: Type.Optional(Type.Number()),
+	background: Type.Optional(Type.Boolean()),
 });
 
 /** A call's arguments as far as the page reads them. */
