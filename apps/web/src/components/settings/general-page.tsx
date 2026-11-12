@@ -1,7 +1,7 @@
 /**
  * General: what is set for this device, which the node keeps for its session — how Octoii looks (light, dark or the
- * system's; the palette; how wide the chat grows), what sends a message, and how a file and a diff read — and what puts
- * it all back as it came, asked first.
+ * system's; the palette; how wide the chat grows), what sends a message, and how a file and a diff read — whether the
+ * browser lets the page notify; and what puts it all back as it came, asked first.
  */
 import { type ReactNode, useState } from "react";
 import { type Device, type DeviceChange, PALETTES, type PaletteVariables, paletteVariables } from "../../core/device.ts";
@@ -77,6 +77,15 @@ export function GeneralPage(props: GeneralPageProps): ReactNode {
 				</Row>
 				<Row title="Folder tree" description="The Files view shows the folder's tree beside the file." anchor="setting-folder-tree">
 					<Switch aria-label="Folder tree" checked={device.files_tree} onCheckedChange={(files_tree) => set({ files_tree })} />
+				</Row>
+			</Section>
+			<Section title="Notifications">
+				<Row
+					title="System notifications"
+					description="While Octoii is in the background, a thread that waits on you or finishes is told by the system."
+					anchor="setting-notifications"
+				>
+					<SystemNotifications />
 				</Row>
 			</Section>
 			<Section title="This device">
@@ -175,5 +184,18 @@ function Restore(props: { readonly onRestore: () => void }): ReactNode {
 				</Button>
 			)}
 		</Row>
+	);
+}
+
+/** Whether the browser lets the page notify: on, blocked in its settings, not there, or asked as the person says. */
+function SystemNotifications(): ReactNode {
+	const [permission, setPermission] = useState(() => (typeof Notification === "undefined" ? undefined : Notification.permission));
+	if (permission === undefined) return <span className="text-ui text-muted-foreground">Not in this browser</span>;
+	if (permission === "granted") return <span className="text-ui text-muted-foreground">On</span>;
+	if (permission === "denied") return <span className="text-ui text-muted-foreground">Blocked in the browser's settings</span>;
+	return (
+		<Button size="sm" variant="outline" onClick={() => void Notification.requestPermission().then(setPermission)}>
+			Allow
+		</Button>
 	);
 }

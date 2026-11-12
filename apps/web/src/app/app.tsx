@@ -21,6 +21,7 @@ import { ThreadScreen } from "../screens/thread.tsx";
 import { ConnectionLine, PairingPage, unpaired } from "./access.tsx";
 import { NoticesProvider } from "../components/ui/notices.tsx";
 import { useUndo } from "../components/state/marks.ts";
+import { useAttention } from "../components/state/attention.ts";
 
 /** The app. */
 export function App(): ReactNode {
@@ -32,6 +33,7 @@ export function App(): ReactNode {
 	useShortcut("mod+k", () => setPaletteOpen(!paletteOpen));
 	useShortcut("mod+n", () => go({ place: "new" }));
 	useUndo();
+	useAttention(route.place === "thread" ? route.thread : undefined);
 	if (unpaired(connection)) return <PairingPage />;
 	const settings = settingsOf(route);
 	const onSection = (section: SettingsSection | undefined, at?: string): void =>

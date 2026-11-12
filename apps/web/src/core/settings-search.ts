@@ -12,6 +12,7 @@ export const SETTINGS_ITEMS: readonly SettingsItem[] = [
 	{ section: "general", title: "Theme", words: "appearance color colour scheme light dark system", anchor: "setting-theme" },
 	{ section: "general", title: "Palette", words: "appearance color colour accent hue", anchor: "setting-palette" },
 	{ section: "general", title: "Chat width", words: "appearance narrow comfortable wide column messages", anchor: "setting-chat-width" },
+	{ section: "general", title: "System notifications", words: "notify notification alert sound background badge", anchor: "setting-notifications" },
 	{ section: "general", title: "Send shortcut", words: "composer enter keyboard new line", anchor: "setting-send-shortcut" },
 	{ section: "general", title: "Wrap long lines", words: "files diffs wrap scroll", anchor: "setting-wrap-lines" },
 	{ section: "general", title: "Diff layout", words: "files diffs split stacked side by side", anchor: "setting-diff-layout" },
