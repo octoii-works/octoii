@@ -14,7 +14,7 @@ use crate::model::ModelRequest;
 use crate::turn::charge;
 
 /// What a title request asks of the model, after the window.
-pub const INSTRUCTION: &str = "Do not answer the person or do what they ask. Write a title for this thread instead: the topic of what they ask, in at most six words, in the language they wrote in, with no quotes and no full stop. Write the title alone.";
+pub const INSTRUCTION: &str = "Do not answer the person or do what they ask. Write a title for this thread instead: the topic of what they ask, in at most six words, in the language they wrote in, names, paths and numbers kept as written, with no quotes and no full stop. Write the title alone.";
 
 /// The most bytes a title is kept to.
 const TITLE_BYTES_MAX: usize = 80;

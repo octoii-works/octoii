@@ -63,7 +63,7 @@ pub struct ReadTool;
 
 impl Tool for ReadTool {
     const NAME: &'static str = "read";
-    const DESCRIPTION: &'static str = "Reads a file as it is, a page of lines at a time, or lists a directory, a / after each directory's name. A note after the text tells what the page leaves out: the lines it holds and the offset to read on from, lines cut for their length. An image is shown to you as an image; a PDF or a binary file is named for what it is, not shown.";
+    const DESCRIPTION: &'static str = "Reads a file, or lists a directory, a / after each directory's name. Text comes as it is, without line numbers, at most 2000 lines or 48 KB a page; a line longer than 2000 characters is cut. A note after the page gives the lines it holds and the offset to read on from. An image is shown to you; a PDF or other binary file is named, not shown.";
     type Args = ReadArgs;
 
     fn effect(&self, _: &ReadArgs, _: &Base) -> Effect {
@@ -180,8 +180,7 @@ fn edits(base: &Base, path: &str) -> Effect {
 
 impl Tool for WriteTool {
     const NAME: &'static str = "write";
-    const DESCRIPTION: &'static str =
-        "Writes a file whole, making it and its directories where they are missing; gives how many lines it added and took out.";
+    const DESCRIPTION: &'static str = "Writes a file whole, making it and its directories where they are missing. Gives how many lines it added and took out. To change part of a file, use edit.";
     type Args = WriteArgs;
 
     fn effect(&self, args: &WriteArgs, base: &Base) -> Effect {
@@ -227,7 +226,7 @@ pub struct EditTool;
 
 impl Tool for EditTool {
     const NAME: &'static str = "edit";
-    const DESCRIPTION: &'static str = "Replaces text in a file: `old` must match one place, or every place with `all`. It is matched exactly, else with typographic characters (curly quotes, dashes, special spaces) read as plain ones, else line by line with trailing whitespace ignored, a match not exact noted with how it matched. Gives the change as a unified diff. A refusal gives its reason: empty, same (`new` is `old`), not-found (`old` is nowhere in the file), unchanged, many (with how many places matched: give more of `old`, or set `all`).";
+    const DESCRIPTION: &'static str = "Replaces text in a file: `old` must match one place, or every place with `all`. Give in `old` just the lines that make it unique. It is matched exactly, else with typographic characters (curly quotes, dashes, special spaces) read as plain ones, else line by line ignoring trailing whitespace; a match not exact is noted with how it matched. Gives the change as a unified diff. A refusal gives its reason: empty, same (`new` is `old`), not-found (`old` is nowhere in the file), unchanged, many (how many places matched: give more of `old`, or set `all`).";
     type Args = EditArgs;
 
     fn effect(&self, args: &EditArgs, base: &Base) -> Effect {
@@ -289,8 +288,7 @@ pub struct GlobTool;
 
 impl Tool for GlobTool {
     const NAME: &'static str = "glob";
-    const DESCRIPTION: &'static str =
-        "Finds the files under a directory whose paths match a glob, honouring ignore files: their paths one to a line, the newest first.";
+    const DESCRIPTION: &'static str = "Finds the files under a directory whose paths match a glob, honouring ignore files: their paths one a line, the newest first, 200 a page; a note gives the offset to go on from.";
     type Args = GlobArgs;
 
     fn effect(&self, _: &GlobArgs, _: &Base) -> Effect {
@@ -349,8 +347,10 @@ pub struct GrepArgs {
     pub path: String,
     /// Only files whose paths match it: their names, for a glob of no /.
     pub glob: Option<String>,
+    /// Take `pattern` as plain text.
     #[serde(default)]
     pub literal: bool,
+    /// Match letters of either case.
     #[serde(default)]
     pub case_insensitive: bool,
     /// Lines shown around each match.
@@ -367,7 +367,7 @@ pub struct GrepTool;
 
 impl Tool for GrepTool {
     const NAME: &'static str = "grep";
-    const DESCRIPTION: &'static str = "Finds the lines a regular expression matches in the files under a directory, or in one file, honouring ignore files: each as path:line: text, a line around it as path:line- text. Binary files are passed over, and counted.";
+    const DESCRIPTION: &'static str = "Finds the lines a regular expression matches, in ripgrep's syntax, in the files under a directory or in one file, honouring ignore files: each as `path:line: text`, a line around it as `path:line- text`, 250 matches a page, a note giving the offset to go on from. A line longer than 500 characters is cut. Binary files are passed over, and counted.";
     type Args = GrepArgs;
 
     fn effect(&self, _: &GrepArgs, _: &Base) -> Effect {

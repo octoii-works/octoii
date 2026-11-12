@@ -3912,6 +3912,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "image",
+ "insta",
  "iroh",
  "oauth2",
  "octoii-ai",
@@ -3923,6 +3924,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.1",
  "siphon",
+ "siphon-agent",
  "siphon-browser",
  "siphon-claude-code",
  "siphon-image",
@@ -5543,6 +5545,7 @@ dependencies = [
 name = "siphon"
 version = "0.0.1"
 dependencies = [
+ "anyhow",
  "beak",
  "bytes",
  "nucleo-matcher",

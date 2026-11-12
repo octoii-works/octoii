@@ -73,7 +73,7 @@ fn conversation() -> Request {
                 is_error: false,
             }),
             Item::Message(Message::Developer {
-                content: vec![InputContent::text("<system-update>the date changed</system-update>")],
+                content: vec![InputContent::text("<system-reminder>the date changed</system-reminder>")],
             }),
             Item::ConfigurationUpdate(ConfigurationUpdate {
                 effort: ReasoningEffort::High,
@@ -133,7 +133,7 @@ async fn deepseek_takes_developer_messages_as_the_systems_and_no_caches_name() {
         .find(|item| {
             item["content"][0]["text"]
                 .as_str()
-                .is_some_and(|text| text.contains("system-update"))
+                .is_some_and(|text| text.contains("system-reminder"))
         })
         .expect("the update");
     assert_eq!(update["role"], "system");

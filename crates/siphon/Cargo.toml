@@ -11,6 +11,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+anyhow = "1.0.104"
 bytes = "1.12.1"
 beak = { path = "../../vendor/beak/crates/beak" }
 octoii-ai = { path = "../octoii-ai" }

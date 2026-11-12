@@ -56,7 +56,7 @@ pub fn request(thread: &str, reference: &str, served: Option<&Model>, window: &W
                 }
             }
             Entry::Input { content, .. } => input.push(Item::Message(Message::User { content: content.clone() })),
-            Entry::System { sections, .. } if !sections.is_empty() => input.push(told(sections)),
+            Entry::System { sections, .. } if !sections.is_empty() => input.push(told_again(sections)),
             Entry::Reply { response, .. } => input.extend(response.output.iter().cloned()),
             Entry::Result { output, .. } => input.push(Item::FunctionCallOutput(output.clone())),
             Entry::TurnEnd {
@@ -90,13 +90,26 @@ pub fn request(thread: &str, reference: &str, served: Option<&Model>, window: &W
 }
 
 /// A system entry's sections as the model is sent them: a part for each, its text as the entry holds it, or a note of
-/// a section no longer told.
+/// a section that no longer applies.
 fn told(sections: &[Section]) -> Item {
     let parts = sections
         .iter()
         .map(|section| match &section.text {
             Some(text) => InputContent::text(text.clone()),
-            None => InputContent::text(format!("[{} is no longer told]", section.name)),
+            None => InputContent::text(format!("The section {} no longer applies.", section.name)),
+        })
+        .collect();
+    developer(parts)
+}
+
+/// A later system entry's sections as the model is sent them: each changed section, named as the one it replaces, or
+/// named as one that no longer applies.
+fn told_again(sections: &[Section]) -> Item {
+    let parts = sections
+        .iter()
+        .map(|section| match &section.text {
+            Some(text) => InputContent::text(format!("The section {} is now:\n{text}", section.name)),
+            None => InputContent::text(format!("The section {} no longer applies.", section.name)),
         })
         .collect();
     developer(parts)

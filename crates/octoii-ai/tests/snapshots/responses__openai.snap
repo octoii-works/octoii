@@ -47,7 +47,7 @@ expression: "sent_to(&OPENAI, \"openai\", \"gpt-6-sol\", &conversation()).await"
     {
       "content": [
         {
-          "text": "<system-update>the date changed</system-update>",
+          "text": "<system-reminder>the date changed</system-reminder>",
           "type": "input_text"
         }
       ],

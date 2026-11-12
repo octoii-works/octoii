@@ -1,7 +1,7 @@
 //! Anthropic's Messages API. A request's instructions and the updates before every other item make its system; the
 //! person's items make user turns, a call's results first; what the model wrote makes assistant turns, its own blocks
 //! sent back as they came; an update waits for the end of the person's turn, then stands as a system message, or as a
-//! `<system-update>` in the person's turn where the model takes no system message or the turn holds nothing of the
+//! `<system-reminder>` in the person's turn where the model takes no system message or the turn holds nothing of the
 //! person's. An effort changed where it stands goes there where the model takes it, else is folded into the request's.
 //! The stream's content blocks come back as items — text blocks one message, each thinking block reasoning, each
 //! `tool_use` a call, each search with its results a web search — each keeping the blocks it came as where the model
@@ -307,13 +307,13 @@ impl Conversation<'_> {
     }
 
     /// Places the updates waiting: after the person's turn as a system message where the model takes one, else as
-    /// `<system-update>` text in the person's turn; an effort changed where it stands.
+    /// `<system-reminder>` text in the person's turn; an effort changed where it stands.
     fn flush(&mut self) {
         let texts = std::mem::take(&mut self.texts);
         let effort = self.effort.take();
         let as_system = self.takes_system && self.user_in_turn;
         if !as_system {
-            let tagged = texts.iter().map(|text| text_block(&super::system_update(text))).collect();
+            let tagged = texts.iter().map(|text| text_block(&super::system_reminder(text))).collect();
             self.user(tagged);
         }
         let content: Vec<Value> = if as_system {

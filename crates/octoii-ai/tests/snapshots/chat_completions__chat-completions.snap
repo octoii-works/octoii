@@ -56,7 +56,7 @@ expression: body
           "type": "text"
         },
         {
-          "text": "<system-update>\nthe date changed\n</system-update>",
+          "text": "<system-reminder>\nthe date changed\n</system-reminder>",
           "type": "text"
         }
       ],

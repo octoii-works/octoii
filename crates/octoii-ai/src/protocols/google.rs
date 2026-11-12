@@ -1,7 +1,7 @@
 //! Google's Interactions API. A request goes as an interaction: the instructions and the leading updates as its
 //! `system_instruction`, the conversation as steps — the person's input, the model's output, its calls by Gemini's ids
 //! and their results naming them, its thoughts and Google's searches as the model wrote them — later updates inside
-//! `<system-update>` at the end of the person's turn, files inline, text files as their text, and the settings in its
+//! `<system-reminder>` at the end of the person's turn, files inline, text files as their text, and the settings in its
 //! `generation_config`, kept nowhere, streamed. Its steps come back as items: an item whose step stopped is ended once
 //! the next step starts or the interaction ends, as the end may cut it off.
 
@@ -176,7 +176,7 @@ impl Builder<'_> {
                     })
                     .collect();
                 self.waiting
-                    .push(json!({ "type": "text", "text": super::system_update(&text.join(JOINER)) }));
+                    .push(json!({ "type": "text", "text": super::system_reminder(&text.join(JOINER)) }));
                 for file in files {
                     let block = self.block(file)?;
                     self.waiting.push(block);

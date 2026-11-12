@@ -68,11 +68,11 @@ pub fn context_too_long(message: &str) -> bool {
     SAID.iter().any(|words| lowered.contains(words))
 }
 
-/// An update of the instructions inside `<system-update>`, for a model that takes it as the person's text: escaped so
-/// it cannot close its tag.
+/// A system reminder — what the host tells the model after the start — inside `<system-reminder>`, for a model that
+/// takes it as the person's text: escaped so it cannot close its tag.
 #[must_use]
-pub fn system_update(words: &str) -> String {
-    format!("<system-update>\n{}\n</system-update>", escaped(words, "</system-update"))
+pub fn system_reminder(words: &str) -> String {
+    format!("<system-reminder>\n{}\n</system-reminder>", escaped(words, "</system-reminder"))
 }
 
 /// A text file's text inside `<file>`, with its name where it has one, for a model that takes no text files: escaped

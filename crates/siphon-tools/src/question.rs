@@ -50,7 +50,7 @@ pub struct QuestionTool;
 
 impl Tool for QuestionTool {
     const NAME: &'static str = "question";
-    const DESCRIPTION: &'static str = "Asks the person some questions at once, each with options to choose one of, or several with multiple, or with none to answer in words; they may answer in words of their own instead of an option, leave any unanswered, or dismiss them all. Ask only what you cannot find out yourself, and what changes what you do.";
+    const DESCRIPTION: &'static str = "Asks the person some questions at once, each with options to choose one of, or several with `multiple`, or none to answer in words. They may answer in words of their own instead, leave any unanswered, or dismiss them all. Put the option you recommend first, \"(recommended)\" after its label. Ask only what you cannot find out yourself and what changes what you do.";
     type Args = QuestionArgs;
 
     fn effect(&self, _: &QuestionArgs, _: &Base) -> Effect {

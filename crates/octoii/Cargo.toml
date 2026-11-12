@@ -56,6 +56,8 @@ oauth2 = { version = "5.0.0", default-features = false }
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls"] }
 
 [dev-dependencies]
+siphon-agent = { path = "../siphon-agent" }
+insta = "1.49.0"
 siphon-threads = { path = "../siphon-threads" }
 net = { package = "iroh", version = "1.4.1", features = ["test-utils"] }
 futures-util = "0.3.34"

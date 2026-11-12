@@ -20,7 +20,6 @@ use siphon_threads::Mode;
 use siphon_threads::CallStatus;
 
 use crate::calls::{Calls, Setting, State};
-use crate::declarations::declarations;
 use crate::effect::Effect;
 use crate::told::Told;
 use crate::tool::{Context, Refusal, Tool, Tools};
@@ -81,7 +80,7 @@ pub struct ScriptOutput {
 
 impl Tool for ExecuteTool {
     const NAME: &'static str = "execute";
-    const DESCRIPTION: &'static str = "Runs JavaScript that calls the tools of `tools` — those below, and those of the MCP servers you are told of — in loops, at once with Promise.all, working on what they give in code — as the body of an async function — await within it, return what it gives — and gives what it returned, as JSON, and what it wrote with console.log. Each tool takes its arguments as one object and resolves to what it gives, as text; a call the tool refuses rejects. Use it for work of many steps at once: many files read or changed, a page's many actions, a batch extracted.";
+    const DESCRIPTION: &'static str = "Runs JavaScript as the body of an async function, calling tools through `tools`: `await tools.read({ path: \"a.txt\" })` resolves to what the tool gives, as text, and rejects where the tool refuses. Call them in loops, at once with Promise.all, and work on what they give in code. Gives what the script returned, as JSON, and what it wrote with console.log. Use it for work of many steps: many files read or changed, a page's many actions, a batch extracted.";
     type Args = ExecuteArgs;
 
     fn effect(&self, _: &ExecuteArgs, _: &Base) -> Effect {
@@ -93,10 +92,11 @@ impl Tool for ExecuteTool {
     }
 
     fn described(&self) -> String {
+        let names: Vec<String> = self.tools.declared().into_iter().map(|declared| declared.name).collect();
         format!(
-            "{}\n\n{}\ndeclare const tools: Tools;",
+            "{} `tools` holds {}, each taking the arguments its function does, and the MCP servers' tools of <catalog>.",
             Self::DESCRIPTION,
-            declarations(&self.tools.declared())
+            names.join(", ")
         )
     }
 

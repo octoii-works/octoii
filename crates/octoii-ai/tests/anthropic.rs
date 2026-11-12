@@ -121,7 +121,10 @@ fn an_update_is_the_persons_tagged_text_for_a_model_that_takes_no_system_message
     assert_eq!(turn["role"], "user");
     assert_eq!(turn["content"][0]["type"], "tool_result", "a call's result first in its turn");
     assert_eq!(turn["content"][1]["text"], "and summarize");
-    assert_eq!(turn["content"][2]["text"], "<system-update>\nthe date changed\n</system-update>");
+    assert_eq!(
+        turn["content"][2]["text"],
+        "<system-reminder>\nthe date changed\n</system-reminder>"
+    );
 }
 
 #[test]

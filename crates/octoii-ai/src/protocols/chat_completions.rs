@@ -1,7 +1,7 @@
 //! Chat Completions, which Z.ai and the servers on the person's machine speak. A request goes as its messages: the
 //! instructions and the updates before every other item one `system` message; each turn of the person's its call
 //! results as `tool` messages, then a user message of the files they held, then the person's messages, its updates
-//! inside `<system-update>` at the end of the last of them; and what the model wrote between two of the person's turns
+//! inside `<system-reminder>` at the end of the last of them; and what the model wrote between two of the person's turns
 //! as assistant messages of `reasoning_content`, text and `tool_calls`. Functions are its only tools. Its chunks come
 //! back as the vocabulary's events.
 
@@ -259,7 +259,7 @@ impl Conversation<'_> {
             let tagged = turn
                 .updates
                 .iter()
-                .map(|update| json!({ "type": "text", "text": super::system_update(update) }));
+                .map(|update| json!({ "type": "text", "text": super::system_reminder(update) }));
             match turn.users.last_mut() {
                 Some(last) => last.extend(tagged),
                 None => turn.users.push(tagged.collect()),

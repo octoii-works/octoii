@@ -231,6 +231,17 @@ pub trait Toolset: Send + Sync + 'static {
     ) -> Pin<Box<dyn Future<Output = Result<Told, Refusal>> + Send + 'a>>;
 }
 
+/// A tool's parameters as the model is given them: their JSON Schema without what speaks to a schema's reader rather than
+/// to the model — the dialect, and the Rust type's name and doc.
+fn parameters(mut schema: serde_json::Value) -> serde_json::Value {
+    if let Some(object) = schema.as_object_mut() {
+        for key in ["$schema", "title", "description"] {
+            object.remove(key);
+        }
+    }
+    schema
+}
+
 /// The tools a thread's model may call, by name: its own, and those of its toolsets.
 #[derive(Clone, Default)]
 pub struct Tools {
@@ -256,7 +267,7 @@ impl Tools {
         let declared = Declared {
             name: T::NAME.to_owned(),
             description: tool.described(),
-            parameters: schemars::schema_for!(T::Args).to_value(),
+            parameters: parameters(schemars::schema_for!(T::Args).to_value()),
         };
         Arc::make_mut(&mut self.entries).insert(
             T::NAME.to_owned(),

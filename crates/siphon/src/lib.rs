@@ -17,7 +17,7 @@ use octoii_ai::models::{Host as Network, Models, Provider};
 use octoii_ai::transport::Transport;
 use siphon_agent::{
     CompactProgram, DelegateProgram, DelegateTool, DelegatedProgram, Gather, ModelRequest, ResumeProgram, Sources, ThreadProgram,
-    TitleProgram, TurnProgram, answer_gather, answer_model, answer_review,
+    TitleProgram, Told, TurnProgram, answer_gather, answer_model, answer_review,
 };
 use siphon_machine::Host;
 use siphon_protocol::Scope;
@@ -60,6 +60,7 @@ pub struct Siphon {
     pub sign_in: Arc<providers::SignInSetup>,
     pub sign_ins: providers::SignIns,
     pub(crate) registry: Arc<plugin::Registry>,
+    sources: Sources,
 }
 
 impl Siphon {
@@ -67,6 +68,15 @@ impl Siphon {
     #[must_use]
     pub fn sets(&self) -> &[siphon_protocol::Set] {
         &self.registry.sets
+    }
+
+    /// What the model of the thread `id` is told now, as it would be gathered before its next turn: its sections, its
+    /// tools, and the names its scripts may call.
+    ///
+    /// # Errors
+    /// The volume's failure; a thread's settings not as Siphon writes them.
+    pub async fn told(&self, id: &str) -> anyhow::Result<Told> {
+        siphon_agent::gather::gathered(&self.sources, &self.runtime, id).await
     }
 
     /// The machine as the person reads it, beside the threads: their paths taken whole, from the root, read alone, what
@@ -238,7 +248,14 @@ impl Building {
             .with(DelegateTool);
         let hosts = Arc::new(providers);
         let models = Arc::new(Models::new(network, hosts.to_vec(), catalogue));
-        let runtime = programs(runtime, &machine, config, &models, tellers, inner, outer).start_on((kernel, events), options)?;
+        let sources = Sources {
+            tools: outer.clone(),
+            tellers,
+            models: Arc::clone(&models),
+            host: machine.clone(),
+            config,
+        };
+        let runtime = programs(runtime, &machine, &models, sources.clone(), inner, outer).start_on((kernel, events), options)?;
         let siphon = Siphon {
             machine,
             threads: Threads::new(runtime.clone()),
@@ -249,6 +266,7 @@ impl Building {
             sign_in: Arc::new(sign_in),
             sign_ins: providers::SignIns::start(),
             registry: Arc::new(registry),
+            sources,
         };
         // The accounts the person added are providers beside the host's.
         if let Err(providers::Refused::Beak(error)) = providers::refreshed(&siphon.runtime, &siphon.models, &siphon.providers) {
@@ -263,19 +281,11 @@ impl Building {
 fn programs(
     runtime: siphon_runtime::Builder,
     machine: &Host,
-    config: Option<std::path::PathBuf>,
     models: &Arc<Models>,
-    tellers: Vec<Arc<dyn siphon_agent::Teller>>,
+    sources: Sources,
     inner: Tools,
     tools: Tools,
 ) -> siphon_runtime::Builder {
-    let sources = Sources {
-        tools: tools.clone(),
-        tellers,
-        models: Arc::clone(models),
-        host: machine.clone(),
-        config,
-    };
     let (gathering, asking, reviewing) = (sources, Arc::clone(models), Arc::clone(models));
     let (execs, host) = (tools.clone(), machine.clone());
     runtime
