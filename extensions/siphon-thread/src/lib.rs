@@ -9,9 +9,9 @@ use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
 
-use siphon::agent::{Teller, Telling};
+use siphon::agent::{Shared, Teller, Telling};
 use siphon::tools::projects::Place;
-use siphon::{Builder, Extension};
+use siphon::{Extension, Registrar};
 use siphon_runtime::Runtime;
 pub use tool::{ThreadAction, ThreadTool, ThreadToolInput, ThreadToolProgram};
 
@@ -32,11 +32,11 @@ impl Extension for ThreadExtension {
         "The model starts, messages and stops the person's other threads when asked, and reads what threads did before."
     }
 
-    fn build(self: Box<Self>, builder: &mut Builder) {
-        builder.tools(|tools| tools.with(ThreadTool));
-        builder.runtime(|runtime| runtime.program(ThreadToolProgram));
-        if let Some(folder) = builder.machine.threads.clone() {
-            builder.teller(Arc::new(Folder(folder)));
+    fn build(self: Box<Self>, registrar: &mut Registrar<'_>) {
+        registrar.tool(ThreadTool);
+        registrar.runtime(|runtime| runtime.program(ThreadToolProgram));
+        if let Some(folder) = registrar.machine().threads.clone() {
+            registrar.teller(Shared::Thread, Arc::new(Folder(folder)));
         }
     }
 }

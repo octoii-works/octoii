@@ -8,11 +8,11 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use siphon::agent::{Teller, Telling};
+use siphon::agent::{Shared, Teller, Telling};
 use siphon::protocol::Error;
 use siphon::tools::projects::Place;
 use siphon::tools::{Context, Refusal, Toolset};
-use siphon::{Builder, Caller, Extension};
+use siphon::{Caller, Extension, Registrar};
 use siphon_runtime::{Changes, Runtime};
 
 use crate::protocol;
@@ -39,17 +39,17 @@ impl Extension for McpExtension {
         "The tools of the MCP servers the person and the project configure."
     }
 
-    fn build(self: Box<Self>, builder: &mut Builder) {
-        let servers = Servers::start(builder.machine.clone(), self.config.as_deref());
+    fn build(self: Box<Self>, registrar: &mut Registrar<'_>) {
+        let servers = Servers::start(registrar.machine().clone(), self.config.as_deref());
         let toolset: Arc<dyn Toolset> = Arc::new(servers.clone());
-        builder.tools(|tools| tools.with_toolset(toolset));
-        builder.runtime(|runtime| runtime.program(TrustProgram).ask_person::<Trust>());
+        registrar.toolset(toolset);
+        registrar.runtime(|runtime| runtime.program(TrustProgram).ask_person::<Trust>());
         let listing = servers.clone();
-        builder.methods(protocol::set(), protocol::Method::read, move |caller: Caller, method| {
+        registrar.methods(protocol::set(), protocol::Method::read, move |caller: Caller, method| {
             let servers = listing.clone();
             async move { answered(&servers, &caller, method).await }
         });
-        builder.teller(Arc::new(servers));
+        registrar.teller(Shared::Project, Arc::new(servers));
     }
 }
 

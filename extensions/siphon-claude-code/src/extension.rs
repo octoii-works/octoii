@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use octoii_ai::models::Provider;
-use siphon::{Builder, Extension};
+use siphon::{Extension, Registrar};
 
 use crate::account::{self, Place};
 use crate::driver::ClaudeCode;
@@ -32,18 +32,18 @@ impl Extension for ClaudeCodeExtension {
         "Claude's models through Claude Code, signed in with a Claude account."
     }
 
-    fn build(self: Box<Self>, builder: &mut Builder) {
-        let program = self.program.or_else(|| account::found(builder.machine.home.as_deref()));
+    fn build(self: Box<Self>, registrar: &mut Registrar<'_>) {
+        let program = self.program.or_else(|| account::found(registrar.machine().home.as_deref()));
         let place = Place {
-            kernel: builder.kernel.clone(),
-            machine: builder.machine.clone(),
+            kernel: registrar.kernel().clone(),
+            machine: registrar.machine().clone(),
             program,
             folder: self.folder,
         };
         let _ = std::fs::create_dir_all(place.work());
         let claude = Arc::new(ClaudeCode::new(place));
         let forgetting = Arc::clone(&claude);
-        builder.on_thread_deleted(move |thread| forgetting.forget_conversation(thread));
-        builder.provider(Provider::of(claude));
+        registrar.on_thread_deleted(move |thread| forgetting.forget_conversation(thread));
+        registrar.provider(Provider::of(claude));
     }
 }

@@ -4,7 +4,7 @@
 
 use serde_json::{Value, json};
 use siphon::protocol::{Error, Nothing, Scope};
-use siphon::{Builder, Caller, Extension, Lagged, Subscription};
+use siphon::{Caller, Extension, Lagged, Registrar, Subscription};
 use tokio::sync::broadcast::error::RecvError;
 
 use crate::protocol::{self, BrowserEvent, BrowserTopic, Method, PageDialog, PageKey, PageListed, PageMouse, View};
@@ -32,24 +32,24 @@ impl Extension for BrowserExtension {
         "A Chrome of the thread's own, beside the chat, that the model reads and works and the person watches."
     }
 
-    fn build(self: Box<Self>, builder: &mut Builder) {
+    fn build(self: Box<Self>, registrar: &mut Registrar<'_>) {
         let browser = Browser::start(BrowserHost {
-            kernel: builder.kernel.clone(),
-            machine: builder.machine.clone(),
+            kernel: registrar.kernel().clone(),
+            machine: registrar.machine().clone(),
             program: self.program,
             profile: self.profile,
             downloads: self.downloads,
         });
         let closing = browser.clone();
-        builder.on_thread_deleted(move |thread| closing.close_thread(thread));
+        registrar.on_thread_deleted(move |thread| closing.close_thread(thread));
         let tool = BrowserTool { browser: browser.clone() };
-        builder.tools(|tools| tools.with(tool));
+        registrar.tool(tool);
         let doing = browser.clone();
-        builder.methods(protocol::set(), Method::read, move |_: Caller, method| {
+        registrar.methods(protocol::set(), Method::read, move |_: Caller, method| {
             let browser = doing.clone();
             async move { answered(&browser, method).await }
         });
-        builder.topics(Scope::BrowserOperate, move |subscription: Subscription, topic: BrowserTopic| {
+        registrar.topics(Scope::BrowserOperate, move |subscription: Subscription, topic: BrowserTopic| {
             let browser = browser.clone();
             async move { told(&browser, &subscription, topic).await }
         });

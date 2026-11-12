@@ -196,11 +196,18 @@ fn runtime(beak: &Beak, script: &Arc<Script>) -> Runtime {
     let models = models(script);
     let sources = Sources {
         tools: tools.clone(),
-        tellers: Vec::new(),
+        tellers: Sources::ordered(
+            siphon::agent::sections::tellers(&Machine::default(), None)
+                .into_iter()
+                .map(|(shared, teller)| siphon::agent::OwnedTeller {
+                    extension: siphon::agent::CORE.to_owned(),
+                    shared,
+                    teller,
+                })
+                .collect(),
+        ),
         owners: std::collections::HashMap::new(),
         models: Arc::clone(&models),
-        host: Machine::default(),
-        config: None,
     };
     let execs = tools.clone();
     Runtime::builder()

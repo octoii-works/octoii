@@ -21,8 +21,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::agent::{
-    CompactProgram, DelegatedProgram, Gather, ModelRequest, ResumeProgram, Sources, ThreadProgram, TitleProgram, Told, TurnProgram,
-    answer_gather, answer_model, answer_review,
+    CORE, CompactProgram, DelegatedProgram, Gather, ModelRequest, ResumeProgram, Sources, ThreadProgram, TitleProgram, Told, TurnProgram,
+    answer_gather, answer_model, answer_review, sections,
 };
 use crate::machine::Host;
 use crate::protocol::Scope;
@@ -38,7 +38,7 @@ use octoii_ai::models::{Host as Network, Models, Provider};
 use octoii_ai::transport::Transport;
 use siphon_runtime::{Asked, Options, Runtime};
 
-pub use extension::{Builder, Caller, Extension, Full, Lagged, Sink, Subscription};
+pub use extension::{Caller, Extension, Full, Lagged, Registrar, Sink, Subscription};
 pub use kept::{Ends, Kept};
 
 /// What Siphon is built on: the machine its work is done on; the folder of the person's own configuration, for every
@@ -129,8 +129,7 @@ impl Siphon {
 
 /// Siphon being built: what its extensions add to, and what it is started with.
 pub struct Building {
-    pub builder: Builder,
-    config: Option<std::path::PathBuf>,
+    builder: extension::Builder,
     sign_in: providers::SignInSetup,
     credentials: Arc<dyn Credentials>,
     events: Events,
@@ -188,20 +187,13 @@ impl Siphon {
             kernel,
             machine,
             runtime: Runtime::builder(),
-            tools: Tools::new()
-                .with(ReadTool)
-                .with(WriteTool)
-                .with(EditTool)
-                .with(GlobTool)
-                .with(GrepTool)
-                .with(ShellTool)
-                .with(ExecuteTool),
+            tools: Tools::new(),
             owners: HashMap::new(),
             providers,
             tellers: Vec::new(),
             registry: extension::Registry::default(),
-            adding: String::new(),
         };
+        own(&mut builder.registrar(CORE), config.as_deref());
         builder.methods(
             crate::protocol::siphon::set(),
             crate::protocol::siphon::Method::read,
@@ -210,7 +202,6 @@ impl Siphon {
         builder.topics(Scope::ThreadsRead, connection::told);
         Ok(Building {
             builder,
-            config,
             sign_in,
             credentials,
             events,
@@ -260,7 +251,6 @@ impl Building {
     pub fn start(self) -> beak::Result<Siphon> {
         let Building {
             builder,
-            config,
             sign_in,
             credentials,
             events,
@@ -277,17 +267,14 @@ impl Building {
             providers,
             tellers,
             registry,
-            ..
         } = builder;
         let hosts = Arc::new(providers);
         let models = Arc::new(Models::new(network, hosts.to_vec(), catalogue));
         let sources = Sources {
             tools: tools.clone(),
-            tellers,
             owners,
+            tellers: Sources::ordered(tellers),
             models: Arc::clone(&models),
-            host: machine.clone(),
-            config,
         };
         let runtime = programs(runtime, &machine, &models, sources.clone(), tools).start_on((kernel, events), options)?;
         let siphon = Siphon {
@@ -307,6 +294,23 @@ impl Building {
             return Err(error);
         }
         Ok(siphon)
+    }
+}
+
+/// What Siphon adds as its own, through `registrar`: the coding tools and `execute`; and what tells a thread's model the
+/// base, the instructions it follows and the skills it may use — found in the folder of the person's configuration
+/// `config` and the project's — its memory of the project, and the environment it works in.
+fn own(registrar: &mut Registrar<'_>, config: Option<&std::path::Path>) {
+    registrar.tool(ReadTool);
+    registrar.tool(WriteTool);
+    registrar.tool(EditTool);
+    registrar.tool(GlobTool);
+    registrar.tool(GrepTool);
+    registrar.tool(ShellTool);
+    registrar.tool(ExecuteTool);
+    let host = registrar.machine().clone();
+    for (shared, teller) in sections::tellers(&host, config) {
+        registrar.teller(shared, teller);
     }
 }
 

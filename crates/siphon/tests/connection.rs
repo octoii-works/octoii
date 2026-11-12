@@ -8,7 +8,7 @@ use beak::Beak;
 use serde_json::{Value, json};
 use siphon::protocol::Scope;
 use siphon::testing::{self, Client};
-use siphon::{Builder, Caller, Extension, Lagged, Siphon, Subscription};
+use siphon::{Caller, Extension, Lagged, Registrar, Siphon, Subscription};
 
 fn siphon(beak: &Beak) -> Siphon {
     let setup = testing::setup(siphon::machine::Host::default());
@@ -64,12 +64,12 @@ impl Extension for Echo {
         "Says back what it is told."
     }
 
-    fn build(self: Box<Self>, builder: &mut Builder) {
-        builder.methods(echo::set(), echo::Method::read, |_: Caller, method| async move {
+    fn build(self: Box<Self>, registrar: &mut Registrar<'_>) {
+        registrar.methods(echo::set(), echo::Method::read, |_: Caller, method| async move {
             let echo::Method::Say(said) = method;
             Ok(serde_json::to_value(said).unwrap_or_default())
         });
-        builder.topics(
+        registrar.topics(
             Scope::TerminalsOperate,
             |subscription: Subscription, topic: echo::EchoTopic| async move {
                 let echo::EchoTopic::Echo { words } = topic;

@@ -11,6 +11,7 @@ pub mod model;
 pub mod render;
 pub mod resume;
 pub mod review;
+pub mod sections;
 pub mod skills;
 pub mod thread;
 pub mod title;
@@ -20,7 +21,7 @@ pub mod waiting;
 
 pub use compaction::{CompactInput, CompactProgram};
 pub use context::{Composition, ContextPart, Share};
-pub use gather::{Gather, Sources, Teller, Telling, answer_gather};
+pub use gather::{CORE, Gather, OwnedTeller, Shared, Sources, Teller, Telling, answer_gather};
 pub use model::{ModelRequest, Streamed, answer_model};
 pub use resume::{ResumeInput, ResumeProgram};
 pub use review::answer_review;

@@ -21,6 +21,7 @@ use tokio::sync::mpsc::{self, error::TrySendError};
 use tokio_util::sync::CancellationToken;
 
 use crate::Siphon;
+use crate::agent::{OwnedTeller, Shared};
 use crate::connection::{Outgoing, text};
 
 /// An extension: its name, which settings switch it by; the words it is shown by and a line of what it brings; and
@@ -29,7 +30,7 @@ pub trait Extension {
     fn name(&self) -> &'static str;
     fn title(&self) -> &'static str;
     fn description(&self) -> &'static str;
-    fn build(self: Box<Self>, builder: &mut Builder);
+    fn build(self: Box<Self>, registrar: &mut Registrar<'_>);
 }
 
 /// Who a call or a subscription is for: Siphon, and the session of the client that made it.
@@ -134,17 +135,16 @@ impl Sink {
 
 /// What Siphon is built of as its extensions add to it: the kernel opened and the machine, for what an extension starts on
 /// them; the runtime's programs and handlers; the tools, and the extension each came from; the providers; the tellers,
-/// each by its extension; the methods and topics; and the extension being added, which what it adds is held by.
-pub struct Builder {
-    pub kernel: Kernel,
-    pub machine: Host,
+/// each by its extension; and the methods and topics.
+pub(crate) struct Builder {
+    pub(crate) kernel: Kernel,
+    pub(crate) machine: Host,
     pub(crate) runtime: siphon_runtime::Builder,
     pub(crate) tools: Tools,
     pub(crate) owners: HashMap<String, String>,
     pub(crate) providers: Vec<Provider>,
-    pub(crate) tellers: Vec<(String, Arc<dyn crate::agent::Teller>)>,
+    pub(crate) tellers: Vec<OwnedTeller>,
     pub(crate) registry: Registry,
-    pub(crate) adding: String,
 }
 
 impl std::fmt::Debug for Builder {
@@ -154,35 +154,24 @@ impl std::fmt::Debug for Builder {
 }
 
 impl Builder {
-    /// The runtime's builder, as `add` leaves it: programs, handlers and requests the person answers added.
-    pub fn runtime(&mut self, add: impl FnOnce(siphon_runtime::Builder) -> siphon_runtime::Builder) {
-        let runtime = std::mem::replace(&mut self.runtime, siphon_runtime::Runtime::builder());
-        self.runtime = add(runtime);
+    /// What adds to Siphon as `extension`, everything it adds held as that extension's.
+    pub(crate) fn registrar(&mut self, extension: &'static str) -> Registrar<'_> {
+        Registrar { builder: self, extension }
     }
 
-    /// The tools of a thread's model and its scripts, as `add` leaves them.
-    pub fn tools(&mut self, add: impl FnOnce(Tools) -> Tools) {
-        self.tools = add(std::mem::take(&mut self.tools));
-    }
-
-    /// What tells a thread's model of the place it works in, before each turn.
-    pub fn teller(&mut self, teller: Arc<dyn crate::agent::Teller>) {
-        self.tellers.push((self.adding.clone(), teller));
-    }
-
-    /// What to do as a thread is deleted, given its id: what the extension held for it let go of, as a process's
-    /// resources go with it.
-    pub fn on_thread_deleted(&mut self, deleted: impl Fn(&str) + Send + Sync + 'static) {
-        self.registry.deleted.push(Arc::new(deleted));
-    }
-
-    /// A provider models are reached through.
-    pub fn provider(&mut self, provider: Provider) {
-        self.providers.push(provider);
+    /// Adds what `extension` brings, listed for clients.
+    pub(crate) fn extension(&mut self, extension: impl Extension + 'static) {
+        self.registry.extensions.push(ExtensionListed {
+            name: extension.name().to_owned(),
+            title: extension.title().to_owned(),
+            description: extension.description().to_owned(),
+        });
+        let mut registrar = self.registrar(extension.name());
+        Box::new(extension).build(&mut registrar);
     }
 
     /// The methods of `set`, each read by `read` and done by `handle`.
-    pub fn methods<M, F, Done>(&mut self, set: Set, read: fn(&str, serde_json::Value) -> serde_json::Result<M>, handle: F)
+    pub(crate) fn methods<M, F, Done>(&mut self, set: Set, read: fn(&str, serde_json::Value) -> serde_json::Result<M>, handle: F)
     where
         M: Send + 'static,
         F: Fn(Caller, M) -> Done + Send + Sync + 'static,
@@ -204,7 +193,7 @@ impl Builder {
     }
 
     /// The topics of the family `T`, which a session needs `scope` to subscribe to, each told by `tell`.
-    pub fn topics<T, F, Told>(&mut self, scope: Scope, tell: F)
+    pub(crate) fn topics<T, F, Told>(&mut self, scope: Scope, tell: F)
     where
         T: DeserializeOwned + Send + 'static,
         F: Fn(Subscription, T) -> Told + Send + Sync + 'static,
@@ -220,24 +209,90 @@ impl Builder {
         });
         self.registry.topics.push((scope, teller));
     }
+}
 
-    /// Adds what `extension` brings, the tools and tellers as its.
-    pub fn extension(&mut self, extension: impl Extension + 'static) -> &mut Self {
-        let name = extension.name();
-        self.registry.extensions.push(ExtensionListed {
-            name: name.to_owned(),
-            title: extension.title().to_owned(),
-            description: extension.description().to_owned(),
+/// What adds to Siphon as an extension, by its name, as it is built: what it adds is held as that extension's, so a
+/// setting that switches the extension off leaves it out. Siphon adds its own as `core`.
+pub struct Registrar<'a> {
+    builder: &'a mut Builder,
+    extension: &'static str,
+}
+
+impl std::fmt::Debug for Registrar<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Registrar")
+            .field("extension", &self.extension)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Registrar<'_> {
+    /// The kernel opened, for what the extension starts on it.
+    #[must_use]
+    pub fn kernel(&self) -> &Kernel {
+        &self.builder.kernel
+    }
+
+    /// The machine, for what the extension starts on it.
+    #[must_use]
+    pub fn machine(&self) -> &Host {
+        &self.builder.machine
+    }
+
+    /// The tool `tool`, which a thread's model and its scripts call.
+    pub fn tool<T: crate::tools::Tool>(&mut self, tool: T) {
+        self.builder.tools = std::mem::take(&mut self.builder.tools).with(tool);
+        self.builder.owners.insert(T::NAME.to_owned(), self.extension.to_owned());
+    }
+
+    /// The toolset `toolset`, whose tools a thread's scripts call by the names a teller tells.
+    pub fn toolset(&mut self, toolset: Arc<dyn crate::tools::Toolset>) {
+        self.builder.tools = std::mem::take(&mut self.builder.tools).with_toolset(toolset);
+    }
+
+    /// What tells a thread's model, before each turn, what is `shared` that widely.
+    pub fn teller(&mut self, shared: Shared, teller: Arc<dyn crate::agent::Teller>) {
+        self.builder.tellers.push(OwnedTeller {
+            extension: self.extension.to_owned(),
+            shared,
+            teller,
         });
-        let before: Vec<String> = self.tools.declared().into_iter().map(|declared| declared.name).collect();
-        name.clone_into(&mut self.adding);
-        Box::new(extension).build(self);
-        self.adding.clear();
-        for declared in self.tools.declared() {
-            if !before.contains(&declared.name) {
-                self.owners.insert(declared.name, name.to_owned());
-            }
-        }
-        self
+    }
+
+    /// The runtime's builder, as `add` leaves it: programs, handlers and requests the person answers added.
+    pub fn runtime(&mut self, add: impl FnOnce(siphon_runtime::Builder) -> siphon_runtime::Builder) {
+        let runtime = std::mem::replace(&mut self.builder.runtime, siphon_runtime::Runtime::builder());
+        self.builder.runtime = add(runtime);
+    }
+
+    /// What to do as a thread is deleted, given its id: what the extension held for it let go of, as a process's
+    /// resources go with it.
+    pub fn on_thread_deleted(&mut self, deleted: impl Fn(&str) + Send + Sync + 'static) {
+        self.builder.registry.deleted.push(Arc::new(deleted));
+    }
+
+    /// A provider models are reached through.
+    pub fn provider(&mut self, provider: Provider) {
+        self.builder.providers.push(provider);
+    }
+
+    /// The methods of `set`, each read by `read` and done by `handle`.
+    pub fn methods<M, F, Done>(&mut self, set: Set, read: fn(&str, serde_json::Value) -> serde_json::Result<M>, handle: F)
+    where
+        M: Send + 'static,
+        F: Fn(Caller, M) -> Done + Send + Sync + 'static,
+        Done: Future<Output = Result<serde_json::Value, Error>> + Send + 'static,
+    {
+        self.builder.methods(set, read, handle);
+    }
+
+    /// The topics of the family `T`, which a session needs `scope` to subscribe to, each told by `tell`.
+    pub fn topics<T, F, Told>(&mut self, scope: Scope, tell: F)
+    where
+        T: DeserializeOwned + Send + 'static,
+        F: Fn(Subscription, T) -> Told + Send + Sync + 'static,
+        Told: Future<Output = Result<(), Lagged>> + Send + 'static,
+    {
+        self.builder.topics(scope, tell);
     }
 }

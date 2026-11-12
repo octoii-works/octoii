@@ -4,7 +4,7 @@
 mod question;
 
 pub use question::{Asked, Choice, QuestionArgs, QuestionTool};
-use siphon::{Builder, Extension};
+use siphon::{Extension, Registrar};
 
 /// Questions, as a host adds them.
 #[derive(Debug, Clone, Copy, Default)]
@@ -23,7 +23,7 @@ impl Extension for QuestionExtension {
         "The model asks the person questions with options to choose from, when it cannot find out itself."
     }
 
-    fn build(self: Box<Self>, builder: &mut Builder) {
-        builder.tools(|tools| tools.with(QuestionTool));
+    fn build(self: Box<Self>, registrar: &mut Registrar<'_>) {
+        registrar.tool(QuestionTool);
     }
 }

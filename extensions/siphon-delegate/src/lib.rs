@@ -21,7 +21,7 @@ use siphon::machine::paths::Base;
 use siphon::threads::inbox::{self, Ended, Inbound, Joins, ReplyTo};
 use siphon::threads::{Config, NewThread, Parent, Threads, thread};
 use siphon::tools::{Context, Effect, Refusal, Setting, Told, Tool};
-use siphon::{Builder, Extension};
+use siphon::{Extension, Registrar};
 use siphon_runtime::{Changes, Ending, Program, Run, Wait};
 
 /// Sub-threads, as a host adds them.
@@ -41,9 +41,9 @@ impl Extension for DelegateExtension {
         "The model hands tasks to sub-threads of its own, when the person asks it to delegate or work on things at once."
     }
 
-    fn build(self: Box<Self>, builder: &mut Builder) {
-        builder.tools(|tools| tools.with(DelegateTool));
-        builder.runtime(|runtime| runtime.program(DelegateProgram));
+    fn build(self: Box<Self>, registrar: &mut Registrar<'_>) {
+        registrar.tool(DelegateTool);
+        registrar.runtime(|runtime| runtime.program(DelegateProgram));
     }
 }
 

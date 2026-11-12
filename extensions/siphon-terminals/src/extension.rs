@@ -4,7 +4,7 @@
 
 use serde_json::{Value, json};
 use siphon::protocol::{Error, Nothing, Scope};
-use siphon::{Builder, Caller, Extension, Full, Lagged, Subscription};
+use siphon::{Caller, Extension, Full, Lagged, Registrar, Subscription};
 use tokio::sync::broadcast::error::RecvError;
 
 use crate::protocol::{self, Cells, Method, TerminalListed, TerminalsEvent, TerminalsTopic};
@@ -27,20 +27,20 @@ impl Extension for TerminalsExtension {
         "Terminals beside the chat, the person's and those the model opens to run servers and watchers."
     }
 
-    fn build(self: Box<Self>, builder: &mut Builder) {
-        let terminals = Terminals::start(builder.kernel.clone(), builder.machine.clone());
+    fn build(self: Box<Self>, registrar: &mut Registrar<'_>) {
+        let terminals = Terminals::start(registrar.kernel().clone(), registrar.machine().clone());
         let closing = terminals.clone();
-        builder.on_thread_deleted(move |thread| closing.close_thread(thread));
+        registrar.on_thread_deleted(move |thread| closing.close_thread(thread));
         let tool = TerminalTool {
             terminals: terminals.clone(),
         };
-        builder.tools(|tools| tools.with(tool));
+        registrar.tool(tool);
         let doing = terminals.clone();
-        builder.methods(protocol::set(), Method::read, move |context: Caller, method| {
+        registrar.methods(protocol::set(), Method::read, move |context: Caller, method| {
             let terminals = doing.clone();
             async move { answered(&terminals, &context, method).await }
         });
-        builder.topics(Scope::TerminalsOperate, move |subscription: Subscription, topic: TerminalsTopic| {
+        registrar.topics(Scope::TerminalsOperate, move |subscription: Subscription, topic: TerminalsTopic| {
             let terminals = terminals.clone();
             async move { told(&terminals, &subscription, topic).await }
         });
