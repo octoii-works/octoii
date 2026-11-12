@@ -32,6 +32,7 @@ tokio-util = "0.7.20"
 [dev-dependencies]
 futures = "0.3.34"
 siphon-delegate = { path = "../../extensions/siphon-delegate" }
+siphon-thread = { path = "../../extensions/siphon-thread" }
 siphon-settings = { path = "../siphon-settings" }
 tempfile = "3.27.0"
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "time"] }

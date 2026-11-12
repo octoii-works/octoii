@@ -21,6 +21,7 @@ use siphon_protocol::Machine;
 use siphon_question::QuestionExtension;
 use siphon_runtime::Options;
 use siphon_terminals::TerminalsExtension;
+use siphon_thread::ThreadExtension;
 
 use crate::access::Access;
 use crate::control::{self, Control};
@@ -125,6 +126,7 @@ pub fn building(home: &Home, sign_in: SignInSetup) -> anyhow::Result<siphon::Bui
         .extension(TerminalsExtension)
         .extension(QuestionExtension)
         .extension(DelegateExtension)
+        .extension(ThreadExtension)
         .extension(config)
         .extension(claude))
 }

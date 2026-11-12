@@ -74,9 +74,11 @@ impl Teller for Servers {
         &'a self,
         runtime: &'a Runtime,
         thread: &'a str,
-        place: &'a Place,
+        place: Option<&'a Place>,
     ) -> Pin<Box<dyn Future<Output = anyhow::Result<Telling>> + Send + 'a>> {
         Box::pin(async move {
+            // The servers are configured for the person and a project: a thread of no folder has none of a project's.
+            let Some(place) = place else { return Ok(Telling::default()) };
             let catalog = self.catalog(runtime, place).await?;
             if let Some(trust) = &catalog.asks {
                 asked(runtime, thread, trust).await?;

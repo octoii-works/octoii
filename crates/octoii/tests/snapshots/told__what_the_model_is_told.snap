@@ -61,6 +61,15 @@ What you remember of this project across threads, a Markdown file a memory, kept
 </index>
 </memory>
 
+=== section threads
+<threads>
+Each thread of this machine is a folder in <folder>/home/threads, named by its id; this thread's is <thread>. Read them with the file tools; nothing writes them.
+- log/: its conversation as JSON Lines, an entry a line, in files that sort in the order they began. An entry has an id, rising along the log; a type — input (what the person sent), reply (the model's response), result (a tool's output), turn-end, config (a change of settings), system (what the model was told), discarded (an answer that came to nothing); and its fields.
+- outputs/: the whole output of a call too long to be given whole.
+- files/: the images and files of its conversation, named by their SHA-256.
+Read them when the person asks about another thread or about work done before.
+</threads>
+
 === section environment
 <environment>
 workspace: <folder>/project
@@ -72,15 +81,6 @@ temporary folders: <system temporary>/
 permissions: default — edits in the workspace, the memory, the scratchpad and the temporary folders go ahead, and commands run in a sandbox that writes only those. An edit elsewhere, a command run with `escalate` and a justification to write beyond the sandbox, and a tool of an MCP server wait for the person's approval, unless they allowed it for the project before.
 date: <date> (UTC)
 </environment>
-
-=== section threads
-<threads>
-Each thread of this machine is a folder in <folder>/home/threads, named by its id; this thread's is <thread>. Read them with the file tools; nothing writes them.
-- log/: its conversation as JSON Lines, an entry a line, in files that sort in the order they began. An entry has an id, rising along the log; a type — input (what the person sent), reply (the model's response), result (a tool's output), turn-end, config (a change of settings), system (what the model was told), discarded (an answer that came to nothing); and its fields.
-- outputs/: the whole output of a call too long to be given whole.
-- files/: the images and files of its conversation, named by their SHA-256.
-Read them when the person asks about another thread or about work done before.
-</threads>
 
 === tool browser
 Works the thread's browser, which the person sees beside the chat, one action a call, on its current page — switch makes another current:

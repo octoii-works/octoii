@@ -17,8 +17,8 @@ use octoii_ai::host::Credentials;
 use octoii_ai::models::{Host as Network, Models, Provider};
 use octoii_ai::transport::Transport;
 use siphon_agent::{
-    CompactProgram, DelegatedProgram, Gather, ModelRequest, ResumeProgram, Sources, ThreadProgram, ThreadTool, ThreadToolProgram,
-    TitleProgram, Told, TurnProgram, answer_gather, answer_model, answer_review,
+    CompactProgram, DelegatedProgram, Gather, ModelRequest, ResumeProgram, Sources, ThreadProgram, TitleProgram, Told, TurnProgram,
+    answer_gather, answer_model, answer_review,
 };
 use siphon_machine::Host;
 use siphon_protocol::Scope;
@@ -186,8 +186,7 @@ impl Siphon {
                 .with(GlobTool)
                 .with(GrepTool)
                 .with(ShellTool)
-                .with(ExecuteTool)
-                .with(ThreadTool),
+                .with(ExecuteTool),
             owners: HashMap::new(),
             providers,
             tellers: Vec::new(),
@@ -324,7 +323,6 @@ fn programs(
         .program(TitleProgram)
         .program(CompactProgram)
         .program(DelegatedProgram)
-        .program(ThreadToolProgram)
         .program(ResumeProgram)
         .handle(move |asked: Asked<Gather>| {
             let sources = gathering.clone();

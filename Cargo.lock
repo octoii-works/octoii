@@ -3936,6 +3936,7 @@ dependencies = [
  "siphon-runtime",
  "siphon-settings",
  "siphon-terminals",
+ "siphon-thread",
  "siphon-threads",
  "tempfile",
  "thiserror 2.0.21",
@@ -5604,6 +5605,7 @@ dependencies = [
  "siphon-machine",
  "siphon-runtime",
  "siphon-settings",
+ "siphon-thread",
  "siphon-threads",
  "siphon-tools",
  "tempfile",
@@ -5844,6 +5846,25 @@ version = "0.0.1"
 dependencies = [
  "similar 3.2.1",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "siphon-thread"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "beak",
+ "bytes",
+ "octoii-ai",
+ "schemars 1.2.3",
+ "serde",
+ "serde_json",
+ "siphon",
+ "siphon-agent",
+ "siphon-machine",
+ "siphon-runtime",
+ "siphon-threads",
+ "siphon-tools",
 ]
 
 [[package]]

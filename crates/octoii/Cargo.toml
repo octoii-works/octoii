@@ -43,6 +43,7 @@ siphon-mcp = { path = "../../extensions/siphon-mcp" }
 siphon-protocol = { path = "../siphon-protocol" }
 siphon-delegate = { path = "../../extensions/siphon-delegate" }
 siphon-question = { path = "../../extensions/siphon-question" }
+siphon-thread = { path = "../../extensions/siphon-thread" }
 siphon-runtime = { path = "../siphon-runtime" }
 siphon-terminals = { path = "../../extensions/siphon-terminals" }
 siphon-threads = { path = "../siphon-threads" }

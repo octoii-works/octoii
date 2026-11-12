@@ -20,8 +20,8 @@ use siphon_threads::inbox::{self, Inbound, Joins, ReplyTo};
 use siphon_threads::{Config, Mode, NewThread, Threads, thread};
 use siphon_tools::{Context, Effect, Refusal, Setting, Told, Tool};
 
-use crate::thread::ThreadProgram;
-use crate::waiting::{DelegatedProgram, Waiting, directory_of, label};
+use siphon_agent::ThreadProgram;
+use siphon_agent::waiting::{DelegatedProgram, Waiting, directory_of, label};
 
 /// What the model does with the person's other threads.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]

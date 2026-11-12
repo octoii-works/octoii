@@ -35,7 +35,8 @@ impl Request for Gather {
 /// What an extension tells a thread's model of the place it works in, gathered before each turn: sections of what it is
 /// told, and the names of the tools its scripts may call beside its own — as the MCP servers tell their catalog.
 pub trait Teller: Send + Sync + 'static {
-    /// What it tells the model of the thread `thread`, working at `place`, on `runtime`.
+    /// What it tells the model of the thread `thread`, working at `place` — none for a thread of no folder — on
+    /// `runtime`.
     ///
     /// # Errors
     /// What keeps it from telling.
@@ -43,7 +44,7 @@ pub trait Teller: Send + Sync + 'static {
         &'a self,
         runtime: &'a Runtime,
         thread: &'a str,
-        place: &'a Place,
+        place: Option<&'a Place>,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<Telling>> + Send + 'a>>;
 }
 
@@ -150,17 +151,17 @@ pub async fn gathered(sources: &Sources, runtime: &Runtime, id: &str) -> anyhow:
         if let Some(folder) = sources.host.memory_of(&place.project) {
             add("memory", crate::memory::told(&folder));
         }
-        for (_, teller) in sources.tellers.iter().filter(|(extension, _)| on(extension)) {
-            let telling = teller.tell(runtime, id, &place).await?;
-            for (name, text) in telling.sections {
-                add(&name, text);
-            }
-            catalog.extend(telling.tools);
+    }
+    let place = workspace.as_deref().map(Place::of);
+    for (_, teller) in sources.tellers.iter().filter(|(extension, _)| on(extension)) {
+        let telling = teller.tell(runtime, id, place.as_ref()).await?;
+        for (name, text) in telling.sections {
+            add(&name, text);
         }
+        catalog.extend(telling.tools);
     }
     told.catalog = catalog;
     let mode = config.mode.unwrap_or_default();
-    let place = workspace.as_deref().map(Place::of);
     add(
         "environment",
         environment(
@@ -172,9 +173,6 @@ pub async fn gathered(sources: &Sources, runtime: &Runtime, id: &str) -> anyhow:
             runtime.now_ms(),
         ),
     );
-    if let Some(folder) = &sources.host.threads {
-        add("threads", threads_told(folder, id));
-    }
     // A sub-thread works on its task alone: it starts no thread and reaches none.
     let sub_thread = directory
         .label(thread::PARENT_LABEL.as_bytes())
@@ -318,21 +316,6 @@ fn civil(days: i64) -> (i64, i64, i64) {
     let month = if month_index < 10 { month_index + 3 } else { month_index - 9 };
     let year = year_of_era + era * 400 + i64::from(month <= 2);
     (year, month, day)
-}
-
-/// Where the threads are, as the model is told it, where the host lays them out: each a folder by its id, read alone
-/// through the file tools; and this thread's id.
-fn threads_told(folder: &Path, id: &str) -> String {
-    format!(
-        "<threads>
-Each thread of this machine is a folder in {}, named by its id; this thread's is {id}. Read them with the file tools; nothing writes them.
-- log/: its conversation as JSON Lines, an entry a line, in files that sort in the order they began. An entry has an id, rising along the log; a type — input (what the person sent), reply (the model's response), result (a tool's output), turn-end, config (a change of settings), system (what the model was told), discarded (an answer that came to nothing); and its fields.
-- outputs/: the whole output of a call too long to be given whole.
-- files/: the images and files of its conversation, named by their SHA-256.
-Read them when the person asks about another thread or about work done before.
-</threads>",
-        folder.display()
-    )
 }
 
 #[cfg(test)]
