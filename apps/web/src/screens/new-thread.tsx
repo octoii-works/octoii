@@ -14,6 +14,7 @@ import { ChevronDown, FolderOpen, FolderPlus, FolderX } from "lucide-react";
 import type { Device } from "../core/device.ts";
 import { recentModelsOf } from "../core/models.ts";
 import { contentOf } from "../core/attachments.ts";
+import { thingsOf } from "../core/mentions.ts";
 import { folderName, type Project, projectsOf } from "../core/threads.ts";
 import { Composer } from "../components/composer/composer.tsx";
 import { FolderChooser } from "../components/files/folder-chooser.tsx";
@@ -73,6 +74,7 @@ export function NewThreadScreen(props: NewThreadScreenProps): ReactNode {
 							sendShortcut={props.device.send_shortcut}
 							draft={{ project: folder }}
 							folder={folder}
+							things={thingsOf(rows, [], [], undefined)}
 							onSend={async ({ text, attachments }) => {
 								const thread = await client.create({
 									...(folder === undefined ? {} : { workspace: folder }),

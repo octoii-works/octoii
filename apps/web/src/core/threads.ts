@@ -8,7 +8,7 @@
  * sub-thread in none — and the times one is snoozed till.
  */
 import type { Ask, Listed } from "@octoii-works/octoii-client";
-import { linksAsWords } from "./links.ts";
+import { namesAsWords } from "./links.ts";
 import { type Hue, huesApart, monogramHue } from "./monogram.ts";
 import { mintedAt } from "./time.ts";
 
@@ -146,7 +146,7 @@ const TITLE_CHARACTERS = 80;
  * name — cut at a word past `TITLE_CHARACTERS`.
  */
 export function titleOf(message: string): string {
-	const line = linksAsWords(message.trim().split("\n")[0]?.trim() ?? "");
+	const line = namesAsWords(message.trim().split("\n")[0]?.trim() ?? "");
 	if (line.length <= TITLE_CHARACTERS) return line;
 	const cut = line.slice(0, TITLE_CHARACTERS);
 	const space = cut.lastIndexOf(" ");

@@ -73,6 +73,12 @@ async fn answered(terminals: &Terminals, context: &Caller, method: Method) -> Re
                 .map_err(|error| failed(&error))?;
         }
         Method::Close(of) => terminals.close(&of.terminal),
+        Method::Text(of) => {
+            let text = terminals.text(&of.terminal).await.map_err(|error| failed(&error))?;
+            return Ok(json!(protocol::TerminalText {
+                text: text.trim_end().to_owned()
+            }));
+        }
     }
     Ok(json!(Nothing {}))
 }

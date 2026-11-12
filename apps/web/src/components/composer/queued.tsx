@@ -9,7 +9,7 @@ import type { ReactNode } from "react";
 import type { Inbound, InputContent } from "@octoii-works/octoii-client";
 import { useClient } from "@octoii-works/octoii-client/react";
 import { CornerDownRight, Pencil, X } from "lucide-react";
-import { linksAsWords } from "../../core/links.ts";
+import { namesAsWords } from "../../core/links.ts";
 import { inputText, threadOfActor } from "../../core/timeline.ts";
 import { useDraft } from "../state/draft.ts";
 import { failed } from "../state/notices.ts";
@@ -51,7 +51,7 @@ function QueuedRow(props: { readonly thread: string; readonly id: string; readon
 	return (
 		<div className={ROW}>
 			<CornerDownRight className="size-3.5 shrink-0 text-muted-foreground" />
-			<span className="min-w-0 flex-1 truncate text-foreground">{linksAsWords(words) || "A message"}</span>
+			<span className="min-w-0 flex-1 truncate text-foreground">{namesAsWords(words) || "A message"}</span>
 			<span className="text-xs text-muted-foreground">{props.nextTurn ? "Next turn" : "Joins at the next step"}</span>
 			{wordsAlone ? (
 				<button type="button" aria-label="Edit" title="Edit" onClick={edit} className={ICON}>

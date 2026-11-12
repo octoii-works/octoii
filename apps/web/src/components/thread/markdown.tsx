@@ -3,9 +3,8 @@
  * browser, one to a path of the machine — from the thread's folder, whole, or a `file:` address — a chip that opens it
  * in the panel; a paragraph of images of the machine's files alone drawn as pictures side by side, an image among words
  * a chip of its file, one of the web a link to it, never fetched, as an address in a picture would tell a page what the
- * page holds; a page of the thread's browser that `::page` points at as its card, a thread `:thread` names as its chip
- * — a dot of how it stands and its title — the other directives as they were
- * written; each code block in a well of its own, its code plain while it is still being written; and a table scrolled
+ * page holds; a thread, a page of the thread's browser or a terminal of its a directive names — `:thread{id=…}` within a
+ * line as its chip, `::thread{id=…}` on a line of its own as its card — the other directives as they were written; each code block in a well of its own, its code plain while it is still being written; and a table scrolled
  * within itself where it is wider than its column. Text that is whole is read once: what it draws is kept by the text,
  * so a block drawn again — scrolled back to, or its thread opened again — is not read anew.
  */
@@ -20,22 +19,19 @@ import { picturesOfParagraph } from "../../core/pictures.ts";
 import { PathLink } from "../files/path-link.tsx";
 import { cn } from "../ui/cn.ts";
 import { CodeBeingWritten, CodeBlock } from "./code-block.tsx";
-import { PAGE_ELEMENT, remarkDirectives, THREAD_ELEMENT } from "./directives.ts";
+import { isKind } from "../../core/things.ts";
+import { CARD_ELEMENT, CHIP_ELEMENT, remarkDirectives } from "./directives.ts";
 import { remarkAutolinkEnds } from "./autolinks.ts";
-import { PageCard } from "./page-card.tsx";
 import { PictureStrip } from "./pictures.tsx";
-import { standingDot } from "./entity.tsx";
-import { useThreads } from "@octoii-works/octoii-client/react";
-import { standingOf } from "../../core/sub-threads.ts";
-import { threadTitle } from "../../core/threads.ts";
+import { ThingCard, ThingChip } from "./things.tsx";
 
 declare module "react" {
 	namespace JSX {
 		interface IntrinsicElements {
-			/** A page of the thread's browser a message points at, by its id: what `::page` is drawn as. */
-			[PAGE_ELEMENT]: { readonly page?: string };
-			/** A thread a message names, by its id: what `:thread` is drawn as. */
-			[THREAD_ELEMENT]: { readonly thread?: string };
+			/** A thing a message names within a line, by its kind and its id: what `:thread`, `:page` and `:terminal` are drawn as. */
+			[CHIP_ELEMENT]: { readonly kind?: string; readonly id?: string };
+			/** A thing a message names on a line of its own, by its kind and its id: what `::thread`, `::page` and `::terminal` are drawn as. */
+			[CARD_ELEMENT]: { readonly kind?: string; readonly id?: string };
 		}
 	}
 }
@@ -59,8 +55,8 @@ const COMPONENTS: Components = {
 		return pictures === undefined ? <p>{props.children}</p> : <PictureStrip pictures={pictures} className="my-2" />;
 	},
 	img: (props) => <ImageLink src={typeof props.src === "string" ? props.src : ""} words={props.alt ?? ""} />,
-	[PAGE_ELEMENT]: (props) => (props.page === undefined ? null : <PageCard page={props.page} />),
-	[THREAD_ELEMENT]: (props) => (props.thread === undefined ? null : <ThreadChip thread={props.thread} />),
+	[CHIP_ELEMENT]: (props) => (props.kind === undefined || props.id === undefined || !isKind(props.kind) ? null : <ThingChip kind={props.kind} id={props.id} />),
+	[CARD_ELEMENT]: (props) => (props.kind === undefined || props.id === undefined || !isKind(props.kind) ? null : <ThingCard kind={props.kind} id={props.id} />),
 };
 
 /** An image among words: a chip of its file, to open in the panel; a link to one of the web, which is never fetched. */
@@ -162,16 +158,5 @@ export function Prose(props: { readonly text: string; readonly className?: strin
 		<div className={cn("prose-chat", props.className)}>
 			<Marked text={props.text} />
 		</div>
-	);
-}
-
-/** A thread a message names: a dot of how it stands and its title as it is listed, going into it as it is clicked; "a thread" where it is not listed. */
-function ThreadChip(props: { readonly thread: string }): ReactNode {
-	const row = useThreads()?.find((each) => each.id === props.thread);
-	return (
-		<a href={`#/thread/${props.thread}`} className="inline-flex items-baseline gap-1">
-			{row === undefined ? null : <span className={cn("size-1.5 shrink-0 self-center rounded-full", standingDot(standingOf(row)))} />}
-			{row === undefined ? "a thread" : threadTitle(row)}
-		</a>
 	);
 }

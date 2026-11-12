@@ -897,6 +897,11 @@ line?: string, };
 export type TerminalOpened = { terminal: string, };
 
 /**
+ * What a terminal's screen shows, as text.
+ */
+export type TerminalText = { text: string, };
+
+/**
  * An event of a subscription to the terminals': a thread's terminals as they changed; a terminal's screen drawn again
  * whole, through the offset in its output it shows; or a piece of what it wrote, from an offset. A screen and a piece
  * are binary frames, whose bytes after this event are the screen's sequences, or the piece.
@@ -1072,6 +1077,7 @@ export type Methods = {
   'terminals.write': { params: WriteTerminal; result: Nothing };
   'terminals.resize': { params: ResizeTerminal; result: Nothing };
   'terminals.close': { params: OfTerminal; result: Nothing };
+  'terminals.text': { params: OfTerminal; result: TerminalText };
   'servers.list': { params: ListServers; result: ServersListed };
   'trust.decide': { params: DecideTrust; result: Nothing };
   'access.list': { params: Nothing; result: AccessListed };

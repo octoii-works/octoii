@@ -5,6 +5,7 @@
  */
 import type { FileKind } from "@octoii-works/octoii-client";
 import { nameOf } from "./files.ts";
+import { thingsAsWords } from "./things.ts";
 
 /** Lines of a file, from `start` to `end`, the first numbered 1. */
 export type Lines = { readonly start: number; readonly end: number };
@@ -68,7 +69,7 @@ export function linkTo(path: string, kind: FileKind): string {
 /** Each markdown link in a line: its words, escapes and all, then where it points. */
 const LINKS = /\[((?:\\.|[^\]\\])*)\]\((?:<(?:\\.|[^>\\])*>|[^)\s]*)\)/g;
 
-/** `text` with each link by its words, as a line that names the message shows it. */
-export function linksAsWords(text: string): string {
-	return text.replace(LINKS, (_link, words: string) => words.replace(/\\(.)/g, "$1"));
+/** `text` with each link by its words, and each thing a directive names, as a line that names the message shows it. */
+export function namesAsWords(text: string): string {
+	return thingsAsWords(text).replace(LINKS, (_link, words: string) => words.replace(/\\(.)/g, "$1"));
 }

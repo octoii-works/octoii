@@ -17,6 +17,14 @@ siphon_protocol::methods! {
     "terminals.resize" Resize(ResizeTerminal) -> Nothing, Some(Scope::TerminalsOperate);
     /// A terminal closed, its program hung up on.
     "terminals.close" Close(OfTerminal) -> Nothing, Some(Scope::TerminalsOperate);
+    /// What a terminal's screen shows, as text: its lines, the blank ones at its end left out.
+    "terminals.text" Text(OfTerminal) -> TerminalText, Some(Scope::TerminalsOperate);
+}
+
+/// What a terminal's screen shows, as text.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct TerminalText {
+    pub text: String,
 }
 
 /// A terminal's size, in cells.

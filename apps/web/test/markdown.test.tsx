@@ -1,11 +1,12 @@
 /**
- * A message's Markdown as the page draws it: its directives — a page of the thread's as its card, a thread it names as
- * its chip, any other as it was written, and the words a line holds whole however many colons they hold — an image of the web as a link, never
+ * A message's Markdown as the page draws it: its directives — a thing it names, a chip within a line and a card on a line
+ * of its own, any other as it was written, and the words a line holds whole however many colons they hold — an image of the web as a link, never
  * fetched, and a bare address ended at the full-width mark after it.
  */
 import { describe, expect, it } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Prose } from "../src/components/thread/markdown.tsx";
+import { MessageThreadContext } from "../src/components/thread/message-thread.ts";
 
 const drawn = (text: string): string => renderToStaticMarkup(<Prose text={text} />);
 
@@ -21,6 +22,21 @@ describe("a message's Markdown", () => {
 		expect(drawn('::video{src="a.mp4"}')).toContain("<p>::video{src=&quot;a.mp4&quot;}</p>");
 		expect(drawn(":::note\nsome words\n:::")).toContain("<p>:::note\nsome words\n:::</p>");
 		expect(drawn("::page")).toContain("<p>::page</p>");
+	});
+
+	it("draws a thing named within a line as its chip, one on a line of its own as its card, a closed one said to be gone", () => {
+		const pages = [
+			{ id: "p1", title: "Docs", url: "https://example.com/docs", view: { width: 1280, height: 800 }, loading: false, back: false, forward: false },
+		];
+		const html = renderToStaticMarkup(
+			<MessageThreadContext value={{ thread: "t1", workspace: undefined, pages, terminals: [] }}>
+				<Prose text={"see :page{id=p1} here\n\n::page{id=p1}"} />
+			</MessageThreadContext>,
+		);
+		expect(html).toContain("<p>see <button");
+		expect(html).toContain("Docs</button> here</p>");
+		expect(html).toContain("https://example.com/docs</span>");
+		expect(drawn("see :page{id=p2} here")).toContain("a page no longer open</span> here");
 	});
 
 	it("gives a name of no thread back as it was written, the chip of a thread drawn where the threads are read", () => {

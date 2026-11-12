@@ -1,6 +1,6 @@
 /** Links in a message: what one points at, the link a mention writes, and a line with links by their words. */
 import { describe, expect, it } from "bun:test";
-import { linksAsWords, linkTo, targetOf } from "../src/core/links.ts";
+import { namesAsWords, linkTo, targetOf } from "../src/core/links.ts";
 
 describe("a link", () => {
 	it("points at a path of the machine — from the thread's folder, whole, or a file address — its line let go", () => {
@@ -29,8 +29,13 @@ describe("a link", () => {
 	});
 
 	it("reads by its words in a line that names its message", () => {
-		expect(linksAsWords("What does [fuzzy.zig](packages/siphon/src/protocol/fuzzy.zig) score?")).toBe("What does fuzzy.zig score?");
-		expect(linksAsWords("see [my notes.md](<docs/my notes.md>) and [\\[id\\].ts](lib/[id].ts)")).toBe("see my notes.md and [id].ts");
-		expect(linksAsWords("no links [here]")).toBe("no links [here]");
+		expect(namesAsWords("What does [fuzzy.zig](packages/siphon/src/protocol/fuzzy.zig) score?")).toBe("What does fuzzy.zig score?");
+		expect(namesAsWords("see [my notes.md](<docs/my notes.md>) and [\\[id\\].ts](lib/[id].ts)")).toBe("see my notes.md and [id].ts");
+		expect(namesAsWords("no links [here]")).toBe("no links [here]");
+	});
+
+	it("names a thing a directive names by its kind, a terminal by its number, in a line that names its message", () => {
+		expect(namesAsWords("check :terminal{id=2} and :thread{id=01a1-t} on :page{id=p1}")).toBe("check terminal 2 and a thread on a page");
+		expect(namesAsWords("10:30 Error:failed")).toBe("10:30 Error:failed");
 	});
 });

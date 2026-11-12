@@ -9,11 +9,11 @@
  */
 import { type ReactNode, useId, useRef, useState, useTransition } from "react";
 import type { ReasoningEffort as Effort, Mode } from "@octoii-works/octoii-client";
-import type { FoundPath } from "@octoii-works/octoii-client";
 import { ArrowUp, Square } from "lucide-react";
 import type { Device } from "../../core/device.ts";
 import type { DraftPlace } from "../../core/drafts.ts";
-import { withMention } from "../../core/mentions.ts";
+import { type Choice, withMention } from "../../core/mentions.ts";
+import type { Thing } from "../../core/things.ts";
 import { type Placement, usePlacedCaret } from "../effects/caret.ts";
 import { useDraft } from "../state/draft.ts";
 import { MentionMenu, optionId } from "./mention-menu.tsx";
@@ -50,6 +50,8 @@ export type ComposerProps = {
 	readonly draft: DraftPlace;
 	/** The folder whose files `@` mentions; none where the thread works in none. */
 	readonly folder: string | undefined;
+	/** The things `@` mentions past files: the thread's terminals and pages, the person's other threads. */
+	readonly things: readonly Thing[];
 	/** Sends the words and the files; resolves once the node took them, so the box empties then. */
 	readonly onSend: (message: Outgoing) => Promise<void>;
 	/** Sends them to wait for the turn that works to end and begin the next, as the other send shortcut asks while it works; none where nothing is queued. */
@@ -64,9 +66,9 @@ export type ComposerProps = {
 /** A message as the composer sends it: its words, and the files it gives its model. */
 export type Outgoing = { readonly text: string; readonly attachments: readonly Attachment[] };
 
-/** The words a box says it takes, and what it says where it mentions files. */
+/** The words a box says it takes, and what it says where it mentions things. */
 const PLACEHOLDER = "Ask anything";
-const PLACEHOLDER_MENTIONING = "Ask anything. @ files";
+const PLACEHOLDER_MENTIONING = "Ask anything. @ to mention";
 
 /** What a frame dropped on does: files dropped attached; anything else left to the page. */
 function droppedOn(attach: (files: readonly File[]) => void): Pick<React.HTMLAttributes<HTMLDivElement>, "onDragOver" | "onDrop"> {
@@ -98,7 +100,7 @@ function sendOf(shortcut: Device["send_shortcut"], mod: boolean, shift: boolean)
 function placeholderOf(props: ComposerProps): string {
 	if (props.approval !== undefined) return "Deny, telling the model what to do instead";
 	if (props.model === undefined) return "Choose a model to begin";
-	return props.placeholder ?? (props.folder === undefined ? PLACEHOLDER : PLACEHOLDER_MENTIONING);
+	return props.placeholder ?? (props.folder === undefined && props.things.length === 0 ? PLACEHOLDER : PLACEHOLDER_MENTIONING);
 }
 
 /** The composer. */
@@ -108,14 +110,15 @@ export function Composer(props: ComposerProps): ReactNode {
 	const [choosingModel, setChoosingModel] = useState(false);
 	const menu = useId();
 	const box = useRef<HTMLTextAreaElement>(null);
+	const frame = useRef<HTMLDivElement>(null);
 	const [caret, setCaret] = useState(0);
 	const [placement, setPlacement] = useState<Placement | undefined>(undefined);
 	usePlacedCaret(box, placement);
-	const mentions = useMentions(props.folder, draft.text, caret);
+	const mentions = useMentions(props.folder, props.things, draft.text, caret);
 	const recall = useRecall(props.sent ?? [], draft.text, draft.setText, setPlacement);
-	const mention = (found: FoundPath): void => {
+	const mention = (chosen: Choice): void => {
 		if (mentions.mention === undefined) return;
-		const next = withMention(draft.text, mentions.mention, caret, found);
+		const next = withMention(draft.text, mentions.mention, caret, chosen);
 		draft.setText(next.text);
 		setCaret(next.caret);
 		setPlacement({ caret: next.caret });
@@ -170,8 +173,8 @@ export function Composer(props: ComposerProps): ReactNode {
 		else if (draft.text.trim() !== "") deny(props.approval);
 	};
 	return (
-		<div className="relative rounded-lg border border-border bg-card shadow-raised" {...droppedOn(attaching.attach)}>
-			{mentions.mention === undefined ? null : <MentionMenu id={menu} mentions={mentions} onChoose={mention} />}
+		<div ref={frame} className="relative rounded-lg border border-border bg-card shadow-raised" {...droppedOn(attaching.attach)}>
+			{mentions.mention === undefined ? null : <MentionMenu id={menu} anchor={frame} mentions={mentions} onChoose={mention} />}
 			<Attachments
 				attachments={draft.attachments}
 				attaching={attaching}
@@ -195,11 +198,9 @@ export function Composer(props: ComposerProps): ReactNode {
 				onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
 				onKeyDown={keyDown}
 				aria-label="Message"
-				aria-autocomplete={props.folder === undefined ? undefined : "list"}
+				aria-autocomplete={props.folder === undefined && props.things.length === 0 ? undefined : "list"}
 				aria-controls={mentions.mention === undefined ? undefined : menu}
-				aria-activedescendant={
-					mentions.mention === undefined || mentions.found === undefined || mentions.found.length === 0 ? undefined : optionId(menu, mentions.highlighted)
-				}
+				aria-activedescendant={mentions.mention === undefined || mentions.choices.length === 0 ? undefined : optionId(menu, mentions.highlighted)}
 				rows={2}
 				placeholder={placeholderOf(props)}
 				className="block field-sizing-content max-h-[40vh] min-h-16 w-full resize-none bg-transparent px-4 pt-4 pb-1 text-ui leading-relaxed outline-none placeholder:text-faint-foreground"

@@ -25,6 +25,8 @@ import { DetailsButtons, type DetailsProps, InlineDetails } from "../components/
 import { Timeline, type TimelineHandle } from "../components/thread/timeline.tsx";
 import { RightPanel } from "../components/panel/right-panel.tsx";
 import { MessageThreadContext } from "../components/thread/message-thread.ts";
+import { thingsOf } from "../core/mentions.ts";
+import type { Thing } from "../core/things.ts";
 import { failed } from "../components/state/notices.ts";
 import { useSeen } from "../components/effects/seen.ts";
 import { useNow } from "../components/effects/now.ts";
@@ -89,7 +91,7 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 				/>
 				{/* The timeline's room, between the header and the dock, its details floating at its top right. */}
 				<div className="relative flex min-h-0 flex-1 flex-col">
-					<MessageThreadContext value={{ thread, workspace, pages }}>
+					<MessageThreadContext value={{ thread, workspace, pages, terminals }}>
 						<Timeline
 							ref={timeline}
 							thread={thread}
@@ -108,6 +110,7 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 				<Dock
 					thread={thread}
 					row={row}
+					things={thingsOf(rows, terminals, pages, thread)}
 					sent={theirs}
 					conversation={conversation}
 					device={props.device}
@@ -132,6 +135,8 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 function Dock(props: {
 	readonly thread: string;
 	readonly row: Listed | undefined;
+	/** The things the composer's `@` mentions past files. */
+	readonly things: readonly Thing[];
 	/** What the person sent in the thread, oldest first. */
 	readonly sent: readonly string[];
 	readonly conversation: Conversation;
@@ -168,6 +173,7 @@ function Dock(props: {
 							{...(working ? { placeholder: "Steer the work: your message joins at its next step" } : {})}
 							draft={{ thread }}
 							folder={workspace}
+							things={props.things}
 							onSend={async ({ text, attachments }) => {
 								props.onSent(await client.deliver(thread, contentOf(text, attachments)));
 							}}

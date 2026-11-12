@@ -1,6 +1,14 @@
-/** A file mentioned as the person writes, and the text with a link to the one chosen in its place. */
+/** A mention as the person writes it, what it may name, and the text with the one chosen in its place. */
 import { describe, expect, it } from "bun:test";
-import { mentionAt, withMention } from "../src/core/mentions.ts";
+import { matchingThings, mentionAt, thingsOf, withMention } from "../src/core/mentions.ts";
+import type { Listed } from "@octoii-works/octoii-client";
+
+const listed = (id: string, title: string, began: number): Listed => ({
+	id,
+	config: { mode: "default", title },
+	marks: { pinned: false, archived: false },
+	status: { turn: "replied", inbox: [], asks: [], compacting: false, began_at: began },
+});
 
 describe("a mention", () => {
 	it("is the `@` the caret ends, at the start or after a space, with what follows it", () => {
@@ -15,8 +23,24 @@ describe("a mention", () => {
 		const text = "read @ma please";
 		const mention = mentionAt(text, 8);
 		if (mention === undefined) throw new Error("no mention");
-		const file = withMention(text, mention, 8, { path: "src/main.zig", kind: "file" });
+		const file = withMention(text, mention, 8, { path: { path: "src/main.zig", kind: "file" } });
 		expect(file).toEqual({ text: "read [main.zig](src/main.zig) please", caret: 30 });
-		expect(withMention("@sr", { query: "sr", start: 0 }, 3, { path: "src", kind: "directory" })).toEqual({ text: "[src/](src/) ", caret: 13 });
+		expect(withMention("@sr", { query: "sr", start: 0 }, 3, { path: { path: "src", kind: "directory" } })).toEqual({ text: "[src/](src/) ", caret: 13 });
+	});
+
+	it("is replaced by the directive that names the thing chosen", () => {
+		expect(withMention("see @dev", { query: "dev", start: 4 }, 8, { thing: { kind: "terminal", id: "2", name: "npm run dev" } })).toEqual({
+			text: "see :terminal{id=2} ",
+			caret: 20,
+		});
+	});
+
+	it("may name the thread's terminals and pages, then the person's other threads at rest or at work, the latest first", () => {
+		const own = listed("t0", "This one", 3);
+		const older = listed("t1", "Older", 1);
+		const newer = listed("t2", "Newer", 2);
+		const things = thingsOf([own, older, newer], [], [], "t0");
+		expect(things.map((thing) => thing.id)).toEqual(["t2", "t1"]);
+		expect(matchingThings(things, "OLD").map((thing) => thing.name)).toEqual(["Older"]);
 	});
 });
