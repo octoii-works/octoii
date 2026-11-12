@@ -191,15 +191,12 @@ fn models(script: &Arc<Script>) -> Arc<Models> {
 
 fn runtime(beak: &Beak, script: &Arc<Script>) -> Runtime {
     let inner = Tools::new().with(ReadTool).with(WriteTool).with(ShellTool);
-    let tools = inner
-        .clone()
-        .with(ExecuteTool { tools: inner.clone() })
-        .with(DelegateTool)
-        .with(ThreadTool);
+    let tools = inner.clone().with(ExecuteTool).with(DelegateTool).with(ThreadTool);
     let models = models(script);
     let sources = Sources {
         tools: tools.clone(),
         tellers: Vec::new(),
+        owners: std::collections::HashMap::new(),
         models: Arc::clone(&models),
         host: Machine::default(),
         config: None,

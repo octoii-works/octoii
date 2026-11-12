@@ -24,6 +24,14 @@ impl Extension for BrowserExtension {
         "browser"
     }
 
+    fn title(&self) -> &'static str {
+        "Browser"
+    }
+
+    fn description(&self) -> &'static str {
+        "A Chrome of the thread's own, beside the chat, that the model reads and works and the person watches."
+    }
+
     fn build(self: Box<Self>, builder: &mut Builder) {
         let browser = Browser::start(BrowserHost {
             kernel: builder.kernel.clone(),

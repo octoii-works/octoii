@@ -79,10 +79,11 @@ fn runtime(beak: &Beak, models: &Arc<Models>) -> Runtime {
         .with(GlobTool)
         .with(GrepTool)
         .with(ShellTool);
-    let tools = inner.clone().with(ExecuteTool { tools: inner.clone() });
+    let tools = inner.clone().with(ExecuteTool);
     let sources = Sources {
         tools: tools.clone(),
         tellers: Vec::new(),
+        owners: std::collections::HashMap::new(),
         models: Arc::clone(models),
         host: Machine::default(),
         config: None,

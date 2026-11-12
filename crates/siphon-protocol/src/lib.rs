@@ -96,6 +96,15 @@ impl Machine {
     }
 }
 
+/// An extension of the machine's: its name, which settings switch it by; the words it is shown by; and a line of what
+/// it brings.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct ExtensionListed {
+    pub name: String,
+    pub title: String,
+    pub description: String,
+}
+
 /// Nothing: what a method takes or answers where it takes or answers nothing.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct Nothing {}
@@ -113,7 +122,7 @@ pub struct Unsubscribe {
 }
 
 /// An event of the connection's own: the welcome a client is sent first — its session, what it may do, the machine
-/// it reached — or that a subscription fell behind and was let go, with the topic to subscribe to again from where it
+/// it reached and its extensions — or that a subscription fell behind and was let go, with the topic to subscribe to again from where it
 /// stood.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "event", rename_all = "snake_case")]
@@ -122,6 +131,7 @@ pub enum ConnectionEvent {
         session: String,
         scopes: Vec<Scope>,
         machine: Machine,
+        extensions: Vec<ExtensionListed>,
     },
     Lagged {
         subscription: String,

@@ -3,7 +3,7 @@
 
 use octoii::access::{Access, Holder};
 use octoii::home::Home;
-use octoii::pairing::{AccessExtension, Links};
+use octoii::pairing::{Links, with_access};
 use serde_json::{Value, json};
 use siphon::testing::Client;
 use siphon_protocol::Scope;
@@ -27,7 +27,7 @@ async fn the_access_is_listed_paired_and_revoked_through_the_protocol() {
         tunnel,
     };
     let building = octoii::serve::building(&home, siphon::providers::SignInSetup::default()).expect("Siphon");
-    let siphon = building.extension(AccessExtension { links }).start().expect("started");
+    let siphon = with_access(building, links).start().expect("started");
     let access = Access::new(siphon.runtime.clone());
     let program = access
         .issue(Some("script".into()), vec![Scope::ThreadsRead])

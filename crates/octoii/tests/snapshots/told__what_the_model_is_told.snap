@@ -792,7 +792,7 @@ Replaces text in a file: `old` must match one place, or every place with `all`. 
 }
 
 === tool execute
-Runs JavaScript as the body of an async function, calling tools through `tools`: `await tools.read({ path: "a.txt" })` resolves to what the tool gives, as text, and rejects where the tool refuses. Call them in loops, at once with Promise.all, and work on what they give in code. Gives what the script returned, as JSON, and what it wrote with console.log. Use it for work of many steps: many files read or changed, a page's many actions, a batch extracted. `tools` holds browser, edit, glob, grep, read, shell, terminal, write, each taking the arguments its function does, and the MCP servers' tools of <catalog>.
+Runs JavaScript as the body of an async function, calling tools through `tools`: `await tools.read({ path: "a.txt" })` resolves to what the tool gives, as text, and rejects where the tool refuses. Call them in loops, at once with Promise.all, and work on what they give in code. Gives what the script returned, as JSON, and what it wrote with console.log. Use it for work of many steps: many files read or changed, a page's many actions, a batch extracted. `tools` holds each of your tools by its name — but this one and those that ask the person or start threads — each taking the arguments its function does, and the tools of <catalog>.
 --- parameters
 {
   "properties": {

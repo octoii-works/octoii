@@ -112,7 +112,7 @@ fn said(call: siphon_tools::Call) -> (CallStatus, String, usize, Option<serde_js
 
 fn tools(servers: &Servers) -> (Tools, Tools) {
     let inner = Tools::new().with(ReadTool).with_toolset(std::sync::Arc::new(servers.clone()));
-    let outer = inner.clone().with(ExecuteTool { tools: inner.clone() });
+    let outer = inner.clone().with(ExecuteTool);
     (inner, outer.with_toolset(std::sync::Arc::new(servers.clone())))
 }
 

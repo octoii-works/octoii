@@ -90,3 +90,46 @@ async fn what_the_model_is_told() {
     let temporary = home.temporary().expect("the Home's temporary folder");
     insta::assert_snapshot!(steady(&shown(&told), &id, folder.path(), &temporary));
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_extension_switched_off_tells_the_model_nothing() {
+    let folder = tempfile::tempdir().expect("a folder");
+    let home = Home::at(folder.path().join("home"));
+    home.prepare().expect("a Home");
+    let siphon = octoii::serve::siphon(&home, siphon::providers::SignInSetup::default()).expect("Siphon");
+    let new = NewThread {
+        actor: "person".into(),
+        config: Config {
+            workspace: Some(folder.path().display().to_string()),
+            ..Config::default()
+        },
+        ..NewThread::default()
+    };
+    let key = siphon.runtime.new_id().expect("an id");
+    let id = siphon.threads.create(&new, &key).await.expect("a thread");
+    let names = |told: &siphon_agent::Told| -> Vec<String> {
+        told.tools
+            .iter()
+            .filter_map(|tool| match tool {
+                Tool::Function { name, .. } => Some(name.clone()),
+                Tool::WebSearch => None,
+            })
+            .collect()
+    };
+    let before = names(&siphon.told(&id).await.expect("told"));
+    assert!(before.iter().any(|name| name == "browser") && before.iter().any(|name| name == "terminal"));
+    let change = siphon_settings::SettingsChange {
+        environment: Some(siphon_settings::EnvironmentChange {
+            disabled_extensions: Some(vec!["browser".into()]),
+            ..siphon_settings::EnvironmentChange::default()
+        }),
+        device: None,
+    };
+    siphon_settings::set(&siphon.runtime, "a-session", &change).await.expect("set");
+    let after = names(&siphon.told(&id).await.expect("told"));
+    assert!(
+        !after.iter().any(|name| name == "browser"),
+        "the browser is told no more: {after:?}"
+    );
+    assert!(after.iter().any(|name| name == "terminal") && after.iter().any(|name| name == "read"));
+}

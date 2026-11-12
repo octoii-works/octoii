@@ -23,7 +23,7 @@ fn inner() -> Tools {
 }
 
 fn tools() -> Tools {
-    inner().with(ExecuteTool { tools: inner() })
+    inner().with(ExecuteTool)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -153,8 +153,11 @@ fn the_tools_a_script_calls_are_named_by_the_functions_they_are() {
         .find(|declared| declared.name == "execute")
         .expect("execute")
         .description;
-    assert!(described.contains("`tools` holds read, shell, write,"), "{described}");
-    assert!(!described.contains("execute,"), "a script calls no script: {described}");
+    assert!(described.contains("`tools` holds each of your tools by its name"), "{described}");
+    assert!(
+        !described.contains("read, shell"),
+        "the tools are not listed, as which are told changes: {described}"
+    );
     assert_eq!(ExecuteTool::NAME, "execute");
 }
 

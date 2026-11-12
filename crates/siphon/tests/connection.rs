@@ -56,6 +56,14 @@ impl Extension for Echo {
         "echo"
     }
 
+    fn title(&self) -> &'static str {
+        "Echo"
+    }
+
+    fn description(&self) -> &'static str {
+        "Says back what it is told."
+    }
+
     fn build(self: Box<Self>, builder: &mut Builder) {
         builder.methods(echo::set(), echo::Method::read, |_: Caller, method| async move {
             let echo::Method::Say(said) = method;
@@ -83,7 +91,8 @@ impl Extension for Echo {
 
 const ALL: [Scope; 2] = [Scope::ThreadsRead, Scope::ThreadsOperate];
 
-/// The welcome a client of the session `session-1` with `scopes` is sent: its session, its scopes, and the machine.
+/// The welcome a client of the session `session-1` with `scopes` is sent: its session, its scopes, the machine, and its
+/// extensions.
 fn welcome_of(siphon: &siphon::Siphon, scopes: &[&str]) -> serde_json::Value {
     json!({
         "event": "welcome",
@@ -96,6 +105,7 @@ fn welcome_of(siphon: &siphon::Siphon, scopes: &[&str]) -> serde_json::Value {
             "scratchpads": siphon.machine.scratchpads,
             "memory": siphon.machine.memory,
         },
+        "extensions": [{ "name": "echo", "title": "Echo", "description": "Says back what it is told." }],
     })
 }
 

@@ -24,6 +24,14 @@ impl Extension for ClaudeCodeExtension {
         "claude-code"
     }
 
+    fn title(&self) -> &'static str {
+        "Claude Code"
+    }
+
+    fn description(&self) -> &'static str {
+        "Claude's models through Claude Code, signed in with a Claude account."
+    }
+
     fn build(self: Box<Self>, builder: &mut Builder) {
         let program = self.program.or_else(|| account::found(builder.machine.home.as_deref()));
         let place = Place {

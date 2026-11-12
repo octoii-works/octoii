@@ -4,6 +4,7 @@
 //! environment it works in; where the threads are; and the tools it may call — its own, and the web search its provider runs where its model's facts
 //! say it does.
 
+use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -57,11 +58,13 @@ pub struct Telling {
 
 /// Where what the model is told comes from: the tools it may call, what the extensions tell, the models' facts, the
 /// machine, and the folder of the person's own configuration, for every project — their instructions, `AGENTS.md`, and
-/// their skills, `skills/`.
+/// their skills, `skills/`. Each teller is told with the name of the extension it came from, and each tool an extension
+/// brought is named in `owners`, so what an extension the person switched off brings is left out.
 #[derive(Clone)]
 pub struct Sources {
     pub tools: Tools,
-    pub tellers: Vec<Arc<dyn Teller>>,
+    pub tellers: Vec<(String, Arc<dyn Teller>)>,
+    pub owners: HashMap<String, String>,
     pub models: Arc<Models>,
     pub host: Host,
     pub config: Option<PathBuf>,
@@ -131,6 +134,8 @@ pub async fn gathered(sources: &Sources, runtime: &Runtime, id: &str) -> anyhow:
         .unwrap_or_default();
     let config = Config::of(&directory)?;
     let workspace = config.workspace.as_deref().map(PathBuf::from);
+    let disabled = siphon_settings::environment(&snapshot)?.disabled_extensions;
+    let on = |extension: &str| !disabled.iter().any(|off| off == extension);
     let mut told = Told::default();
     let mut catalog = Vec::new();
     let mut add = |name: &str, text: String| told.sections.push((name.to_owned(), text));
@@ -147,7 +152,7 @@ pub async fn gathered(sources: &Sources, runtime: &Runtime, id: &str) -> anyhow:
         if let Some(folder) = sources.host.memory_of(&place.project) {
             add("memory", crate::memory::told(&folder));
         }
-        for teller in &sources.tellers {
+        for (_, teller) in sources.tellers.iter().filter(|(extension, _)| on(extension)) {
             let telling = teller.tell(runtime, id, &place).await?;
             for (name, text) in telling.sections {
                 add(&name, text);
@@ -176,6 +181,7 @@ pub async fn gathered(sources: &Sources, runtime: &Runtime, id: &str) -> anyhow:
         .tools
         .declared()
         .into_iter()
+        .filter(|declared| sources.owners.get(&declared.name).is_none_or(|extension| on(extension)))
         .map(|declared| Tool::Function {
             name: declared.name,
             description: declared.description,

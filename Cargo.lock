@@ -3932,6 +3932,7 @@ dependencies = [
  "siphon-mcp",
  "siphon-protocol",
  "siphon-runtime",
+ "siphon-settings",
  "siphon-terminals",
  "siphon-threads",
  "tempfile",

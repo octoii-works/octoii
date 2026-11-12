@@ -8,6 +8,7 @@ mod kept;
 pub mod providers;
 pub mod testing;
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use beak::{Beak, Events};
@@ -185,9 +186,11 @@ impl Siphon {
                 .with(GlobTool)
                 .with(GrepTool)
                 .with(ShellTool),
+            owners: HashMap::new(),
             providers,
             tellers: Vec::new(),
             registry: extension::Registry::default(),
+            adding: String::new(),
         };
         builder.methods(
             siphon_protocol::siphon::set(),
@@ -215,6 +218,24 @@ impl std::fmt::Debug for Building {
 }
 
 impl Building {
+    /// Adds the host's own methods of `set`, each read by `read` and done by `handle`: methods of the host's, as Siphon's
+    /// are Siphon's, which no setting switches off.
+    #[must_use]
+    pub fn methods<M, F, Done>(
+        mut self,
+        set: siphon_protocol::Set,
+        read: fn(&str, serde_json::Value) -> serde_json::Result<M>,
+        handle: F,
+    ) -> Self
+    where
+        M: Send + 'static,
+        F: Fn(Caller, M) -> Done + Send + Sync + 'static,
+        Done: std::future::Future<Output = Result<serde_json::Value, siphon_protocol::Error>> + Send + 'static,
+    {
+        self.builder.methods(set, read, handle);
+        self
+    }
+
     /// Adds what `extension` brings.
     #[must_use]
     pub fn extension(mut self, extension: impl Extension + 'static) -> Self {
@@ -242,13 +263,15 @@ impl Building {
             machine,
             runtime,
             tools: inner,
+            owners,
             providers,
             tellers,
             registry,
+            ..
         } = builder;
         let outer = inner
             .clone()
-            .with(ExecuteTool { tools: inner.clone() })
+            .with(ExecuteTool)
             .with(QuestionTool)
             .with(DelegateTool)
             .with(ThreadTool);
@@ -257,6 +280,7 @@ impl Building {
         let sources = Sources {
             tools: outer.clone(),
             tellers,
+            owners,
             models: Arc::clone(&models),
             host: machine.clone(),
             config,

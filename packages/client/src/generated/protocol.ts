@@ -155,10 +155,10 @@ export type ConfigureThread = { thread: string, change: ConfigChange, };
 
 /**
  * An event of the connection's own: the welcome a client is sent first — its session, what it may do, the machine
- * it reached — or that a subscription fell behind and was let go, with the topic to subscribe to again from where it
+ * it reached and its extensions — or that a subscription fell behind and was let go, with the topic to subscribe to again from where it
  * stood.
  */
-export type ConnectionEvent = { "event": "welcome", session: string, scopes: Array<Scope>, machine: Machine, } | { "event": "lagged", subscription: string, topic: Topic, };
+export type ConnectionEvent = { "event": "welcome", session: string, scopes: Array<Scope>, machine: Machine, extensions: Array<ExtensionListed>, } | { "event": "lagged", subscription: string, topic: Topic, };
 
 /**
  * How a provider is connected: by an API key the person gives; by a sign-in in a browser; through an agent on the
@@ -225,18 +225,28 @@ review_model: string | null,
 /**
  * How many days a thread keeps what came before its window; forever, where none.
  */
-history_retention_days: number | null, };
+history_retention_days: number | null, 
+/**
+ * The extensions switched off, by their names: what they tell a thread's model is told no more.
+ */
+disabled_extensions: Array<string>, };
 
 /**
  * A change of the environment's settings: each given in place of the one it had, each left out kept;
  * `Some(None)` lets an optional one go.
  */
-export type EnvironmentChange = { thread_mode?: Mode | null, favorite_models?: Array<string> | null, review_model?: string | null, history_retention_days?: number | null, };
+export type EnvironmentChange = { thread_mode?: Mode | null, favorite_models?: Array<string> | null, review_model?: string | null, history_retention_days?: number | null, disabled_extensions?: Array<string> | null, };
 
 /**
  * Why a call was refused, or what it asked could not be done: a code a client may act on, and words for the person.
  */
 export type Error = { code: string, message: string, };
+
+/**
+ * An extension of the machine's: its name, which settings switch it by; the words it is shown by; and a line of what
+ * it brings.
+ */
+export type ExtensionListed = { name: string, title: string, description: string, };
 
 /**
  * Why a request failed: its kind; the provider's code and words; the HTTP status it answered with; how long to wait

@@ -31,11 +31,9 @@ pub struct ExecuteArgs {
     pub code: String,
 }
 
-/// `execute`, its scripts calling `tools`.
-#[derive(Debug, Clone)]
-pub struct ExecuteTool {
-    pub tools: Tools,
-}
+/// `execute`, its scripts calling the tools its `ScriptProgram` holds.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ExecuteTool;
 
 /// What a script's process is started with: its thread, its code, the MCP servers' tools it may call beside the
 /// built-in ones, and how its calls are weighed.
@@ -87,7 +85,7 @@ pub struct ScriptOutput {
 
 impl Tool for ExecuteTool {
     const NAME: &'static str = "execute";
-    const DESCRIPTION: &'static str = "Runs JavaScript as the body of an async function, calling tools through `tools`: `await tools.read({ path: \"a.txt\" })` resolves to what the tool gives, as text, and rejects where the tool refuses. Call them in loops, at once with Promise.all, and work on what they give in code. Gives what the script returned, as JSON, and what it wrote with console.log. Use it for work of many steps: many files read or changed, a page's many actions, a batch extracted.";
+    const DESCRIPTION: &'static str = "Runs JavaScript as the body of an async function, calling tools through `tools`: `await tools.read({ path: \"a.txt\" })` resolves to what the tool gives, as text, and rejects where the tool refuses. Call them in loops, at once with Promise.all, and work on what they give in code. Gives what the script returned, as JSON, and what it wrote with console.log. Use it for work of many steps: many files read or changed, a page's many actions, a batch extracted. `tools` holds each of your tools by its name — but this one and those that ask the person or start threads — each taking the arguments its function does, and the tools of <catalog>.";
     type Args = ExecuteArgs;
 
     fn effect(&self, _: &ExecuteArgs, _: &Base) -> Effect {
@@ -96,15 +94,6 @@ impl Tool for ExecuteTool {
 
     fn exec(&self, _: &Context, _: ExecuteArgs) -> impl std::future::Future<Output = Result<Told, Refusal>> + Send {
         std::future::ready(Err(Refusal::new("a script runs as a program of its own")))
-    }
-
-    fn described(&self) -> String {
-        let names: Vec<String> = self.tools.declared().into_iter().map(|declared| declared.name).collect();
-        format!(
-            "{} `tools` holds {}, each taking the arguments its function does, and the MCP servers' tools of <catalog>.",
-            Self::DESCRIPTION,
-            names.join(", ")
-        )
     }
 
     fn start(

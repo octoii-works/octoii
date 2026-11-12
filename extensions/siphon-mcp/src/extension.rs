@@ -31,6 +31,14 @@ impl Extension for McpExtension {
         "mcp"
     }
 
+    fn title(&self) -> &'static str {
+        "MCP"
+    }
+
+    fn description(&self) -> &'static str {
+        "The tools of the MCP servers the person and the project configure."
+    }
+
     fn build(self: Box<Self>, builder: &mut Builder) {
         let servers = Servers::start(builder.machine.clone(), self.config.as_deref());
         let toolset: Arc<dyn Toolset> = Arc::new(servers.clone());

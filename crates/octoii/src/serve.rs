@@ -26,7 +26,7 @@ use crate::credentials::Credstore;
 use crate::home::Home;
 use crate::http::{self, Node};
 use crate::login;
-use crate::pairing::{AccessExtension, Links};
+use crate::pairing::{Links, with_access};
 
 /// What the node is served with: its Home, the loopback port, the web app's folder, and the relays its tunnel is at
 /// home on — where none, the one at the address the machine's account gave it, or none, reached directly alone.
@@ -168,8 +168,7 @@ pub async fn serve_until(served: Served, stop: impl Future<Output = ()> + Send +
         loopback: loopback.clone(),
         tunnel: tunnel.clone(),
     };
-    let access_extension = AccessExtension { links: links.clone() };
-    let siphon = building(&home, sign_in)?.extension(access_extension).start().context("Siphon")?;
+    let siphon = with_access(building(&home, sign_in)?, links.clone()).start().context("Siphon")?;
     // The models of each provider that lists its own — Claude Code's — asked for as the node starts, as a thread finds
     // its model, and the person picks one, in the directory alone.
     let models = std::sync::Arc::clone(&siphon.models);

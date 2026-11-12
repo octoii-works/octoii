@@ -5,7 +5,7 @@
 //! node's commands alike; a session or a link revoked.
 
 use serde::{Deserialize, Serialize};
-use siphon::{Builder, Caller, Extension};
+use siphon::{Building, Caller};
 use siphon_protocol::{Error, Nothing, Scope};
 use ts_rs::TS;
 
@@ -94,24 +94,14 @@ pub struct Revoked {
     pub revoked: String,
 }
 
-/// The node's access as an extension of Siphon's, its links made as `links` makes them.
-#[derive(Debug, Clone)]
-pub struct AccessExtension {
-    pub links: Links,
-}
-
-impl Extension for AccessExtension {
-    fn name(&self) -> &'static str {
-        "access"
-    }
-
-    fn build(self: Box<Self>, builder: &mut Builder) {
-        let links = self.links;
-        builder.methods(set(), Method::read, move |caller: Caller, method| {
-            let links = links.clone();
-            async move { answered(&links, &caller, method).await }
-        });
-    }
+/// Siphon as `building` builds it, with the node's access methods, its links made as `links` makes them: the node's
+/// own, as Siphon's are Siphon's, which no setting switches off.
+#[must_use]
+pub fn with_access(building: Building, links: Links) -> Building {
+    building.methods(set(), Method::read, move |caller: Caller, method| {
+        let links = links.clone();
+        async move { answered(&links, &caller, method).await }
+    })
 }
 
 fn failed(error: &Refused) -> Error {

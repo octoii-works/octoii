@@ -5,6 +5,7 @@
 //! person allows it, adds the same through the protocol. Siphon knows none of them; a host picks them, gives each what
 //! it needs of the host as it makes it, and builds Siphon with them.
 
+use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -14,7 +15,7 @@ use octoii_ai::models::Provider;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use siphon_machine::Host;
-use siphon_protocol::{Error, Scope, Set};
+use siphon_protocol::{Error, ExtensionListed, Scope, Set};
 use siphon_tools::Tools;
 use tokio::sync::mpsc::{self, error::TrySendError};
 use tokio_util::sync::CancellationToken;
@@ -22,9 +23,12 @@ use tokio_util::sync::CancellationToken;
 use crate::Siphon;
 use crate::connection::{Outgoing, text};
 
-/// An extension: its name, and what it adds as Siphon is built.
+/// An extension: its name, which settings switch it by; the words it is shown by and a line of what it brings; and
+/// what it adds as Siphon is built.
 pub trait Extension {
     fn name(&self) -> &'static str;
+    fn title(&self) -> &'static str;
+    fn description(&self) -> &'static str;
     fn build(self: Box<Self>, builder: &mut Builder);
 }
 
@@ -50,10 +54,11 @@ type Teller = Arc<dyn Fn(&serde_json::Value) -> Option<Telling> + Send + Sync>;
 /// What an extension does as a thread is deleted: lets go of what it held for it.
 pub(crate) type Deleted = Arc<dyn Fn(&str) + Send + Sync>;
 
-/// The methods and topics Siphon and its extensions brought, as the connection finds them, and what each extension does as
-/// a thread is deleted.
+/// The methods and topics Siphon and its extensions brought, as the connection finds them, what each extension does as
+/// a thread is deleted, and the extensions themselves, as a client is told them.
 #[derive(Default)]
 pub(crate) struct Registry {
+    pub(crate) extensions: Vec<ExtensionListed>,
     pub(crate) sets: Vec<Set>,
     pub(crate) deleted: Vec<Deleted>,
     pub(crate) methods: std::collections::HashMap<&'static str, (Option<Scope>, Handler)>,
@@ -128,15 +133,18 @@ impl Sink {
 }
 
 /// What Siphon is built of as its extensions add to it: the kernel opened and the machine, for what an extension starts on
-/// them; the runtime's programs and handlers; the tools; the providers; the methods and topics.
+/// them; the runtime's programs and handlers; the tools, and the extension each came from; the providers; the tellers,
+/// each by its extension; the methods and topics; and the extension being added, which what it adds is held by.
 pub struct Builder {
     pub kernel: Kernel,
     pub machine: Host,
     pub(crate) runtime: siphon_runtime::Builder,
     pub(crate) tools: Tools,
+    pub(crate) owners: HashMap<String, String>,
     pub(crate) providers: Vec<Provider>,
-    pub(crate) tellers: Vec<Arc<dyn siphon_agent::Teller>>,
+    pub(crate) tellers: Vec<(String, Arc<dyn siphon_agent::Teller>)>,
     pub(crate) registry: Registry,
+    pub(crate) adding: String,
 }
 
 impl std::fmt::Debug for Builder {
@@ -159,7 +167,7 @@ impl Builder {
 
     /// What tells a thread's model of the place it works in, before each turn.
     pub fn teller(&mut self, teller: Arc<dyn siphon_agent::Teller>) {
-        self.tellers.push(teller);
+        self.tellers.push((self.adding.clone(), teller));
     }
 
     /// What to do as a thread is deleted, given its id: what the extension held for it let go of, as a process's
@@ -213,9 +221,23 @@ impl Builder {
         self.registry.topics.push((scope, teller));
     }
 
-    /// Adds what `extension` brings.
+    /// Adds what `extension` brings, the tools and tellers as its.
     pub fn extension(&mut self, extension: impl Extension + 'static) -> &mut Self {
+        let name = extension.name();
+        self.registry.extensions.push(ExtensionListed {
+            name: name.to_owned(),
+            title: extension.title().to_owned(),
+            description: extension.description().to_owned(),
+        });
+        let before: Vec<String> = self.tools.declared().into_iter().map(|declared| declared.name).collect();
+        name.clone_into(&mut self.adding);
         Box::new(extension).build(self);
+        self.adding.clear();
+        for declared in self.tools.declared() {
+            if !before.contains(&declared.name) {
+                self.owners.insert(declared.name, name.to_owned());
+            }
+        }
         self
     }
 }

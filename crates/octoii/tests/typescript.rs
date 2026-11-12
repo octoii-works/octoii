@@ -20,10 +20,7 @@ async fn the_client_s_typescript_is_what_the_node_s_siphon_and_extensions_make()
         tunnel,
     };
     let building = octoii::serve::building(&home, siphon::providers::SignInSetup::default()).expect("Siphon");
-    let siphon = building
-        .extension(octoii::pairing::AccessExtension { links })
-        .start()
-        .expect("started");
+    let siphon = octoii::pairing::with_access(building, links).start().expect("started");
     let made = siphon_protocol::typescript(siphon.sets());
     siphon.runtime.close().await;
     if std::env::var_os("UPDATE_EXPECT").is_some() {

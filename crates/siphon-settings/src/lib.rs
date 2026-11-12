@@ -1,5 +1,5 @@
 //! The settings a person sets. The environment's — the mode a thread starts in, the models they starred, the model
-//! that judges calls in auto, how long a thread's history is kept — are annotations of the directory `siphon.settings`,
+//! that judges calls in auto, how long a thread's history is kept, the extensions they switched off — are annotations of the directory `siphon.settings`,
 //! each as JSON: every client of the environment shares them, and Siphon reads them. Each device's are a document of
 //! its client's own words, `siphon.settings/devices/<session>.json`, which Siphon reads none of, changed as a JSON merge
 //! patch (RFC 7396) changes a document. Each change is one commit, so whoever follows the volume hears of it.
@@ -23,6 +23,7 @@ const THREAD_MODE: &str = "siphon.thread_mode";
 const FAVORITE_MODELS: &str = "siphon.favorite_models";
 const REVIEW_MODEL: &str = "siphon.review_model";
 const HISTORY_RETENTION: &str = "siphon.history_retention_days";
+const DISABLED_EXTENSIONS: &str = "siphon.disabled_extensions";
 
 /// The environment's settings.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
@@ -35,6 +36,8 @@ pub struct Environment {
     pub review_model: Option<String>,
     /// How many days a thread keeps what came before its window; forever, where none.
     pub history_retention_days: Option<u32>,
+    /// The extensions switched off, by their names: what they tell a thread's model is told no more.
+    pub disabled_extensions: Vec<String>,
 }
 
 impl Default for Environment {
@@ -44,6 +47,7 @@ impl Default for Environment {
             favorite_models: Vec::new(),
             review_model: None,
             history_retention_days: Some(HISTORY_RETENTION_DAYS),
+            disabled_extensions: Vec::new(),
         }
     }
 }
@@ -62,6 +66,8 @@ pub struct EnvironmentChange {
     #[serde(default, skip_serializing_if = "Option::is_none", with = "::serde_with::rust::double_option")]
     #[ts(as = "_", optional)]
     pub history_retention_days: Option<Option<u32>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disabled_extensions: Option<Vec<String>>,
 }
 
 /// A change of the settings: the environment's, and the device's, as a merge patch of its document.
@@ -111,6 +117,7 @@ pub fn environment(snapshot: &Snapshot) -> Result<Environment, Error> {
         favorite_models: annotation(&directory, FAVORITE_MODELS)?.unwrap_or_default(),
         review_model: annotation(&directory, REVIEW_MODEL)?.flatten(),
         history_retention_days: annotation(&directory, HISTORY_RETENTION)?.unwrap_or(defaults.history_retention_days),
+        disabled_extensions: annotation(&directory, DISABLED_EXTENSIONS)?.unwrap_or_default(),
     })
 }
 
@@ -160,6 +167,9 @@ fn annotations(change: &EnvironmentChange) -> Result<Vec<Named>, Error> {
     }
     if let Some(days) = &change.history_retention_days {
         out.push(named(HISTORY_RETENTION, json(days)?));
+    }
+    if let Some(extensions) = &change.disabled_extensions {
+        out.push(named(DISABLED_EXTENSIONS, json(extensions)?));
     }
     Ok(out)
 }

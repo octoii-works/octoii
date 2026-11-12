@@ -19,6 +19,14 @@ impl Extension for TerminalsExtension {
         "terminals"
     }
 
+    fn title(&self) -> &'static str {
+        "Terminals"
+    }
+
+    fn description(&self) -> &'static str {
+        "Terminals beside the chat, the person's and those the model opens to run servers and watchers."
+    }
+
     fn build(self: Box<Self>, builder: &mut Builder) {
         let terminals = Terminals::start(builder.kernel.clone(), builder.machine.clone());
         let closing = terminals.clone();

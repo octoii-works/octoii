@@ -57,6 +57,7 @@ pub async fn serve(
         session: access.session.clone(),
         scopes: access.scopes.clone(),
         machine,
+        extensions: siphon.registry.extensions.clone(),
     };
     if outgoing.send(text(&welcome)).await.is_err() {
         return;
