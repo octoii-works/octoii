@@ -192,7 +192,12 @@ export type DecideTrust = { folder: string, digest: string, trusted: boolean, };
  */
 export type DeleteMemory = { path: string, file: string, };
 
-export type Deliver = { thread: string, content: Array<InputContent>, key: string, };
+export type Deliver = { thread: string, content: Array<InputContent>, key: string, 
+/**
+ * When it joins the thread's work: at the next step of the turn that works, steering it, unless it waits for the
+ * next turn.
+ */
+joins?: Joins, };
 
 export type Delivered = { delivery: string, };
 
@@ -372,7 +377,7 @@ export type InRepository = { repository?: Repository, };
 /**
  * What is delivered to a thread.
  */
-export type Inbound = { "type": "input", actor: string, content: Array<InputContent>, reply_to?: ReplyTo | null, } | { "type": "config", actor: string, model?: string | null, effort?: ReasoningEffort | null, mode?: Mode | null, workspace?: string | null, title?: string | null, budget_nanodollars?: number | null, };
+export type Inbound = { "type": "input", actor: string, content: Array<InputContent>, reply_to?: ReplyTo | null, joins?: Joins, } | { "type": "config", actor: string, model?: string | null, effort?: ReasoningEffort | null, mode?: Mode | null, workspace?: string | null, title?: string | null, budget_nanodollars?: number | null, };
 
 /**
  * Why a response ended `incomplete`: at its output limit, filtered by the provider's policy, or cut off by its caller,
@@ -399,6 +404,12 @@ export type Item = { "type": "message" } & Message | { "type": "function_call" }
  * Where an item a model writes stands: still being written, written whole, or cut off.
  */
 export type ItemStatus = "in_progress" | "completed" | "incomplete";
+
+/**
+ * When an input joins a thread's work: at the next step of the turn that works — as its calls end, steering it — or
+ * as the next turn, once the turn that works ended; at once where none works.
+ */
+export type Joins = "step" | "turn";
 
 export type JsonValue = number | string | boolean | Array<JsonValue> | { [key in string]: JsonValue } | null;
 

@@ -29,6 +29,7 @@ function groupsOf(send: Device["send_shortcut"]): readonly Group[] {
 			shortcuts: [
 				{ title: "Send", keys: send === "enter" ? ["Enter"] : ["⌘", "Enter"] },
 				{ title: "New line", keys: send === "enter" ? ["⇧", "Enter"] : ["Enter"] },
+				{ title: "While a turn works, send for the next turn", keys: send === "enter" ? ["⌘", "Enter"] : ["⌘", "⇧", "Enter"] },
 				{ title: "What you sent before, at the box's start", keys: ["↑"] },
 				{ title: "What you sent after, at the box's end", keys: ["↓"] },
 				{ title: "Choose a model", keys: ["⌘", "'"] },

@@ -171,6 +171,9 @@ function Dock(props: {
 							onSend={async ({ text, attachments }) => {
 								props.onSent(await client.deliver(thread, contentOf(text, attachments)));
 							}}
+							onQueue={async ({ text, attachments }) => {
+								props.onSent(await client.queue(thread, contentOf(text, attachments)));
+							}}
 							onStop={() => void client.stop(thread).catch((error: unknown) => failed("The thread could not be stopped", error))}
 							approval={approval}
 							sent={props.sent}

@@ -827,6 +827,60 @@ async fn a_task_delegated_in_the_background_is_answered_at_once_and_its_end_deli
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn an_input_queued_while_a_turn_works_waits_for_it_to_end_and_begins_the_next() {
+    let script = script(vec![
+        Ok(vec![calls("c1", "shell", &serde_json::json!({ "command": "sleep 2" }))]),
+        Ok(vec![says("slept")]),
+    ]);
+    script
+        .for_input
+        .lock()
+        .expect("held")
+        .push(("and then this".into(), vec![says("this too")]));
+    let beak = Beak::new().expect("Beak");
+    let runtime = runtime(&beak, &script);
+    let threads = Threads::<ThreadProgram>::new(runtime.clone());
+    let (_folder, workspace) = folder();
+    let id = thread(&threads, &workspace).await;
+    threads
+        .deliver(&id, "person", vec![InputContent::text("sleep")], "d1")
+        .await
+        .expect("delivered");
+    until(&threads, &id, Turn::Running).await;
+    threads
+        .queue(&id, "person", vec![InputContent::text("and then this")], "d2")
+        .await
+        .expect("queued");
+    let mut committed = runtime.committed();
+    tokio::time::timeout(Duration::from_secs(20), async {
+        while entries(&threads, &id)
+            .iter()
+            .filter(|entry| matches!(entry, Entry::TurnEnd { .. }))
+            .count()
+            < 2
+        {
+            committed.changed().await.expect("the runtime runs");
+        }
+    })
+    .await
+    .expect("two turns in time");
+    let kinds: Vec<&str> = entries(&threads, &id)
+        .iter()
+        .filter_map(|entry| match entry {
+            Entry::Input { .. } => Some("input"),
+            Entry::TurnEnd { .. } => Some("end"),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        kinds,
+        ["input", "end", "input", "end"],
+        "the queued input begins the next turn, steering none"
+    );
+    runtime.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_thread_started_by_another_takes_its_message_and_its_end_is_told_back() {
     let script = script(vec![
         Ok(vec![calls(

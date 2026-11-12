@@ -58,8 +58,10 @@ export type Client = {
 	configure(thread: string, change: ConfigChange): Promise<void>;
 	/** Changes how the person keeps the thread: pinned, archived, snoozed, seen, settled — each given in place of the one it had. */
 	mark(thread: string, change: MarksChange): Promise<void>;
-	/** Delivers `content` to the thread, once: the id it was delivered by, which withdraws it while it waits and which its entry in the log records. */
+	/** Delivers `content` to the thread, once — steering the turn that works at its next step: the id it was delivered by, which withdraws it while it waits and which its entry in the log records. */
 	deliver(thread: string, content: readonly InputContent[]): Promise<string>;
+	/** Delivers `content` to the thread as `deliver` does, to wait for the turn that works to end and begin the next. */
+	queue(thread: string, content: readonly InputContent[]): Promise<string>;
 	/** Takes back what was delivered by `delivery` while it waits in the thread's inbox: whether it was still there. */
 	withdraw(thread: string, delivery: string): Promise<boolean>;
 	/** Deletes the thread, whatever it was doing: its log, its processes, its terminals and its pages gone for good. */
@@ -162,6 +164,8 @@ export function createClient(options: ClientOptions): Client {
 		configure: (thread, change) => done(connection.call("threads.configure", { thread, change })),
 		mark: (thread, change) => done(connection.call("threads.mark", { thread, change })),
 		deliver: async (thread, content) => (await connection.callOpen("threads.deliver", { thread, content: [...content], key: options.randomUUID() })).delivery,
+		queue: async (thread, content) =>
+			(await connection.callOpen("threads.deliver", { thread, content: [...content], key: options.randomUUID(), joins: "turn" })).delivery,
 		withdraw: async (thread, delivery) => (await connection.call("threads.withdraw", { thread, delivery })).withdrawn,
 		delete: (thread) => done(connection.call("threads.delete", { thread })),
 		stop: (thread) => done(connection.call("threads.stop", { thread })),

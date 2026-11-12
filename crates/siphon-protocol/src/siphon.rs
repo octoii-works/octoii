@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use siphon_agent::Composition;
 use siphon_machine::git::{ChangedFile, Changes, ChangesScope, Commit, Comparison, Repository};
 use siphon_settings::{Environment, SettingsChange};
+use siphon_threads::inbox::Joins;
 use siphon_threads::log::Cursor;
 use siphon_threads::{Config, ConfigChange, Entry, Listed, MarksChange, Status};
 use ts_rs::TS;
@@ -22,7 +23,8 @@ crate::methods! {
     "threads.configure" ConfigureThread(ConfigureThread) -> Nothing, Some(Scope::ThreadsOperate);
     /// How the person keeps a thread changed.
     "threads.mark" MarkThread(MarkThread) -> Nothing, Some(Scope::ThreadsOperate);
-    /// What a message gives a thread delivered to its inbox, once for its idempotency key: its delivery's id.
+    /// What a message gives a thread delivered to its inbox, once for its idempotency key — to join the turn that works at
+    /// its next step, or to wait for the next turn: its delivery's id.
     "threads.deliver" Deliver(Deliver) -> Delivered, Some(Scope::ThreadsOperate);
     /// A delivery taken back, where its thread has not taken it yet: whether it was.
     "threads.withdraw" Withdraw(Withdraw) -> Withdrawn, Some(Scope::ThreadsOperate);
@@ -131,6 +133,11 @@ pub struct Deliver {
     pub thread: String,
     pub content: Vec<InputContent>,
     pub key: String,
+    /// When it joins the thread's work: at the next step of the turn that works, steering it, unless it waits for the
+    /// next turn.
+    #[serde(default, skip_serializing_if = "Joins::is_step")]
+    #[ts(as = "Option<Joins>", optional)]
+    pub joins: Joins,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

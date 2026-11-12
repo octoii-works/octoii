@@ -1,7 +1,8 @@
 //! A thread's inbox: what is delivered to it and not yet taken into its log — an input, a change of how it runs —
 //! each a file `inbox/<id>.json`, its id made as it came, so the names sort in the order they came. The thread's main
 //! process takes them in that order, as a mail queue is drained, each into its log where it then stands, a change of
-//! how it runs set on its directory in the same commit.
+//! how it runs set on its directory in the same commit. A turn that works takes what joins at its next step, steering
+//! it; an input that waits for the next turn stays till the turn ends, and begins the next.
 
 use beak::{Range, Snapshot};
 use bytes::Bytes;
@@ -17,13 +18,15 @@ use crate::thread;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum Inbound {
-    /// An input: whose it is — the person's, or a thread's — what it says, and who is told how the turn that takes it
-    /// ends, where someone waits on it.
+    /// An input: whose it is — the person's, or a thread's — what it says, who is told how the turn that takes it
+    /// ends, where someone waits on it, and when it joins the thread's work.
     Input {
         actor: String,
         content: Vec<InputContent>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reply_to: Option<ReplyTo>,
+        #[serde(default, skip_serializing_if = "Joins::is_step")]
+        joins: Joins,
     },
     /// A change of how the thread runs, by whom.
     Config {
@@ -31,6 +34,23 @@ pub enum Inbound {
         #[serde(flatten)]
         change: ConfigChange,
     },
+}
+
+/// When an input joins a thread's work: at the next step of the turn that works — as its calls end, steering it — or
+/// as the next turn, once the turn that works ended; at once where none works.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+#[serde(rename_all = "snake_case")]
+pub enum Joins {
+    #[default]
+    Step,
+    Turn,
+}
+
+impl Joins {
+    #[must_use]
+    pub fn is_step(&self) -> bool {
+        *self == Self::Step
+    }
 }
 
 /// Who is told how the turn that takes an input ends, by mail of `key`: the process at `process`, by its path, as the
@@ -143,7 +163,24 @@ pub struct Taken {
 /// # Errors
 /// The volume's failure; what cannot be read or written as JSON.
 pub fn take(run: &mut Run<'_>, id: &str, writer: &mut Writer) -> Result<Vec<Taken>, Error> {
-    let waiting = waiting(run.snapshot(), id)?;
+    take_of(run, id, writer, waiting(run.snapshot(), id)?)
+}
+
+/// Takes what waits in the inbox of the thread `id` as `take` does, as a turn that works takes it at its next step:
+/// all but an input that waits for the next turn.
+///
+/// # Errors
+/// As `take`'s.
+pub fn take_steering(run: &mut Run<'_>, id: &str, writer: &mut Writer) -> Result<Vec<Taken>, Error> {
+    let steering = waiting(run.snapshot(), id)?
+        .into_iter()
+        .filter(|each| !matches!(each.inbound, Inbound::Input { joins: Joins::Turn, .. }))
+        .collect();
+    take_of(run, id, writer, steering)
+}
+
+/// Takes `waiting`, of the inbox of the thread `id`, into its log, as `take` says.
+fn take_of(run: &mut Run<'_>, id: &str, writer: &mut Writer, waiting: Vec<Waiting>) -> Result<Vec<Taken>, Error> {
     if waiting.is_empty() {
         return Ok(Vec::new());
     }
@@ -157,7 +194,9 @@ pub fn take(run: &mut Run<'_>, id: &str, writer: &mut Writer) -> Result<Vec<Take
     for each in waiting {
         run.changes.delete(file(id, &each.id));
         let entry = match each.inbound {
-            Inbound::Input { actor, content, reply_to } => Entry::Input {
+            Inbound::Input {
+                actor, content, reply_to, ..
+            } => Entry::Input {
                 id: run.new_id()?,
                 actor,
                 delivery: each.id,

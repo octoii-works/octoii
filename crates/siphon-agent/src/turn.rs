@@ -2,7 +2,7 @@
 //! once, whole, takes on the calls the reply made — each weighed, asked and exec'd as its own, a call that reads at
 //! once, one that may act after those before it — appending each result as it and every call before it ended, in the
 //! order the model made them; then takes in what waits in the thread's inbox, so what the person sent while the calls
-//! ran steers the turn at its next step, and asks again, until a reply calls nothing. It asks again after a failure
+//! ran steers the turn at its next step — what waits for the next turn left for it — and asks again, until a reply calls nothing. It asks again after a failure
 //! that may pass, and has its window compacted before a request it is too full for, or once after its provider refused
 //! one as too long. Asked to stop, it keeps what had come of the reply and what its calls gave as they were cut off, and
 //! ends every call it never ran as stopped, so every call the log holds has its result.
@@ -284,7 +284,7 @@ impl TurnProgram {
         if let Some(wait) = wait {
             return Ok(Ending::Wait(TurnState::Calling { calls, appended }, wait));
         }
-        inbox::take(run, &input.thread, &mut writer)?;
+        inbox::take_steering(run, &input.thread, &mut writer)?;
         Ok(Ending::Next(TurnState::FRESH))
     }
 

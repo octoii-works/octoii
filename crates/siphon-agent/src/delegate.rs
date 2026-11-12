@@ -18,7 +18,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use siphon_machine::paths::Base;
 use siphon_runtime::{Changes, Ending, Program, Run, Wait};
-use siphon_threads::inbox::{self, Ended, Inbound, ReplyTo};
+use siphon_threads::inbox::{self, Ended, Inbound, Joins, ReplyTo};
 use siphon_threads::{Config, NewThread, Parent, Threads, thread};
 use siphon_tools::{Context, Effect, Refusal, Setting, Told, Tool};
 
@@ -221,6 +221,7 @@ fn give(run: &mut Run<'_>, own: &str, args: &DelegateArgs) -> anyhow::Result<End
         actor: own.to_owned(),
         content: vec![InputContent::text(args.task.clone())],
         reply_to: Some(reply_to),
+        joins: Joins::Step,
     };
     inbox::put(&mut run.changes, &child, &task, &inbound)?;
     let waiting = Waiting {
@@ -313,6 +314,7 @@ impl Program for DelegatedProgram {
             actor: waiting.child.clone(),
             content,
             reply_to: None,
+            joins: Joins::Step,
         };
         let delivery = run.new_id()?;
         inbox::put(&mut run.changes, &waiting.thread, &delivery, &inbound)?;

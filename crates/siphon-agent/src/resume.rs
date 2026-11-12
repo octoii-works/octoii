@@ -6,7 +6,7 @@
 use beak::Snapshot;
 use serde::{Deserialize, Serialize};
 use siphon_runtime::{Changes, Ending, Program, Run, Wait};
-use siphon_threads::inbox::{self, Inbound};
+use siphon_threads::inbox::{self, Inbound, Joins};
 use siphon_threads::{Entry, Window, thread};
 
 /// The person's word it goes on with.
@@ -97,6 +97,7 @@ impl Program for ResumeProgram {
             actor: input.actor.clone(),
             content: vec![octoii_ai::vocabulary::InputContent::text(WORD)],
             reply_to: None,
+            joins: Joins::Step,
         };
         let delivery = run.new_id()?;
         inbox::put(&mut run.changes, &input.thread, &delivery, &word)?;

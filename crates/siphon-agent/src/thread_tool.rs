@@ -16,7 +16,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use siphon_machine::paths::Base;
 use siphon_runtime::{Changes, Ending, Program, Run};
-use siphon_threads::inbox::{self, Inbound, ReplyTo};
+use siphon_threads::inbox::{self, Inbound, Joins, ReplyTo};
 use siphon_threads::{Config, Mode, NewThread, Threads, thread};
 use siphon_tools::{Context, Effect, Refusal, Setting, Told, Tool};
 
@@ -223,6 +223,7 @@ fn send(run: &mut Run<'_>, own: &str, target: &str, message: &str, report: bool)
             InputContent::text(message.to_owned()),
         ],
         reply_to,
+        joins: Joins::Step,
     };
     inbox::put(&mut run.changes, target, &delivery, &inbound)?;
     if report {

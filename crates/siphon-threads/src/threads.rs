@@ -11,7 +11,7 @@ use siphon_runtime::{Changes, NotGiven, Program, Runtime};
 
 use crate::config::{Config, ConfigChange};
 use crate::idempotency::{self, Done};
-use crate::inbox::{self, Inbound};
+use crate::inbox::{self, Inbound, Joins};
 use crate::log::{self, Entry, Writer};
 use crate::marks::{MarksChange, SNOOZE_NAME};
 use crate::status::{self, Listed, Parent, TURN_ANNOTATION, Turn};
@@ -178,12 +178,27 @@ impl<M: Program<Input = MainInput>> Threads<M> {
         Ok(())
     }
 
-    /// Delivers `content`, `actor`'s input, to the thread `id`, kept in its inbox till its main process takes it: its
-    /// id there. Delivered again under the same `key` within a day, it is the input delivered then.
+    /// Delivers `content`, `actor`'s input, to the thread `id`, kept in its inbox till its main process takes it — at
+    /// the next step of the turn that works, steering it, or as the next turn: its id there. Delivered again under the
+    /// same `key` within a day, it is the input delivered then.
     ///
     /// # Errors
     /// `NoSuchThread`; as the key says; the commit's failure.
     pub async fn deliver(&self, id: &str, actor: &str, content: Vec<InputContent>, key: &str) -> Result<String, Error> {
+        self.put_input(id, actor, content, Joins::Step, key).await
+    }
+
+    /// Delivers `content`, `actor`'s input, to the thread `id` as `deliver` does, to wait for the turn that works to end
+    /// and begin the next: its id in the inbox.
+    ///
+    /// # Errors
+    /// As `deliver`'s.
+    pub async fn queue(&self, id: &str, actor: &str, content: Vec<InputContent>, key: &str) -> Result<String, Error> {
+        self.put_input(id, actor, content, Joins::Turn, key).await
+    }
+
+    /// Delivers `content`, `actor`'s input, to the thread `id`, to join its work as `joins` says, once for `key`.
+    async fn put_input(&self, id: &str, actor: &str, content: Vec<InputContent>, joins: Joins, key: &str) -> Result<String, Error> {
         self.directory(id)?;
         if let Some(done) = idempotency::done_before(&self.runtime.snapshot()?, key, "threads.deliver", Some(id))? {
             return Ok(done.result);
@@ -193,6 +208,7 @@ impl<M: Program<Input = MainInput>> Threads<M> {
             actor: actor.to_owned(),
             content,
             reply_to: None,
+            joins,
         };
         let delivery = self.put(id, &inbound, &mut changes)?;
         let done = Done {

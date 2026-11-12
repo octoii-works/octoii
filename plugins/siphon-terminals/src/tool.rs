@@ -11,7 +11,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use siphon_machine::paths::Base;
 use siphon_runtime::{Changes, Runtime};
-use siphon_threads::inbox::{self, Inbound};
+use siphon_threads::inbox::{self, Inbound, Joins};
 use siphon_tools::{Context, Effect, Refusal, Told, Tool};
 use tokio::sync::broadcast;
 
@@ -217,6 +217,7 @@ async fn tell(runtime: &Runtime, ended: &Ended) -> anyhow::Result<()> {
         actor: ACTOR.to_owned(),
         content: vec![InputContent::text(ended_words(ended))],
         reply_to: None,
+        joins: Joins::Step,
     };
     let mut changes = Changes::new();
     inbox::put(&mut changes, &ended.thread, &runtime.new_id()?, &inbound)?;

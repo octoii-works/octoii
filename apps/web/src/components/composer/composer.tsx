@@ -52,6 +52,8 @@ export type ComposerProps = {
 	readonly folder: string | undefined;
 	/** Sends the words and the files; resolves once the node took them, so the box empties then. */
 	readonly onSend: (message: Outgoing) => Promise<void>;
+	/** Sends them to wait for the turn that works to end and begin the next, as the other send shortcut asks while it works; none where nothing is queued. */
+	readonly onQueue?: (message: Outgoing) => Promise<void>;
 	readonly onStop: () => void;
 	/** The call's permission that waits on the person, answered here; none while none waits. */
 	readonly approval?: Approval | undefined;
@@ -79,6 +81,17 @@ function droppedOn(attach: (files: readonly File[]) => void): Pick<React.HTMLAtt
 			attach(files);
 		},
 	};
+}
+
+/**
+ * Which send Enter is, with ⌘/Ctrl or Shift held, as the device sends: the send, the other — which, while the turn
+ * works, waits for the next — or none, a new line. Enter sends and ⌘↵ is the other; where the device sends with ⌘↵,
+ * ⌘⇧↵ is the other and Enter alone a new line.
+ */
+function sendOf(shortcut: Device["send_shortcut"], mod: boolean, shift: boolean): "send" | "other" | undefined {
+	if (shortcut === "enter") return shift ? undefined : mod ? "other" : "send";
+	if (!mod) return undefined;
+	return shift ? "other" : "send";
 }
 
 /** What the box says it takes: a denial while a permission waits; a model, before one is chosen; else what it is given, or asking anything. */
@@ -115,12 +128,12 @@ export function Composer(props: ComposerProps): ReactNode {
 		approval.deny(draft.text.trim());
 		draft.clear();
 	};
-	const send = (): void => {
+	const sendBy = (sent: (message: Outgoing) => Promise<void>): void => {
 		if (unready || sending) return;
 		const message = { text: draft.text.trim(), attachments: draft.attachments };
 		startSending(async () => {
 			try {
-				await props.onSend(message);
+				await sent(message);
 				draft.clear();
 			} catch (error) {
 				// The draft stays, to be sent again.
@@ -145,14 +158,15 @@ export function Composer(props: ComposerProps): ReactNode {
 			deny(props.approval);
 			return;
 		}
-		if (event.key !== "Enter" || event.shiftKey || event.altKey) return;
+		if (event.key !== "Enter" || event.altKey) return;
+		const mod = event.metaKey || event.ctrlKey;
 		// While a permission waits, ⌘↵ allows it, wherever the focus is.
-		if (props.approval !== undefined && (event.metaKey || event.ctrlKey)) return;
-		// Enter sends unless the device sends with Cmd/Ctrl+Enter, where Enter alone makes a new line.
-		if (props.sendShortcut === "mod-enter" && !(event.metaKey || event.ctrlKey)) return;
+		if (props.approval !== undefined && mod) return;
+		const pressed = sendOf(props.sendShortcut, mod, event.shiftKey);
+		if (pressed === undefined) return;
 		event.preventDefault();
-		// While a permission waits, what is written denies it.
-		if (props.approval === undefined) send();
+		// While a permission waits, what is written denies it; while the turn works, the other send waits for the next.
+		if (props.approval === undefined) sendBy(pressed === "other" && props.working ? (props.onQueue ?? props.onSend) : props.onSend);
 		else if (draft.text.trim() !== "") deny(props.approval);
 	};
 	return (
@@ -199,7 +213,7 @@ export function Composer(props: ComposerProps): ReactNode {
 					{props.mode === undefined ? null : <ModeControl mode={props.mode} onChoose={props.onMode} />}
 				</div>
 				{props.approval === undefined ? (
-					<SendButton working={props.working} empty={empty} unready={unready || sending} onSend={send} onStop={props.onStop} />
+					<SendButton working={props.working} empty={empty} unready={unready || sending} onSend={() => sendBy(props.onSend)} onStop={props.onStop} />
 				) : (
 					<ComposerApproval approval={props.approval} reason={() => draft.text.trim()} onDenied={draft.clear} />
 				)}

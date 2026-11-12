@@ -1,6 +1,7 @@
 /**
  * The person's messages that wait in a thread's inbox, docked over the composer: each taken into the turn that works as its
- * next step begins, which it steers, or begins the next turn; each rising in as it is sent, with its text, its links by
+ * next step begins, which it steers, or, where it was sent to wait, beginning the next turn as this one ends — each
+ * saying which; each rising in as it is sent, with its text, its links by
  * their words, a pen that takes it back into the composer to be written again — words alone, as files go no way back —
  * and a cross that takes it back while it waits.
  */
@@ -16,13 +17,13 @@ import { failed } from "../state/notices.ts";
 /** The person's messages waiting in `thread`'s inbox — not what a thread delivered, which is not theirs to take back; nothing where none waits. */
 export function Queued(props: { readonly thread: string; readonly inbox: readonly (readonly [string, Inbound])[] }): ReactNode {
 	const queued = props.inbox.flatMap(([id, inbound]) =>
-		inbound.type === "input" && threadOfActor(inbound.actor) === undefined ? [{ id, content: inbound.content }] : [],
+		inbound.type === "input" && threadOfActor(inbound.actor) === undefined ? [{ id, content: inbound.content, nextTurn: inbound.joins === "turn" }] : [],
 	);
 	if (queued.length === 0) return null;
 	return (
 		<div className="mx-3 mb-[-1px] flex flex-col gap-0.5 rounded-t-lg border border-b-0 border-border bg-card px-2 py-1.5">
 			{queued.map((input) => (
-				<QueuedRow key={input.id} thread={props.thread} id={input.id} content={input.content} />
+				<QueuedRow key={input.id} thread={props.thread} id={input.id} content={input.content} nextTurn={input.nextTurn} />
 			))}
 		</div>
 	);
@@ -33,7 +34,7 @@ const ROW =
 	"flex h-control-sm items-center gap-2 rounded-md px-1.5 text-ui transition-[opacity,translate] duration-200 hover:bg-accent starting:translate-y-1 starting:opacity-0 motion-reduce:transition-none";
 
 /** A message of the person's waiting in the inbox: written again in the composer, its words before what the composer holds; or taken back. */
-function QueuedRow(props: { readonly thread: string; readonly id: string; readonly content: readonly InputContent[] }): ReactNode {
+function QueuedRow(props: { readonly thread: string; readonly id: string; readonly content: readonly InputContent[]; readonly nextTurn: boolean }): ReactNode {
 	const client = useClient();
 	const draft = useDraft({ thread: props.thread });
 	const words = inputText(props.content);
@@ -51,7 +52,7 @@ function QueuedRow(props: { readonly thread: string; readonly id: string; readon
 		<div className={ROW}>
 			<CornerDownRight className="size-3.5 shrink-0 text-muted-foreground" />
 			<span className="min-w-0 flex-1 truncate text-foreground">{linksAsWords(words) || "A message"}</span>
-			<span className="text-xs text-muted-foreground">Joins at the next step</span>
+			<span className="text-xs text-muted-foreground">{props.nextTurn ? "Next turn" : "Joins at the next step"}</span>
 			{wordsAlone ? (
 				<button type="button" aria-label="Edit" title="Edit" onClick={edit} className={ICON}>
 					<Pencil className="size-3.5" />

@@ -6,6 +6,7 @@ use std::path::Path;
 use serde::Serialize;
 use siphon_protocol::siphon::{Created, Delivered, Method, ThreadRead, ThreadsListed, Withdrawn};
 use siphon_protocol::{Error, Nothing};
+use siphon_threads::inbox::Joins;
 use siphon_threads::{NewThread, PERSON, log};
 use siphon_tools::projects::Place;
 
@@ -113,12 +114,15 @@ async fn threads_answered(siphon: &Siphon, method: Method) -> Result<serde_json:
             threads.mark(&mark.thread, &mark.change).await.map_err(|error| failed(&error))?;
             json(&Nothing {})
         }
-        Method::Deliver(deliver) => json(&Delivered {
-            delivery: threads
-                .deliver(&deliver.thread, PERSON, deliver.content, &deliver.key)
-                .await
-                .map_err(|error| failed(&error))?,
-        }),
+        Method::Deliver(deliver) => {
+            let delivered = match deliver.joins {
+                Joins::Step => threads.deliver(&deliver.thread, PERSON, deliver.content, &deliver.key).await,
+                Joins::Turn => threads.queue(&deliver.thread, PERSON, deliver.content, &deliver.key).await,
+            };
+            json(&Delivered {
+                delivery: delivered.map_err(|error| failed(&error))?,
+            })
+        }
         Method::Withdraw(withdraw) => json(&Withdrawn {
             withdrawn: threads
                 .withdraw(&withdraw.thread, &withdraw.delivery)
