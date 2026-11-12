@@ -200,8 +200,8 @@ impl Machine {
         self.base.shown(&Path::new("/").join(path))
     }
 
-    /// Binds the host's folder `place` back, writable, over what hides it, as `mount --bind` does: a plugin's own
-    /// folder, among what the host keeps for itself, reached by the plugin's own programs alone.
+    /// Binds the host's folder `place` back, writable, over what hides it, as `mount --bind` does: an extension's own
+    /// folder, among what the host keeps for itself, reached by the extension's own programs alone.
     ///
     /// # Errors
     /// Beak's failure to mount it.

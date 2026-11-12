@@ -1,4 +1,4 @@
-//! `octoii serve`: Siphon and its core plugins on this computer — the volume in the Home, the providers' keys from the
+//! `octoii serve`: Siphon and its core extensions on this computer — the volume in the Home, the providers' keys from the
 //! credstore and the login environment, the machine as the person's own with what the node keeps for itself hidden
 //! from it — served to clients on the loopback address and to the devices that reach the node by its key through the
 //! tunnel, at home on its relays, and its control socket opened to the node's commands, till it is asked to stop:
@@ -13,12 +13,12 @@ use octoii_ai::drivers;
 use octoii_ai::models::Provider;
 use siphon::providers::SignInSetup;
 use siphon::{Setup, Siphon};
-use siphon_browser::BrowserPlugin;
-use siphon_claude_code::ClaudeCodePlugin;
-use siphon_mcp::McpPlugin;
+use siphon_browser::BrowserExtension;
+use siphon_claude_code::ClaudeCodeExtension;
+use siphon_mcp::McpExtension;
 use siphon_protocol::Machine;
 use siphon_runtime::Options;
-use siphon_terminals::TerminalsPlugin;
+use siphon_terminals::TerminalsExtension;
 
 use crate::access::Access;
 use crate::control::{self, Control};
@@ -26,7 +26,7 @@ use crate::credentials::Credstore;
 use crate::home::Home;
 use crate::http::{self, Node};
 use crate::login;
-use crate::pairing::{AccessPlugin, Links};
+use crate::pairing::{AccessExtension, Links};
 
 /// What the node is served with: its Home, the loopback port, the web app's folder, and the relays its tunnel is at
 /// home on — where none, the one at the address the machine's account gave it, or none, reached directly alone.
@@ -75,7 +75,7 @@ fn machine(home: &Home, temporary: &Path) -> siphon_machine::Host {
     }
 }
 
-/// Siphon on this computer, started with its core plugins: a provider's sign-in in a browser come back to `sign_in`.
+/// Siphon on this computer, started with its core extensions: a provider's sign-in in a browser come back to `sign_in`.
 ///
 /// # Errors
 /// Where Beak or the volume cannot be opened.
@@ -83,7 +83,7 @@ pub fn siphon(home: &Home, sign_in: SignInSetup) -> anyhow::Result<Siphon> {
     building(home, sign_in)?.start().context("Siphon")
 }
 
-/// Siphon on this computer being built, its core plugins added — the browser, the terminals, the MCP servers, Claude
+/// Siphon on this computer being built, its core extensions added — the browser, the terminals, the MCP servers, Claude
 /// Code — for the node to add its own and start it.
 ///
 /// # Errors
@@ -105,20 +105,24 @@ pub fn building(home: &Home, sign_in: SignInSetup) -> anyhow::Result<siphon::Bui
             ..Options::default()
         },
     };
-    let browser = BrowserPlugin {
+    let browser = BrowserExtension {
         program: None,
         profile: Some(home.browser().join("profile")),
         downloads: Some(temporary.join("downloads")),
     };
     let built = Siphon::builder(&beak, setup).context("the volume")?;
-    let config = McpPlugin {
+    let config = McpExtension {
         config: Some(home.config()),
     };
-    let claude = ClaudeCodePlugin {
+    let claude = ClaudeCodeExtension {
         program: None,
         folder: home.state().join("claude-code"),
     };
-    Ok(built.plugin(browser).plugin(TerminalsPlugin).plugin(config).plugin(claude))
+    Ok(built
+        .extension(browser)
+        .extension(TerminalsExtension)
+        .extension(config)
+        .extension(claude))
 }
 
 /// Serves the node as `served` says, till it is asked to stop: an interrupt, or a terminate.
@@ -164,8 +168,8 @@ pub async fn serve_until(served: Served, stop: impl Future<Output = ()> + Send +
         loopback: loopback.clone(),
         tunnel: tunnel.clone(),
     };
-    let access_plugin = AccessPlugin { links: links.clone() };
-    let siphon = building(&home, sign_in)?.plugin(access_plugin).start().context("Siphon")?;
+    let access_extension = AccessExtension { links: links.clone() };
+    let siphon = building(&home, sign_in)?.extension(access_extension).start().context("Siphon")?;
     // The models of each provider that lists its own — Claude Code's — asked for as the node starts, as a thread finds
     // its model, and the person picks one, in the directory alone.
     let models = std::sync::Arc::clone(&siphon.models);

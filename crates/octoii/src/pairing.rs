@@ -1,11 +1,11 @@
 //! Pairing, and the access the node's clients hold, as the node's own methods of the protocol — the node a host that
-//! adds what is its own to Siphon as any plugin does: the sessions and the links not yet used; a link made to pair a
+//! adds what is its own to Siphon as any extension does: the sessions and the links not yet used; a link made to pair a
 //! client, its addresses — on this computer, at the loopback; on another device, at the web app, where the node has a
 //! home relay, with the node's key and relay by which the page dials it — made in one place for the protocol and the
 //! node's commands alike; a session or a link revoked.
 
 use serde::{Deserialize, Serialize};
-use siphon::{Builder, Caller, Plugin};
+use siphon::{Builder, Caller, Extension};
 use siphon_protocol::{Error, Nothing, Scope};
 use ts_rs::TS;
 
@@ -94,13 +94,13 @@ pub struct Revoked {
     pub revoked: String,
 }
 
-/// The node's access as a plugin of Siphon's, its links made as `links` makes them.
+/// The node's access as an extension of Siphon's, its links made as `links` makes them.
 #[derive(Debug, Clone)]
-pub struct AccessPlugin {
+pub struct AccessExtension {
     pub links: Links,
 }
 
-impl Plugin for AccessPlugin {
+impl Extension for AccessExtension {
     fn name(&self) -> &'static str {
         "access"
     }

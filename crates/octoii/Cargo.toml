@@ -1,6 +1,6 @@
 [package]
 name = "octoii"
-description = "Octoii's node, the `octoii` program: Siphon and its core plugins on this computer, served to the person's clients on the loopback and through the tunnel, its Home kept"
+description = "Octoii's node, the `octoii` program: Siphon and its core extensions on this computer, served to the person's clients on the loopback and through the tunnel, its Home kept"
 version = "0.0.1"
 edition.workspace = true
 rust-version.workspace = true
@@ -35,14 +35,14 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 sha2 = "0.11.1"
 siphon = { path = "../siphon" }
-siphon-browser = { path = "../../plugins/siphon-browser" }
+siphon-browser = { path = "../../extensions/siphon-browser" }
 siphon-machine = { path = "../siphon-machine" }
 siphon-image = { path = "../siphon-image" }
-siphon-claude-code = { path = "../../plugins/siphon-claude-code" }
-siphon-mcp = { path = "../../plugins/siphon-mcp" }
+siphon-claude-code = { path = "../../extensions/siphon-claude-code" }
+siphon-mcp = { path = "../../extensions/siphon-mcp" }
 siphon-protocol = { path = "../siphon-protocol" }
 siphon-runtime = { path = "../siphon-runtime" }
-siphon-terminals = { path = "../../plugins/siphon-terminals" }
+siphon-terminals = { path = "../../extensions/siphon-terminals" }
 siphon-threads = { path = "../siphon-threads" }
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "net", "signal", "fs", "time"] }

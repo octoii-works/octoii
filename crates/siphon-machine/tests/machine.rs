@@ -383,7 +383,7 @@ async fn a_folder_bound_back_over_what_the_host_hides_is_reached_by_a_command_an
     let kernel = kernel(&beak);
     let kept = tempfile::tempdir().expect("a folder");
     let kept = kept.path().canonicalize().expect("its real path");
-    let own = kept.join("plugin");
+    let own = kept.join("extension");
     std::fs::create_dir_all(&own).expect("its folder");
     std::fs::write(kept.join("secret"), "s").expect("written");
     let host = Host {

@@ -1,4 +1,4 @@
-//! Octoii's node, the `octoii` program: Siphon and its core plugins on this computer — the browser, the terminals, the
+//! Octoii's node, the `octoii` program: Siphon and its core extensions on this computer — the browser, the terminals, the
 //! MCP servers — its Home kept, served to the person's clients on the loopback address, and reached by its own commands
 //! through its control socket.
 

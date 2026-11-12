@@ -7,15 +7,19 @@ use std::time::Duration;
 use beak::Beak;
 use serde_json::{Value, json};
 use siphon::testing::{self, Client};
-use siphon::{Builder, Caller, Lagged, Plugin, Siphon, Subscription};
+use siphon::{Builder, Caller, Extension, Lagged, Siphon, Subscription};
 use siphon_protocol::Scope;
 
 fn siphon(beak: &Beak) -> Siphon {
     let setup = testing::setup(siphon_machine::Host::default());
-    Siphon::builder(beak, setup).expect("built").plugin(Echo).start().expect("started")
+    Siphon::builder(beak, setup)
+        .expect("built")
+        .extension(Echo)
+        .start()
+        .expect("started")
 }
 
-/// A plugin of the test's: a method that says back what it is given, and a topic that tells it thrice.
+/// An extension of the test's: a method that says back what it is given, and a topic that tells it thrice.
 mod echo {
     use serde::{Deserialize, Serialize};
     use siphon_protocol::Scope;
@@ -47,7 +51,7 @@ mod echo {
 
 struct Echo;
 
-impl Plugin for Echo {
+impl Extension for Echo {
     fn name(&self) -> &'static str {
         "echo"
     }
@@ -248,7 +252,7 @@ async fn a_subscription_its_client_does_not_keep_up_with_lags_and_is_made_again_
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_plugin_s_methods_and_topics_are_the_protocol_s_beside_siphon_s() {
+async fn a_extension_s_methods_and_topics_are_the_protocol_s_beside_siphon_s() {
     let beak = Beak::new().expect("Beak");
     let siphon = siphon(&beak);
     let mut client = Client::connect(&siphon, ALL.to_vec(), 64);

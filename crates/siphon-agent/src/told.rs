@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use siphon_threads::{Entry, Section, Window};
 
 /// What the model is told: its sections, by name, in the order told; the tools it may call; and the names of the tools
-/// its scripts may call beside them, as the plugins told them.
+/// its scripts may call beside them, as the extensions told them.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Told {
     pub sections: Vec<(String, String)>,

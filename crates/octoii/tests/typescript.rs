@@ -1,4 +1,4 @@
-//! The client's TypeScript of the protocol is what the node's Siphon and its plugins make of it: written anew where
+//! The client's TypeScript of the protocol is what the node's Siphon and its extensions make of it: written anew where
 //! `UPDATE_EXPECT` is set, as expect-test's snapshots are, and compared otherwise, so a change of a type the client was
 //! not given fails.
 
@@ -7,7 +7,7 @@ use octoii::home::Home;
 const MODULE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packages/client/src/generated/protocol.ts");
 
 #[tokio::test(flavor = "multi_thread")]
-async fn the_client_s_typescript_is_what_the_node_s_siphon_and_plugins_make() {
+async fn the_client_s_typescript_is_what_the_node_s_siphon_and_extensions_make() {
     let folder = tempfile::tempdir().expect("a folder");
     let home = Home::at(folder.path());
     home.prepare().expect("a Home");
@@ -20,7 +20,10 @@ async fn the_client_s_typescript_is_what_the_node_s_siphon_and_plugins_make() {
         tunnel,
     };
     let building = octoii::serve::building(&home, siphon::providers::SignInSetup::default()).expect("Siphon");
-    let siphon = building.plugin(octoii::pairing::AccessPlugin { links }).start().expect("started");
+    let siphon = building
+        .extension(octoii::pairing::AccessExtension { links })
+        .start()
+        .expect("started");
     let made = siphon_protocol::typescript(siphon.sets());
     siphon.runtime.close().await;
     if std::env::var_os("UPDATE_EXPECT").is_some() {

@@ -12,7 +12,7 @@ use siphon_threads::{Listed, Status, log, thread};
 
 use super::journal::{Followed, Since, is_at_or_under};
 use crate::Siphon;
-use crate::plugin::{Full, Lagged, Subscription};
+use crate::extension::{Full, Lagged, Subscription};
 
 /// About how many bytes of a thread's log one event of entries carries.
 const ENTRIES_BYTES: u64 = 256 << 10;
@@ -170,7 +170,7 @@ async fn threads_told(subscription: &Subscription) -> Result<(), Full> {
 
 /// Each of `ids` told as it now stands where `shown` shows it otherwise, or gone where it is gone; `shown` kept as told.
 fn threads_changed(
-    sink: &crate::plugin::Sink,
+    sink: &crate::extension::Sink,
     shown: &mut HashMap<String, Listed>,
     listed: impl Fn(&str) -> Option<Listed>,
     ids: &BTreeSet<String>,

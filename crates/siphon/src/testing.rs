@@ -1,4 +1,4 @@
-//! What tests of Siphon, of its plugins and of a host build on: Siphon's setup on a volume in memory that asks no
+//! What tests of Siphon, of its extensions and of a host build on: Siphon's setup on a volume in memory that asks no
 //! model, and a client of a connection — its calls made, its answers and events read, a binary frame's event with the
 //! bytes it carries.
 

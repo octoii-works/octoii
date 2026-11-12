@@ -1,10 +1,10 @@
 //! Siphon whole: the runtime on Beak with the programs of a thread's and the handlers of its requests, the tools its
-//! model calls, the models it asks, and the protocol a client speaks to it — built with the plugins a host picks, which
+//! model calls, the models it asks, and the protocol a client speaks to it — built with the extensions a host picks, which
 //! bring the rest: their providers, tools, programs, what they tell the model, and their methods.
 
 pub mod connection;
+mod extension;
 mod kept;
-mod plugin;
 pub mod providers;
 pub mod testing;
 
@@ -28,8 +28,8 @@ use siphon_tools::{
     WriteTool, answer_exec,
 };
 
+pub use extension::{Builder, Caller, Extension, Full, Lagged, Sink, Subscription};
 pub use kept::{Ends, Kept};
-pub use plugin::{Builder, Caller, Full, Lagged, Plugin, Sink, Subscription};
 
 /// What Siphon is built on: the machine its work is done on; the folder of the person's own configuration, for every
 /// project — their instructions, `AGENTS.md`, and their skills, `skills/` — where they keep one; the host's credentials
@@ -48,7 +48,7 @@ pub struct Setup {
 
 /// Siphon, started: the machine its work is done on, its runtime, its threads, the models they ask — reached with the
 /// host's providers, the credentials kept, and how a sign-in comes back — the sign-ins begun, and the protocol's
-/// methods and topics as Siphon and its plugins brought them.
+/// methods and topics as Siphon and its extensions brought them.
 #[derive(Clone)]
 pub struct Siphon {
     pub machine: Host,
@@ -59,12 +59,12 @@ pub struct Siphon {
     pub providers: Arc<Vec<Provider>>,
     pub sign_in: Arc<providers::SignInSetup>,
     pub sign_ins: providers::SignIns,
-    pub(crate) registry: Arc<plugin::Registry>,
+    pub(crate) registry: Arc<extension::Registry>,
     sources: Sources,
 }
 
 impl Siphon {
-    /// The sets of methods Siphon and its plugins brought, as the protocol is described by.
+    /// The sets of methods Siphon and its extensions brought, as the protocol is described by.
     #[must_use]
     pub fn sets(&self) -> &[siphon_protocol::Set] {
         &self.registry.sets
@@ -98,7 +98,7 @@ impl Siphon {
         )
     }
 
-    /// Deletes the thread `id` and every thread under it, the scratchpad of each, each plugin letting go of what it
+    /// Deletes the thread `id` and every thread under it, the scratchpad of each, each extension letting go of what it
     /// held for each.
     ///
     /// # Errors
@@ -109,15 +109,15 @@ impl Siphon {
                 // What is left there is the system's to clear in time, where it cannot be removed now.
                 let _ = std::fs::remove_dir_all(scratchpad);
             }
-            for plugin in &self.registry.deleted {
-                plugin(&deleted);
+            for extension in &self.registry.deleted {
+                extension(&deleted);
             }
         }
         Ok(())
     }
 }
 
-/// Siphon being built: what its plugins add to, and what it is started with.
+/// Siphon being built: what its extensions add to, and what it is started with.
 pub struct Building {
     pub builder: Builder,
     config: Option<std::path::PathBuf>,
@@ -146,7 +146,7 @@ impl std::fmt::Debug for Setup {
 
 impl Siphon {
     /// Siphon to be built on `beak` as `setup` says, its volume opened, with its own tools, programs, methods and
-    /// topics; its plugins next.
+    /// topics; its extensions next.
     ///
     /// # Errors
     /// The volume's failure, as another holding its directory.
@@ -174,7 +174,7 @@ impl Siphon {
             new_id: Arc::new(move || minting.new_id(minted_at.now_ms()).expect("the volume mints an id")),
             clock: Arc::new(move || clock.now_ms()),
         };
-        let mut builder = plugin::Builder {
+        let mut builder = extension::Builder {
             kernel,
             machine,
             runtime: Runtime::builder(),
@@ -187,7 +187,7 @@ impl Siphon {
                 .with(ShellTool),
             providers,
             tellers: Vec::new(),
-            registry: plugin::Registry::default(),
+            registry: extension::Registry::default(),
         };
         builder.methods(
             siphon_protocol::siphon::set(),
@@ -215,10 +215,10 @@ impl std::fmt::Debug for Building {
 }
 
 impl Building {
-    /// Adds what `plugin` brings.
+    /// Adds what `extension` brings.
     #[must_use]
-    pub fn plugin(mut self, plugin: impl Plugin + 'static) -> Self {
-        self.builder.plugin(plugin);
+    pub fn extension(mut self, extension: impl Extension + 'static) -> Self {
+        self.builder.extension(extension);
         self
     }
 
@@ -237,7 +237,7 @@ impl Building {
             catalogue,
             options,
         } = self;
-        let plugin::Builder {
+        let extension::Builder {
             kernel,
             machine,
             runtime,
@@ -282,7 +282,7 @@ impl Building {
     }
 }
 
-/// The runtime's own programs and handlers beside the plugins' in `runtime`: the thread's processes, the requests
+/// The runtime's own programs and handlers beside the extensions' in `runtime`: the thread's processes, the requests
 /// answered by the machine and the models, and those the person answers.
 fn programs(
     runtime: siphon_runtime::Builder,

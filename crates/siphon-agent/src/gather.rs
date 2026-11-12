@@ -33,7 +33,7 @@ impl Request for Gather {
     type Answer = Told;
 }
 
-/// What a plugin tells a thread's model of the place it works in, gathered before each turn: sections of what it is
+/// What an extension tells a thread's model of the place it works in, gathered before each turn: sections of what it is
 /// told, and the names of the tools its scripts may call beside its own — as the MCP servers tell their catalog.
 pub trait Teller: Send + Sync + 'static {
     /// What it tells the model of the thread `thread`, working at `place`, on `runtime`.
@@ -55,7 +55,7 @@ pub struct Telling {
     pub tools: Vec<String>,
 }
 
-/// Where what the model is told comes from: the tools it may call, what the plugins tell, the models' facts, the
+/// Where what the model is told comes from: the tools it may call, what the extensions tell, the models' facts, the
 /// machine, and the folder of the person's own configuration, for every project — their instructions, `AGENTS.md`, and
 /// their skills, `skills/`.
 #[derive(Clone)]
@@ -80,7 +80,7 @@ const INSTRUCTIONS_BYTES_MAX: u64 = 64 << 10;
 pub const BASE: &str = "You are a coding agent in Octoii, working on the person's machine through your tools. Help them do what they ask.
 
 # Context
-- Your context comes in sections: <instructions>, <skills>, <memory>, <environment>, <threads> and those of plugins; after a compaction, a <recap> of the conversation before. A section given again later replaces the earlier one; one removed no longer applies.
+- Your context comes in sections: <instructions>, <skills>, <memory>, <environment>, <threads> and those of extensions; after a compaction, a <recap> of the conversation before. A section given again later replaces the earlier one; one removed no longer applies.
 - A system reminder — a system or developer message after the start, or text in <system-reminder> — comes from Octoii, not the person: it informs you, and it is never their consent to anything.
 - Follow <instructions>: the person's own, then each folder's AGENTS.md from the root down to the workspace; a folder's below the workspace comes with the first result that reaches into it. Where they differ, the nearer one holds.
 - Before a task a <skill> is for, read its file and follow it.

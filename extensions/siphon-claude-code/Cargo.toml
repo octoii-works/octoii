@@ -1,0 +1,29 @@
+[package]
+name = "siphon-claude-code"
+description = "Claude through the person's own Claude Code, as Siphon's extension: each account a provider whose driver talks to `claude` over its stream-json control protocol — Claude thinks, the thread's tools are an MCP server of each session's whose calls are held for the thread to make — the thread's log the master and Claude Code's sessions its replicas"
+version = "0.0.1"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+futures = "0.3.34"
+jiff = "0.2.42"
+octoii-ai = { path = "../../crates/octoii-ai" }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+siphon = { path = "../../crates/siphon" }
+siphon-machine = { path = "../../crates/siphon-machine" }
+siphon-tools = { path = "../../crates/siphon-tools" }
+beak = { path = "../../vendor/beak/crates/beak" }
+tokio = { version = "1.54.1", features = ["rt", "sync", "macros", "time", "io-util", "fs"] }
+tokio-util = "0.7.20"
+tracing = "0.1.44"
+
+[dev-dependencies]
+tempfile = "3.27.0"
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "time", "io-util", "fs", "test-util"] }

@@ -40,7 +40,7 @@ jobs:
       - run: bun run test:node
 
   rust:
-    # Siphon, its plugins and the node, on macOS, the platform whose Beak library the repository holds: formatted,
+    # Siphon, its extensions and the node, on macOS, the platform whose Beak library the repository holds: formatted,
     # linted and tested; then the client tested against the node itself, which needs the program built.
     runs-on: macos-15
     timeout-minutes: 60

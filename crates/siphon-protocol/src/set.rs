@@ -1,4 +1,4 @@
-//! A set of methods: those of Siphon's core, or of a plugin — declared once by `methods!`, read in Rust as the set's
+//! A set of methods: those of Siphon's core, or of an extension — declared once by `methods!`, read in Rust as the set's
 //! own `Method`, and described in TypeScript with the events and topics of its subscriptions, so a host that
 //! assembles sets gives its clients the protocol they make together.
 

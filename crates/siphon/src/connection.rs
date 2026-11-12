@@ -22,7 +22,7 @@ pub(crate) use calls::answered;
 pub(crate) use subscriptions::told;
 
 use crate::Siphon;
-use crate::plugin::{Caller, Lagged, Sink, Subscription};
+use crate::extension::{Caller, Lagged, Sink, Subscription};
 
 /// How many messages wait to go out to a client before a subscription's next event lets the subscription go.
 pub const OUTGOING_AHEAD: usize = 256;
@@ -113,7 +113,7 @@ pub async fn serve(
 }
 
 /// What subscribing or letting go answers: its result, and the subscription to start once the answer is sent.
-type Subscribing = Result<(serde_json::Value, Option<crate::plugin::Boxed<()>>), Error>;
+type Subscribing = Result<(serde_json::Value, Option<crate::extension::Boxed<()>>), Error>;
 
 /// The params of `subscribe`.
 #[derive(Deserialize)]
@@ -159,7 +159,7 @@ impl Subscriptions {
             sink: sink.clone(),
             stop,
         };
-        let started: crate::plugin::Boxed<()> = Box::pin(async move {
+        let started: crate::extension::Boxed<()> = Box::pin(async move {
             if let Err(Lagged(topic)) = telling(subscription).await {
                 let lagged = ConnectionEvent::Lagged {
                     subscription: sink.id.clone(),

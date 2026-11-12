@@ -4,9 +4,9 @@
 //! subscription the client holds, as what it follows changes. A subscription that falls behind what its client reads
 //! is let go and told it lagged, with the topic to subscribe to again from where it stood.
 //!
-//! The methods come in sets — Siphon's own, `siphon`, and each plugin's, declared by `methods!` — which a host
+//! The methods come in sets — Siphon's own, `siphon`, and each extension's, declared by `methods!` — which a host
 //! assembles; `typescript` describes the protocol the sets make together, its types each set's own, so what is sent is
-//! what Siphon and its plugins keep.
+//! what Siphon and its extensions keep.
 
 mod set;
 pub mod siphon;

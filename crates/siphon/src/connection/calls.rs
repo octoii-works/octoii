@@ -12,7 +12,7 @@ use siphon_tools::projects::Place;
 
 use super::refusal;
 use crate::Siphon;
-use crate::plugin::Caller;
+use crate::extension::Caller;
 
 /// Does `method` for the client of `caller`, by the group it is of.
 pub(crate) async fn answered(caller: Caller, method: Method) -> Result<serde_json::Value, Error> {
