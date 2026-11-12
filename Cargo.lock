@@ -3932,6 +3932,7 @@ dependencies = [
  "siphon-memory",
  "siphon-question",
  "siphon-runtime",
+ "siphon-skills",
  "siphon-terminals",
  "siphon-thread",
  "tempfile",
@@ -5717,6 +5718,16 @@ dependencies = [
  "thiserror 2.0.21",
  "tree-sitter",
  "tree-sitter-bash",
+]
+
+[[package]]
+name = "siphon-skills"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "serde_json",
+ "siphon",
+ "siphon-runtime",
 ]
 
 [[package]]

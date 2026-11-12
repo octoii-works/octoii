@@ -47,7 +47,7 @@ fn skill(path: &Path, folder: &str) -> Option<Skill> {
         .ok()?;
     let mut name = folder.to_owned();
     let mut description = String::new();
-    for (key, value) in crate::agent::front_matter::of(&head) {
+    for (key, value) in siphon::agent::front_matter::of(&head) {
         match key {
             "name" if !value.is_empty() => value.clone_into(&mut name),
             "description" => value.clone_into(&mut description),

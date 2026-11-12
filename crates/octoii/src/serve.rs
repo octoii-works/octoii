@@ -21,6 +21,7 @@ use siphon_mcp::McpExtension;
 use siphon_memory::MemoryExtension;
 use siphon_question::QuestionExtension;
 use siphon_runtime::Options;
+use siphon_skills::SkillsExtension;
 use siphon_terminals::TerminalsExtension;
 use siphon_thread::ThreadExtension;
 
@@ -129,6 +130,9 @@ pub fn building(home: &Home, sign_in: SignInSetup) -> anyhow::Result<siphon::Bui
         .extension(DelegateExtension)
         .extension(ThreadExtension)
         .extension(MemoryExtension)
+        .extension(SkillsExtension {
+            config: Some(home.config()),
+        })
         .extension(config)
         .extension(claude))
 }

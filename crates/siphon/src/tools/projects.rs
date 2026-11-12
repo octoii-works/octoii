@@ -33,6 +33,14 @@ impl Place {
             project: project.to_owned(),
         }
     }
+
+    /// The folders from the machine's root down to the workspace, the workspace last.
+    #[must_use]
+    pub fn folders_down(&self) -> Vec<&Path> {
+        let mut folders: Vec<&Path> = self.workspace.ancestors().collect();
+        folders.reverse();
+        folders
+    }
 }
 
 /// The kind of a project's directory, and the label that holds its folder.

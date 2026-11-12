@@ -1,6 +1,5 @@
 //! What Siphon itself tells a thread's model, as tellers of its own beside its extensions': the base every turn starts
-//! from; the instructions it follows, which always apply, given whole; the skills it may use; and the environment it
-//! works in.
+//! from; the instructions it follows, which always apply, given whole; and the environment it works in.
 
 use std::fmt::Write as _;
 use std::future::Future;
@@ -9,23 +8,21 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use crate::agent::gather::{Shared, Teller, Telling};
-use crate::agent::skills;
 use crate::machine::Host;
 use crate::threads::{Config, Mode, thread};
 use crate::tools::projects::Place;
 use crate::tools::{INSTRUCTIONS_FILE, Instructions as InstructionsFile};
 use siphon_runtime::Runtime;
 
-/// Siphon's own tellers, each with how widely what it tells is shared: the base, the instructions and the skills found
-/// in the folder of the person's configuration `config` and the project's, and the environment,
+/// Siphon's own tellers, each with how widely what it tells is shared: the base, the instructions found in the folder
+/// of the person's configuration `config` and the project's, and the environment,
 /// as `host` keeps them.
 #[must_use]
 pub fn tellers(host: &Host, config: Option<&Path>) -> Vec<(Shared, Arc<dyn Teller>)> {
     let config = config.map(Path::to_path_buf);
     vec![
         (Shared::Machine, Arc::new(Base)),
-        (Shared::Project, Arc::new(Instructions { config: config.clone() })),
-        (Shared::Project, Arc::new(Skills { config })),
+        (Shared::Project, Arc::new(Instructions { config })),
         (Shared::Thread, Arc::new(Environment { host: host.clone() })),
     ]
 }
@@ -61,28 +58,8 @@ pub struct Instructions {
 
 impl Teller for Instructions {
     fn tell<'a>(&'a self, _: &'a Runtime, _: &'a str, place: Option<&'a Place>) -> Told<'a> {
-        let text = place.and_then(|place| instructions(self.config.as_deref(), &place.workspace));
+        let text = place.and_then(|place| instructions(self.config.as_deref(), place));
         told(text.map(|text| ("instructions", text)).into_iter().collect())
-    }
-}
-
-/// The skills a thread at a place may use: the person's own, in the folder of their configuration `config`, then each
-/// project folder's.
-#[derive(Debug)]
-pub struct Skills {
-    pub config: Option<PathBuf>,
-}
-
-impl Teller for Skills {
-    fn tell<'a>(&'a self, _: &'a Runtime, _: &'a str, place: Option<&'a Place>) -> Told<'a> {
-        let found = place
-            .map(|place| skills::find(&skill_places(self.config.as_deref(), place)))
-            .unwrap_or_default();
-        told(if found.is_empty() {
-            Vec::new()
-        } else {
-            vec![("skills", skills::told(&found))]
-        })
     }
 }
 
@@ -153,19 +130,12 @@ pub const BASE: &str = "You are a coding agent in Octoii, working on the person'
 - To show the person an image file, write `![what it is](path)` in your reply: they see it, and you do not.
 - Name a thing a tool tells you to name by its kind and its id: within a line as `:kind{id=<id>}`, which the person sees as its name and how it stands, and opens; on a line of its own as `::kind{id=<id>}`, which they see as its card.";
 
-/// The folders from the machine's root down to `workspace`, the workspace last.
-fn folders_down(workspace: &Path) -> Vec<&Path> {
-    let mut folders: Vec<&Path> = workspace.ancestors().collect();
-    folders.reverse();
-    folders
-}
-
 /// The instructions the model follows, each file whole: the person's own, in the folder of their configuration `config`; then the
-/// `AGENTS.md` of each folder from the machine's root down to `workspace`, as each folder's applies within it — the
+/// `AGENTS.md` of each folder from the machine's root down to the workspace of `place`, as each folder's applies within it — the
 /// nearest last. None where there are none.
-fn instructions(config: Option<&Path>, workspace: &Path) -> Option<String> {
+fn instructions(config: Option<&Path>, place: &Place) -> Option<String> {
     let mut files: Vec<PathBuf> = config.map(|config| config.join(INSTRUCTIONS_FILE)).into_iter().collect();
-    for folder in folders_down(workspace) {
+    for folder in place.folders_down() {
         let file = folder.join(INSTRUCTIONS_FILE);
         if !files.contains(&file) {
             files.push(file);
@@ -194,19 +164,6 @@ fn read_text(path: &Path, bytes_max: u64) -> Option<String> {
     let mut text = String::new();
     std::fs::File::open(path).ok()?.take(bytes_max).read_to_string(&mut text).ok()?;
     Some(text)
-}
-
-/// The folders of skills a thread working at `place` finds, the farthest first: the person's own, then each project
-/// folder's from its root down to the workspace.
-fn skill_places(config: Option<&Path>, place: &Place) -> Vec<PathBuf> {
-    let mut places: Vec<PathBuf> = config.map(|config| config.join("skills")).into_iter().collect();
-    places.extend(
-        folders_down(&place.workspace)
-            .into_iter()
-            .filter(|folder| folder.starts_with(&place.project))
-            .map(|folder| folder.join(".agents/skills")),
-    );
-    places
 }
 
 /// The environment a thread works in, as the model is told it: its workspace and the git repository it is in, the

@@ -1,0 +1,17 @@
+[package]
+name = "siphon-skills"
+description = "Skills: instructions for kinds of tasks, in the person's folder of skills and each project's, which a thread's model is told of and follows"
+version = "0.0.1"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = "1.0.104"
+serde_json = "1.0.154"
+siphon = { path = "../../crates/siphon" }
+siphon-runtime = { path = "../../crates/siphon-runtime" }

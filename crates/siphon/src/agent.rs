@@ -12,7 +12,6 @@ pub mod render;
 pub mod resume;
 pub mod review;
 pub mod sections;
-pub mod skills;
 pub mod thread;
 pub mod title;
 pub mod told;

@@ -43,11 +43,6 @@ The person's own instructions.
 The project's instructions.
 </instructions>
 
-=== section skills
-<skills>
-<skill name="release" path="<folder>/home/etc/skills/release/SKILL.md">How a release is made.</skill>
-</skills>
-
 === section memory
 <memory path="<folder>/home/etc/memory/-<folder>-project">
 What you remember of this project across threads, a Markdown file a memory, kept as you see fit, without asking.
@@ -60,6 +55,11 @@ What you remember of this project across threads, a Markdown file a memory, kept
 - [Tests](tests.md) — the suite runs with `cargo test`
 </index>
 </memory>
+
+=== section skills
+<skills>
+<skill name="release" path="<folder>/home/etc/skills/release/SKILL.md">How a release is made.</skill>
+</skills>
 
 === section environment
 <environment>
