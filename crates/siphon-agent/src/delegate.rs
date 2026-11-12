@@ -72,7 +72,7 @@ impl Tool for DelegateTool {
         Some(changes.start::<DelegateProgram>(parent.clone(), key, &input).map(|_| ()))
     }
 
-    fn finished(&self, outcome: &beak::Outcome) -> Vec<InputContent> {
+    fn finished(&self, outcome: &beak::Outcome) -> Told {
         let said = |bytes: Option<&[u8]>| {
             bytes
                 .map(|bytes| serde_json::from_slice::<String>(bytes).unwrap_or_else(|_| String::from_utf8_lossy(bytes).into_owned()))
@@ -82,7 +82,7 @@ impl Tool for DelegateTool {
             beak::Outcome::Completed(result) | beak::Outcome::Stopped { result, .. } => said(result.as_deref()),
             beak::Outcome::Failed { error, .. } => said(error.as_deref()),
         };
-        vec![InputContent::text(text)]
+        Told::from(vec![InputContent::text(text)])
     }
 }
 

@@ -386,6 +386,11 @@ async fn a_folder_s_instructions_a_read_comes_upon_are_given_once_a_window() {
     let script = script(vec![
         Ok(vec![calls("c1", "read", &serde_json::json!({ "path": "pkg/a.txt" }))]),
         Ok(vec![calls("c2", "read", &serde_json::json!({ "path": "pkg/b.txt" }))]),
+        Ok(vec![calls(
+            "c3",
+            "execute",
+            &serde_json::json!({ "code": "return await tools.read({ path: \"deep/c.txt\" });" }),
+        )]),
         Ok(vec![says("read")]),
     ]);
     let beak = Beak::new().expect("Beak");
@@ -396,6 +401,9 @@ async fn a_folder_s_instructions_a_read_comes_upon_are_given_once_a_window() {
     std::fs::write(workspace.join("pkg/AGENTS.md"), "Tabs, not spaces.\n").expect("its instructions");
     std::fs::write(workspace.join("pkg/a.txt"), "a\n").expect("a file");
     std::fs::write(workspace.join("pkg/b.txt"), "b\n").expect("a file");
+    std::fs::create_dir_all(workspace.join("deep")).expect("a folder");
+    std::fs::write(workspace.join("deep/AGENTS.md"), "Keep it short.\n").expect("its instructions");
+    std::fs::write(workspace.join("deep/c.txt"), "c\n").expect("a file");
     let id = thread(&threads, &workspace).await;
     threads
         .deliver(&id, "person", vec![InputContent::text("read pkg")], "d1")
@@ -429,6 +437,11 @@ async fn a_folder_s_instructions_a_read_comes_upon_are_given_once_a_window() {
         outputs[0]
     );
     assert!(!outputs[1].contains(&opening), "given once a window: {}", outputs[1]);
+    assert!(
+        outputs[2].contains("Keep it short."),
+        "a script's read gives the instructions it came upon with the script's result: {}",
+        outputs[2]
+    );
     runtime.close().await;
 }
 

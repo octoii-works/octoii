@@ -1,10 +1,10 @@
 //! `execute`: the model writes JavaScript that calls its tools — in loops, at once, working on their answers in code —
-//! run on the script engine, the tools under `tools`, told to the model in TypeScript. A script is a process of its own
-//! under its call, as it may wait on a person through the host's restarts: each phase runs it again from its start on
-//! an engine of that phase alone — the same code, seed, settlements and times, so it runs as it first did — till it
-//! makes calls not yet settled. Those are taken on as every model's calls are, each weighed, asked and exec'd as its
-//! own; once they ended, their results are settled into the next run of it. Its end is what it returned, or what it
-//! threw, and what it wrote to its console.
+//! run on the script engine, the tools under `tools`, each taking the arguments its function takes. A script is a
+//! process of its own under its call, as it may wait on a person through the host's restarts: each phase runs it again
+//! from its start on an engine of that phase alone — the same code, seed, settlements and times, so it runs as it first
+//! did — till it makes calls not yet settled. Those are taken on as every model's calls are, each weighed, asked and
+//! exec'd as its own; once they ended, their results are settled into the next run of it. Its end is what it returned,
+//! or what it threw, and what it wrote to its console, with the instructions its calls came upon.
 
 use std::fmt::Write as _;
 
@@ -21,7 +21,7 @@ use siphon_threads::CallStatus;
 
 use crate::calls::{Calls, Setting, State};
 use crate::effect::Effect;
-use crate::told::Told;
+use crate::told::{Instructions, Told};
 use crate::tool::{Context, Refusal, Tool, Tools};
 
 /// The arguments of `execute`.
@@ -66,9 +66,13 @@ pub struct ScriptState {
     pub began_ms: i64,
     pub settled: Vec<Settled>,
     pub calls: Option<Calls>,
+    /// The instructions its calls came upon, each once.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub instructions: Vec<Instructions>,
 }
 
-/// What a script came to: what it returned, as JSON, or what it threw; and what it wrote to its console.
+/// What a script came to: what it returned, as JSON, or what it threw; what it wrote to its console; and the
+/// instructions its calls came upon.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScriptOutput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -76,6 +80,8 @@ pub struct ScriptOutput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     pub console: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub instructions: Vec<Instructions>,
 }
 
 impl Tool for ExecuteTool {
@@ -121,13 +127,13 @@ impl Tool for ExecuteTool {
         Some(changes.start::<ScriptProgram>(parent.clone(), key, &input).map(|_| ()))
     }
 
-    fn finished(&self, outcome: &beak::Outcome) -> Vec<InputContent> {
+    fn finished(&self, outcome: &beak::Outcome) -> Told {
         let read = match outcome {
             beak::Outcome::Completed(Some(result)) => serde_json::from_slice::<ScriptOutput>(result).ok(),
             _ => None,
         };
         let Some(output) = read else {
-            return vec![InputContent::text(format!("the script ended as {outcome:?}"))];
+            return Told::from(vec![InputContent::text(format!("the script ended as {outcome:?}"))]);
         };
         let mut text = output.console.join("\n");
         match (output.value, output.error) {
@@ -139,7 +145,11 @@ impl Tool for ExecuteTool {
             }
             (None, None) => {}
         }
-        vec![InputContent::text(text.trim_start().to_owned())]
+        Told {
+            output: vec![InputContent::text(text.trim_start().to_owned())],
+            structured: None,
+            instructions: output.instructions,
+        }
     }
 }
 
@@ -205,6 +215,7 @@ impl ScriptProgram {
                         value: Some(value),
                         error: None,
                         console: script.output(),
+                        instructions: state.instructions.clone(),
                     });
                 }
                 Progress::Threw(thrown) => {
@@ -212,6 +223,7 @@ impl ScriptProgram {
                         value: None,
                         error: Some(format!("{}: {}", thrown.name, thrown.message)),
                         console: script.output(),
+                        instructions: state.instructions.clone(),
                     });
                 }
                 Progress::OutOfSteps => {
@@ -219,6 +231,7 @@ impl ScriptProgram {
                         value: None,
                         error: Some("it ran past the steps a script may take".into()),
                         console: script.output(),
+                        instructions: state.instructions.clone(),
                     });
                 }
             }
@@ -273,9 +286,20 @@ impl Program for ScriptProgram {
         }
         let ended = state.calls.take().map(|calls| calls.0).unwrap_or_default();
         for call in ended {
-            let State::Ended { status, output, .. } = call.state else {
+            let State::Ended {
+                status,
+                output,
+                instructions,
+                ..
+            } = call.state
+            else {
                 continue;
             };
+            for each in instructions {
+                if !state.instructions.iter().any(|told| told.path == each.path) {
+                    state.instructions.push(each);
+                }
+            }
             state.settled.push(Settled {
                 id: call.id.parse().unwrap_or_default(),
                 ok: status == CallStatus::Ok,

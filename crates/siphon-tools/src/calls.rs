@@ -284,15 +284,16 @@ impl Calls {
                     return Ok(());
                 };
                 run.changes.reap(process);
+                let told = setting.tools.finished(&call.tool, &outcome);
                 State::Ended {
                     status: if matches!(outcome, beak::Outcome::Completed(_)) {
                         CallStatus::Ok
                     } else {
                         CallStatus::ToolError
                     },
-                    output: setting.tools.finished(&call.tool, &outcome),
-                    structured: None,
-                    instructions: Vec::new(),
+                    output: told.output,
+                    structured: told.structured,
+                    instructions: told.instructions,
                 }
             }
             State::Waiting | State::Ended { .. } => return Ok(()),

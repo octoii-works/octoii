@@ -141,9 +141,9 @@ pub trait Tool: Send + Sync + 'static {
         None
     }
 
-    /// For a tool that runs as a program: its process's end, as the model reads it.
-    fn finished(&self, outcome: &beak::Outcome) -> Vec<InputContent> {
-        vec![InputContent::text(format!("{outcome:?}"))]
+    /// For a tool that runs as a program: what its process's end tells, as an exec of it tells it.
+    fn finished(&self, outcome: &beak::Outcome) -> Told {
+        Told::from(vec![InputContent::text(format!("{outcome:?}"))])
     }
 }
 
@@ -173,7 +173,7 @@ trait Erased: Send + Sync {
         arguments: &serde_json::Value,
         setting: &Setting<'_>,
     ) -> Option<serde_json::Result<()>>;
-    fn finished(&self, outcome: &beak::Outcome) -> Vec<InputContent>;
+    fn finished(&self, outcome: &beak::Outcome) -> Told;
 }
 
 impl<T: Tool> Erased for T {
@@ -206,7 +206,7 @@ impl<T: Tool> Erased for T {
         Tool::start(self, changes, parent, key, &args, setting)
     }
 
-    fn finished(&self, outcome: &beak::Outcome) -> Vec<InputContent> {
+    fn finished(&self, outcome: &beak::Outcome) -> Told {
         Tool::finished(self, outcome)
     }
 
@@ -376,11 +376,11 @@ impl Tools {
         self.entries.get(name)?.tool.start(changes, parent, key, arguments, setting)
     }
 
-    /// The end `outcome` of the process of a call of `name`, as the model reads it.
+    /// What the end `outcome` of the process of a call of `name` tells.
     #[must_use]
-    pub fn finished(&self, name: &str, outcome: &beak::Outcome) -> Vec<InputContent> {
+    pub fn finished(&self, name: &str, outcome: &beak::Outcome) -> Told {
         self.entries.get(name).map_or_else(
-            || vec![InputContent::text(format!("{outcome:?}"))],
+            || Told::from(vec![InputContent::text(format!("{outcome:?}"))]),
             |entry| entry.tool.finished(outcome),
         )
     }

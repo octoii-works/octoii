@@ -20,6 +20,7 @@ import { PathLink } from "../files/path-link.tsx";
 import { cn } from "../ui/cn.ts";
 import { CodeBeingWritten, CodeBlock } from "./code-block.tsx";
 import { PAGE_ELEMENT, remarkDirectives } from "./directives.ts";
+import { remarkAutolinkEnds } from "./autolinks.ts";
 import { PageCard } from "./page-card.tsx";
 import { PictureStrip } from "./pictures.tsx";
 
@@ -84,7 +85,7 @@ function keptUrl(url: string): string {
 }
 
 /** The plugins markdown is read with: GitHub's flavour, and the directives the page knows. */
-const PLUGINS = [remarkGfm, remarkDirective, remarkDirectives];
+const PLUGINS = [remarkGfm, remarkAutolinkEnds, remarkDirective, remarkDirectives];
 
 /** Whether the code being drawn is still being written: its fence not closed yet. */
 const CodeWritten = createContext(false);
