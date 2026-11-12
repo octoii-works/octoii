@@ -859,7 +859,11 @@ export type Subscribed = { subscription: string, };
 /**
  * A terminal of a thread's: its id, its number in the thread, its size, and the title its program set.
  */
-export type TerminalListed = { id: string, number: number, size: Cells, title: string, };
+export type TerminalListed = { id: string, number: number, size: Cells, title: string, 
+/**
+ * The command line it runs, where the model opened it to run one rather than the person's shell.
+ */
+line?: string, };
 
 export type TerminalOpened = { terminal: string, };
 

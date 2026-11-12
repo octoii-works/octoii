@@ -19,8 +19,9 @@ export const ANSI_DARK: readonly number[] = [
 /** The terminal's font size, in CSS pixels. */
 export const TERMINAL_FONT_SIZE = 12;
 
-/** A terminal's name on its tab: the title its program set, or its number in the thread. */
+/** A terminal's name on its tab: the title its program set, the command line the model runs in it, or its number in the thread. */
 export function terminalName(terminal: TerminalListed): string {
 	const title = terminal.title.trim();
-	return title === "" ? `Terminal ${String(terminal.number)}` : title;
+	if (title !== "") return title;
+	return terminal.line ?? `Terminal ${String(terminal.number)}`;
 }

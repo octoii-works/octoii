@@ -55,13 +55,18 @@ pub struct ResizeTerminal {
     pub size: Cells,
 }
 
-/// A terminal of a thread's: its id, its number in the thread, its size, and the title its program set.
+/// A terminal of a thread's: its id, its number in the thread, its size, the title its program set, and the command line
+/// it runs where the model opened it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct TerminalListed {
     pub id: String,
     pub number: u32,
     pub size: Cells,
     pub title: String,
+    /// The command line it runs, where the model opened it to run one rather than the person's shell.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub line: Option<String>,
 }
 
 /// What a client subscribes to of the terminals': a thread's terminals, or a terminal as it writes — from the offset

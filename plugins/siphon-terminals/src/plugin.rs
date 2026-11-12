@@ -122,6 +122,7 @@ async fn listed_told(terminals: &Terminals, subscription: &Subscription, thread:
                     cols: shown.size.cols,
                 },
                 title: shown.title,
+                line: shown.line,
             })
             .collect();
         sink.offer(&TerminalsEvent::Terminals {

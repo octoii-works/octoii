@@ -3,14 +3,15 @@
  * enough, the chat's column staying centred under it, or in a popover from the header's button where it is not: the
  * machine the thread works on and its folder, which opens in
  * the Files view; the folder's repository — its branch, how far ahead of its upstream and behind, and the lines the
- * changes the Diff view shows gained and lost, which open it; the thread it came from and those it delegated to; how
+ * changes the Diff view shows gained and lost, which open it; the terminals open in the thread, the model's by the
+ * command line each runs, which open in the panel; the thread it came from and those it delegated to; how
  * full its window is, which opens what fills it and compacts it; and what its model's requests read, wrote and cost,
  * which opens where it went, request by request.
  */
 import type { ReactNode } from "react";
 import type { Conversation, Listed, Repository, ThreadUsage as Usage, Turn } from "@octoii-works/octoii-client";
-import { useConnection, useThreads } from "@octoii-works/octoii-client/react";
-import { Coins, CornerLeftUp, FileDiff, Folder, FolderX, Gauge, GitBranch, Laptop, SquareMenu } from "lucide-react";
+import { useConnection, useTerminals, useThreads } from "@octoii-works/octoii-client/react";
+import { Coins, CornerLeftUp, FileDiff, Folder, FolderX, Gauge, GitBranch, Laptop, SquareMenu, SquareTerminal } from "lucide-react";
 import { cachedShare, type Context, contextOf, fullnessOf } from "../../core/details.ts";
 import { defaultScope, scopeName, shortCount, totalsOf } from "../../core/diff.ts";
 import { modelOf } from "../../core/models.ts";
@@ -21,7 +22,8 @@ import { useDirectory } from "../composer/directory.ts";
 import { useOutcome } from "../effects/read.ts";
 import { showDetails, useDetailsShown } from "../state/details.ts";
 import { go } from "../state/navigation.ts";
-import { showSurface, useThreadPanel } from "../state/panel.ts";
+import { showSurface, terminalKey, useThreadPanel } from "../state/panel.ts";
+import { terminalName } from "../../core/terminal.ts";
 import { IconButton, ToggleButton } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
 import { Meter } from "../ui/meter.tsx";
@@ -89,6 +91,7 @@ function DetailsCard(props: DetailsProps): ReactNode {
 		<div className="flex flex-col divide-y divide-border text-ui">
 			<Workspace thread={props.thread} folder={folder} />
 			{folder === undefined ? null : <VersionControl thread={props.thread} folder={folder} revision={props.revision} />}
+			<Terminals thread={props.thread} />
 			<Lineage thread={props.thread} row={props.row} />
 			<Spending thread={props.thread} row={props.row} turns={props.turns} compactions={props.compactions} />
 		</div>
@@ -131,6 +134,26 @@ function RowContent(props: { readonly icon: ReactNode; readonly label: ReactNode
 			<span className="min-w-0 flex-1 truncate">{props.label}</span>
 			{props.aside === undefined ? null : <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground tabular-nums">{props.aside}</span>}
 		</>
+	);
+}
+
+/** The terminals open in the thread, each by the command line the model runs in it or by its name, opened in the panel; nothing where none is. */
+function Terminals(props: { readonly thread: string }): ReactNode {
+	const terminals = useTerminals(props.thread) ?? [];
+	if (terminals.length === 0) return null;
+	return (
+		<section className="p-1.5">
+			{terminals.map((terminal) => (
+				<DetailRow
+					key={terminal.id}
+					icon={<SquareTerminal />}
+					label={terminal.line === undefined ? terminalName(terminal) : <code className="font-mono text-xs">{terminal.line}</code>}
+					aside={`Terminal ${String(terminal.number)}`}
+					title={terminal.line ?? terminalName(terminal)}
+					onOpen={() => showSurface(props.thread, terminalKey(terminal.id))}
+				/>
+			))}
+		</section>
 	);
 }
 
