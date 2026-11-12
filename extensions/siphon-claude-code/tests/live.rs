@@ -28,7 +28,7 @@ impl Credentials for Nothing {
 #[ignore = "reaches the person's own Claude Code"]
 async fn the_persons_own_claude_code_tells_how_it_stands_and_what_it_offers() {
     let folder = tempfile::tempdir().expect("a folder");
-    let beak = beak::Beak::new().expect("Beak");
+    let beak = siphon::testing::Beak::new().expect("Beak");
     let commands = siphon::testing::commands(&beak);
     let home = std::env::home_dir();
     let place = Place {

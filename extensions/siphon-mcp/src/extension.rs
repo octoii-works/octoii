@@ -8,11 +8,11 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use siphon::Volume;
 use siphon::agent::{Shared, Teller, Telling};
 use siphon::protocol::Error;
 use siphon::tools::Place;
 use siphon::tools::{Context, Refusal, Toolset};
+use siphon::volume::Volume;
 use siphon::{Caller, Extension, Registrar};
 
 use crate::protocol;

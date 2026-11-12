@@ -11,12 +11,12 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use base64::Engine as _;
-use beak::{Exec, Spec, Stdio};
 use bytes::Bytes;
 use chromiumoxide_cdp::cdp::{CdpEvent, CdpEventMessage};
 use serde_json::{Value, json};
 use siphon::machine::Base;
 use siphon::machine::{Commands, Host, Machine, Writes};
+use siphon::machine::{Exec, Spec, Stdio};
 use tokio::sync::{broadcast, mpsc, oneshot};
 
 use crate::cdp::{Cdp, CdpError, connect};
@@ -145,7 +145,7 @@ pub enum BrowserError {
     #[error(transparent)]
     Cdp(#[from] CdpError),
     #[error(transparent)]
-    Beak(#[from] beak::Error),
+    Beak(#[from] siphon::volume::Error),
     #[error("the browser's own folders: {0}")]
     Folders(String),
 }

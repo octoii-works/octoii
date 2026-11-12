@@ -188,7 +188,7 @@ struct Ended {
     thread: String,
     number: u32,
     line: String,
-    exit: beak::Exit,
+    exit: siphon::machine::Exit,
     screen: String,
 }
 
@@ -221,15 +221,15 @@ async fn end_of(events: &mut broadcast::Receiver<Event>, id: &str) -> Option<End
 }
 
 /// Tells the thread that a command line it ran ended, in its inbox.
-async fn tell(volume: &siphon::Volume, ended: &Ended) -> anyhow::Result<()> {
+async fn tell(volume: &siphon::volume::Volume, ended: &Ended) -> anyhow::Result<()> {
     siphon::agent::deliver(volume, &ended.thread, ACTOR, vec![InputContent::text(ended_words(ended))]).await
 }
 
 /// A command line's end as the model is told it: the note, then its last screen.
 fn ended_words(ended: &Ended) -> String {
     let how = match ended.exit {
-        beak::Exit::Code(code) => format!("exit {code}"),
-        beak::Exit::Signal(signal) => format!("ended by signal {signal}"),
+        siphon::machine::Exit::Code(code) => format!("exit {code}"),
+        siphon::machine::Exit::Signal(signal) => format!("ended by signal {signal}"),
     };
     format!(
         "<system-reminder>terminal {}, which ran `{}`, ended: {how}</system-reminder>\n{}",

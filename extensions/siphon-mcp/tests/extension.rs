@@ -2,10 +2,10 @@
 //! a project's configuration shown with what the person decided on it, and trusted — its servers then among those a
 //! thread there would use.
 
-use beak::Beak;
 use serde_json::{Value, json};
 use siphon::Siphon;
 use siphon::protocol::Scope;
+use siphon::testing::Beak;
 use siphon::testing::{self, Client};
 use siphon_mcp::McpExtension;
 

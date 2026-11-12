@@ -4,9 +4,9 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use beak::Beak;
 use bytes::Bytes;
 use siphon::machine::Host;
+use siphon::testing::Beak;
 use siphon_terminals::{Error, Event, Running, Size, Terminals};
 
 const SIZE: Size = Size { rows: 24, cols: 80 };
@@ -134,7 +134,7 @@ async fn a_command_line_the_model_runs_tells_its_end_with_its_screen_and_one_clo
     })
     .await
     .expect("in time");
-    assert_eq!(ended.0, beak::Exit::Code(3));
+    assert_eq!(ended.0, siphon::machine::Exit::Code(3));
     assert!(ended.1.contains("served"), "its last screen: {}", ended.1);
     assert_eq!(ended.2, 1);
     let lasting = Running::Line {

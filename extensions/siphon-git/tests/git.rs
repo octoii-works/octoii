@@ -5,10 +5,10 @@
 use std::path::Path;
 use std::process::Command;
 
-use beak::Beak;
 use serde_json::{Value, json};
 use siphon::Siphon;
 use siphon::protocol::Scope;
+use siphon::testing::Beak;
 use siphon::testing::{self, Client};
 
 fn git(root: &Path, arguments: &[&str]) {

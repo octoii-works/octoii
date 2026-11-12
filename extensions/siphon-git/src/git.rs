@@ -161,7 +161,7 @@ impl Git<'_> {
             .run(self.time, self.under, &Program::new(argv, cwd), &self.cancelled)
             .await?;
         match ran.exit {
-            beak::Exit::Code(code) if succeeded(code) => Ok(ran.output),
+            siphon::machine::Exit::Code(code) if succeeded(code) => Ok(ran.output),
             _ => Err(GitError::Refused {
                 command: arguments.join(" "),
                 said: text(&ran.errors).trim().to_owned(),

@@ -5585,7 +5585,6 @@ name = "siphon-browser"
 version = "0.0.1"
 dependencies = [
  "base64 0.23.1",
- "beak",
  "bytes",
  "chromiumoxide_cdp",
  "chromiumoxide_types",
@@ -5604,7 +5603,6 @@ dependencies = [
 name = "siphon-claude-code"
 version = "0.0.1"
 dependencies = [
- "beak",
  "futures",
  "jiff",
  "octoii-ai",
@@ -5631,12 +5629,10 @@ dependencies = [
 name = "siphon-git"
 version = "0.0.1"
 dependencies = [
- "beak",
  "bytes",
  "serde",
  "serde_json",
  "siphon",
- "siphon-runtime",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -5659,7 +5655,6 @@ version = "0.0.1"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
- "beak",
  "bytes",
  "futures",
  "http",
@@ -5669,7 +5664,6 @@ dependencies = [
  "serde",
  "serde_json",
  "siphon",
- "siphon-runtime",
  "tempfile",
  "tokio",
  "tokio-util",
@@ -5684,7 +5678,6 @@ dependencies = [
  "serde",
  "serde_json",
  "siphon",
- "siphon-runtime",
  "tempfile",
  "thiserror 2.0.21",
  "ts-rs",
@@ -5744,7 +5737,6 @@ dependencies = [
  "anyhow",
  "serde_json",
  "siphon",
- "siphon-runtime",
 ]
 
 [[package]]
@@ -5752,14 +5744,12 @@ name = "siphon-terminals"
 version = "0.0.1"
 dependencies = [
  "anyhow",
- "beak",
  "bytes",
  "octoii-ai",
  "schemars 1.2.3",
  "serde",
  "serde_json",
  "siphon",
- "siphon-runtime",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -5783,7 +5773,6 @@ dependencies = [
  "schemars 1.2.3",
  "serde",
  "siphon",
- "siphon-runtime",
 ]
 
 [[package]]

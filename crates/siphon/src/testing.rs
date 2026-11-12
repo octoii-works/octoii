@@ -16,6 +16,9 @@ use tokio::sync::mpsc;
 use crate::connection::{Access, Outgoing, serve};
 use crate::{Setup, Siphon};
 
+/// Beak, which a test opens for what it starts: Siphon, calls, commands.
+pub use beak::Beak;
+
 /// No credentials: a test's threads ask no model.
 struct Nothing;
 
@@ -168,7 +171,7 @@ pub struct Called {
 /// exec'd by Siphon's own tools and those a test adds, a script's calls too; the person's trust asked as Siphon asks it.
 #[derive(Debug)]
 pub struct Calling {
-    pub runtime: siphon_runtime::Runtime,
+    runtime: siphon_runtime::Runtime,
 }
 
 /// What the caller of a test's calls is started with: where they work, the tools of <catalog>, and the calls.
@@ -330,9 +333,56 @@ pub fn commands(beak: &beak::Beak) -> crate::machine::Commands {
 impl Calling {
     /// The volume of the calls' runtime, as an extension reaches it.
     #[must_use]
-    pub fn volume(&self) -> crate::Volume {
-        crate::Volume {
+    pub fn volume(&self) -> crate::volume::Volume {
+        crate::volume::Volume {
             runtime: self.runtime.clone(),
         }
+    }
+
+    /// Asks the person `trust` as Siphon asks it, answers `trusted` as they would once it is asked, and returns once it
+    /// is decided.
+    ///
+    /// # Panics
+    /// Where the volume fails, or it is not asked and decided in 10 s each.
+    pub async fn decide(&self, trust: &crate::trust::Trust, trusted: bool) {
+        let key = crate::trust::TrustProgram::KEY.as_bytes();
+        let mut changes = siphon_runtime::Changes::new();
+        changes
+            .start::<crate::trust::TrustProgram>(Bytes::new(), crate::trust::TrustProgram::KEY, trust)
+            .expect("an input");
+        self.runtime.commit(changes).await.expect("started");
+        let process = beak::layout::process(b"", key);
+        let request = beak::layout::request(&process, key);
+        let mut committed = self.runtime.committed();
+        let asked = async {
+            while self.runtime.snapshot().expect("a snapshot").stat(&request).expect("read").is_none() {
+                committed.changed().await.expect("the runtime runs");
+            }
+        };
+        tokio::time::timeout(Duration::from_secs(10), asked).await.expect("asked in time");
+        self.runtime
+            .answer(&process, key, &json!({ "trusted": trusted }))
+            .await
+            .expect("answered");
+        let decided = async {
+            loop {
+                let snapshot = self.runtime.snapshot().expect("a snapshot");
+                if crate::trust::decided(&snapshot, &trust.folder, &trust.digest)
+                    .expect("read")
+                    .is_some()
+                {
+                    break;
+                }
+                committed.changed().await.expect("the runtime runs");
+            }
+        };
+        tokio::time::timeout(Duration::from_secs(10), decided)
+            .await
+            .expect("decided in time");
+    }
+
+    /// Ends the calls' runtime.
+    pub async fn close(&self) {
+        self.runtime.close().await;
     }
 }

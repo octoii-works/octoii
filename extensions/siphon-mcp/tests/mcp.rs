@@ -3,18 +3,13 @@
 //! and called as its own — directly, or from a script.
 
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
-use beak::{Beak, layout};
-use bytes::Bytes;
 use serde_json::json;
 use siphon::machine::Host;
-use siphon::testing::{Called, Calling};
+use siphon::testing::{Beak, Called, Calling};
 use siphon::tools::CallStatus;
 use siphon::tools::Place;
-use siphon::trust::{self, TrustProgram};
 use siphon_mcp::{Launch, Servers, parse};
-use siphon_runtime::Changes;
 
 fn fixture() -> String {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -130,7 +125,6 @@ async fn the_person_s_servers_tools_are_listed_and_called_as_the_model_s_own() {
     let servers = Servers::start(Host::default(), Some(&home));
     let beak = Beak::new().expect("Beak");
     let calling = calling(&beak, &servers);
-    let runtime = &calling.runtime;
     let volume = calling.volume();
     let (_folder, workspace) = folder();
     let catalog = servers.catalog(&volume, &Place::of(&workspace)).await.expect("a catalog");
@@ -180,7 +174,7 @@ async fn the_person_s_servers_tools_are_listed_and_called_as_the_model_s_own() {
         (CallStatus::ToolError, "no MCP server other where this thread works".into(), 0, None)
     );
     assert_eq!(said[5], (CallStatus::Ok, r#""from a script""#.into(), 0, None));
-    runtime.close().await;
+    calling.close().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -188,7 +182,6 @@ async fn a_project_s_servers_run_once_the_person_trusts_its_configuration_as_it_
     let servers = Servers::start(Host::default(), None);
     let beak = Beak::new().expect("Beak");
     let calling = calling(&beak, &servers);
-    let runtime = &calling.runtime;
     let volume = calling.volume();
     let (_folder, project) = folder();
     std::fs::create_dir(project.join(".git")).expect("a repository");
@@ -209,36 +202,7 @@ async fn a_project_s_servers_run_once_the_person_trusts_its_configuration_as_it_
     let asks = catalog.asks.expect("asked");
     assert_eq!(asks.servers[0].runs, format!("python3 {}", fixture()));
 
-    let mut changes = Changes::new();
-    changes
-        .start::<TrustProgram>(Bytes::new(), TrustProgram::KEY, &asks)
-        .expect("an input");
-    runtime.commit(changes).await.expect("started");
-    let process = layout::process(b"", TrustProgram::KEY.as_bytes());
-    let request = layout::request(&process, TrustProgram::KEY.as_bytes());
-    let mut committed = runtime.committed();
-    tokio::time::timeout(Duration::from_secs(10), async {
-        while runtime.snapshot().expect("a snapshot").stat(&request).expect("read").is_none() {
-            committed.changed().await.expect("the runtime runs");
-        }
-    })
-    .await
-    .expect("asked in time");
-    runtime
-        .answer(&process, TrustProgram::KEY.as_bytes(), &json!({ "trusted": true }))
-        .await
-        .expect("answered");
-    tokio::time::timeout(Duration::from_secs(10), async {
-        loop {
-            let snapshot = runtime.snapshot().expect("a snapshot");
-            if trust::decided(&snapshot, &asks.folder, &asks.digest).expect("read") == Some(true) {
-                break;
-            }
-            committed.changed().await.expect("the runtime runs");
-        }
-    })
-    .await
-    .expect("decided in time");
+    calling.decide(&asks, true).await;
 
     let catalog = servers.catalog(&volume, &place).await.expect("a catalog");
     assert_eq!(catalog.tools.len(), 4, "{:?}", catalog.problems);
@@ -251,5 +215,5 @@ async fn a_project_s_servers_run_once_the_person_trusts_its_configuration_as_it_
         catalog.tools.is_empty() && catalog.asks.is_some(),
         "a changed configuration is asked again"
     );
-    runtime.close().await;
+    calling.close().await;
 }

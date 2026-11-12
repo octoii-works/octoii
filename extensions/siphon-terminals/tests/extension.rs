@@ -4,10 +4,10 @@
 
 use std::path::PathBuf;
 
-use beak::Beak;
 use serde_json::json;
 use siphon::Siphon;
 use siphon::protocol::Scope;
+use siphon::testing::Beak;
 use siphon::testing::{self, Client};
 use siphon_terminals::TerminalsExtension;
 

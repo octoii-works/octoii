@@ -276,7 +276,7 @@ impl Account {
             .run(time, b"", &signing_out, &tokio_util::sync::CancellationToken::new())
             .await
             .map_err(|error| Failure::new(FailureKind::Server, format!("`claude auth logout` failed: {error}")))?;
-        if ran.exit != beak::Exit::Code(0) {
+        if ran.exit != siphon::machine::Exit::Code(0) {
             let errors = String::from_utf8_lossy(&ran.errors);
             return Err(Failure::new(
                 FailureKind::Server,

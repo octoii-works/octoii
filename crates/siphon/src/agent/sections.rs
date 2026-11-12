@@ -50,7 +50,7 @@ fn told<'a>(sections: Vec<(&str, String)>) -> Told<'a> {
 pub struct Base;
 
 impl Teller for Base {
-    fn tell<'a>(&'a self, _: &'a crate::Volume, _: &'a str, _: Option<&'a Place>) -> Told<'a> {
+    fn tell<'a>(&'a self, _: &'a crate::volume::Volume, _: &'a str, _: Option<&'a Place>) -> Told<'a> {
         told(vec![("base", BASE.to_owned())])
     }
 }
@@ -63,7 +63,7 @@ pub struct Instructions {
 }
 
 impl Teller for Instructions {
-    fn tell<'a>(&'a self, _: &'a crate::Volume, _: &'a str, place: Option<&'a Place>) -> Told<'a> {
+    fn tell<'a>(&'a self, _: &'a crate::volume::Volume, _: &'a str, place: Option<&'a Place>) -> Told<'a> {
         let text = place.and_then(|place| instructions(self.config.as_deref(), place));
         told(text.map(|text| ("instructions", text)).into_iter().collect())
     }
@@ -77,7 +77,7 @@ pub struct Environment {
 }
 
 impl Teller for Environment {
-    fn tell<'a>(&'a self, volume: &'a crate::Volume, thread: &'a str, place: Option<&'a Place>) -> Told<'a> {
+    fn tell<'a>(&'a self, volume: &'a crate::volume::Volume, thread: &'a str, place: Option<&'a Place>) -> Told<'a> {
         Box::pin(async move {
             let directory = volume
                 .snapshot()?

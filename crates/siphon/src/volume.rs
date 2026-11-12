@@ -4,9 +4,11 @@
 
 use std::future::Future;
 
-use beak::Snapshot;
 use bytes::Bytes;
 use siphon_runtime::{Changes, Runtime};
+
+/// What the volume's reads give, and how the volume and the machine's commands fail, as Beak tells it.
+pub use beak::{Error, Result, Snapshot};
 
 /// The volume, as an extension reaches it.
 #[derive(Debug, Clone)]

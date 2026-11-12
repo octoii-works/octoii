@@ -20,7 +20,7 @@ use siphon_runtime::{Changes, Run};
 /// # Errors
 /// The volume's failure.
 pub async fn deliver(
-    volume: &crate::Volume,
+    volume: &crate::volume::Volume,
     thread: &str,
     actor: &str,
     content: Vec<octoii_ai::vocabulary::InputContent>,
@@ -42,7 +42,7 @@ pub async fn deliver(
 ///
 /// # Errors
 /// The volume's failure.
-pub fn parent_of(volume: &crate::Volume, thread: &str) -> anyhow::Result<Option<String>> {
+pub fn parent_of(volume: &crate::volume::Volume, thread: &str) -> anyhow::Result<Option<String>> {
     let directory = volume.snapshot()?.stat(&thread::path(thread))?.and_then(|entry| entry.directory);
     Ok(directory.and_then(|directory| label(&directory, thread::PARENT_LABEL)))
 }

@@ -43,8 +43,8 @@ pub struct Caller {
 impl Caller {
     /// The volume, as an extension reaches it.
     #[must_use]
-    pub fn volume(&self) -> crate::Volume {
-        crate::Volume {
+    pub fn volume(&self) -> crate::volume::Volume {
+        crate::volume::Volume {
             runtime: self.siphon.runtime.clone(),
         }
     }

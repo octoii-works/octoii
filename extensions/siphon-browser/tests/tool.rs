@@ -3,10 +3,10 @@
 
 use std::path::PathBuf;
 
-use beak::Beak;
 use serde_json::json;
 use siphon::machine::Base;
 use siphon::machine::Host;
+use siphon::testing::Beak;
 use siphon::tools::{Effect, Tools};
 
 #[tokio::test(flavor = "multi_thread")]

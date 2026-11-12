@@ -21,7 +21,7 @@ mod tests;
 pub mod threads;
 pub mod tools;
 pub mod trust;
-mod volume;
+pub mod volume;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -46,7 +46,6 @@ use siphon_runtime::{Asked, Options, Runtime};
 
 pub use extension::{Caller, Extension, Full, Lagged, Registrar, Sink, Subscription};
 pub use kept::{Ends, Kept};
-pub use volume::Volume;
 
 /// What Siphon is built on: the machine its work is done on; the folder of the person's own configuration, for every
 /// project — their instructions, `AGENTS.md`, and their skills, `skills/` — where they keep one; the host's credentials

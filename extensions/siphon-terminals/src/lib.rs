@@ -15,9 +15,9 @@ pub use tool::{ACTOR, Action, TerminalTool};
 
 use std::path::{Path, PathBuf};
 
-use beak::{Command, CommandEvent, Exec, Spec, Stdio};
 use bytes::Bytes;
 use siphon::machine::Base;
+use siphon::machine::{Command, CommandEvent, Exec, Spec, Stdio};
 use siphon::machine::{Commands, Host, Machine, Writes};
 use tokio::sync::{broadcast, mpsc, oneshot};
 
@@ -73,7 +73,7 @@ pub enum Event {
         thread: String,
         number: u32,
         line: String,
-        exit: beak::Exit,
+        exit: siphon::machine::Exit,
         screen: String,
     },
 }
@@ -90,7 +90,7 @@ pub enum Error {
     #[error("the terminals are gone")]
     Gone,
     #[error(transparent)]
-    Beak(#[from] beak::Error),
+    Beak(#[from] siphon::volume::Error),
 }
 
 type Reply<T> = oneshot::Sender<Result<T, Error>>;
@@ -116,7 +116,7 @@ enum Message {
     },
     Screen {
         id: String,
-        reply: Reply<beak::Screen>,
+        reply: Reply<siphon::machine::Screen>,
     },
     Text {
         id: String,
@@ -125,7 +125,7 @@ enum Message {
     ReadAt {
         id: String,
         offset: u64,
-        reply: Reply<beak::Chunk>,
+        reply: Reply<siphon::machine::Chunk>,
     },
     List {
         thread: String,
@@ -218,7 +218,7 @@ impl Terminals {
     ///
     /// # Errors
     /// `NoSuchTerminal`; Beak's failure.
-    pub async fn screen(&self, id: &str) -> Result<beak::Screen, Error> {
+    pub async fn screen(&self, id: &str) -> Result<siphon::machine::Screen, Error> {
         let id = id.to_owned();
         self.ask(|reply| Message::Screen { id, reply }).await
     }
@@ -236,7 +236,7 @@ impl Terminals {
     ///
     /// # Errors
     /// `NoSuchTerminal`; Beak's failure.
-    pub async fn read_at(&self, id: &str, offset: u64) -> Result<beak::Chunk, Error> {
+    pub async fn read_at(&self, id: &str, offset: u64) -> Result<siphon::machine::Chunk, Error> {
         let id = id.to_owned();
         self.ask(|reply| Message::ReadAt { id, offset, reply }).await
     }

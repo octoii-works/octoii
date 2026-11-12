@@ -2,10 +2,10 @@
 //! the page painted as a binary frame of JPEG, taken to an address and typed into by the person — where the machine
 //! has a browser.
 
-use beak::Beak;
 use serde_json::json;
 use siphon::Siphon;
 use siphon::protocol::Scope;
+use siphon::testing::Beak;
 use siphon::testing::{self, Client};
 use siphon_browser::BrowserExtension;
 

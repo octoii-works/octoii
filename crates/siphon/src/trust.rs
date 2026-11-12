@@ -130,7 +130,7 @@ impl Program for TrustProgram {
 ///
 /// # Errors
 /// The volume's failure.
-pub async fn ask(volume: &crate::Volume, thread: &str, trust: &Trust) -> anyhow::Result<()> {
+pub async fn ask(volume: &crate::volume::Volume, thread: &str, trust: &Trust) -> anyhow::Result<()> {
     let main = thread::main(thread);
     let asking = beak::layout::process(&main, TrustProgram::KEY.as_bytes());
     if volume.snapshot()?.record(&asking)?.is_some() {

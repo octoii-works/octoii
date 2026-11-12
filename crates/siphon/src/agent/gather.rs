@@ -42,7 +42,7 @@ pub trait Teller: Send + Sync + 'static {
     /// What keeps it from telling.
     fn tell<'a>(
         &'a self,
-        volume: &'a crate::Volume,
+        volume: &'a crate::volume::Volume,
         thread: &'a str,
         place: Option<&'a Place>,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<Telling>> + Send + 'a>>;
@@ -144,7 +144,7 @@ pub async fn gathered(sources: &Sources, runtime: &Runtime, id: &str) -> anyhow:
         .workspace
         .as_deref()
         .map(|workspace| Place::of(std::path::Path::new(workspace)));
-    let volume = crate::Volume { runtime: runtime.clone() };
+    let volume = crate::volume::Volume { runtime: runtime.clone() };
     let mut told = Told::default();
     for owned in sources.tellers.iter().filter(|owned| on(&owned.extension)) {
         let telling = owned.teller.tell(&volume, id, place.as_ref()).await?;

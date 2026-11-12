@@ -76,7 +76,7 @@ impl Plan {
     ///
     /// # Errors
     /// A `Refusal` where no id could be minted.
-    pub fn spawn(&mut self, volume: &crate::Volume, title: Option<String>, spawned: Spawned) -> Result<String, Refusal> {
+    pub fn spawn(&mut self, volume: &crate::volume::Volume, title: Option<String>, spawned: Spawned) -> Result<String, Refusal> {
         let thread = minted(volume)?;
         let entry = minted(volume)?;
         self.steps.push(Step::Spawn {
@@ -95,7 +95,7 @@ impl Plan {
     /// A `Refusal` where no id could be minted.
     pub fn deliver(
         &mut self,
-        volume: &crate::Volume,
+        volume: &crate::volume::Volume,
         thread: &str,
         content: Vec<InputContent>,
         joins: Joins,
@@ -131,7 +131,7 @@ impl Plan {
 }
 
 /// An id minted from the volume.
-fn minted(volume: &crate::Volume) -> Result<String, Refusal> {
+fn minted(volume: &crate::volume::Volume) -> Result<String, Refusal> {
     volume.new_id().map_err(|error| Refusal(format!("no id was minted: {error}")))
 }
 

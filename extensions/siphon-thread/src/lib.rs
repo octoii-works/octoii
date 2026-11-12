@@ -45,7 +45,7 @@ struct Folder(PathBuf);
 impl Teller for Folder {
     fn tell<'a>(
         &'a self,
-        _: &'a siphon::Volume,
+        _: &'a siphon::volume::Volume,
         thread: &'a str,
         _: Option<&'a Place>,
     ) -> Pin<Box<dyn Future<Output = anyhow::Result<Telling>> + Send + 'a>> {

@@ -5,10 +5,10 @@
 
 use std::collections::HashMap;
 
-use beak::{Command, CommandEvent, CommandEvents};
 use bytes::BytesMut;
 use chromiumoxide_types::Command as CdpCommand;
 use serde_json::Value;
+use siphon::machine::{Command, CommandEvent, CommandEvents};
 use tokio::sync::{mpsc, oneshot};
 
 /// Why a call came to nothing.

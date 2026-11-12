@@ -12,14 +12,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use base64::Engine as _;
-use beak::Snapshot;
 use octoii_ai::vocabulary::InputContent;
 use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, ResourceContents};
 use rmcp::service::{Peer, RoleClient, RunningService, ServiceExt};
 use rmcp::transport::{StreamableHttpClientTransport, streamable_http_client::StreamableHttpClientTransportConfig};
-use siphon::Volume;
 use siphon::machine::Base;
 use siphon::machine::{Host, Variables, Writes};
+use siphon::volume::Snapshot;
+use siphon::volume::Volume;
 use siphon::{Ends, Kept};
 
 use crate::config::{Configured, Launch, OWN_FILE, PROJECT_FILE, Server, parse};
@@ -77,7 +77,12 @@ impl Servers {
     ///
     /// # Errors
     /// The volume's failure.
-    pub fn configured(&self, snapshot: &Snapshot, place: &Place, variables: &dyn Fn(&str) -> Option<String>) -> beak::Result<Found> {
+    pub fn configured(
+        &self,
+        snapshot: &Snapshot,
+        place: &Place,
+        variables: &dyn Fn(&str) -> Option<String>,
+    ) -> siphon::volume::Result<Found> {
         let mut found = Found::default();
         if let Some(path) = &self.own
             && let Some(text) = read(path, &mut found.configured.problems)
@@ -131,7 +136,7 @@ impl Servers {
     ///
     /// # Errors
     /// The volume's failure.
-    pub async fn catalog(&self, volume: &Volume, place: &Place) -> beak::Result<Catalog> {
+    pub async fn catalog(&self, volume: &Volume, place: &Place) -> siphon::volume::Result<Catalog> {
         let found = self.configured(&volume.snapshot()?, place, &host_variable)?;
         let listing = found.configured.servers.iter().map(|server| async move {
             let peer = self.peer(server, volume).await?;
@@ -205,7 +210,7 @@ impl Servers {
 
     /// What the project at `place` names in its configuration, with the person's decision on it as it is; none where
     /// it names no server.
-    fn project(snapshot: &Snapshot, place: &Place) -> beak::Result<Option<ProjectServers>> {
+    fn project(snapshot: &Snapshot, place: &Place) -> siphon::volume::Result<Option<ProjectServers>> {
         let path = place.project.join(PROJECT_FILE);
         let Some(text) = read(&path, &mut Vec::new()) else {
             return Ok(None);
@@ -240,7 +245,7 @@ impl Servers {
     ///
     /// # Errors
     /// The volume's failure.
-    pub async fn listed(&self, volume: &Volume, place: Option<&Place>) -> beak::Result<ServersListed> {
+    pub async fn listed(&self, volume: &Volume, place: Option<&Place>) -> siphon::volume::Result<ServersListed> {
         let snapshot = volume.snapshot()?;
         let found = match place {
             Some(place) => self.configured(&snapshot, place, &host_variable)?,

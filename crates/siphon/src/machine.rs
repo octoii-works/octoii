@@ -13,6 +13,9 @@ pub(crate) use files::{EditOutcome, Is};
 pub(crate) use namespace::Errors;
 pub(crate) use search::{GrepOptions, Grepped};
 
+/// The commands' own words, as Beak gives them: a command and its events, what starts one, how it ended, a
+/// terminal's screen and a piece of what it wrote.
+pub use beak::{Chunk, Command, CommandEvent, CommandEvents, Exec, Exit, Screen, Spec, Stdio};
 /// What extensions and hosts use of it.
 pub use commands::Commands;
 pub use coprocess::{Coprocess, Stderr, Stdin, Stdout, Variables};

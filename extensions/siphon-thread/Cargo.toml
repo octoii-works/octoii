@@ -16,4 +16,3 @@ octoii-ai = { path = "../../crates/octoii-ai" }
 schemars = "1.2.3"
 serde = { version = "1.0.229", features = ["derive"] }
 siphon = { path = "../../crates/siphon" }
-siphon-runtime = { path = "../../crates/siphon-runtime" }

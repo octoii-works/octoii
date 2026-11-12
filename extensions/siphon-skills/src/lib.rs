@@ -46,7 +46,7 @@ struct Told {
 impl Teller for Told {
     fn tell<'a>(
         &'a self,
-        _: &'a siphon::Volume,
+        _: &'a siphon::volume::Volume,
         _: &'a str,
         place: Option<&'a Place>,
     ) -> Pin<Box<dyn Future<Output = anyhow::Result<Telling>> + Send + 'a>> {
