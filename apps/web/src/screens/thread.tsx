@@ -57,6 +57,10 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 	const limited = limitedOf(conversation, row?.config.model ?? undefined, now);
 	const turnsAndLimit = withLimited(itemsOf(conversation), limited, conversation.status?.resuming_at ?? undefined);
 	const work = turnsAndLimit.flatMap((item) => (item.kind === "turn" ? item.turn.work : []));
+	// What the person sent, oldest first, which the composer's ↑ calls back.
+	const theirs = turnsAndLimit.flatMap((item) =>
+		item.kind === "turn" ? item.turn.said.filter((said) => said.from === undefined && said.text !== "").map((said) => said.text) : [],
+	);
 	// The thread's present stands as the timeline's last lines: its sub-threads that wait on the person, where it waits on them for nothing itself; then what works in its background.
 	const items = withNow(turnsAndLimit, {
 		waiting: conversation.asks.length > 0 ? [] : waitingOn(rows, thread),
@@ -104,6 +108,7 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 				<Dock
 					thread={thread}
 					row={row}
+					sent={theirs}
 					conversation={conversation}
 					device={props.device}
 					onSent={(delivery) => {
@@ -127,6 +132,8 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 function Dock(props: {
 	readonly thread: string;
 	readonly row: Listed | undefined;
+	/** What the person sent in the thread, oldest first. */
+	readonly sent: readonly string[];
 	readonly conversation: Conversation;
 	readonly device: Device;
 	/** Told the id each input the person sends is delivered by. */
@@ -166,6 +173,7 @@ function Dock(props: {
 							}}
 							onStop={() => void client.stop(thread).catch((error: unknown) => failed("The thread could not be stopped", error))}
 							approval={approval}
+							sent={props.sent}
 						/>
 					)}
 				</div>

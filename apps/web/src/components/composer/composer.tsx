@@ -4,7 +4,7 @@
  * while it works and the box is empty; over the box, the files the message gives, pasted, dropped or picked. Enter sends, or Cmd/Ctrl+Enter where the device says so; a message sent while
  * the turn works waits in the thread's inbox till the turn's next step takes it in, which it steers. Nothing is sent
  * before a model is chosen: a thread's turns ask it. `@` mentions a file of the thread's folder, from a menu of those
- * its path holds. While a call's permission waits, the composer stays itself and answers it: what is written denies the
+ * its path holds; ↑ at the box's start calls back what the person sent in the thread before. While a call's permission waits, the composer stays itself and answers it: what is written denies the
  * call, telling the model what to do instead — Enter, or Esc — and Deny, Allow (⌘↵) and More stand where it sends.
  */
 import { type ReactNode, useId, useRef, useState, useTransition } from "react";
@@ -17,6 +17,7 @@ import { withMention } from "../../core/mentions.ts";
 import { type Placement, usePlacedCaret } from "../effects/caret.ts";
 import { useDraft } from "../state/draft.ts";
 import { MentionMenu, optionId } from "./mention-menu.tsx";
+import { useRecall } from "./recall.ts";
 import { useMentions } from "./mentions.ts";
 import { ModeControl } from "./mode-picker.tsx";
 import type { Attachment } from "../../core/attachments.ts";
@@ -54,6 +55,8 @@ export type ComposerProps = {
 	readonly onStop: () => void;
 	/** The call's permission that waits on the person, answered here; none while none waits. */
 	readonly approval?: Approval | undefined;
+	/** What the person sent in the thread before, oldest first, which ↑ calls back. */
+	readonly sent?: readonly string[];
 };
 
 /** A message as the composer sends it: its words, and the files it gives its model. */
@@ -62,6 +65,21 @@ export type Outgoing = { readonly text: string; readonly attachments: readonly A
 /** The words a box says it takes, and what it says where it mentions files. */
 const PLACEHOLDER = "Ask anything";
 const PLACEHOLDER_MENTIONING = "Ask anything. @ files";
+
+/** What a frame dropped on does: files dropped attached; anything else left to the page. */
+function droppedOn(attach: (files: readonly File[]) => void): Pick<React.HTMLAttributes<HTMLDivElement>, "onDragOver" | "onDrop"> {
+	return {
+		onDragOver: (event) => {
+			if (event.dataTransfer.types.includes("Files")) event.preventDefault();
+		},
+		onDrop: (event) => {
+			const files = filesOf(event.dataTransfer);
+			if (files.length === 0) return;
+			event.preventDefault();
+			attach(files);
+		},
+	};
+}
 
 /** What the box says it takes: a denial while a permission waits; a model, before one is chosen; else what it is given, or asking anything. */
 function placeholderOf(props: ComposerProps): string {
@@ -81,6 +99,7 @@ export function Composer(props: ComposerProps): ReactNode {
 	const [placement, setPlacement] = useState<Placement | undefined>(undefined);
 	usePlacedCaret(box, placement);
 	const mentions = useMentions(props.folder, draft.text, caret);
+	const recall = useRecall(props.sent ?? [], draft.text, draft.setText, setPlacement);
 	const mention = (found: FoundPath): void => {
 		if (mentions.mention === undefined) return;
 		const next = withMention(draft.text, mentions.mention, caret, found);
@@ -117,6 +136,10 @@ export function Composer(props: ComposerProps): ReactNode {
 			if (taken.chosen !== undefined) mention(taken.chosen);
 			return;
 		}
+		if (mentions.mention === undefined && recall.key(event)) {
+			event.preventDefault();
+			return;
+		}
 		if (event.key === "Escape" && props.approval !== undefined) {
 			event.preventDefault();
 			deny(props.approval);
@@ -133,18 +156,7 @@ export function Composer(props: ComposerProps): ReactNode {
 		else if (draft.text.trim() !== "") deny(props.approval);
 	};
 	return (
-		<div
-			className="relative rounded-lg border border-border bg-card shadow-raised"
-			onDragOver={(event) => {
-				if (event.dataTransfer.types.includes("Files")) event.preventDefault();
-			}}
-			onDrop={(event) => {
-				const files = filesOf(event.dataTransfer);
-				if (files.length === 0) return;
-				event.preventDefault();
-				attaching.attach(files);
-			}}
-		>
+		<div className="relative rounded-lg border border-border bg-card shadow-raised" {...droppedOn(attaching.attach)}>
 			{mentions.mention === undefined ? null : <MentionMenu id={menu} mentions={mentions} onChoose={mention} />}
 			<Attachments
 				attachments={draft.attachments}
@@ -162,6 +174,7 @@ export function Composer(props: ComposerProps): ReactNode {
 				ref={box}
 				value={draft.text}
 				onChange={(event) => {
+					recall.typed();
 					draft.setText(event.target.value);
 					setCaret(event.target.selectionStart);
 				}}
