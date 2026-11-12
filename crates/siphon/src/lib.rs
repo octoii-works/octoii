@@ -16,6 +16,8 @@ pub mod providers;
 pub mod reminder;
 pub mod settings;
 pub mod testing;
+#[cfg(test)]
+mod tests;
 pub mod threads;
 pub mod tools;
 pub mod trust;

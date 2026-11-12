@@ -42,7 +42,5 @@ ts-rs = { version = "12.0.1", features = ["no-serde-warnings", "serde-json-impl"
 
 [dev-dependencies]
 image = { version = "0.25", default-features = false, features = ["png"] }
-siphon-delegate = { path = "../../extensions/siphon-delegate" }
-siphon-thread = { path = "../../extensions/siphon-thread" }
 tempfile = "3.27.0"
 tokio = { version = "1.54.1", features = ["io-util", "macros", "rt-multi-thread", "test-util", "time"] }

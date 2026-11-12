@@ -4,13 +4,11 @@
 
 use std::time::Duration;
 
+use crate::threads::log::{self, Entry, Writer};
+use crate::threads::{Changed, Config, ConfigChange, ConfigChanged, MainInput, MarksChange, Mode, NewThread, Parent, Threads, Turn, inbox};
 use beak::Beak;
 use bytes::Bytes;
 use octoii_ai::vocabulary::{InputContent, ReasoningEffort};
-use siphon::threads::log::{self, Entry, Writer};
-use siphon::threads::{
-    Changed, Config, ConfigChange, ConfigChanged, MainInput, MarksChange, Mode, NewThread, Parent, Threads, Turn, inbox,
-};
 use siphon_runtime::{Ending, Options, Program, Run, Runtime, Wait};
 
 /// A main process that takes its inbox into its log as it changes, and does nothing more.
@@ -113,7 +111,7 @@ async fn a_thread_is_made_once_for_its_key_its_log_begun_with_how_it_runs() {
     );
     assert!(matches!(
         threads.deliver(&id, "person", vec![InputContent::text("hi")], "make-1").await,
-        Err(siphon::threads::Error::Idempotency(siphon::threads::idempotency::Error::Reused))
+        Err(crate::threads::Error::Idempotency(crate::threads::idempotency::Error::Reused))
     ));
     assert_eq!(threads.list().expect("listed").len(), 1);
     threads.runtime().close().await;
@@ -302,7 +300,7 @@ async fn a_thread_is_deleted_with_every_thread_under_it() {
     assert_eq!(gone, [parent.clone(), child, grandchild]);
     let left: Vec<String> = threads.list().expect("listed").into_iter().map(|listed| listed.id).collect();
     assert_eq!(left, [other]);
-    assert!(matches!(threads.listed(&parent), Err(siphon::threads::Error::NoSuchThread)));
+    assert!(matches!(threads.listed(&parent), Err(crate::threads::Error::NoSuchThread)));
     threads.runtime().close().await;
 }
 
@@ -367,7 +365,7 @@ async fn a_thread_s_files_are_read_by_their_reference_as_its_conversation_names_
     let other = threads.create(&person(Config::default()), "k2").await.expect("made");
     let runtime = threads.runtime();
     let mut changes = siphon_runtime::Changes::new();
-    let reference = siphon::threads::files::keep(
+    let reference = crate::threads::files::keep(
         &runtime.snapshot().expect("a snapshot"),
         &mut changes,
         &id,
@@ -375,13 +373,13 @@ async fn a_thread_s_files_are_read_by_their_reference_as_its_conversation_names_
     )
     .expect("kept");
     runtime.commit(changes).await.expect("committed");
-    let files = siphon::threads::files::OfThread {
+    let files = crate::threads::files::OfThread {
         runtime: runtime.clone(),
         thread: id,
     };
     assert_eq!(files.read(&reference).expect("read"), Bytes::from_static(b"%PDF"));
     assert!(files.read("sha256:00").is_err(), "a reference of no file kept");
-    let elsewhere = siphon::threads::files::OfThread {
+    let elsewhere = crate::threads::files::OfThread {
         runtime: runtime.clone(),
         thread: other,
     };

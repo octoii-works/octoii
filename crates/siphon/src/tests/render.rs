@@ -1,13 +1,13 @@
 //! What the model is told, as the log keeps it, and the request a window is rendered as.
 
+use crate::agent::render::{STOPPED_NOTE, request};
+use crate::agent::told::{held, news};
+use crate::threads::{Changed, ConfigChanged, Entry, Outcome, Section, Window};
 use octoii_ai::catalogue::{Features, InputLimits, Model};
 use octoii_ai::vocabulary::{
     ConfigurationUpdate, FileRef, ImageDetail, InputContent, Item, Message, ReasoningConfig, ReasoningEffort, Response, ResponseStatus,
     Tool,
 };
-use siphon::agent::render::{STOPPED_NOTE, request};
-use siphon::agent::told::{held, news};
-use siphon::threads::{Changed, ConfigChanged, Entry, Outcome, Section, Window};
 
 fn system(id: &str, sections: &[(&str, Option<&str>)], tools: Vec<Tool>) -> Entry {
     Entry::System {
@@ -188,14 +188,14 @@ fn what_told_the_thread_of_work_it_began_is_a_system_reminder_and_a_task_given_i
         actor: actor.into(),
         delivery: id.into(),
         content: vec![InputContent::text(id)],
-        reply_to: task.then(|| siphon::threads::inbox::ReplyTo {
+        reply_to: task.then(|| crate::threads::inbox::ReplyTo {
             process: "p".into(),
             started: None,
             key: "k".into(),
         }),
     };
     let window = Window::of(vec![
-        from("theirs", siphon::threads::PERSON, false),
+        from("theirs", crate::threads::PERSON, false),
         from("a task", "parent-thread", true),
         from("<system-reminder>terminal 1 ended</system-reminder>", "terminal", false),
         from("[the sub-thread finished]", "child-thread", false),

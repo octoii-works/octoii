@@ -4,9 +4,9 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use crate::machine::paths::Base;
+use crate::machine::{EditOutcome, GrepOptions, Host, Machine, Program, Read, ReadOptions, RunError, Writes};
 use beak::{Beak, Kernel, Options};
-use siphon::machine::paths::Base;
-use siphon::machine::{EditOutcome, GrepOptions, Host, Machine, Program, Read, ReadOptions, RunError, Writes};
 use siphon_text::Edit;
 use tokio_util::sync::CancellationToken;
 
@@ -337,8 +337,8 @@ async fn a_coprocess_reads_what_it_is_given_answers_on_its_output_keeps_its_erro
         "-c".into(),
         "printf started >&2; while read line; do echo \"$WORD $line\"; done".into(),
     ];
-    let variables = siphon::machine::Variables::Over(vec![("WORD".into(), "heard".into())]);
-    let siphon::machine::Coprocess { mut stdin, stdout, stderr } =
+    let variables = crate::machine::Variables::Over(vec![("WORD".into(), "heard".into())]);
+    let crate::machine::Coprocess { mut stdin, stdout, stderr } =
         machine.coprocess(1_000, b"", argv, &workspace, variables).expect("started");
     let mut stdout = BufReader::new(stdout);
     stdin.write_all(b"one\n").await.expect("written");
@@ -355,7 +355,7 @@ async fn a_coprocess_reads_what_it_is_given_answers_on_its_output_keeps_its_erro
         b"",
         vec!["no-such-program-anywhere".into()],
         &workspace,
-        siphon::machine::Variables::Over(Vec::new()),
+        crate::machine::Variables::Over(Vec::new()),
     );
     assert!(matches!(missing, Err(RunError::MissingProgram(_))));
 }
@@ -368,7 +368,7 @@ async fn a_coprocess_given_its_variables_alone_runs_with_those_alone() {
     let kernel = kernel(&beak);
     let (machine, _folder, workspace) = machine(&kernel, &Host::default());
     let argv = vec!["/bin/sh".into(), "-c".into(), "printf '%s|%s' \"$WORD\" \"${HOME-none}\"".into()];
-    let only = siphon::machine::Variables::Only(vec![("WORD".into(), "alone".into())]);
+    let only = crate::machine::Variables::Only(vec![("WORD".into(), "alone".into())]);
     let mut coprocess = machine.coprocess(1_000, b"", argv, &workspace, only).expect("started");
     let mut told = String::new();
     coprocess.stdout.read_to_string(&mut told).await.expect("read");
@@ -399,7 +399,7 @@ async fn a_folder_bound_back_over_what_the_host_hides_is_reached_by_a_command_an
     );
     let argv = vec!["/bin/sh".into(), "-c".into(), line];
     let mut coprocess = machine
-        .coprocess(1_000, b"", argv, &workspace, siphon::machine::Variables::Over(Vec::new()))
+        .coprocess(1_000, b"", argv, &workspace, crate::machine::Variables::Over(Vec::new()))
         .expect("started");
     let mut told = String::new();
     coprocess.stdout.read_to_string(&mut told).await.expect("read");

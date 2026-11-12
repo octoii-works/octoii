@@ -1,9 +1,13 @@
-//! The agent on a real model, run only when asked — `cargo test -p siphon --test live -- --ignored` — with the
+//! The agent on a real model, run only when asked — `cargo test -p siphon --lib tests::live -- --ignored` — with the
 //! key in the environment: OpenRouter's DeepSeek V4.1 Flash, as the cheapest model that reasons and calls tools.
 
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::agent::{CompactProgram, Gather, ModelRequest, Sources, ThreadProgram, TitleProgram, TurnProgram, answer_gather, answer_model};
+use crate::machine::Host as Machine;
+use crate::threads::{Config, Mode, NewThread, Threads, Turn};
+use crate::tools::{EditTool, Exec, ExecuteTool, GlobTool, GrepTool, ReadTool, ScriptProgram, ShellTool, Tools, WriteTool, answer_exec};
 use beak::Beak;
 use bytes::Bytes;
 use octoii_ai::catalogue;
@@ -11,10 +15,6 @@ use octoii_ai::drivers::OPENROUTER;
 use octoii_ai::host::{Credential, Credentials, Files, NoSuchFile, Unavailable};
 use octoii_ai::models::{Host, Models, Provider};
 use octoii_ai::vocabulary::InputContent;
-use siphon::agent::{CompactProgram, Gather, ModelRequest, Sources, ThreadProgram, TitleProgram, TurnProgram, answer_gather, answer_model};
-use siphon::machine::Host as Machine;
-use siphon::threads::{Config, Mode, NewThread, Threads, Turn};
-use siphon::tools::{EditTool, Exec, ExecuteTool, GlobTool, GrepTool, ReadTool, ScriptProgram, ShellTool, Tools, WriteTool, answer_exec};
 use siphon_runtime::{Asked, Options, Runtime};
 
 /// The key in the environment, as the host's credentials.
@@ -83,10 +83,10 @@ fn runtime(beak: &Beak, models: &Arc<Models>) -> Runtime {
     let sources = Sources {
         tools: tools.clone(),
         tellers: Sources::ordered(
-            siphon::agent::sections::tellers(&Machine::default(), None)
+            crate::agent::sections::tellers(&Machine::default(), None)
                 .into_iter()
-                .map(|(shared, teller)| siphon::agent::OwnedTeller {
-                    extension: siphon::agent::CORE.to_owned(),
+                .map(|(shared, teller)| crate::agent::OwnedTeller {
+                    extension: crate::agent::CORE.to_owned(),
                     shared,
                     teller,
                 })
@@ -102,12 +102,12 @@ fn runtime(beak: &Beak, models: &Arc<Models>) -> Runtime {
         .program(ThreadProgram)
         .program(TurnProgram {
             tools,
-            machine: siphon::machine::Host::default(),
+            machine: crate::machine::Host::default(),
             models: Arc::clone(models),
         })
         .program(ScriptProgram {
             tools: inner,
-            primitives: std::sync::Arc::new(siphon::agent::ThreadPrimitives),
+            primitives: std::sync::Arc::new(crate::agent::ThreadPrimitives),
         })
         .program(TitleProgram)
         .program(CompactProgram)
@@ -165,10 +165,7 @@ async fn the_agent_reads_a_file_and_writes_what_it_found() {
     };
     let turn = tokio::time::timeout(Duration::from_mins(3), ended).await.expect("ended in time");
     let snapshot = runtime.snapshot().expect("a snapshot");
-    for line in siphon::threads::log::read_after(&snapshot, &id, None, u64::MAX)
-        .expect("read")
-        .lines
-    {
+    for line in crate::threads::log::read_after(&snapshot, &id, None, u64::MAX).expect("read").lines {
         eprintln!("{}", String::from_utf8_lossy(&line).chars().take(400).collect::<String>());
     }
     let titled = async {
@@ -177,7 +174,7 @@ async fn the_agent_reads_a_file_and_writes_what_it_found() {
         }
     };
     let titled = tokio::time::timeout(Duration::from_mins(1), titled).await.is_ok();
-    let titling = beak::layout::process(&siphon::threads::thread::main(&id), TitleProgram::KEY.as_bytes());
+    let titling = beak::layout::process(&crate::threads::thread::main(&id), TitleProgram::KEY.as_bytes());
     eprintln!(
         "the title process: {:?}",
         runtime

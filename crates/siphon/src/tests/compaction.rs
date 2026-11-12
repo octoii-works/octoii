@@ -1,8 +1,8 @@
 //! Where a window is cut, and when it is full.
 
+use crate::agent::compaction::{KEPT_TOKENS, RESERVE_TOKENS, cut, is_full};
+use crate::threads::{CallStatus, Entry, Window};
 use octoii_ai::vocabulary::{FunctionCallOutput, InputContent, Response, ResponseStatus, Usage};
-use siphon::agent::compaction::{KEPT_TOKENS, RESERVE_TOKENS, cut, is_full};
-use siphon::threads::{CallStatus, Entry, Window};
 
 fn input(id: &str) -> Entry {
     Entry::Input {

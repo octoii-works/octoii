@@ -4,13 +4,13 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
+use crate::machine::Host;
+use crate::machine::paths::Base;
+use crate::tools::{Context, EditTool, Effect, GlobTool, GrepTool, ReadTool, ShellTool, Tools, WriteTool, Writes};
 use beak::Beak;
 use bytes::Bytes;
 use octoii_ai::vocabulary::InputContent;
 use serde_json::json;
-use siphon::machine::Host;
-use siphon::machine::paths::Base;
-use siphon::tools::{Context, EditTool, Effect, GlobTool, GrepTool, ReadTool, ShellTool, Tools, WriteTool, Writes};
 use siphon_runtime::{Changes, Options, Runtime};
 use tokio_util::sync::CancellationToken;
 
@@ -28,13 +28,13 @@ fn tools() -> Tools {
 async fn context(beak: &Beak, writes: Writes) -> (Context, tempfile::TempDir) {
     let runtime = Runtime::builder().start(beak, Options::default()).expect("started");
     let mut changes = Changes::new();
-    changes.mkdir(siphon::threads::thread::path("t1"));
+    changes.mkdir(crate::threads::thread::path("t1"));
     runtime.commit(changes).await.expect("a thread's directory");
     let folder = tempfile::tempdir().expect("a folder");
     let workspace = folder.path().canonicalize().expect("its real path");
     let context = Context {
         thread: "t1".into(),
-        process: siphon::threads::thread::path("t1"),
+        process: crate::threads::thread::path("t1"),
         call: "c1".into(),
         base: Base { workspace, home: None },
         writes,
@@ -134,7 +134,7 @@ async fn an_image_read_is_shown_as_an_image_kept_in_its_thread() {
         panic!("an image")
     };
     assert_eq!(file.media_type, "image/png");
-    let kept = siphon::threads::files::read(&context.runtime.snapshot().expect("a snapshot"), "t1", &file.reference).expect("read");
+    let kept = crate::threads::files::read(&context.runtime.snapshot().expect("a snapshot"), "t1", &file.reference).expect("read");
     assert_eq!(kept, Some(Bytes::from(png)), "kept by its content in the thread");
 }
 

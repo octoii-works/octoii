@@ -5,18 +5,18 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
+use crate::machine::Host;
+use crate::machine::paths::Base;
+use crate::threads::Mode;
+use crate::tools::{
+    CallStatus, Calls, Context, Effect, Exec, Judgment, Permission, ReadTool, Refusal, Review, Setting, ShellTool, Told, Tool, Tools,
+    WriteTool, answer_exec, projects,
+};
 use beak::{Beak, Outcome, layout};
 use bytes::Bytes;
 use octoii_ai::vocabulary::InputContent;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use siphon::machine::Host;
-use siphon::machine::paths::Base;
-use siphon::threads::Mode;
-use siphon::tools::{
-    CallStatus, Calls, Context, Effect, Exec, Judgment, Permission, ReadTool, Refusal, Review, Setting, ShellTool, Told, Tool, Tools,
-    WriteTool, answer_exec, projects,
-};
 use siphon_runtime::{Asked, Changes, Ending, NotGiven, Options, Program, Run, Runtime};
 
 fn tools() -> Tools {
@@ -87,7 +87,7 @@ impl Program for Caller {
         let setting = Setting {
             thread: &input.thread,
             tools: &self.tools,
-            primitives: &siphon::agent::ThreadPrimitives,
+            primitives: &crate::agent::ThreadPrimitives,
             catalog: &[],
             mode: input.mode,
             base: &base,
@@ -102,8 +102,8 @@ impl Program for Caller {
     }
 }
 
-fn said(call: siphon::tools::Call) -> (CallStatus, String) {
-    let siphon::tools::State::Ended { status, output, .. } = call.state else {
+fn said(call: crate::tools::Call) -> (CallStatus, String) {
+    let crate::tools::State::Ended { status, output, .. } = call.state else {
         return (CallStatus::Interrupted, String::new());
     };
     let text = output
@@ -124,7 +124,7 @@ fn runtime(beak: &Beak) -> Runtime {
         .program(Caller { tools: tools() })
         .handle(|asked: Asked<Exec>| async move { answer_exec(&tools(), &Host::default(), asked).await })
         .ask_person::<Permission>()
-        .ask_person::<siphon::tools::Asks>()
+        .ask_person::<crate::tools::Asks>()
         .handle(|asked: Asked<Review>| async move {
             let removes = asked.payload.shown.does.iter().any(|does| does.contains(" rm "));
             Ok(Judgment {
@@ -316,7 +316,7 @@ async fn a_call_s_long_output_is_cut_to_its_head_and_tail_the_whole_kept_in_its_
     let beak = Beak::new().expect("Beak");
     let runtime = runtime(&beak);
     let mut changes = Changes::new();
-    changes.mkdir(siphon::threads::thread::path("t1"));
+    changes.mkdir(crate::threads::thread::path("t1"));
     runtime.commit(changes).await.expect("a thread's directory");
     let (_folder, workspace) = folder();
     let asking = Asking {

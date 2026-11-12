@@ -3,8 +3,8 @@
 
 use std::path::PathBuf;
 
-use siphon::threads::Mode;
-use siphon::tools::{Bounds, Effect, Grants, Line, Verdict, Writes, patterns_of, weigh};
+use crate::threads::Mode;
+use crate::tools::{Bounds, Effect, Grants, Line, Verdict, Writes, patterns_of, weigh};
 
 fn runs(line: &str) -> Effect {
     Effect::Runs {

@@ -5,17 +5,17 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
+use crate::machine::Host;
+use crate::machine::paths::Base;
+use crate::threads::Mode;
+use crate::tools::{
+    CallStatus, Calls, Exec, ExecuteTool, Permission, ReadTool, ScriptProgram, Setting, ShellTool, Tool, Tools, WriteTool, answer_exec,
+};
 use beak::{Beak, Outcome, layout};
 use bytes::Bytes;
 use octoii_ai::vocabulary::InputContent;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use siphon::machine::Host;
-use siphon::machine::paths::Base;
-use siphon::threads::Mode;
-use siphon::tools::{
-    CallStatus, Calls, Exec, ExecuteTool, Permission, ReadTool, ScriptProgram, Setting, ShellTool, Tool, Tools, WriteTool, answer_exec,
-};
 use siphon_runtime::{Asked, Changes, Ending, Options, Program, Run, Runtime};
 
 fn inner() -> Tools {
@@ -52,7 +52,7 @@ impl Program for Caller {
         };
         let tools = tools();
         let setting = Setting {
-            primitives: &siphon::agent::ThreadPrimitives,
+            primitives: &crate::agent::ThreadPrimitives,
             thread: "t1",
             tools: &tools,
             catalog: &[],
@@ -66,7 +66,7 @@ impl Program for Caller {
             return Ok(Ending::Wait(calls, wait));
         }
         let call = calls.0.remove(0);
-        let siphon::tools::State::Ended { status, output, .. } = call.state else {
+        let crate::tools::State::Ended { status, output, .. } = call.state else {
             anyhow::bail!("not ended")
         };
         let text = output
@@ -86,7 +86,7 @@ fn runtime(beak: &Beak) -> Runtime {
         .program(Caller)
         .program(ScriptProgram {
             tools: inner(),
-            primitives: std::sync::Arc::new(siphon::agent::ThreadPrimitives),
+            primitives: std::sync::Arc::new(crate::agent::ThreadPrimitives),
         })
         .handle(|asked: Asked<Exec>| async move { answer_exec(&inner(), &Host::default(), asked).await })
         .ask_person::<Permission>()

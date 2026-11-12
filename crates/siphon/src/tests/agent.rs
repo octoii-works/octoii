@@ -7,6 +7,12 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use crate::agent::{
+    DelegatedProgram, Gather, ModelRequest, Sources, ThreadProgram, TitleProgram, TurnProgram, answer_gather, answer_model, answer_review,
+};
+use crate::machine::Host as Machine;
+use crate::threads::{CallStatus, Config, Entry, Mode, NewThread, Outcome, Threads, Turn};
+use crate::tools::{Asks, Exec, ExecuteTool, Permission, ReadTool, Review, ScriptProgram, ShellTool, Tools, WriteTool, answer_exec};
 use beak::Beak;
 use bytes::Bytes;
 use futures::future::BoxFuture;
@@ -19,15 +25,7 @@ use octoii_ai::vocabulary::{
     Failure, FailureKind, FunctionCall, Incomplete, InputContent, Item, Message, OutputContent, Request, Response, ResponseStatus, Tool,
     Usage,
 };
-use siphon::agent::{
-    DelegatedProgram, Gather, ModelRequest, Sources, ThreadProgram, TitleProgram, TurnProgram, answer_gather, answer_model, answer_review,
-};
-use siphon::machine::Host as Machine;
-use siphon::threads::{CallStatus, Config, Entry, Mode, NewThread, Outcome, Threads, Turn};
-use siphon::tools::{Asks, Exec, ExecuteTool, Permission, ReadTool, Review, ScriptProgram, ShellTool, Tools, WriteTool, answer_exec};
-use siphon_delegate::DelegateTool;
 use siphon_runtime::{Asked, Options, Runtime};
-use siphon_thread::ThreadTool;
 
 /// What a scripted reply says to stand for one its output limit cut off.
 const CUT_OFF: &str = "cut off";
@@ -73,9 +71,9 @@ impl Driver for Scripted {
     fn stream<'a>(&'a self, _: &'a Call, model: &'a Model, request: &'a Request) -> BoxFuture<'a, Result<Source, Failure>> {
         Box::pin(async move {
             let script = &self.0;
-            let output = if asks(request, siphon::agent::title::INSTRUCTION) {
+            let output = if asks(request, crate::agent::title::INSTRUCTION) {
                 vec![says("Writing a file.")]
-            } else if asks(request, siphon::agent::compaction::RECAP) {
+            } else if asks(request, crate::agent::compaction::RECAP) {
                 vec![says("the recap")]
             } else if request.format.is_some() {
                 let told = format!("{:?}", request.input);
@@ -197,10 +195,10 @@ fn runtime(beak: &Beak, script: &Arc<Script>) -> Runtime {
     let sources = Sources {
         tools: tools.clone(),
         tellers: Sources::ordered(
-            siphon::agent::sections::tellers(&Machine::default(), None)
+            crate::agent::sections::tellers(&Machine::default(), None)
                 .into_iter()
-                .map(|(shared, teller)| siphon::agent::OwnedTeller {
-                    extension: siphon::agent::CORE.to_owned(),
+                .map(|(shared, teller)| crate::agent::OwnedTeller {
+                    extension: crate::agent::CORE.to_owned(),
                     shared,
                     teller,
                 })
@@ -215,17 +213,17 @@ fn runtime(beak: &Beak, script: &Arc<Script>) -> Runtime {
         .program(ThreadProgram)
         .program(TurnProgram {
             tools,
-            machine: siphon::machine::Host::default(),
+            machine: crate::machine::Host::default(),
             models: Arc::clone(&models),
         })
         .program(ScriptProgram {
             tools: inner,
-            primitives: std::sync::Arc::new(siphon::agent::ThreadPrimitives),
+            primitives: std::sync::Arc::new(crate::agent::ThreadPrimitives),
         })
         .program(TitleProgram)
-        .program(siphon::agent::CompactProgram)
+        .program(crate::agent::CompactProgram)
         .program(DelegatedProgram)
-        .program(siphon::agent::ResumeProgram)
+        .program(crate::agent::ResumeProgram)
         .handle(move |asked: Asked<Gather>| {
             let sources = sources.clone();
             async move { answer_gather(&sources, asked).await }
@@ -314,10 +312,10 @@ async fn until(threads: &Threads<ThreadProgram>, id: &str, turn: Turn) {
 /// The entries of the thread `id`'s log, in its order.
 fn entries(threads: &Threads<ThreadProgram>, id: &str) -> Vec<Entry> {
     let snapshot = threads.runtime().snapshot().expect("a snapshot");
-    let read = siphon::threads::log::read_after(&snapshot, id, None, u64::MAX).expect("read");
+    let read = crate::threads::log::read_after(&snapshot, id, None, u64::MAX).expect("read");
     read.lines
         .iter()
-        .map(|line| siphon::threads::log::entry_of(line).expect("an entry"))
+        .map(|line| crate::threads::log::entry_of(line).expect("an entry"))
         .collect()
 }
 
@@ -359,7 +357,7 @@ async fn a_turn_takes_on_the_calls_its_replies_make_and_asks_again_till_one_call
     assert_eq!(threads.listed(&id).expect("listed").config.title.as_deref(), Some("Writing a file"));
     let kinds: Vec<&str> = entries(&threads, &id)
         .iter()
-        .filter(|entry| !matches!(entry, Entry::Config { actor, .. } if actor == siphon::threads::SIPHON))
+        .filter(|entry| !matches!(entry, Entry::Config { actor, .. } if actor == crate::threads::SIPHON))
         .map(|entry| match entry {
             Entry::Config { .. } => "config",
             Entry::System { .. } => "system",
@@ -482,7 +480,7 @@ async fn a_reply_its_output_limit_cut_off_is_told_to_go_on_once() {
     let asked = script.asked.lock().expect("held").clone();
     assert_eq!(asked.len(), 2, "asked again once, and no more");
     assert!(
-        matches!(asked[1].input.last(), Some(Item::Message(Message::Developer { content })) if content == &[InputContent::text(siphon::agent::turn::GO_ON)]),
+        matches!(asked[1].input.last(), Some(Item::Message(Message::Developer { content })) if content == &[InputContent::text(crate::agent::turn::GO_ON)]),
         "told to go on as a system reminder: {:?}",
         asked[1].input.last()
     );
@@ -623,14 +621,14 @@ async fn in_auto_a_call_that_would_ask_is_judged_by_the_model_the_environment_na
     ]);
     let beak = Beak::new().expect("Beak");
     let runtime = runtime(&beak, &script);
-    let change = siphon::settings::SettingsChange {
-        environment: Some(siphon::settings::EnvironmentChange {
+    let change = crate::settings::SettingsChange {
+        environment: Some(crate::settings::EnvironmentChange {
             review_model: Some(Some("test/m".into())),
-            ..siphon::settings::EnvironmentChange::default()
+            ..crate::settings::EnvironmentChange::default()
         }),
         device: None,
     };
-    siphon::settings::set(&runtime, "s", &change).await.expect("set");
+    crate::settings::set(&runtime, "s", &change).await.expect("set");
     let threads = Threads::<ThreadProgram>::new(runtime.clone());
     let (_folder, workspace) = folder();
     std::fs::create_dir(workspace.join("build")).expect("a folder");
@@ -713,7 +711,7 @@ async fn a_window_too_full_for_its_next_request_is_compacted_and_the_model_asked
 }
 
 /// The threads made, but `except`, by their ids.
-fn others(threads: &Threads<ThreadProgram>, except: &str) -> Vec<siphon::threads::Listed> {
+fn others(threads: &Threads<ThreadProgram>, except: &str) -> Vec<crate::threads::Listed> {
     threads
         .list()
         .expect("listed")
@@ -984,9 +982,9 @@ async fn a_thread_sends_no_message_to_one_whose_mode_reaches_further() {
 /// Arms the resume of the thread `id` to go on `after` from now.
 async fn arm(runtime: &Runtime, id: &str, after: i64) {
     let snapshot = runtime.snapshot().expect("a snapshot");
-    let input = siphon::agent::ResumeInput::now(&snapshot, id, runtime.now_ms() + after, "person").expect("read");
+    let input = crate::agent::ResumeInput::now(&snapshot, id, runtime.now_ms() + after, "person").expect("read");
     let mut changes = siphon_runtime::Changes::new();
-    siphon::agent::resume::arm(&snapshot, &mut changes, &input).expect("armed");
+    crate::agent::resume::arm(&snapshot, &mut changes, &input).expect("armed");
     runtime.commit(changes).await.expect("committed");
 }
 
@@ -1013,7 +1011,7 @@ async fn a_resume_goes_on_at_its_time_unless_the_person_went_on_first() {
     let id = thread(&threads, &workspace).await;
     arm(&runtime, &id, 300).await;
     until(&threads, &id, Turn::Replied).await;
-    assert_eq!(words_given(&threads, &id), [siphon::agent::resume::WORD]);
+    assert_eq!(words_given(&threads, &id), [crate::agent::resume::WORD]);
 
     let other = made(&threads, &workspace, Mode::FullAccess).await;
     arm(&runtime, &other, 60_000).await;
@@ -1022,7 +1020,7 @@ async fn a_resume_goes_on_at_its_time_unless_the_person_went_on_first() {
         .await
         .expect("delivered");
     until(&threads, &other, Turn::Replied).await;
-    let resume = beak::layout::process(&siphon::threads::thread::main(&other), siphon::agent::ResumeProgram::KEY.as_bytes());
+    let resume = beak::layout::process(&crate::threads::thread::main(&other), crate::agent::ResumeProgram::KEY.as_bytes());
     let mut committed = runtime.committed();
     tokio::time::timeout(Duration::from_secs(10), async {
         while runtime
@@ -1040,4 +1038,139 @@ async fn a_resume_goes_on_at_its_time_unless_the_person_went_on_first() {
     .expect("ended in time");
     assert_eq!(words_given(&threads, &other), ["myself"]);
     runtime.close().await;
+}
+
+/// `delegate` as the delegate extension has it, for these tests: a task planned for a sub-thread of the call — a new
+/// one, or the one named — waited on, or in the background.
+#[derive(Debug, Clone, Copy, Default)]
+struct DelegateTool;
+
+#[derive(Debug, Clone, serde::Deserialize, schemars::JsonSchema)]
+struct DelegateArgs {
+    task: String,
+    title: Option<String>,
+    thread: Option<String>,
+    #[serde(default)]
+    background: bool,
+}
+
+impl crate::tools::Tool for DelegateTool {
+    const NAME: &'static str = "delegate";
+    const DESCRIPTION: &'static str = "Runs a task in a sub-thread.";
+    const REACHES_THREADS: bool = true;
+    type Args = DelegateArgs;
+
+    fn effect(&self, _: &DelegateArgs, _: &crate::machine::paths::Base) -> crate::tools::Effect {
+        crate::tools::Effect::Delegates
+    }
+
+    fn exec(
+        &self,
+        context: &crate::tools::Context,
+        args: DelegateArgs,
+    ) -> impl std::future::Future<Output = Result<crate::tools::Told, crate::tools::Refusal>> + Send {
+        std::future::ready((|| {
+            let mut plan = crate::tools::Plan::default();
+            let child = match args.thread {
+                Some(named) => named,
+                None => plan.spawn(&context.runtime, args.title, crate::tools::Spawned::SubThread)?,
+            };
+            let report = if args.background {
+                crate::tools::Report::Inbox
+            } else {
+                crate::tools::Report::Call
+            };
+            plan.deliver(
+                &context.runtime,
+                &child,
+                vec![InputContent::text(args.task)],
+                crate::threads::inbox::Joins::Step,
+                report,
+            )?;
+            let text = if args.background {
+                format!("sub-thread {child} is working on it in the background")
+            } else {
+                String::new()
+            };
+            Ok(crate::tools::Told {
+                plan,
+                ..crate::tools::Told::from(vec![InputContent::text(text)])
+            })
+        })())
+    }
+
+    fn awaited(&self, _: &DelegateArgs, child: &str, ended: Option<&crate::threads::inbox::Ended>) -> crate::tools::Told {
+        let how = crate::agent::waiting::how(ended);
+        let text = match ended {
+            Some(crate::threads::inbox::Ended::Replied { said }) => {
+                format!("{said}\n<system-reminder>sub-thread {child} {how}</system-reminder>")
+            }
+            _ => format!("<system-reminder>sub-thread {child} {how}</system-reminder>"),
+        };
+        crate::tools::Told::from(vec![InputContent::text(text)])
+    }
+}
+
+/// `thread` as the thread extension has it, for these tests: a thread of the person's started with a message, or a
+/// thread sent one, told back where it asks.
+#[derive(Debug, Clone, Copy, Default)]
+struct ThreadTool;
+
+#[derive(Debug, Clone, serde::Deserialize, schemars::JsonSchema)]
+#[serde(tag = "action", rename_all = "snake_case")]
+enum ThreadAction {
+    Start {
+        message: String,
+        title: Option<String>,
+        #[serde(default)]
+        report: bool,
+    },
+    Send {
+        thread: String,
+        message: String,
+        #[serde(default)]
+        report: bool,
+    },
+}
+
+impl crate::tools::Tool for ThreadTool {
+    const NAME: &'static str = "thread";
+    const DESCRIPTION: &'static str = "Works with the person's other threads.";
+    const REACHES_THREADS: bool = true;
+    type Args = ThreadAction;
+
+    fn effect(&self, _: &ThreadAction, _: &crate::machine::paths::Base) -> crate::tools::Effect {
+        crate::tools::Effect::Delegates
+    }
+
+    fn exec(
+        &self,
+        context: &crate::tools::Context,
+        action: ThreadAction,
+    ) -> impl std::future::Future<Output = Result<crate::tools::Told, crate::tools::Refusal>> + Send {
+        std::future::ready((|| {
+            let own = context.thread.as_str();
+            let mut plan = crate::tools::Plan::default();
+            let (thread, message, report) = match action {
+                ThreadAction::Start { message, title, report } => {
+                    (plan.spawn(&context.runtime, title, crate::tools::Spawned::Thread)?, message, report)
+                }
+                ThreadAction::Send { thread, message, report } => (thread, message, report),
+            };
+            let delivered = vec![
+                InputContent::text(format!("<system-reminder>message from thread {own}</system-reminder>")),
+                InputContent::text(message),
+            ];
+            let reported = if report {
+                crate::tools::Report::Inbox
+            } else {
+                crate::tools::Report::None
+            };
+            plan.deliver(&context.runtime, &thread, delivered, crate::threads::inbox::Joins::Step, reported)?;
+            Ok(crate::tools::Told {
+                plan,
+                ..crate::tools::Told::from(vec![InputContent::text(format!("thread {thread} has your message"))])
+            })
+        })())
+    }
 }

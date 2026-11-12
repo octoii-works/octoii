@@ -1,10 +1,10 @@
 //! The environment's settings shared, its defaults where none was set; a device's changed as a merge patch, bounded,
 //! and let go of.
 
+use crate::settings::{Environment, EnvironmentChange, Error, SettingsChange, device, environment, forget, set};
+use crate::threads::Mode;
 use beak::Beak;
 use serde_json::json;
-use siphon::settings::{Environment, EnvironmentChange, Error, SettingsChange, device, environment, forget, set};
-use siphon::threads::Mode;
 use siphon_runtime::{Changes, Options, Runtime};
 
 #[tokio::test(flavor = "multi_thread")]
