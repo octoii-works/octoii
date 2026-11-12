@@ -20,8 +20,8 @@ use siphon_threads::inbox::{self, Inbound, Joins, ReplyTo};
 use siphon_threads::{Config, Mode, NewThread, Threads, thread};
 use siphon_tools::{Context, Effect, Refusal, Setting, Told, Tool};
 
-use crate::delegate::{DelegatedProgram, Waiting, directory_of, label};
 use crate::thread::ThreadProgram;
+use crate::waiting::{DelegatedProgram, Waiting, directory_of, label};
 
 /// What the model does with the person's other threads.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -60,7 +60,7 @@ pub struct ThreadTool;
 impl Tool for ThreadTool {
     const NAME: &'static str = "thread";
     const REACHES_THREADS: bool = true;
-    const DESCRIPTION: &'static str = "Works with the person's other threads, which they see in their list: start makes a new thread in this folder with your model and mode, `message` its first input; send gives a thread a message, which it takes at its next step or begins a turn with; stop ends the turn a thread works on. Use it only when the person asks for a new thread, or names one to message or stop; a sub-agent, delegating or working on things at once is never one — those are delegate's. A new thread sees nothing of this conversation: give `message` all it needs. With `report`, you are told by a message how the turn that takes it ends; do not wait for it or poll it. Name a thread in your reply as :thread{id=<its id>}, or ::thread{id=<its id>} for its card.";
+    const DESCRIPTION: &'static str = "Works with the person's other threads, which they see in their list: start makes a new thread in this folder with your model and mode, `message` its first input; send gives a thread a message, which it takes at its next step or begins a turn with; stop ends the turn a thread works on. Use it only when the person asks for a new thread, or names one to message or stop; never for a sub-agent, delegating or working on things at once. A new thread sees nothing of this conversation: give `message` all it needs. With `report`, you are told by a message how the turn that takes it ends; do not wait for it or poll it. Name a thread in your reply as :thread{id=<its id>}, or ::thread{id=<its id>} for its card.";
     type Args = ThreadAction;
 
     fn effect(&self, _: &ThreadAction, _: &Base) -> Effect {

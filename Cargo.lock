@@ -3927,6 +3927,7 @@ dependencies = [
  "siphon-agent",
  "siphon-browser",
  "siphon-claude-code",
+ "siphon-delegate",
  "siphon-image",
  "siphon-machine",
  "siphon-mcp",
@@ -5599,6 +5600,7 @@ dependencies = [
  "serde",
  "serde_json",
  "siphon-accounts",
+ "siphon-delegate",
  "siphon-machine",
  "siphon-runtime",
  "siphon-settings",
@@ -5651,6 +5653,25 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+]
+
+[[package]]
+name = "siphon-delegate"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "beak",
+ "bytes",
+ "octoii-ai",
+ "schemars 1.2.3",
+ "serde",
+ "serde_json",
+ "siphon",
+ "siphon-agent",
+ "siphon-machine",
+ "siphon-runtime",
+ "siphon-threads",
+ "siphon-tools",
 ]
 
 [[package]]

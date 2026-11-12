@@ -20,9 +20,10 @@ use octoii_ai::vocabulary::{
     Usage,
 };
 use siphon_agent::{
-    DelegateProgram, DelegateTool, DelegatedProgram, Gather, ModelRequest, Sources, ThreadProgram, ThreadTool, ThreadToolProgram,
-    TitleProgram, TurnProgram, answer_gather, answer_model, answer_review,
+    DelegatedProgram, Gather, ModelRequest, Sources, ThreadProgram, ThreadTool, ThreadToolProgram, TitleProgram, TurnProgram,
+    answer_gather, answer_model, answer_review,
 };
+use siphon_delegate::{DelegateProgram, DelegateTool};
 use siphon_machine::Host as Machine;
 use siphon_runtime::{Asked, Options, Runtime};
 use siphon_threads::{CallStatus, Config, Entry, Mode, NewThread, Outcome, Threads, Turn};

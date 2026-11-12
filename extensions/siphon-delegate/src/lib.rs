@@ -1,13 +1,12 @@
-//! Sub-threads: the `delegate` tool, by which a thread's model hands a task to a thread of its own, as a parent forks a
-//! child — only where the person asks it to delegate, or to work on things at once. A new sub-thread is made in the
-//! thread's folder, with its model, its mode and its effort, the task its first input; a task for one made before goes
-//! to its inbox, steering it where it runs. The call waits till the turn that took the task ends, then gives what the
-//! sub-thread said last; several calls in one reply run at once. One in the background is answered at once, and a
-//! process beside the thread's main process — of no turn, so a stop of the turn reaches it not, as an interrupt reaches
-//! the foreground alone — waits on the sub-thread instead, then delivers what came of it to the thread's inbox, as `at`
-//! mails a job's output to whoever queued it. A sub-thread is a thread like any other, which the person follows and
-//! steers; it delegates no further, its work on a task stops as the call that waits on it does, and it goes with its
-//! thread.
+//! Sub-threads as an extension of Siphon's: the `delegate` tool, by which a thread's model hands a task to a thread of
+//! its own, as a parent forks a child — only where the person asks it to delegate, or to work on things at once. A new
+//! sub-thread is made in the thread's folder, with its model, its mode and its effort, the task its first input; a task
+//! for one made before goes to its inbox, steering it where it runs. The call waits till the turn that took the task
+//! ends, then gives what the sub-thread said last; several calls in one reply run at once. One in the background is
+//! answered at once, and a process beside the thread's main process — of no turn, so a stop of the turn reaches it
+//! not, as an interrupt reaches the foreground alone — waits on the sub-thread instead. A sub-thread is a thread like
+//! any other, which the person follows and steers; it delegates no further, its work on a task stops as the call that
+//! waits on it does, and it goes with its thread.
 
 use std::future::Future;
 
@@ -16,13 +15,37 @@ use bytes::Bytes;
 use octoii_ai::vocabulary::InputContent;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use siphon::{Builder, Extension};
+use siphon_agent::ThreadProgram;
+use siphon_agent::waiting::{DelegatedProgram, Waiting, directory_of, ended_of, gone, how, label};
 use siphon_machine::paths::Base;
 use siphon_runtime::{Changes, Ending, Program, Run, Wait};
 use siphon_threads::inbox::{self, Ended, Inbound, Joins, ReplyTo};
 use siphon_threads::{Config, NewThread, Parent, Threads, thread};
 use siphon_tools::{Context, Effect, Refusal, Setting, Told, Tool};
 
-use crate::thread::ThreadProgram;
+/// Sub-threads, as a host adds them.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DelegateExtension;
+
+impl Extension for DelegateExtension {
+    fn name(&self) -> &'static str {
+        "delegate"
+    }
+
+    fn title(&self) -> &'static str {
+        "Sub-threads"
+    }
+
+    fn description(&self) -> &'static str {
+        "The model hands tasks to sub-threads of its own, when the person asks it to delegate or work on things at once."
+    }
+
+    fn build(self: Box<Self>, builder: &mut Builder) {
+        builder.tools(|tools| tools.with(DelegateTool));
+        builder.runtime(|runtime| runtime.program(DelegateProgram));
+    }
+}
 
 /// The arguments of `delegate`.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -47,7 +70,7 @@ pub struct DelegateTool;
 impl Tool for DelegateTool {
     const NAME: &'static str = "delegate";
     const REACHES_THREADS: bool = true;
-    const DESCRIPTION: &'static str = "Hands a task to a sub-thread of your own, which works on it with the same tools in this folder. Call it only when the person asks you to delegate work, to use sub-agents, or to work on several things at once — never on your own initiative, and never for a new thread the person asks for, which `thread` starts. A new sub-thread sees nothing of this conversation: give `task` all it needs. You wait for it to finish and are given what it said last, several calls in one reply running at once; or, with `background`, you are answered at once and told when it finishes, for work that does not hold up yours. Every answer names the sub-thread, which `thread` gives more to do. What it says it did is not proof: look at what it changed before you report it done. The person sees each sub-thread, and can follow and steer it.";
+    const DESCRIPTION: &'static str = "Hands a task to a sub-thread of your own, which works on it with the same tools in this folder. Call it only when the person asks you to delegate work, to use sub-agents, or to work on several things at once — never on your own initiative, and never for a new thread the person asks for. A new sub-thread sees nothing of this conversation: give `task` all it needs. You wait for it to finish and are given what it said last, several calls in one reply running at once; or, with `background`, you are answered at once and told when it finishes, for work that does not hold up yours. Every answer names the sub-thread: give it more to do by its id in `thread`. What it says it did is not proof: look at what it changed before you report it done. The person sees each sub-thread, and can follow and steer it.";
     type Args = DelegateArgs;
 
     fn effect(&self, _: &DelegateArgs, _: &Base) -> Effect {
@@ -94,15 +117,6 @@ pub struct DelegateInput {
     pub args: DelegateArgs,
 }
 
-/// A task given to a sub-thread, waited on: the thread that gave it, the sub-thread, and the task, by its id in the
-/// sub-thread's inbox, which is also the key of the mail that tells how the turn that took it ended.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Waiting {
-    pub thread: String,
-    pub child: String,
-    pub task: String,
-}
-
 /// The program of a delegating call: gives the task to its sub-thread, then waits on it till the turn that took the
 /// task ends, and ends with what it said last — or how its work ended short; under a stop, stops its work on the task.
 #[derive(Debug, Clone, Copy, Default)]
@@ -140,44 +154,6 @@ impl Program for DelegateProgram {
 fn wait_on(waiting: Waiting) -> Ending<Waiting, String> {
     let wait = Wait::new().mail(waiting.task.clone()).change(thread::path(&waiting.child));
     Ending::Wait(waiting, wait)
-}
-
-/// How the sub-thread of `waiting` ended its work on the task, as its mail tells, taken with the run's commit; none
-/// while it has not.
-fn ended_of(run: &mut Run<'_>, waiting: &Waiting) -> anyhow::Result<Option<Ended>> {
-    let path = layout::mail(run.path(), waiting.task.as_bytes());
-    let Some(_) = run.snapshot().stat(&path)? else { return Ok(None) };
-    let payload = run.snapshot().read(&layout::payload(&path), 0, u64::MAX)?.unwrap_or_default();
-    run.take_mail(&waiting.task);
-    Ok(Some(serde_json::from_slice(&payload)?))
-}
-
-/// Whether the sub-thread of `waiting` went, deleted.
-fn gone(run: &Run<'_>, waiting: &Waiting) -> anyhow::Result<bool> {
-    Ok(run.snapshot().stat(&thread::path(&waiting.child))?.is_none())
-}
-
-/// How a sub-thread's work ended, as `ended` says — none, deleted before it did — said of it.
-fn how(ended: Option<&Ended>) -> String {
-    match ended {
-        Some(Ended::Replied { .. }) => "finished: what it said last is here, and its whole work is in it".to_owned(),
-        Some(Ended::Failed { reason }) => format!("failed: {reason}"),
-        Some(Ended::Stopped) => "was stopped by the person before it finished".to_owned(),
-        Some(Ended::Withdrawn) => "had the task taken back before it began it".to_owned(),
-        None => "was deleted before it finished".to_owned(),
-    }
-}
-
-/// The directory of the thread `id`, as the run's snapshot holds it.
-pub(crate) fn directory_of(run: &Run<'_>, id: &str) -> anyhow::Result<Option<beak::Directory>> {
-    Ok(run.snapshot().stat(&thread::path(id))?.and_then(|entry| entry.directory))
-}
-
-pub(crate) fn label(directory: &beak::Directory, name: &str) -> Option<String> {
-    directory
-        .label(name.as_bytes())
-        .filter(|value| !value.is_empty())
-        .map(|value| String::from_utf8_lossy(value).into_owned())
 }
 
 /// Gives the task to the sub-thread `args` names, or to a new one, with the run's commit; then waits on it, or, in the
@@ -271,54 +247,4 @@ fn stop(run: &mut Run<'_>, waiting: &Waiting) -> anyhow::Result<Ending<Waiting, 
         run.changes.extend(stopping);
     }
     Ok(Ending::Stopped(Some("stopped, and the sub-thread's work on it with it".into())))
-}
-
-/// The program of a task given in the background — delegated to a sub-thread, or a message sent to another thread to be
-/// told of — beside its thread's main process: waits on the thread that took it till the turn that took it ends, then
-/// ends, what came of it delivered to the thread's inbox in the same commit.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct DelegatedProgram;
-
-impl Program for DelegatedProgram {
-    const KIND: &'static str = "siphon.delegated";
-    type Input = Waiting;
-    type Checkpoint = ();
-    type Output = ();
-
-    fn run(&self, run: &mut Run<'_>, waiting: Waiting, _: Option<()>) -> anyhow::Result<Ending<(), ()>> {
-        let ended = match ended_of(run, &waiting)? {
-            Some(ended) => Some(ended),
-            None if gone(run, &waiting)? => None,
-            None => {
-                let wait = Wait::new().mail(waiting.task.clone()).change(thread::path(&waiting.child));
-                return Ok(Ending::Wait((), wait));
-            }
-        };
-        let ours = directory_of(run, &waiting.child)?
-            .and_then(|child| label(&child, thread::PARENT_LABEL))
-            .as_deref()
-            == Some(waiting.thread.as_str());
-        let note = if ours {
-            format!(
-                "[the sub-thread {}, which you gave a task in the background, {}]",
-                waiting.child,
-                how(ended.as_ref())
-            )
-        } else {
-            format!("[the thread {}, which you sent a message, {}]", waiting.child, how(ended.as_ref()))
-        };
-        let mut content = vec![InputContent::text(note)];
-        if let Some(Ended::Replied { said }) = ended {
-            content.push(InputContent::text(said));
-        }
-        let inbound = Inbound::Input {
-            actor: waiting.child.clone(),
-            content,
-            reply_to: None,
-            joins: Joins::Step,
-        };
-        let delivery = run.new_id()?;
-        inbox::put(&mut run.changes, &waiting.thread, &delivery, &inbound)?;
-        Ok(Ending::Done(()))
-    }
 }

@@ -4,7 +4,6 @@
 
 pub mod compaction;
 pub mod context;
-pub mod delegate;
 mod front_matter;
 pub mod gather;
 pub mod memory;
@@ -18,10 +17,10 @@ pub mod thread_tool;
 pub mod title;
 pub mod told;
 pub mod turn;
+pub mod waiting;
 
 pub use compaction::{CompactInput, CompactProgram};
 pub use context::{Composition, ContextPart, Share};
-pub use delegate::{DelegateArgs, DelegateProgram, DelegateTool, DelegatedProgram};
 pub use gather::{Gather, Sources, Teller, Telling, answer_gather};
 pub use model::{ModelRequest, Streamed, answer_model};
 pub use resume::{ResumeInput, ResumeProgram};
@@ -31,3 +30,4 @@ pub use thread_tool::{ThreadAction, ThreadTool, ThreadToolProgram};
 pub use title::{TitleInput, TitleProgram};
 pub use told::Told;
 pub use turn::{TurnInput, TurnProgram, TurnState};
+pub use waiting::{DelegatedProgram, Waiting};

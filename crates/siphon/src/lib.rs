@@ -17,8 +17,8 @@ use octoii_ai::host::Credentials;
 use octoii_ai::models::{Host as Network, Models, Provider};
 use octoii_ai::transport::Transport;
 use siphon_agent::{
-    CompactProgram, DelegateProgram, DelegateTool, DelegatedProgram, Gather, ModelRequest, ResumeProgram, Sources, ThreadProgram,
-    ThreadTool, ThreadToolProgram, TitleProgram, Told, TurnProgram, answer_gather, answer_model, answer_review,
+    CompactProgram, DelegatedProgram, Gather, ModelRequest, ResumeProgram, Sources, ThreadProgram, ThreadTool, ThreadToolProgram,
+    TitleProgram, Told, TurnProgram, answer_gather, answer_model, answer_review,
 };
 use siphon_machine::Host;
 use siphon_protocol::Scope;
@@ -187,7 +187,6 @@ impl Siphon {
                 .with(GrepTool)
                 .with(ShellTool)
                 .with(ExecuteTool)
-                .with(DelegateTool)
                 .with(ThreadTool),
             owners: HashMap::new(),
             providers,
@@ -324,7 +323,6 @@ fn programs(
         .program(ScriptProgram { tools })
         .program(TitleProgram)
         .program(CompactProgram)
-        .program(DelegateProgram)
         .program(DelegatedProgram)
         .program(ThreadToolProgram)
         .program(ResumeProgram)
