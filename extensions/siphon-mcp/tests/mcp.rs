@@ -72,6 +72,7 @@ impl Program for Caller {
             home: None,
         };
         let setting = Setting {
+            primitives: &siphon::agent::ThreadPrimitives,
             thread: "t1",
             tools: &self.tools,
             catalog: &input.catalog,
@@ -121,7 +122,10 @@ fn runtime(beak: &Beak, servers: &Servers) -> Runtime {
     let execs = outer.clone();
     Runtime::builder()
         .program(Caller { tools: outer })
-        .program(ScriptProgram { tools: inner })
+        .program(ScriptProgram {
+            tools: inner,
+            primitives: std::sync::Arc::new(siphon::agent::ThreadPrimitives),
+        })
         .program(TrustProgram)
         .ask_person::<Trust>()
         .handle(move |asked: Asked<Exec>| {

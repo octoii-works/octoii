@@ -13,7 +13,7 @@ use siphon::agent::{Shared, Teller, Telling};
 use siphon::tools::projects::Place;
 use siphon::{Extension, Registrar};
 use siphon_runtime::Runtime;
-pub use tool::{ThreadAction, ThreadTool, ThreadToolInput, ThreadToolProgram};
+pub use tool::{ThreadAction, ThreadTool};
 
 /// Threads, as a host adds them.
 #[derive(Debug, Clone, Copy, Default)]
@@ -34,7 +34,6 @@ impl Extension for ThreadExtension {
 
     fn build(self: Box<Self>, registrar: &mut Registrar<'_>) {
         registrar.tool(ThreadTool);
-        registrar.runtime(|runtime| runtime.program(ThreadToolProgram));
         if let Some(folder) = registrar.machine().threads.clone() {
             registrar.teller(Shared::Thread, Arc::new(Folder(folder)));
         }

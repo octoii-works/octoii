@@ -104,7 +104,10 @@ fn runtime(beak: &Beak, models: &Arc<Models>) -> Runtime {
             machine: siphon::machine::Host::default(),
             models: Arc::clone(models),
         })
-        .program(ScriptProgram { tools: inner })
+        .program(ScriptProgram {
+            tools: inner,
+            primitives: std::sync::Arc::new(siphon::agent::ThreadPrimitives),
+        })
         .program(TitleProgram)
         .program(CompactProgram)
         .handle(move |asked: Asked<Gather>| {

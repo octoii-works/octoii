@@ -25,9 +25,9 @@ use siphon::agent::{
 use siphon::machine::Host as Machine;
 use siphon::threads::{CallStatus, Config, Entry, Mode, NewThread, Outcome, Threads, Turn};
 use siphon::tools::{Asks, Exec, ExecuteTool, Permission, ReadTool, Review, ScriptProgram, ShellTool, Tools, WriteTool, answer_exec};
-use siphon_delegate::{DelegateProgram, DelegateTool};
+use siphon_delegate::DelegateTool;
 use siphon_runtime::{Asked, Options, Runtime};
-use siphon_thread::{ThreadTool, ThreadToolProgram};
+use siphon_thread::ThreadTool;
 
 /// What a scripted reply says to stand for one its output limit cut off.
 const CUT_OFF: &str = "cut off";
@@ -217,12 +217,13 @@ fn runtime(beak: &Beak, script: &Arc<Script>) -> Runtime {
             machine: siphon::machine::Host::default(),
             models: Arc::clone(&models),
         })
-        .program(ScriptProgram { tools: inner })
+        .program(ScriptProgram {
+            tools: inner,
+            primitives: std::sync::Arc::new(siphon::agent::ThreadPrimitives),
+        })
         .program(TitleProgram)
         .program(siphon::agent::CompactProgram)
-        .program(DelegateProgram)
         .program(DelegatedProgram)
-        .program(ThreadToolProgram)
         .program(siphon::agent::ResumeProgram)
         .handle(move |asked: Asked<Gather>| {
             let sources = sources.clone();

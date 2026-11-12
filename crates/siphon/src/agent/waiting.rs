@@ -5,7 +5,6 @@
 
 use crate::threads::inbox::{self, Ended, Inbound, Joins};
 use crate::threads::thread;
-use beak::layout;
 use octoii_ai::vocabulary::InputContent;
 use serde::{Deserialize, Serialize};
 use siphon_runtime::{Ending, Program, Run, Wait};
@@ -17,19 +16,6 @@ pub struct Waiting {
     pub thread: String,
     pub child: String,
     pub task: String,
-}
-
-/// How the sub-thread of `waiting` ended its work on the task, as its mail tells, taken with the run's commit; none
-/// while it has not.
-///
-/// # Errors
-/// The volume's failure; a mail not as a thread writes it.
-pub fn ended_of(run: &mut Run<'_>, waiting: &Waiting) -> anyhow::Result<Option<Ended>> {
-    let path = layout::mail(run.path(), waiting.task.as_bytes());
-    let Some(_) = run.snapshot().stat(&path)? else { return Ok(None) };
-    let payload = run.snapshot().read(&layout::payload(&path), 0, u64::MAX)?.unwrap_or_default();
-    run.take_mail(&waiting.task);
-    Ok(Some(serde_json::from_slice(&payload)?))
 }
 
 /// Whether the sub-thread of `waiting` went, deleted.
@@ -82,7 +68,7 @@ impl Program for DelegatedProgram {
     type Output = ();
 
     fn run(&self, run: &mut Run<'_>, waiting: Waiting, _: Option<()>) -> anyhow::Result<Ending<(), ()>> {
-        let ended = match ended_of(run, &waiting)? {
+        let ended = match inbox::ended_mail(run, &waiting.task)? {
             Some(ended) => Some(ended),
             None if gone(run, &waiting)? => None,
             None => {

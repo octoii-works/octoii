@@ -12,6 +12,7 @@ use siphon_runtime::{Answer, Run, Wait};
 
 use crate::tools::effect::{Effect, Line};
 use crate::tools::permissions::{Bounds, Grants, Verdict, Writes, patterns_of, weigh};
+use crate::tools::plan::{Awaited, Primitives};
 use crate::tools::projects;
 use crate::tools::requests::{Asks, Decision, Exec, Judgment, Permission, Review, Shown};
 use crate::tools::tool::Tools;
@@ -26,6 +27,8 @@ pub enum State {
     Running,
     /// Its tool's program runs, as a process under its caller keyed by the call's key.
     Program,
+    /// It ends with how the turn that takes what it delivered ends, which the mail keyed by the delivery tells.
+    Awaiting(Awaited),
     Ended {
         status: CallStatus,
         output: Vec<InputContent>,
@@ -51,19 +54,74 @@ pub struct Call {
     pub state: State,
 }
 
-/// What the calls are weighed and exec'd by: the thread, its tools, the names of the MCP servers' tools its model is
-/// told of, its mode, where its paths start, its project's folder where it has one, the places beside its workspace it
-/// writes as freely, and whether the machine confines a command to a sandbox.
-#[derive(Debug, Clone, Copy)]
+/// What the calls are weighed and exec'd by: the thread, its tools, what does what they plan for threads, the names of
+/// the tools of <catalog> its model is told of, its mode, where its paths start, its project's folder where it has one,
+/// the places beside its workspace it writes as freely, and whether the machine confines a command to a sandbox.
+#[derive(Clone, Copy)]
 pub struct Setting<'a> {
     pub thread: &'a str,
     pub tools: &'a Tools,
+    pub primitives: &'a dyn Primitives,
     pub catalog: &'a [String],
     pub mode: Mode,
     pub base: &'a Base,
     pub project: Option<&'a str>,
     pub places: &'a [std::path::PathBuf],
     pub confines: bool,
+}
+
+impl std::fmt::Debug for Setting<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Setting")
+            .field("thread", &self.thread)
+            .field("mode", &self.mode)
+            .finish_non_exhaustive()
+    }
+}
+
+/// How `call`, which waits on `awaited`, ended, as the mail of the turn that took its delivery tells — or the thread
+/// deleted before it did; none while neither came.
+fn awaited_end(run: &mut Run<'_>, setting: &Setting<'_>, call: &Call, awaited: &Awaited) -> anyhow::Result<Option<State>> {
+    let ended_as = match crate::threads::inbox::ended_mail(run, &awaited.delivery)? {
+        Some(ended) => Some(ended),
+        None if run.snapshot().stat(&crate::threads::thread::path(&awaited.thread))?.is_none() => None,
+        None => return Ok(None),
+    };
+    let told = setting.tools.awaited(
+        &call.tool,
+        &serde_json::from_str(&call.arguments)?,
+        &awaited.thread,
+        ended_as.as_ref(),
+    );
+    Ok(Some(State::Ended {
+        status: if matches!(ended_as, Some(crate::threads::inbox::Ended::Replied { .. })) {
+            CallStatus::Ok
+        } else {
+            CallStatus::ToolError
+        },
+        output: told.output,
+        structured: told.structured,
+        instructions: told.instructions,
+    }))
+}
+
+/// Where a call whose exec told `told` stands, its plan done with the run's commit: ended with what it told, or waiting
+/// on the turn that takes what it delivered; ended failed where its plan may not be done.
+fn planned(run: &mut Run<'_>, setting: &Setting<'_>, call: &str, told: crate::tools::told::Told) -> anyhow::Result<State> {
+    if !told.plan.is_empty()
+        && let Err(refused) = setting.primitives.apply(run, setting.thread, call, &told.plan)?
+    {
+        return Ok(ended(CallStatus::ToolError, refused));
+    }
+    Ok(match told.plan.awaits {
+        Some(awaited) => State::Awaiting(awaited),
+        None => State::Ended {
+            status: CallStatus::Ok,
+            output: told.output,
+            structured: told.structured,
+            instructions: told.instructions,
+        },
+    })
 }
 
 /// A model's calls, as their caller takes them on.
@@ -168,8 +226,13 @@ impl Calls {
     /// The volume's failure; what cannot be read or written as JSON.
     pub fn stop(&mut self, run: &mut Run<'_>, setting: &Setting<'_>) -> anyhow::Result<Option<Wait>> {
         for at in 0..self.0.len() {
-            if self.0[at].state == State::Waiting {
-                self.0[at].state = ended(CallStatus::Interrupted, "the turn was stopped before it ran");
+            match &self.0[at].state {
+                State::Waiting => self.0[at].state = ended(CallStatus::Interrupted, "the turn was stopped before it ran"),
+                State::Awaiting(awaited) => {
+                    setting.primitives.withdraw(run, awaited)?;
+                    self.0[at].state = ended(CallStatus::Interrupted, "stopped, and the thread's work on it with it");
+                }
+                _ => {}
             }
             self.take_answer(at, run, setting)?;
         }
@@ -187,6 +250,13 @@ impl Calls {
                 State::Running => call.key.clone(),
                 State::Program => {
                     wait = wait.child(call.key.clone());
+                    waits = true;
+                    continue;
+                }
+                State::Awaiting(ref awaited) => {
+                    wait = wait
+                        .mail(awaited.delivery.clone())
+                        .change(crate::threads::thread::path(&awaited.thread));
                     waits = true;
                     continue;
                 }
@@ -269,16 +339,15 @@ impl Calls {
                 };
                 run.take_mail(&call.key);
                 match answer {
-                    Answer::Given(told) => State::Ended {
-                        status: CallStatus::Ok,
-                        output: told.output,
-                        structured: told.structured,
-                        instructions: told.instructions,
-                    },
+                    Answer::Given(told) => planned(run, setting, &call.key, told)?,
                     Answer::Failed(words) => ended(CallStatus::ToolError, words),
                     Answer::Interrupted => ended(CallStatus::Interrupted, "the call was cut off"),
                 }
             }
+            State::Awaiting(ref awaited) => match awaited_end(run, setting, call, awaited)? {
+                Some(state) => state,
+                None => return Ok(()),
+            },
             State::Program => {
                 let process = beak::layout::process(run.path(), call.key.as_bytes());
                 let Some(outcome) = run.snapshot().record(&process)?.and_then(|record| record.outcome) else {

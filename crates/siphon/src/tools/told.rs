@@ -4,6 +4,8 @@
 
 use octoii_ai::vocabulary::InputContent;
 use serde::{Deserialize, Serialize};
+
+use crate::tools::plan::Plan;
 use ts_rs::TS;
 
 /// What a tool told of a call: what the model reads, and what the call did, typed by the tool, where it tells it; and
@@ -16,6 +18,9 @@ pub struct Told {
     pub structured: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub instructions: Vec<Instructions>,
+    /// What the call does to threads, which its caller does as it takes the call's end.
+    #[serde(default, skip_serializing_if = "Plan::is_empty")]
+    pub plan: Plan,
 }
 
 /// The name of a folder's instructions file.
@@ -50,6 +55,7 @@ impl Told {
             output,
             structured: serde_json::to_value(structured).ok(),
             instructions: Vec::new(),
+            plan: Plan::default(),
         }
     }
 }
@@ -60,6 +66,7 @@ impl From<Vec<InputContent>> for Told {
             output,
             structured: None,
             instructions: Vec::new(),
+            plan: Plan::default(),
         }
     }
 }

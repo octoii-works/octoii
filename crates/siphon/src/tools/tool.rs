@@ -18,6 +18,7 @@ use serde::de::DeserializeOwned;
 use siphon_runtime::{Changes, Runtime};
 use tokio_util::sync::CancellationToken;
 
+use crate::threads::inbox::Ended;
 use crate::tools::calls::Setting;
 use crate::tools::effect::Effect;
 use crate::tools::permissions::Writes;
@@ -163,6 +164,12 @@ pub trait Tool: Send + Sync + 'static {
     fn finished(&self, outcome: &beak::Outcome) -> Told {
         Told::from(vec![InputContent::text(format!("{outcome:?}"))])
     }
+
+    /// For a call that ends with how the turn of the thread `thread` that took its delivery ended: what that tells,
+    /// as `ended` says — none, the thread deleted before it did.
+    fn awaited(&self, _: &Self::Args, thread: &str, ended: Option<&Ended>) -> Told {
+        Told::from(vec![InputContent::text(crate::threads::inbox::told_of(thread, ended))])
+    }
 }
 
 type Execing = Pin<Box<dyn Future<Output = Result<Told, Refusal>> + Send>>;
@@ -192,6 +199,7 @@ trait Erased: Send + Sync {
         setting: &Setting<'_>,
     ) -> Option<serde_json::Result<()>>;
     fn finished(&self, outcome: &beak::Outcome) -> Told;
+    fn awaited(&self, arguments: &serde_json::Value, thread: &str, ended: Option<&Ended>) -> Told;
 }
 
 impl<T: Tool> Erased for T {
@@ -226,6 +234,13 @@ impl<T: Tool> Erased for T {
 
     fn finished(&self, outcome: &beak::Outcome) -> Told {
         Tool::finished(self, outcome)
+    }
+
+    fn awaited(&self, arguments: &serde_json::Value, thread: &str, ended: Option<&Ended>) -> Told {
+        match serde_json::from_value::<T::Args>(arguments.clone()) {
+            Ok(args) => Tool::awaited(self, &args, thread, ended),
+            Err(_) => Told::from(vec![InputContent::text(crate::threads::inbox::told_of(thread, ended))]),
+        }
     }
 
     fn exec(self: Arc<Self>, context: Context, arguments: serde_json::Value) -> Execing {
@@ -394,6 +409,16 @@ impl Tools {
         setting: &Setting<'_>,
     ) -> Option<serde_json::Result<()>> {
         self.entries.get(name)?.tool.start(changes, parent, key, arguments, setting)
+    }
+
+    /// What the end of the turn of the thread `thread` that took the delivery of a call of `name` with `arguments` tells,
+    /// as `ended` says.
+    #[must_use]
+    pub fn awaited(&self, name: &str, arguments: &serde_json::Value, thread: &str, ended: Option<&Ended>) -> Told {
+        self.entries.get(name).map_or_else(
+            || Told::from(vec![InputContent::text(crate::threads::inbox::told_of(thread, ended))]),
+            |entry| entry.tool.awaited(arguments, thread, ended),
+        )
     }
 
     /// What the end `outcome` of the process of a call of `name` tells.

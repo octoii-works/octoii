@@ -332,7 +332,10 @@ fn programs(
             machine: machine.clone(),
             models: Arc::clone(models),
         })
-        .program(ScriptProgram { tools })
+        .program(ScriptProgram {
+            tools,
+            primitives: Arc::new(crate::agent::ThreadPrimitives),
+        })
         .program(TitleProgram)
         .program(CompactProgram)
         .program(DelegatedProgram)

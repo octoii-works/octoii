@@ -11,6 +11,7 @@ use std::sync::Arc;
 
 use octoii_ai::models::Models;
 
+use crate::agent::primitives::ThreadPrimitives;
 use crate::machine::paths::Base;
 use crate::threads::log::Writer;
 use crate::threads::{CallKey, CallStatus, Config, Entry, SIPHON, ThreadUsage, Window, inbox, thread};
@@ -269,6 +270,7 @@ impl TurnProgram {
         let project = Place::of(&base.workspace).project.to_string_lossy().into_owned();
         let places = self.machine.places_of(&input.thread);
         let setting = Setting {
+            primitives: &ThreadPrimitives,
             thread: &input.thread,
             tools: &self.tools,
             catalog: &input.catalog,
@@ -341,6 +343,7 @@ impl TurnProgram {
                 let config = config_of(run, &input.thread)?;
                 let base = self.base(&config);
                 let setting = Setting {
+                    primitives: &ThreadPrimitives,
                     thread: &input.thread,
                     tools: &self.tools,
                     catalog: &input.catalog,

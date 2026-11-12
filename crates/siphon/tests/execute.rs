@@ -52,6 +52,7 @@ impl Program for Caller {
         };
         let tools = tools();
         let setting = Setting {
+            primitives: &siphon::agent::ThreadPrimitives,
             thread: "t1",
             tools: &tools,
             catalog: &[],
@@ -83,7 +84,10 @@ impl Program for Caller {
 fn runtime(beak: &Beak) -> Runtime {
     Runtime::builder()
         .program(Caller)
-        .program(ScriptProgram { tools: inner() })
+        .program(ScriptProgram {
+            tools: inner(),
+            primitives: std::sync::Arc::new(siphon::agent::ThreadPrimitives),
+        })
         .handle(|asked: Asked<Exec>| async move { answer_exec(&inner(), &Host::default(), asked).await })
         .ask_person::<Permission>()
         .start(beak, Options::default())

@@ -98,6 +98,36 @@ pub fn tell(snapshot: &Snapshot, changes: &mut Changes, reply_to: &ReplyTo, ende
     Ok(())
 }
 
+/// How the turn that took the input of the mail `key` ended, as the mail tells the process of `run`, taken with the
+/// run's commit; none while it has not come.
+///
+/// # Errors
+/// The volume's failure; a mail not as `tell` writes it.
+pub fn ended_mail(run: &mut siphon_runtime::Run<'_>, key: &str) -> anyhow::Result<Option<Ended>> {
+    let path = beak::layout::mail(run.path(), key.as_bytes());
+    if run.snapshot().stat(&path)?.is_none() {
+        return Ok(None);
+    }
+    let payload = run.snapshot().read(&beak::layout::payload(&path), 0, u64::MAX)?.unwrap_or_default();
+    run.take_mail(key);
+    Ok(Some(serde_json::from_slice(&payload)?))
+}
+
+/// How the turn of the thread `thread` that took an input ended, as `ended` says — none, the thread deleted before it
+/// did — as the one that delivered it is told: what it said last, where it replied, then how.
+#[must_use]
+pub fn told_of(thread: &str, ended: Option<&Ended>) -> String {
+    match ended {
+        Some(Ended::Replied { said }) => {
+            format!("{said}\n[the thread {thread} finished: what it said last is above, and its whole work is in it]")
+        }
+        Some(Ended::Failed { reason }) => format!("[the thread {thread} failed: {reason}]"),
+        Some(Ended::Stopped) => format!("[the thread {thread} was stopped by the person before it finished]"),
+        Some(Ended::Withdrawn) => format!("[the thread {thread} had the message taken back before it took it]"),
+        None => format!("[the thread {thread} was deleted before it finished]"),
+    }
+}
+
 /// What waits in an inbox: its id, by which it is withdrawn, and what was delivered.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Waiting {

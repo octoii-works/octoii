@@ -87,6 +87,7 @@ impl Program for Caller {
         let setting = Setting {
             thread: &input.thread,
             tools: &self.tools,
+            primitives: &siphon::agent::ThreadPrimitives,
             catalog: &[],
             mode: input.mode,
             base: &base,

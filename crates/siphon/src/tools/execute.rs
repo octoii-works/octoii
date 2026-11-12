@@ -140,14 +140,22 @@ impl Tool for ExecuteTool {
             output: vec![InputContent::text(text.trim_start().to_owned())],
             structured: None,
             instructions: output.instructions,
+            plan: crate::tools::Plan::default(),
         }
     }
 }
 
-/// The program a script's process runs, its scripts calling `tools`.
-#[derive(Debug, Clone)]
+/// The program a script's process runs, its scripts calling `tools`, what they plan for threads done by `primitives`.
+#[derive(Clone)]
 pub struct ScriptProgram {
     pub tools: Tools,
+    pub primitives: std::sync::Arc<dyn crate::tools::Primitives>,
+}
+
+impl std::fmt::Debug for ScriptProgram {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ScriptProgram").field("tools", &self.tools).finish_non_exhaustive()
+    }
 }
 
 /// The text of a call's output, as a script is given it.
@@ -265,6 +273,7 @@ impl Program for ScriptProgram {
         let setting = Setting {
             thread: &input.thread,
             tools: &self.tools,
+            primitives: &*self.primitives,
             catalog: &input.catalog,
             mode: input.mode,
             base: &base,
