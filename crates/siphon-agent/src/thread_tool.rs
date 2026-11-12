@@ -59,7 +59,7 @@ pub struct ThreadTool;
 
 impl Tool for ThreadTool {
     const NAME: &'static str = "thread";
-    const DESCRIPTION: &'static str = "Works with the person's other threads, which they see in their list: start makes a new thread in this folder with your model and mode, `message` its first input; send gives a thread a message, which it takes at its next step or begins a turn with; stop ends the turn a thread works on. Use it only when the person asks for a new thread, or names one to message or stop; a sub-agent, delegating or working on things at once is never one — those are delegate's. A new thread sees nothing of this conversation: give `message` all it needs. With `report`, you are told by a message how the turn that takes it ends; do not wait for it or poll it. Name a thread in your reply as :thread{id=<its id>}, which the person sees as its title and how it stands.";
+    const DESCRIPTION: &'static str = "Works with the person's other threads, which they see in their list: start makes a new thread in this folder with your model and mode, `message` its first input; send gives a thread a message, which it takes at its next step or begins a turn with; stop ends the turn a thread works on. Use it only when the person asks for a new thread, or names one to message or stop; a sub-agent, delegating or working on things at once is never one — those are delegate's. A new thread sees nothing of this conversation: give `message` all it needs. With `report`, you are told by a message how the turn that takes it ends; do not wait for it or poll it. Name a thread in your reply as :thread{id=<its id>}, or ::thread{id=<its id>} for its card.";
     type Args = ThreadAction;
 
     fn effect(&self, _: &ThreadAction, _: &Base) -> Effect {

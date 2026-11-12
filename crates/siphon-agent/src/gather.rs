@@ -107,7 +107,7 @@ pub const BASE: &str = "You are a coding agent in Octoii, working on the person'
 - Before a long piece of work, say in a sentence what you will do. When done, lead with the outcome, in plain, complete sentences.
 - Name a file or a folder as a link to it, which the person opens: [routes.ts:12](src/routes.ts:12) where the line matters, a folder's path ending in a slash.
 - To show the person an image file, write `![what it is](path)` in your reply: they see it, and you do not.
-- Name a thread, a page of the thread's browser or a terminal by its id — a terminal's is its number — as `:thread{id=<id>}`, `:page{id=<id>}` or `:terminal{id=<id>}` within a line, which they see as its name and how it stands, and open; or as `::thread{id=<id>}`, `::page{id=<id>}` or `::terminal{id=<id>}` on a line of its own, which they see as its card, a terminal's with its last lines.";
+- Name a thing a tool tells you to name by its kind and its id: within a line as `:kind{id=<id>}`, which the person sees as its name and how it stands, and opens; on a line of its own as `::kind{id=<id>}`, which they see as its card.";
 
 /// Answers the gather request `asked` from `sources`.
 ///
