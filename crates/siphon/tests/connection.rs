@@ -79,21 +79,29 @@ impl Plugin for Echo {
 
 const ALL: [Scope; 2] = [Scope::ThreadsRead, Scope::ThreadsOperate];
 
+/// The welcome a client of the session `session-1` with `scopes` is sent: its session, its scopes, and the machine.
+fn welcome_of(siphon: &siphon::Siphon, scopes: &[&str]) -> serde_json::Value {
+    json!({
+        "event": "welcome",
+        "session": "session-1",
+        "scopes": scopes,
+        "machine": {
+            "name": "here",
+            "workspace": siphon.machine.workspace_of(None),
+            "home": siphon.machine.home,
+            "scratchpads": siphon.machine.scratchpads,
+            "memory": siphon.machine.memory,
+        },
+    })
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_client_is_welcomed_its_calls_checked_and_answered() {
     let beak = Beak::new().expect("Beak");
     let siphon = siphon(&beak);
     let mut reader = Client::connect(&siphon, vec![Scope::ThreadsRead], 64);
     let welcome = reader.message().await;
-    assert_eq!(
-        welcome,
-        json!({
-            "event": "welcome",
-            "session": "session-1",
-            "scopes": ["threads.read"],
-            "machine": { "name": "here", "workspace": siphon.machine.workspace_of(None) },
-        })
-    );
+    assert_eq!(welcome, welcome_of(&siphon, &["threads.read"]));
     reader.calls.send("{ not json".into()).await.expect("sent");
     let refused = reader.message().await;
     assert_eq!(

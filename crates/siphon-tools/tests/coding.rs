@@ -188,7 +188,7 @@ async fn a_call_writes_the_memory_of_its_project_and_a_command_its_scratchpad_as
     let kept = tempfile::tempdir().expect("a folder");
     let kept = kept.path().canonicalize().expect("its real path");
     context.host.memory = Some(kept.join("memory"));
-    context.host.scratch = Some(kept.join("scratch"));
+    context.host.scratchpads = Some(kept.join("scratch"));
     let memory = context.host.memory_of(&context.base.workspace).expect("its memory");
     let tools = tools();
     let index = memory.join("MEMORY.md");

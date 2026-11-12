@@ -29,7 +29,7 @@ pub struct Host {
     /// The folder a thread of no folder of its own works in, no project's.
     pub workspace: Option<PathBuf>,
     pub memory: Option<PathBuf>,
-    pub scratch: Option<PathBuf>,
+    pub scratchpads: Option<PathBuf>,
 }
 
 impl Host {
@@ -65,7 +65,7 @@ impl Host {
     /// The scratchpad of the thread `thread`: a folder for what its work leaves that is not to be kept.
     #[must_use]
     pub fn scratchpad_of(&self, thread: &str) -> Option<PathBuf> {
-        self.scratch.as_ref().map(|scratch| scratch.join(thread))
+        self.scratchpads.as_ref().map(|scratchpads| scratchpads.join(thread))
     }
 }
 

@@ -13,6 +13,7 @@ import { memo, type ReactNode, useState } from "react";
 import { Ban, Brain } from "lucide-react";
 import { callDuration, duration } from "../../core/time.ts";
 import { type CallLine, declinedText, leadOf, thoughtCalls, type ThoughtCall, type Work } from "../../core/timeline.ts";
+import { folderOf, nameOf, type Places, spokenPath, spokenText } from "../../core/files.ts";
 import { summaryOf } from "../../core/tools.ts";
 import { useArrived } from "../effects/arrived.ts";
 import { Counting } from "../effects/now.ts";
@@ -22,6 +23,7 @@ import { Waiting } from "./ask-line.tsx";
 import { CallDetail } from "./call-detail.tsx";
 import { ChangeCount } from "./changes.tsx";
 import { Prose } from "./markdown.tsx";
+import { usePlaces } from "./message-thread.ts";
 import { CallMark, Mark } from "./marks.tsx";
 
 /** What a stretch's line is given: the thread whose work it is, its steps — its calls and what was thought between them — and its calls. */
@@ -142,6 +144,7 @@ function stateOf(calls: readonly CallLine[]): string {
 /** What a call does, as its line says it: its verb — shimmering while it runs — and what it works on, its tool's name where it has no verb; then what it says beside them. */
 function CallWords(props: { readonly call: CallLine }): ReactNode {
 	const { call } = props;
+	const places = usePlaces();
 	return (
 		<>
 			{call.verb === undefined ? (
@@ -149,13 +152,37 @@ function CallWords(props: { readonly call: CallLine }): ReactNode {
 			) : (
 				<span className="shrink-0 group-data-[state=running]/call:shimmer">{call.verb}</span>
 			)}
-			{call.subject === undefined ? null : <span className={cn("min-w-0 truncate text-foreground", call.code && "font-mono text-xs")}>{call.subject}</span>}
+			{call.subject === undefined ? null : <Subject call={call} subject={call.subject} places={places} />}
 			{call.aside === undefined ? null : call.aside.kind === "change" ? (
 				<ChangeCount added={call.aside.added} removed={call.aside.removed} />
 			) : (
 				<span className="min-w-0 shrink-0 truncate text-muted-foreground">{call.aside.text}</span>
 			)}
 		</>
+	);
+}
+
+/**
+ * What a call works on, by the places its paths lie in: a file by its name, the folder it is in quieter before it and
+ * the first to give way to the line's room; code as code; the whole as written on hover.
+ */
+function Subject(props: { readonly call: CallLine; readonly subject: string; readonly places: Places | undefined }): ReactNode {
+	const { call, subject, places } = props;
+	if (call.code) {
+		return (
+			<span title={subject} className="min-w-0 truncate font-mono text-xs text-foreground">
+				{places === undefined ? subject : spokenText(subject, places)}
+			</span>
+		);
+	}
+	if (call.work !== "read" && call.work !== "edit") return <span className="min-w-0 truncate text-foreground">{subject}</span>;
+	const spoken = places === undefined ? subject : spokenPath(subject, places);
+	const folder = folderOf(spoken);
+	return (
+		<span title={subject} className="flex min-w-0">
+			{folder === "" ? null : <span className="min-w-0 truncate text-faint-foreground">{`${folder}/`}</span>}
+			<span className="shrink-0 text-foreground">{nameOf(spoken)}</span>
+		</span>
 	);
 }
 

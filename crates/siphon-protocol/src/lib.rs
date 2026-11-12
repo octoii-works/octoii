@@ -69,11 +69,31 @@ pub enum Scope {
     AccessWrite,
 }
 
-/// The machine a client reached: its name, and the folder a thread of no folder of its own works in.
+/// The machine a client reached: its name; the folder a thread of no folder of its own works in; and where the paths
+/// its threads name lie that a client says by their places' names — the person's home folder, the folder of the
+/// threads' scratchpads, a thread's by its id, and the folder of the person's memory, a project's in it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct Machine {
     pub name: String,
     pub workspace: String,
+    pub home: Option<String>,
+    pub scratchpads: Option<String>,
+    pub memory: Option<String>,
+}
+
+impl Machine {
+    /// The machine `host` gives, by the name `name`.
+    #[must_use]
+    pub fn of(name: String, host: &siphon_machine::Host) -> Self {
+        let shown = |path: &std::path::Path| path.to_string_lossy().into_owned();
+        Self {
+            name,
+            workspace: shown(&host.workspace_of(None)),
+            home: host.home.as_deref().map(shown),
+            scratchpads: host.scratchpads.as_deref().map(shown),
+            memory: host.memory.as_deref().map(shown),
+        }
+    }
 }
 
 /// Nothing: what a method takes or answers where it takes or answers nothing.

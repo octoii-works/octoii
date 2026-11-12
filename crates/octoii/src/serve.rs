@@ -71,7 +71,7 @@ fn machine(home: &Home, temporary: &Path) -> siphon_machine::Host {
         hidden: vec![home.credstore(), home.state()],
         threads: Some(home.threads()),
         memory: Some(home.memory()),
-        scratch: Some(temporary.join("threads")),
+        scratchpads: Some(temporary.join("threads")),
     }
 }
 
@@ -176,10 +176,7 @@ pub async fn serve_until(served: Served, stop: impl Future<Output = ()> + Send +
     let node = Node {
         siphon: siphon.clone(),
         access: Access::new(siphon.runtime.clone()),
-        machine: Machine {
-            name: gethostname::gethostname().to_string_lossy().into_owned(),
-            workspace: workspace.to_string_lossy().into_owned(),
-        },
+        machine: Machine::of(gethostname::gethostname().to_string_lossy().into_owned(), &siphon.machine),
         origins: vec![loopback.clone(), format!("http://localhost:{port}")],
         cookie: http::cookie_of(port),
         app,

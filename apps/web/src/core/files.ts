@@ -1,5 +1,6 @@
 /**
- * The machine's files as the interface shows them: whether a path is whole, as the node takes one; a folder's names as
+ * The machine's files as the interface shows them: whether a path is whole, as the node takes one; a path a thread
+ * names as its lines say it, by the places it lies in; a folder's names as
  * the tree shows them, folders first, `.git` left out as an editor's explorer leaves it; a path in a folder, and the
  * names on the way to it from the folder the tree shows; a file's length as a person reads it;
  * what a file's name says of it, for its icon; and, as a folder is chosen, the way to it and the folders in it.
@@ -9,6 +10,40 @@ import type { FolderEntry } from "@octoii-works/octoii-client";
 /** Whether `path` is whole, as the node takes a path of the machine's: from the root, a drive's, or `~`, the home folder. */
 export function isWholePath(path: string): boolean {
 	return /^(\/|~(\/|$)|[A-Za-z]:[\\/])/.test(path.trim());
+}
+
+/** The places a thread's paths are said by: its folder, its scratchpad, the folder of the person's memory, and their home folder. */
+export type Places = {
+	readonly workspace: string | undefined;
+	readonly scratchpad: string | undefined;
+	readonly memory: string | undefined;
+	readonly home: string | undefined;
+};
+
+/**
+ * Where `path` lies, as a line says it: within the thread's scratchpad, from `scratchpad/`; within a project's memory,
+ * from `memory/`, the project's folder left out; within the thread's folder, from it; within the home folder, from `~/`;
+ * else as written.
+ */
+export function spokenPath(path: string, places: Places): string {
+	const within = (folder: string | undefined): string | undefined => {
+		if (folder === undefined || folder === "") return undefined;
+		const base = folder.endsWith("/") ? folder : `${folder}/`;
+		return path.startsWith(base) ? path.slice(base.length) : undefined;
+	};
+	const scratch = within(places.scratchpad);
+	if (scratch !== undefined) return `scratchpad/${scratch}`;
+	const remembered = within(places.memory);
+	if (remembered !== undefined) return `memory/${remembered.slice(remembered.indexOf("/") + 1)}`;
+	const own = within(places.workspace);
+	if (own !== undefined) return own;
+	const home = within(places.home);
+	return home === undefined ? path : `~/${home}`;
+}
+
+/** `text` — a command line — with each whole path in it said as `spokenPath` says it. */
+export function spokenText(text: string, places: Places): string {
+	return text.replace(/(?<![\w~.])\/[^\s"'`;|&<>()]+/g, (path) => spokenPath(path, places));
 }
 
 /** The names the tree never shows. */

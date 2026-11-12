@@ -430,9 +430,11 @@ export type ListServers = { workspace?: string, };
 export type Listed = { id: string, project?: string | null, parent?: Parent | null, config: Config, marks: Marks, status: Status, };
 
 /**
- * The machine a client reached: its name, and the folder a thread of no folder of its own works in.
+ * The machine a client reached: its name; the folder a thread of no folder of its own works in; and where the paths
+ * its threads name lie that a client says by their places' names — the person's home folder, the folder of the
+ * threads' scratchpads, a thread's by its id, and the folder of the person's memory, a project's in it.
  */
-export type Machine = { name: string, workspace: string, };
+export type Machine = { name: string, workspace: string, home: string | null, scratchpads: string | null, memory: string | null, };
 
 export type MarkThread = { thread: string, change: MarksChange, };
 

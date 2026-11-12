@@ -67,10 +67,7 @@ impl Client {
             session: "session-1".into(),
             scopes,
         };
-        let machine = Machine {
-            name: "here".into(),
-            workspace: siphon.machine.workspace_of(None).to_string_lossy().into_owned(),
-        };
+        let machine = Machine::of("here".into(), &siphon.machine);
         tokio::spawn(serve(siphon.clone(), access, machine, incoming, outgoing));
         Self {
             calls,
