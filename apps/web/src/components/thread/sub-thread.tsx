@@ -16,12 +16,8 @@ import type { CallLine, Said } from "../../core/timeline.ts";
 import { callWords } from "../../core/tools.ts";
 import { Counting } from "../effects/now.ts";
 import { go } from "../state/navigation.ts";
-import { cn } from "../ui/cn.ts";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger, FoldChevron } from "../ui/collapsible.tsx";
-import { EntityContent, EntityMark } from "./entity.tsx";
-
-/** Each way a sub-thread stands: its avatar's dot's colour. */
-const DOTS: Readonly<Record<Standing, string>> = { running: "bg-info", completed: "bg-success", failed: "bg-error", stopped: "bg-faint-foreground" };
+import { EntityContent, EntityMark, StandingDot } from "./entity.tsx";
 
 /** The delegations of one step, made by the thread `thread`: one a row, several gathered. */
 export function Delegations(props: { readonly thread: string; readonly calls: readonly CallLine[] }): ReactNode {
@@ -113,7 +109,7 @@ function SubThreadRow(props: {
 			name={props.title}
 			detail={props.detail}
 			time={props.time}
-			opens={thread !== undefined}
+			opens={thread === undefined ? undefined : "elsewhere"}
 		/>
 	);
 	if (thread === undefined) return <div className="work-line">{content}</div>;
@@ -144,14 +140,12 @@ function SubThreadMark(props: { readonly standing: Standing }): ReactNode {
 	);
 }
 
-/** A sub-thread's avatar, as a card lists it: a bot, with a dot of how it stands where `standing` is given. */
+/** A sub-thread's icon, as a card lists it among its icons: a bot, with a dot of how it stands where `standing` is given. */
 export function SubThreadAvatar(props: { readonly standing: Standing | undefined }): ReactNode {
 	return (
-		<span className="relative inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-border bg-muted ring-2 ring-background">
-			<Bot className="size-3.5 text-muted-foreground" />
-			{props.standing === undefined ? null : (
-				<span className={cn("absolute -right-px -bottom-px size-2 rounded-full ring-2 ring-background", DOTS[props.standing])} />
-			)}
+		<span className="relative inline-flex shrink-0 text-muted-foreground">
+			<Bot className="size-4" />
+			{props.standing === undefined ? null : <StandingDot standing={props.standing} />}
 		</span>
 	);
 }

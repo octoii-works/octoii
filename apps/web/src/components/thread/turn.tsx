@@ -54,7 +54,7 @@ function TerminalEnded(props: { readonly said: Said }): ReactNode {
 	const standing = ended.ok ? "completed" : "failed";
 	return (
 		<Collapsible>
-			<CollapsibleTrigger className="group/entity work-line work-opens" aria-description={ended.how}>
+			<CollapsibleTrigger className="group/fold work-line work-opens" aria-description={ended.how}>
 				<EntityContent
 					mark={
 						<EntityMark standing={standing}>
@@ -65,7 +65,7 @@ function TerminalEnded(props: { readonly said: Said }): ReactNode {
 					name={`Terminal ${String(ended.number)}`}
 					detail={<span className="font-mono">{ended.line}</span>}
 					time={clockTime(props.said.at)}
-					opens
+					opens="in-place"
 				/>
 			</CollapsibleTrigger>
 			<CollapsiblePanel>

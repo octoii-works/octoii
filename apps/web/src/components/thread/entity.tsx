@@ -8,6 +8,7 @@ import type { ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
 import type { Standing } from "../../core/sub-threads.ts";
 import { cn } from "../ui/cn.ts";
+import { FoldChevron } from "../ui/collapsible.tsx";
 import { Mark } from "./marks.tsx";
 
 /** Each way a thing stands: its dot's colour, and the words screen readers are told. */
@@ -18,24 +19,32 @@ const STANDINGS: Readonly<Record<Standing, { readonly dot: string; readonly word
 	stopped: { dot: "bg-faint-foreground", words: "stopped" },
 };
 
+/** The dot of how a thing stands, on the corner of its mark or its icon — wherever a thing's standing is drawn. */
+export function StandingDot(props: { readonly standing: Standing }): ReactNode {
+	return <span className={cn("absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full ring-2 ring-background", STANDINGS[props.standing].dot)} />;
+}
+
 /** A thing's mark: `children` on a round, with a dot of how it stands. */
 export function EntityMark(props: { readonly standing: Standing; readonly children: ReactNode }): ReactNode {
 	return (
 		<Mark className="relative">
 			{props.children}
-			<span className={cn("absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full ring-2 ring-background", STANDINGS[props.standing].dot)} />
+			<StandingDot standing={props.standing} />
 		</Mark>
 	);
 }
 
-/** What an entity's line shows: its mark, its name, what it does or what came of it, its time, and whether it opens. */
+/** How an entity's line opens: to the thing, elsewhere; in place, folded under it; or not at all. */
+export type Opens = "elsewhere" | "in-place" | undefined;
+
+/** What an entity's line shows: its mark, its name, what it does or what came of it, its time, and how it opens. */
 export type EntityProps = {
 	readonly mark: ReactNode;
 	readonly standing: Standing;
 	readonly name: ReactNode;
 	readonly detail?: ReactNode;
 	readonly time?: ReactNode;
-	readonly opens: boolean;
+	readonly opens: Opens;
 };
 
 /** An entity's line's content, the same whether the line is a link, a fold's trigger, or neither. */
@@ -44,13 +53,15 @@ export function EntityContent(props: EntityProps): ReactNode {
 		<>
 			{props.mark}
 			<span className="flex min-w-0 flex-1 flex-col py-1">
-				<span className="truncate text-xs font-medium text-foreground">{props.name}</span>
-				{props.detail === undefined ? null : <span className="truncate text-2xs text-muted-foreground">{props.detail}</span>}
+				<span className="truncate text-foreground">{props.name}</span>
+				{props.detail === undefined ? null : <span className="truncate text-xs text-muted-foreground">{props.detail}</span>}
 			</span>
 			<span className="sr-only">{STANDINGS[props.standing].words}</span>
 			{props.time === undefined ? null : <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{props.time}</span>}
-			{props.opens ? (
+			{props.opens === "elsewhere" ? (
 				<ChevronRight className="size-3.5 shrink-0 text-faint-foreground opacity-0 transition-opacity group-hover/entity:opacity-100 group-focus-visible/entity:opacity-100 pointer-coarse:opacity-100" />
+			) : props.opens === "in-place" ? (
+				<FoldChevron className="quiet-chevron" />
 			) : null}
 		</>
 	);
