@@ -1,0 +1,23 @@
+[package]
+name = "siphon-memory"
+description = "Memory: what a project's threads keep across threads, a Markdown file a memory and an index of them, which their model keeps and the person reads and deletes from"
+version = "0.0.1"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = "1.0.104"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+siphon = { path = "../../crates/siphon" }
+siphon-runtime = { path = "../../crates/siphon-runtime" }
+thiserror = "2.0.21"
+ts-rs = { version = "12.0.1", features = ["serde-json-impl", "no-serde-warnings"] }
+
+[dev-dependencies]
+tempfile = "3.27.0"

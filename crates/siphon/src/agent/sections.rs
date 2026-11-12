@@ -1,6 +1,6 @@
 //! What Siphon itself tells a thread's model, as tellers of its own beside its extensions': the base every turn starts
-//! from; the instructions it follows, which always apply, given whole; the skills it may use; its memory of the project;
-//! and the environment it works in.
+//! from; the instructions it follows, which always apply, given whole; the skills it may use; and the environment it
+//! works in.
 
 use std::fmt::Write as _;
 use std::future::Future;
@@ -17,7 +17,7 @@ use crate::tools::{INSTRUCTIONS_FILE, Instructions as InstructionsFile};
 use siphon_runtime::Runtime;
 
 /// Siphon's own tellers, each with how widely what it tells is shared: the base, the instructions and the skills found
-/// in the folder of the person's configuration `config` and the project's, the project's memory and the environment,
+/// in the folder of the person's configuration `config` and the project's, and the environment,
 /// as `host` keeps them.
 #[must_use]
 pub fn tellers(host: &Host, config: Option<&Path>) -> Vec<(Shared, Arc<dyn Teller>)> {
@@ -26,7 +26,6 @@ pub fn tellers(host: &Host, config: Option<&Path>) -> Vec<(Shared, Arc<dyn Telle
         (Shared::Machine, Arc::new(Base)),
         (Shared::Project, Arc::new(Instructions { config: config.clone() })),
         (Shared::Project, Arc::new(Skills { config })),
-        (Shared::Project, Arc::new(Memory { host: host.clone() })),
         (Shared::Thread, Arc::new(Environment { host: host.clone() })),
     ]
 }
@@ -84,24 +83,6 @@ impl Teller for Skills {
         } else {
             vec![("skills", skills::told(&found))]
         })
-    }
-}
-
-/// The memory of the project a thread works in, where `host` keeps one.
-#[derive(Debug)]
-pub struct Memory {
-    pub host: Host,
-}
-
-impl Teller for Memory {
-    fn tell<'a>(&'a self, _: &'a Runtime, _: &'a str, place: Option<&'a Place>) -> Told<'a> {
-        let folder = place.and_then(|place| self.host.memory_of(&place.project));
-        told(
-            folder
-                .map(|folder| ("memory", crate::agent::memory::told(&folder)))
-                .into_iter()
-                .collect(),
-        )
     }
 }
 

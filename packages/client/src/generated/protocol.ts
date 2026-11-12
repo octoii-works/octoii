@@ -1069,8 +1069,6 @@ export type Methods = {
   'models.refresh': { params: Nothing; result: Nothing };
   'grants.list': { params: Nothing; result: GrantsListed };
   'grants.revoke': { params: Granted; result: Nothing };
-  'memory.list': { params: InFolder; result: MemoryListed };
-  'memory.delete': { params: DeleteMemory; result: Nothing };
   'settings.set': { params: SettingsChange; result: Nothing };
   'browser.open': { params: OpenPage; result: PageOpened };
   'browser.navigate': { params: Navigate; result: Nothing };
@@ -1088,6 +1086,8 @@ export type Methods = {
   'terminals.resize': { params: ResizeTerminal; result: Nothing };
   'terminals.close': { params: OfTerminal; result: Nothing };
   'terminals.text': { params: OfTerminal; result: TerminalText };
+  'memory.list': { params: InFolder; result: MemoryListed };
+  'memory.delete': { params: DeleteMemory; result: Nothing };
   'servers.list': { params: ListServers; result: ServersListed };
   'trust.decide': { params: DecideTrust; result: Nothing };
   'access.list': { params: Nothing; result: AccessListed };

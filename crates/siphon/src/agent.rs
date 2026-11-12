@@ -4,9 +4,8 @@
 
 pub mod compaction;
 pub mod context;
-mod front_matter;
+pub mod front_matter;
 pub mod gather;
-pub mod memory;
 pub mod model;
 pub mod primitives;
 pub mod render;

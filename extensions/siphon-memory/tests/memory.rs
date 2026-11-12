@@ -1,7 +1,7 @@
 //! The memory of a project as the person sees it: each memory by its front matter, its index left out; one deleted
 //! with its line of the index, the others' kept; a name that is not a memory's refused.
 
-use siphon::agent::memory::{self, Error, INDEX};
+use siphon_memory::memory::{self, Error, INDEX};
 
 #[test]
 fn a_memory_is_listed_by_its_front_matter_and_deleted_with_its_line_of_the_index() {

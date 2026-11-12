@@ -2,6 +2,7 @@
 //! `---` lines, a value's quotes taken off.
 
 /// The keys and values of the front matter `text` starts with; none where it starts with none.
+#[must_use]
 pub fn of(text: &str) -> Vec<(&str, &str)> {
     let Some(matter) = text.strip_prefix("---\n").and_then(|rest| rest.split("\n---").next()) else {
         return Vec::new();

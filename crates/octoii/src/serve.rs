@@ -18,6 +18,7 @@ use siphon_browser::BrowserExtension;
 use siphon_claude_code::ClaudeCodeExtension;
 use siphon_delegate::DelegateExtension;
 use siphon_mcp::McpExtension;
+use siphon_memory::MemoryExtension;
 use siphon_question::QuestionExtension;
 use siphon_runtime::Options;
 use siphon_terminals::TerminalsExtension;
@@ -127,6 +128,7 @@ pub fn building(home: &Home, sign_in: SignInSetup) -> anyhow::Result<siphon::Bui
         .extension(QuestionExtension)
         .extension(DelegateExtension)
         .extension(ThreadExtension)
+        .extension(MemoryExtension)
         .extension(config)
         .extension(claude))
 }

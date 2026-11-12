@@ -3929,6 +3929,7 @@ dependencies = [
  "siphon-delegate",
  "siphon-image",
  "siphon-mcp",
+ "siphon-memory",
  "siphon-question",
  "siphon-runtime",
  "siphon-terminals",
@@ -5654,6 +5655,20 @@ dependencies = [
  "tempfile",
  "tokio",
  "tokio-util",
+ "ts-rs",
+]
+
+[[package]]
+name = "siphon-memory"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "siphon",
+ "siphon-runtime",
+ "tempfile",
+ "thiserror 2.0.21",
  "ts-rs",
 ]
 

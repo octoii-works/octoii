@@ -53,18 +53,6 @@ pub(crate) async fn answered(caller: Caller, method: Method) -> Result<serde_jso
                 .map_err(|error| refusal("failed", &error.to_string()))?;
             json(&Nothing {})
         }
-        Method::ListMemory(asked) => {
-            let folder = memory_of(siphon, &asked.path);
-            json(&crate::protocol::siphon::MemoryListed {
-                memories: folder.as_deref().map(crate::agent::memory::list).unwrap_or_default(),
-                folder: folder.map(|folder| folder.to_string_lossy().into_owned()),
-            })
-        }
-        Method::DeleteMemory(asked) => {
-            let folder = memory_of(siphon, &asked.path).ok_or_else(|| refusal("no_memory", "this machine keeps no memory"))?;
-            crate::agent::memory::delete(&folder, &asked.file).map_err(|error| refusal("failed", &error.to_string()))?;
-            json(&Nothing {})
-        }
         Method::SetSettings(change) => {
             crate::settings::set(&siphon.runtime, session, &change)
                 .await
@@ -73,11 +61,6 @@ pub(crate) async fn answered(caller: Caller, method: Method) -> Result<serde_jso
         }
         method => threads_answered(siphon, method).await,
     }
-}
-
-/// The folder of the memory of the project the folder `path` is in, where the machine keeps memory.
-fn memory_of(siphon: &Siphon, path: &str) -> Option<std::path::PathBuf> {
-    siphon.machine.memory_of(&Place::of(Path::new(path)).project)
 }
 
 /// Does the threads' method `method` on `siphon`.
