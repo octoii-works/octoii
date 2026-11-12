@@ -5,8 +5,8 @@ use octoii::access::{Access, Holder};
 use octoii::home::Home;
 use octoii::pairing::{Links, with_access};
 use serde_json::{Value, json};
+use siphon::protocol::Scope;
 use siphon::testing::Client;
-use siphon_protocol::Scope;
 
 async fn asked(client: &mut Client, method: &str, params: Value) -> Value {
     let id = client.call(method, params).await;

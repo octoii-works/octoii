@@ -2,12 +2,12 @@
 //! would use, each as it stands; and the person's decision on a project's configuration of them.
 
 use serde::{Deserialize, Serialize};
-use siphon_protocol::{Nothing, Scope};
+use siphon::protocol::{Nothing, Scope};
 use ts_rs::TS;
 
 use crate::ServersListed;
 
-siphon_protocol::methods! {
+siphon::methods! {
     /// The servers a thread working in a folder would use — the person's own alone, where none is named.
     "servers.list" ListServers(ListServers) -> ServersListed, Some(Scope::ThreadsRead);
     /// Whether the person trusts a project's configuration of servers as it is, by its digest.

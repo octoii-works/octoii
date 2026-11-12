@@ -11,13 +11,13 @@ use std::sync::Arc;
 use anyhow::Context as _;
 use octoii_ai::drivers;
 use octoii_ai::models::Provider;
+use siphon::protocol::Machine;
 use siphon::providers::SignInSetup;
 use siphon::{Setup, Siphon};
 use siphon_browser::BrowserExtension;
 use siphon_claude_code::ClaudeCodeExtension;
 use siphon_delegate::DelegateExtension;
 use siphon_mcp::McpExtension;
-use siphon_protocol::Machine;
 use siphon_question::QuestionExtension;
 use siphon_runtime::Options;
 use siphon_terminals::TerminalsExtension;
@@ -63,9 +63,9 @@ fn providers() -> Vec<Provider> {
 /// the Home's `threads/`, what the node keeps for itself — its credentials and its state — hidden from what reaches the
 /// machine through Siphon, `~/octoii`, where a thread of no folder works, the person's memory in the Home, and the
 /// threads' scratchpads in the Home's `temporary` folder.
-fn machine(home: &Home, temporary: &Path) -> siphon_machine::Host {
+fn machine(home: &Home, temporary: &Path) -> siphon::machine::Host {
     let person = std::env::home_dir();
-    siphon_machine::Host {
+    siphon::machine::Host {
         workspace: person.as_ref().map(|person| person.join("octoii")),
         home: person,
         shell: std::env::var_os("SHELL").map(PathBuf::from),

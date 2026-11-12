@@ -5,9 +5,9 @@
 use beak::Beak;
 use serde_json::{Value, json};
 use siphon::Siphon;
+use siphon::protocol::Scope;
 use siphon::testing::{self, Client};
 use siphon_mcp::McpExtension;
-use siphon_protocol::Scope;
 
 async fn asked(client: &mut Client, method: &str, params: Value) -> Value {
     let id = client.call(method, params).await;
@@ -30,7 +30,7 @@ async fn servers_are_listed_as_they_stand_and_a_project_s_trusted_by_the_person(
     let extension = McpExtension {
         config: Some(config.path().to_owned()),
     };
-    let siphon = Siphon::builder(&beak, testing::setup(siphon_machine::Host::default()))
+    let siphon = Siphon::builder(&beak, testing::setup(siphon::machine::Host::default()))
         .expect("built")
         .extension(extension)
         .start()

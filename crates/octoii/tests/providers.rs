@@ -4,8 +4,8 @@
 
 use octoii::home::Home;
 use serde_json::{Value, json};
+use siphon::protocol::Scope;
 use siphon::testing::Client;
-use siphon_protocol::Scope;
 
 async fn asked(client: &mut Client, method: &str, params: Value) -> Value {
     let id = client.call(method, params).await;

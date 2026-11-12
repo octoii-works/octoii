@@ -33,9 +33,9 @@ async fn the_persons_own_claude_code_tells_how_it_stands_and_what_it_offers() {
     let home = std::env::home_dir();
     let place = Place {
         kernel,
-        machine: siphon_machine::Host {
+        machine: siphon::machine::Host {
             home: home.clone(),
-            ..siphon_machine::Host::default()
+            ..siphon::machine::Host::default()
         },
         program: siphon_claude_code::found(home.as_deref()),
         folder: folder.path().canonicalize().expect("its real path"),

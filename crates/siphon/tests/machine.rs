@@ -5,8 +5,8 @@
 use beak::Beak;
 use serde_json::json;
 use siphon::Siphon;
+use siphon::protocol::Scope;
 use siphon::testing::{self, Client};
-use siphon_protocol::Scope;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn the_person_browses_the_machine_s_files_as_git_sees_them() {
@@ -22,7 +22,7 @@ async fn the_person_browses_the_machine_s_files_as_git_sees_them() {
     std::fs::write(root.join("target/built"), "x").expect("written");
     std::fs::write(root.join("dot.png"), b"\x89PNG\r\n\x1a\n rest").expect("written");
     let beak = Beak::new().expect("Beak");
-    let siphon = Siphon::builder(&beak, testing::setup(siphon_machine::Host::default()))
+    let siphon = Siphon::builder(&beak, testing::setup(siphon::machine::Host::default()))
         .expect("built")
         .start()
         .expect("started");

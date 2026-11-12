@@ -1,33 +1,42 @@
-//! Siphon whole: the runtime on Beak with the programs of a thread's and the handlers of its requests, the tools its
-//! model calls, the models it asks, and the protocol a client speaks to it — built with the extensions a host picks, which
-//! bring the rest: their providers, tools, programs, what they tell the model, and their methods.
+//! Siphon, Octoii's runtime of agents on Beak, in layers, each module using only those above it in this list: the
+//! machine a thread reaches; the threads themselves, their store; the environment's settings and the providers'
+//! accounts; the tools a thread's model calls and the weighing of its calls; the agent that runs a thread's turns,
+//! tells its model and compacts it; the extensions a host builds Siphon with; the protocol a client speaks, and its
+//! connection — started as one with the programs of a thread's and the handlers of its requests.
 
+pub mod accounts;
+pub mod agent;
 pub mod connection;
 mod extension;
 mod kept;
+pub mod machine;
+pub mod protocol;
 pub mod providers;
+pub mod settings;
 pub mod testing;
+pub mod threads;
+pub mod tools;
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::agent::{
+    CompactProgram, DelegatedProgram, Gather, ModelRequest, ResumeProgram, Sources, ThreadProgram, TitleProgram, Told, TurnProgram,
+    answer_gather, answer_model, answer_review,
+};
+use crate::machine::Host;
+use crate::protocol::Scope;
+use crate::threads::Threads;
+use crate::tools::{
+    Asks, EditTool, Exec, ExecuteTool, GlobTool, GrepTool, Permission, ReadTool, Review, ScriptProgram, ShellTool, Tools, WriteTool,
+    answer_exec,
+};
 use beak::{Beak, Events};
 use octoii_ai::catalogue::Model;
 use octoii_ai::host::Credentials;
 use octoii_ai::models::{Host as Network, Models, Provider};
 use octoii_ai::transport::Transport;
-use siphon_agent::{
-    CompactProgram, DelegatedProgram, Gather, ModelRequest, ResumeProgram, Sources, ThreadProgram, TitleProgram, Told, TurnProgram,
-    answer_gather, answer_model, answer_review,
-};
-use siphon_machine::Host;
-use siphon_protocol::Scope;
 use siphon_runtime::{Asked, Options, Runtime};
-use siphon_threads::Threads;
-use siphon_tools::{
-    Asks, EditTool, Exec, ExecuteTool, GlobTool, GrepTool, Permission, ReadTool, Review, ScriptProgram, ShellTool, Tools, WriteTool,
-    answer_exec,
-};
 
 pub use extension::{Builder, Caller, Extension, Full, Lagged, Sink, Subscription};
 pub use kept::{Ends, Kept};
@@ -67,7 +76,7 @@ pub struct Siphon {
 impl Siphon {
     /// The sets of methods Siphon and its extensions brought, as the protocol is described by.
     #[must_use]
-    pub fn sets(&self) -> &[siphon_protocol::Set] {
+    pub fn sets(&self) -> &[crate::protocol::Set] {
         &self.registry.sets
     }
 
@@ -77,7 +86,7 @@ impl Siphon {
     /// # Errors
     /// The volume's failure; a thread's settings not as Siphon writes them.
     pub async fn told(&self, id: &str) -> anyhow::Result<Told> {
-        siphon_agent::gather::gathered(&self.sources, &self.runtime, id).await
+        crate::agent::gather::gathered(&self.sources, &self.runtime, id).await
     }
 
     /// The machine as the person reads it, beside the threads: their paths taken whole, from the root, read alone, what
@@ -85,16 +94,16 @@ impl Siphon {
     ///
     /// # Errors
     /// Beak's failure to make its namespace.
-    pub fn person_machine(&self) -> beak::Result<siphon_machine::Machine> {
-        let base = siphon_machine::paths::Base {
+    pub fn person_machine(&self) -> beak::Result<crate::machine::Machine> {
+        let base = crate::machine::paths::Base {
             workspace: std::path::PathBuf::from("/"),
             home: self.machine.home.clone(),
         };
-        siphon_machine::Machine::open(
+        crate::machine::Machine::open(
             self.runtime.kernel(),
             &self.machine,
             base,
-            &siphon_machine::Writes::Within(Vec::new()),
+            &crate::machine::Writes::Within(Vec::new()),
             None,
         )
     }
@@ -104,7 +113,7 @@ impl Siphon {
     ///
     /// # Errors
     /// `NoSuchThread`; the volume's failure.
-    pub async fn delete_thread(&self, id: &str) -> Result<(), siphon_threads::Error> {
+    pub async fn delete_thread(&self, id: &str) -> Result<(), crate::threads::Error> {
         for deleted in self.threads.delete(id).await? {
             if let Some(scratchpad) = self.machine.scratchpad_of(&deleted) {
                 // What is left there is the system's to clear in time, where it cannot be removed now.
@@ -194,8 +203,8 @@ impl Siphon {
             adding: String::new(),
         };
         builder.methods(
-            siphon_protocol::siphon::set(),
-            siphon_protocol::siphon::Method::read,
+            crate::protocol::siphon::set(),
+            crate::protocol::siphon::Method::read,
             connection::answered,
         );
         builder.topics(Scope::ThreadsRead, connection::told);
@@ -224,14 +233,14 @@ impl Building {
     #[must_use]
     pub fn methods<M, F, Done>(
         mut self,
-        set: siphon_protocol::Set,
+        set: crate::protocol::Set,
         read: fn(&str, serde_json::Value) -> serde_json::Result<M>,
         handle: F,
     ) -> Self
     where
         M: Send + 'static,
         F: Fn(Caller, M) -> Done + Send + Sync + 'static,
-        Done: std::future::Future<Output = Result<serde_json::Value, siphon_protocol::Error>> + Send + 'static,
+        Done: std::future::Future<Output = Result<serde_json::Value, crate::protocol::Error>> + Send + 'static,
     {
         self.builder.methods(set, read, handle);
         self

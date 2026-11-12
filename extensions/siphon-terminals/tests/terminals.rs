@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use beak::{Beak, Kernel, Options};
 use bytes::Bytes;
-use siphon_machine::Host;
+use siphon::machine::Host;
 use siphon_terminals::{Error, Event, Running, Size, Terminals};
 
 const SIZE: Size = Size { rows: 24, cols: 80 };
@@ -110,7 +110,7 @@ async fn a_command_line_the_model_runs_tells_its_end_with_its_screen_and_one_clo
     };
     let terminals = Terminals::start(kernel, host);
     let mut events = terminals.events();
-    let writes = siphon_machine::Writes::Within(vec![cwd.clone()]);
+    let writes = siphon::machine::Writes::Within(vec![cwd.clone()]);
     let running = Running::Line {
         line: "echo served; exit 3".into(),
         writes: writes.clone(),
@@ -171,7 +171,7 @@ async fn a_terminal_closed_ends_what_it_runs_though_it_hangs_up_on_nothing() {
     let pid_file = cwd.join("pid");
     let running = Running::Line {
         line: format!("trap '' HUP; echo $$ > {}; exec sleep 60", pid_file.display()),
-        writes: siphon_machine::Writes::Within(vec![cwd.clone()]),
+        writes: siphon::machine::Writes::Within(vec![cwd.clone()]),
         set: Vec::new(),
     };
     let id = terminals.open("t1", cwd.clone(), SIZE, running).await.expect("opened");

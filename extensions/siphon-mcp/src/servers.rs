@@ -17,15 +17,15 @@ use octoii_ai::vocabulary::InputContent;
 use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, ResourceContents};
 use rmcp::service::{Peer, RoleClient, RunningService, ServiceExt};
 use rmcp::transport::{StreamableHttpClientTransport, streamable_http_client::StreamableHttpClientTransportConfig};
+use siphon::machine::paths::Base;
+use siphon::machine::{Host, Machine, Variables, Writes};
 use siphon::{Ends, Kept};
-use siphon_machine::paths::Base;
-use siphon_machine::{Host, Machine, Variables, Writes};
 use siphon_runtime::Runtime;
 
 use crate::config::{Configured, Launch, OWN_FILE, PROJECT_FILE, Server, parse};
 use crate::trust::{self, ShownServer, Trust};
-use siphon_tools::projects::Place;
-use siphon_tools::{Context, Declared, Refusal, Told};
+use siphon::tools::projects::Place;
+use siphon::tools::{Context, Declared, Refusal, Told};
 
 /// How long a server nothing uses keeps running before it is stopped.
 pub const IDLE: Duration = Duration::from_secs(600);

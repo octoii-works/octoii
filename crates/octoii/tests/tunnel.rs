@@ -10,7 +10,7 @@ use octoii::home::Home;
 use octoii::http::{self, Node};
 use octoii_tunnel::{CaTlsConfig, EndpointAddr, Message, PeerError, SecretKey, Tunnel};
 use serde_json::{Value, json};
-use siphon_protocol::Machine;
+use siphon::protocol::Machine;
 
 async fn place(relay: &net::RelayUrl) -> Tunnel {
     Tunnel::builder(SecretKey::generate())

@@ -8,12 +8,12 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
+use siphon::agent::{Teller, Telling};
+use siphon::protocol::Error;
+use siphon::tools::projects::Place;
+use siphon::tools::{Context, Refusal, Toolset};
 use siphon::{Builder, Caller, Extension};
-use siphon_agent::{Teller, Telling};
-use siphon_protocol::Error;
 use siphon_runtime::{Changes, Runtime};
-use siphon_tools::projects::Place;
-use siphon_tools::{Context, Refusal, Toolset};
 
 use crate::protocol;
 use crate::trust::{self, Trust, TrustProgram};
@@ -64,7 +64,7 @@ impl Toolset for Servers {
         context: &'a Context,
         name: &'a str,
         arguments: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<siphon_tools::Told, Refusal>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<siphon::tools::Told, Refusal>> + Send + 'a>> {
         Box::pin(Servers::call(self, context, name, arguments))
     }
 }
@@ -120,7 +120,7 @@ async fn answered(servers: &Servers, caller: &Caller, method: protocol::Method) 
 
 /// Asks the person `trust` under the thread `thread`'s main process, where nothing asks it there yet.
 async fn asked(runtime: &Runtime, thread: &str, trust: &Trust) -> anyhow::Result<()> {
-    let main = siphon_threads::thread::main(thread);
+    let main = siphon::threads::thread::main(thread);
     let asking = beak::layout::process(&main, TrustProgram::KEY.as_bytes());
     if runtime.snapshot()?.record(&asking)?.is_some() {
         return Ok(());
@@ -137,7 +137,7 @@ fn catalog_told(catalog: &Catalog) -> String {
     let mut out = String::from("<catalog>\n");
     if !catalog.tools.is_empty() {
         out.push_str("The MCP servers' tools, members of `tools` as a script of `execute` calls them:\n");
-        out.push_str(&siphon_tools::declarations(&catalog.tools));
+        out.push_str(&siphon::tools::declarations(&catalog.tools));
         out.push('\n');
     }
     for problem in &catalog.problems {

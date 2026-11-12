@@ -10,14 +10,14 @@ use bytes::Bytes;
 use octoii_ai::vocabulary::InputContent;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use siphon_machine::Host;
-use siphon_machine::paths::Base;
+use siphon::machine::Host;
+use siphon::machine::paths::Base;
+use siphon::threads::Mode;
+use siphon::tools::projects::Place;
+use siphon::tools::{CallStatus, Calls, Exec, ExecuteTool, ReadTool, ScriptProgram, Setting, Tools, answer_exec};
 use siphon_mcp::trust::{self, Trust, TrustProgram};
 use siphon_mcp::{Launch, Servers, parse};
 use siphon_runtime::{Asked, Changes, Ending, Options, Program, Run, Runtime};
-use siphon_threads::Mode;
-use siphon_tools::projects::Place;
-use siphon_tools::{CallStatus, Calls, Exec, ExecuteTool, ReadTool, ScriptProgram, Setting, Tools, answer_exec};
 
 fn fixture() -> String {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -88,8 +88,8 @@ impl Program for Caller {
     }
 }
 
-fn said(call: siphon_tools::Call) -> (CallStatus, String, usize, Option<serde_json::Value>) {
-    let siphon_tools::State::Ended {
+fn said(call: siphon::tools::Call) -> (CallStatus, String, usize, Option<serde_json::Value>) {
+    let siphon::tools::State::Ended {
         status,
         output,
         structured,
@@ -229,7 +229,7 @@ async fn the_person_s_servers_tools_are_listed_and_called_as_the_model_s_own() {
     assert_eq!(catalog.problems, Vec::<String>::new());
     let names: Vec<&str> = catalog.tools.iter().map(|tool| tool.name.as_str()).collect();
     assert_eq!(names, ["test.say", "test.fail", "test.where", "test.picture"]);
-    let told = siphon_tools::declarations(&catalog.tools);
+    let told = siphon::tools::declarations(&catalog.tools);
     assert!(told.starts_with("interface Tools {\n  test: {\n"), "{told}");
     assert!(told.contains("    /**\n     * Says the words back.\n     */\n    say(args: {\n      /**\n       * What to say.\n       */\n      words: string;\n    }): Promise<string>;\n"), "{told}");
     let asking = Asking {
@@ -249,7 +249,7 @@ async fn the_person_s_servers_tools_are_listed_and_called_as_the_model_s_own() {
         ],
     };
     let mut changes = Changes::new();
-    changes.mkdir(siphon_threads::thread::path("t1"));
+    changes.mkdir(siphon::threads::thread::path("t1"));
     changes.start::<Caller>(Bytes::new(), "p1", &asking).expect("an input");
     runtime.commit(changes).await.expect("started");
     let said = ended(&runtime, &layout::process(b"", b"p1")).await;

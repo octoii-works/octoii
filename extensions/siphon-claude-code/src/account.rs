@@ -12,8 +12,8 @@ use std::time::Duration;
 
 use octoii_ai::vocabulary::{Failure, FailureKind, ReasoningEffort};
 use serde_json::{Value, json};
-use siphon_machine::paths::Base;
-use siphon_machine::{Machine, Writes};
+use siphon::machine::paths::Base;
+use siphon::machine::{Machine, Writes};
 use tokio::sync::watch;
 
 use crate::process::{Launch, PREFIX, Process, SERVER, Started};
@@ -74,7 +74,7 @@ const PROJECT_NAME_MAX: usize = 200;
 #[derive(Debug, Clone)]
 pub struct Place {
     pub kernel: beak::Kernel,
-    pub machine: siphon_machine::Host,
+    pub machine: siphon::machine::Host,
     pub program: Option<PathBuf>,
     pub folder: PathBuf,
 }
@@ -264,10 +264,10 @@ impl Account {
             return Ok(());
         };
         let argv = vec![program.to_string_lossy().into_owned(), "auth".into(), "logout".into()];
-        let signing_out = siphon_machine::Program {
+        let signing_out = siphon::machine::Program {
             set: vec![("CLAUDE_CONFIG_DIR".into(), config.to_string_lossy().into_owned())],
             timeout: SIGN_OUT,
-            ..siphon_machine::Program::new(argv, self.place.work())
+            ..siphon::machine::Program::new(argv, self.place.work())
         };
         let ran = self
             .machine()?

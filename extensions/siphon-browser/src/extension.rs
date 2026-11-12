@@ -3,8 +3,8 @@
 //! person's mouse, keys and text on it, a thread's pages as they change and a page as it is painted.
 
 use serde_json::{Value, json};
+use siphon::protocol::{Error, Nothing, Scope};
 use siphon::{Builder, Caller, Extension, Lagged, Subscription};
-use siphon_protocol::{Error, Nothing, Scope};
 use tokio::sync::broadcast::error::RecvError;
 
 use crate::protocol::{self, BrowserEvent, BrowserTopic, Method, PageDialog, PageKey, PageListed, PageMouse, View};

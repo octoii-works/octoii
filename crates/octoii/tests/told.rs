@@ -5,10 +5,10 @@ use std::fmt::Write as _;
 
 use octoii::home::Home;
 use octoii_ai::vocabulary::Tool;
-use siphon_threads::{Config, NewThread};
+use siphon::threads::{Config, NewThread};
 
 /// `told` as one text: each section under its name, then each tool, its parameters as their JSON Schema.
-fn shown(told: &siphon_agent::Told) -> String {
+fn shown(told: &siphon::agent::Told) -> String {
     let mut out = String::new();
     for (name, text) in &told.sections {
         let _ = write!(out, "=== section {name}\n{text}\n\n");
@@ -107,7 +107,7 @@ async fn an_extension_switched_off_tells_the_model_nothing() {
     };
     let key = siphon.runtime.new_id().expect("an id");
     let id = siphon.threads.create(&new, &key).await.expect("a thread");
-    let names = |told: &siphon_agent::Told| -> Vec<String> {
+    let names = |told: &siphon::agent::Told| -> Vec<String> {
         told.tools
             .iter()
             .filter_map(|tool| match tool {
@@ -118,14 +118,14 @@ async fn an_extension_switched_off_tells_the_model_nothing() {
     };
     let before = names(&siphon.told(&id).await.expect("told"));
     assert!(before.iter().any(|name| name == "browser") && before.iter().any(|name| name == "terminal"));
-    let change = siphon_settings::SettingsChange {
-        environment: Some(siphon_settings::EnvironmentChange {
+    let change = siphon::settings::SettingsChange {
+        environment: Some(siphon::settings::EnvironmentChange {
             disabled_extensions: Some(vec!["browser".into()]),
-            ..siphon_settings::EnvironmentChange::default()
+            ..siphon::settings::EnvironmentChange::default()
         }),
         device: None,
     };
-    siphon_settings::set(&siphon.runtime, "a-session", &change).await.expect("set");
+    siphon::settings::set(&siphon.runtime, "a-session", &change).await.expect("set");
     let after = names(&siphon.told(&id).await.expect("told"));
     assert!(
         !after.iter().any(|name| name == "browser"),

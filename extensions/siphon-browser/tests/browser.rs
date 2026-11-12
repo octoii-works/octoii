@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use beak::{Beak, Kernel, Options};
 use serde_json::json;
+use siphon::machine::Host;
 use siphon_browser::{Action, Browser, BrowserHost, Change, Outcome, Place, Refusal};
-use siphon_machine::Host;
 
 /// A form: a field, a button that greets what was typed, a choice, a button a box covers, one that raises a dialog,
 /// and a link to a second page.

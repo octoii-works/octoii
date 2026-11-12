@@ -5,9 +5,9 @@
 use beak::Beak;
 use serde_json::json;
 use siphon::Siphon;
+use siphon::protocol::Scope;
 use siphon::testing::{self, Client};
 use siphon_browser::BrowserExtension;
-use siphon_protocol::Scope;
 
 const PAGE: &str = "data:text/html,<title>Hello</title><input id=box autofocus>";
 
@@ -28,10 +28,10 @@ async fn a_page_is_opened_listed_painted_and_worked_by_the_person() {
     // The profile within what the host keeps hidden, as a node keeps it in its Home.
     let folder = tempfile::tempdir().expect("the host's own folder");
     let kept = std::fs::canonicalize(folder.path()).expect("its real path");
-    let machine = siphon_machine::Host {
+    let machine = siphon::machine::Host {
         home: std::env::var_os("HOME").map(Into::into),
         hidden: vec![kept.clone()],
-        ..siphon_machine::Host::default()
+        ..siphon::machine::Host::default()
     };
     let extension = BrowserExtension {
         profile: Some(kept.join("browser/profile")),

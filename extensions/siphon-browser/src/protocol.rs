@@ -3,10 +3,10 @@
 //! and a page painted, each frame the newest the browser painted of it.
 
 use serde::{Deserialize, Serialize};
-use siphon_protocol::{Nothing, Scope};
+use siphon::protocol::{Nothing, Scope};
 use ts_rs::TS;
 
-siphon_protocol::methods! {
+siphon::methods! {
     events: BrowserEvent, topics: BrowserTopic;
     /// A page opened in a thread's browser, at an address or blank, sized as the person's view of it is: its id.
     "browser.open" Open(OpenPage) -> PageOpened, Some(Scope::BrowserOperate);

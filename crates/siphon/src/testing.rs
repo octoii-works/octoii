@@ -5,10 +5,10 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::protocol::{Machine, Scope};
 use bytes::Bytes;
 use octoii_ai::host::{Credential, Credentials, Unavailable};
 use serde_json::{Value, json};
-use siphon_protocol::{Machine, Scope};
 use siphon_runtime::Options;
 use tokio::sync::mpsc;
 
@@ -34,7 +34,7 @@ impl Credentials for Nothing {
 
 /// Siphon's setup for a test: the machine as `machine` gives it, a volume in memory, no providers and no models.
 #[must_use]
-pub fn setup(machine: siphon_machine::Host) -> Setup {
+pub fn setup(machine: crate::machine::Host) -> Setup {
     Setup {
         machine,
         config: None,

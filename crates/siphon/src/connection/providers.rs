@@ -2,10 +2,10 @@
 //! set or forgotten, an account added, renamed or removed — the models' providers made again after — and the models
 //! listed or fetched anew.
 
+use crate::protocol::siphon::{AccountAdded, Method, ModelsListed, ProviderStatus, ProvidersListed, SignInBegun};
+use crate::protocol::{Error, Nothing};
 use octoii_ai::host::Credential;
 use serde::Serialize;
-use siphon_protocol::siphon::{AccountAdded, Method, ModelsListed, ProviderStatus, ProvidersListed, SignInBegun};
-use siphon_protocol::{Error, Nothing};
 
 use super::refusal;
 use crate::Siphon;
@@ -75,14 +75,14 @@ pub(super) async fn answered(siphon: &Siphon, method: Method) -> Result<serde_js
             json(&Nothing {})
         }
         Method::AddAccount(add) => {
-            let account = siphon_accounts::add(&siphon.runtime, &siphon.providers, &add.provider, &add.name, &add.key)
+            let account = crate::accounts::add(&siphon.runtime, &siphon.providers, &add.provider, &add.name, &add.key)
                 .await
                 .map_err(|error| told(&Refused::Accounts(error)))?;
             refresh()?;
             json(&AccountAdded { account })
         }
         Method::RenameAccount(rename) => {
-            siphon_accounts::rename(&siphon.runtime, &rename.account, &rename.name)
+            crate::accounts::rename(&siphon.runtime, &rename.account, &rename.name)
                 .await
                 .map_err(|error| told(&Refused::Accounts(error)))?;
             refresh()?;
@@ -96,7 +96,7 @@ pub(super) async fn answered(siphon: &Siphon, method: Method) -> Result<serde_js
                     .await
                     .map_err(|failure| refusal("refused_by_provider", &failure.message))?;
             }
-            siphon_accounts::remove(&siphon.runtime, &of.account)
+            crate::accounts::remove(&siphon.runtime, &of.account)
                 .await
                 .map_err(|error| told(&Refused::Accounts(error)))?;
             siphon.credentials.forget(&of.account).map_err(|error| unavailable(&error))?;

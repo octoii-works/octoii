@@ -15,14 +15,14 @@ use bytes::Bytes;
 use octoii_ai::vocabulary::InputContent;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use siphon::agent::ThreadProgram;
+use siphon::agent::waiting::{DelegatedProgram, Waiting, directory_of, ended_of, gone, how, label};
+use siphon::machine::paths::Base;
+use siphon::threads::inbox::{self, Ended, Inbound, Joins, ReplyTo};
+use siphon::threads::{Config, NewThread, Parent, Threads, thread};
+use siphon::tools::{Context, Effect, Refusal, Setting, Told, Tool};
 use siphon::{Builder, Extension};
-use siphon_agent::ThreadProgram;
-use siphon_agent::waiting::{DelegatedProgram, Waiting, directory_of, ended_of, gone, how, label};
-use siphon_machine::paths::Base;
 use siphon_runtime::{Changes, Ending, Program, Run, Wait};
-use siphon_threads::inbox::{self, Ended, Inbound, Joins, ReplyTo};
-use siphon_threads::{Config, NewThread, Parent, Threads, thread};
-use siphon_tools::{Context, Effect, Refusal, Setting, Told, Tool};
 
 /// Sub-threads, as a host adds them.
 #[derive(Debug, Clone, Copy, Default)]

@@ -8,8 +8,8 @@ use std::process::Command;
 use beak::Beak;
 use serde_json::{Value, json};
 use siphon::Siphon;
+use siphon::protocol::Scope;
 use siphon::testing::{self, Client};
-use siphon_protocol::Scope;
 
 fn git(root: &Path, arguments: &[&str]) {
     let status = Command::new("git")
@@ -54,7 +54,7 @@ async fn git_tells_a_repository_s_changes_patches_versions_and_commits() {
     std::fs::write(root.join("a.txt"), "one\nTWO\nthree\n").expect("written");
     std::fs::write(root.join("new.txt"), "fresh\n").expect("written");
     let beak = Beak::new().expect("Beak");
-    let siphon = Siphon::builder(&beak, testing::setup(siphon_machine::Host::default()))
+    let siphon = Siphon::builder(&beak, testing::setup(siphon::machine::Host::default()))
         .expect("built")
         .start()
         .expect("started");

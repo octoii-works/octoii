@@ -19,8 +19,4 @@ schemars = "1.2.3"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 siphon = { path = "../../crates/siphon" }
-siphon-agent = { path = "../../crates/siphon-agent" }
-siphon-machine = { path = "../../crates/siphon-machine" }
 siphon-runtime = { path = "../../crates/siphon-runtime" }
-siphon-threads = { path = "../../crates/siphon-threads" }
-siphon-tools = { path = "../../crates/siphon-tools" }

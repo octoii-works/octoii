@@ -6,12 +6,12 @@ use std::time::Duration;
 
 use beak::Beak;
 use serde_json::{Value, json};
+use siphon::protocol::Scope;
 use siphon::testing::{self, Client};
 use siphon::{Builder, Caller, Extension, Lagged, Siphon, Subscription};
-use siphon_protocol::Scope;
 
 fn siphon(beak: &Beak) -> Siphon {
-    let setup = testing::setup(siphon_machine::Host::default());
+    let setup = testing::setup(siphon::machine::Host::default());
     Siphon::builder(beak, setup)
         .expect("built")
         .extension(Echo)
@@ -22,10 +22,10 @@ fn siphon(beak: &Beak) -> Siphon {
 /// An extension of the test's: a method that says back what it is given, and a topic that tells it thrice.
 mod echo {
     use serde::{Deserialize, Serialize};
-    use siphon_protocol::Scope;
+    use siphon::protocol::Scope;
     use ts_rs::TS;
 
-    siphon_protocol::methods! {
+    siphon::methods! {
         events: EchoEvent, topics: EchoTopic;
         /// What it is given, said back.
         "echo.say" Say(Said) -> Said, Some(Scope::ThreadsRead);
@@ -298,7 +298,7 @@ async fn a_extension_s_methods_and_topics_are_the_protocol_s_beside_siphon_s() {
     let id = operator.call("subscribe", json!({ "topic": { "type": "nowhere" } })).await;
     assert_eq!(operator.answer(&id).await["error"]["code"], "no_such_topic");
 
-    let typescript = siphon_protocol::typescript(&[siphon_protocol::siphon::set(), echo::set()]);
+    let typescript = siphon::protocol::typescript(&[siphon::protocol::siphon::set(), echo::set()]);
     assert!(typescript.contains("export type Topic = SiphonTopic | EchoTopic;"));
     assert!(typescript.contains("export type Event = ConnectionEvent | SiphonEvent | EchoEvent;"));
     assert!(typescript.contains("'echo.say': { params: Said; result: Said };"));
@@ -309,13 +309,13 @@ async fn a_extension_s_methods_and_topics_are_the_protocol_s_beside_siphon_s() {
 async fn what_a_project_was_granted_is_listed_and_taken_back_in_part() {
     let beak = Beak::new().expect("Beak");
     let siphon = siphon(&beak);
-    let granted = siphon_tools::Grants {
+    let granted = siphon::tools::Grants {
         commands: vec!["git push *".into(), "cargo test *".into()],
         paths: vec!["/work/app/docs/**".into()],
         tools: Vec::new(),
     };
     let snapshot = siphon.runtime.snapshot().expect("a snapshot");
-    let changes = siphon_tools::projects::grant(&snapshot, "/work/app", granted).expect("granted");
+    let changes = siphon::tools::projects::grant(&snapshot, "/work/app", granted).expect("granted");
     siphon.runtime.commit(changes).await.expect("committed");
     let mut client = Client::connect(&siphon, ALL.to_vec(), 64);
     client.message().await;

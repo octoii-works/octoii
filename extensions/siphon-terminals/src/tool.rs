@@ -9,10 +9,10 @@ use std::time::Duration;
 use octoii_ai::vocabulary::InputContent;
 use schemars::JsonSchema;
 use serde::Deserialize;
-use siphon_machine::paths::Base;
+use siphon::machine::paths::Base;
+use siphon::threads::inbox::{self, Inbound, Joins};
+use siphon::tools::{Context, Effect, Refusal, Told, Tool};
 use siphon_runtime::{Changes, Runtime};
-use siphon_threads::inbox::{self, Inbound, Joins};
-use siphon_tools::{Context, Effect, Refusal, Told, Tool};
 use tokio::sync::broadcast;
 
 use crate::{Event, Running, Shown, Size, Terminals};

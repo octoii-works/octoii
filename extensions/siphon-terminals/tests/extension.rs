@@ -7,8 +7,8 @@ use std::path::PathBuf;
 use beak::Beak;
 use serde_json::json;
 use siphon::Siphon;
+use siphon::protocol::Scope;
 use siphon::testing::{self, Client};
-use siphon_protocol::Scope;
 use siphon_terminals::TerminalsExtension;
 
 /// The bytes of `pieces` as one text.
@@ -19,9 +19,9 @@ fn text(pieces: &[bytes::Bytes]) -> String {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_terminal_is_opened_drawn_and_told_as_it_writes_each_piece_once() {
     let beak = Beak::new().expect("Beak");
-    let machine = siphon_machine::Host {
+    let machine = siphon::machine::Host {
         shell: Some(PathBuf::from("/bin/sh")),
-        ..siphon_machine::Host::default()
+        ..siphon::machine::Host::default()
     };
     let siphon = Siphon::builder(&beak, testing::setup(machine))
         .expect("built")

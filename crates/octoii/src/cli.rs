@@ -7,7 +7,7 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand};
 use hyper::Method;
 use serde_json::{Value, json};
-use siphon_protocol::Scope;
+use siphon::protocol::Scope;
 
 use crate::control::{self, Asked};
 use crate::home::Home;

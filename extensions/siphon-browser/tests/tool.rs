@@ -5,9 +5,9 @@ use std::path::PathBuf;
 
 use beak::Beak;
 use serde_json::json;
-use siphon_machine::Host;
-use siphon_machine::paths::Base;
-use siphon_tools::{Effect, Tools};
+use siphon::machine::Host;
+use siphon::machine::paths::Base;
+use siphon::tools::{Effect, Tools};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn the_browser_tool_reads_a_page_at_once_and_works_one_after_what_came_before() {

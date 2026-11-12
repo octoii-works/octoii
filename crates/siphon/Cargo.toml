@@ -1,6 +1,6 @@
 [package]
 name = "siphon"
-description = "Siphon whole: the runtime on Beak with every program and handler of the agent, its tools, the MCP servers, the terminals and the browser, started as one"
+description = "Siphon, Octoii's runtime of agents on Beak: its threads — their store, their machine, their settings and accounts — the tools their models call and the calls weighed, the agent that runs their turns and compacts them, the protocol a client speaks, and the extensions a host builds it with"
 version = "0.0.1"
 edition.workspace = true
 rust-version.workspace = true
@@ -12,27 +12,37 @@ workspace = true
 
 [dependencies]
 anyhow = "1.0.104"
-bytes = "1.12.1"
 beak = { path = "../../vendor/beak/crates/beak" }
-octoii-ai = { path = "../octoii-ai" }
-siphon-accounts = { path = "../siphon-accounts" }
-siphon-agent = { path = "../siphon-agent" }
-siphon-machine = { path = "../siphon-machine" }
-siphon-protocol = { path = "../siphon-protocol" }
-siphon-runtime = { path = "../siphon-runtime" }
-siphon-settings = { path = "../siphon-settings" }
-siphon-threads = { path = "../siphon-threads" }
-siphon-tools = { path = "../siphon-tools" }
-serde = "1.0.229"
-serde_json = "1.0.154"
-tokio = { version = "1.54.1", features = ["rt", "sync", "macros", "time"] }
-thiserror = "2.0.21"
-tokio-util = "0.7.20"
+bytes = "1.12.1"
+futures = "0.3.34"
+globset = "0.4.21"
+grep-matcher = "0.1.9"
+grep-regex = "0.1.14"
+grep-searcher = "0.1.17"
+ignore = "0.4.34"
+json-patch = "5.0.0"
+jsonschema = { version = "0.61.1", default-features = false }
 nucleo-matcher = "0.3.1"
+octoii-ai = { path = "../octoii-ai" }
+rayon = "1.12.0"
+schemars = "1.2.3"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = { version = "1.0.154", features = ["raw_value"] }
+serde_with = "3.24.0"
+sha2 = "0.11.1"
+siphon-image = { path = "../siphon-image" }
+siphon-runtime = { path = "../siphon-runtime" }
+siphon-script = { path = "../siphon-script" }
+siphon-shell = { path = "../siphon-shell" }
 siphon-text = { path = "../siphon-text" }
+thiserror = "2.0.21"
+tokio = { version = "1.54.1", features = ["io-util", "macros", "rt", "sync", "time"] }
+tokio-util = { version = "0.7.20", features = ["io"] }
+ts-rs = { version = "12.0.1", features = ["no-serde-warnings", "serde-json-impl"] }
 
 [dev-dependencies]
-siphon-tools = { path = "../siphon-tools" }
+image = { version = "0.25", default-features = false, features = ["png"] }
+siphon-delegate = { path = "../../extensions/siphon-delegate" }
+siphon-thread = { path = "../../extensions/siphon-thread" }
 tempfile = "3.27.0"
-ts-rs = "12.0.1"
-tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "time", "test-util"] }
+tokio = { version = "1.54.1", features = ["io-util", "macros", "rt-multi-thread", "test-util", "time"] }

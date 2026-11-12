@@ -10,13 +10,13 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
+use crate::machine::Host;
+use crate::protocol::{Error, ExtensionListed, Scope, Set};
+use crate::tools::Tools;
 use beak::Kernel;
 use octoii_ai::models::Provider;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use siphon_machine::Host;
-use siphon_protocol::{Error, ExtensionListed, Scope, Set};
-use siphon_tools::Tools;
 use tokio::sync::mpsc::{self, error::TrySendError};
 use tokio_util::sync::CancellationToken;
 
@@ -142,7 +142,7 @@ pub struct Builder {
     pub(crate) tools: Tools,
     pub(crate) owners: HashMap<String, String>,
     pub(crate) providers: Vec<Provider>,
-    pub(crate) tellers: Vec<(String, Arc<dyn siphon_agent::Teller>)>,
+    pub(crate) tellers: Vec<(String, Arc<dyn crate::agent::Teller>)>,
     pub(crate) registry: Registry,
     pub(crate) adding: String,
 }
@@ -166,7 +166,7 @@ impl Builder {
     }
 
     /// What tells a thread's model of the place it works in, before each turn.
-    pub fn teller(&mut self, teller: Arc<dyn siphon_agent::Teller>) {
+    pub fn teller(&mut self, teller: Arc<dyn crate::agent::Teller>) {
         self.tellers.push((self.adding.clone(), teller));
     }
 

@@ -16,8 +16,6 @@ schemars = "1.2.3"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 siphon = { path = "../../crates/siphon" }
-siphon-machine = { path = "../../crates/siphon-machine" }
-siphon-tools = { path = "../../crates/siphon-tools" }
 
 [dev-dependencies]
 jsonschema = { version = "0.61.1", default-features = false }

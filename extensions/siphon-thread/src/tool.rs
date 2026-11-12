@@ -14,14 +14,14 @@ use bytes::Bytes;
 use octoii_ai::vocabulary::InputContent;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use siphon_machine::paths::Base;
+use siphon::machine::paths::Base;
+use siphon::threads::inbox::{self, Inbound, Joins, ReplyTo};
+use siphon::threads::{Config, Mode, NewThread, Threads, thread};
+use siphon::tools::{Context, Effect, Refusal, Setting, Told, Tool};
 use siphon_runtime::{Changes, Ending, Program, Run};
-use siphon_threads::inbox::{self, Inbound, Joins, ReplyTo};
-use siphon_threads::{Config, Mode, NewThread, Threads, thread};
-use siphon_tools::{Context, Effect, Refusal, Setting, Told, Tool};
 
-use siphon_agent::ThreadProgram;
-use siphon_agent::waiting::{DelegatedProgram, Waiting, directory_of, label};
+use siphon::agent::ThreadProgram;
+use siphon::agent::waiting::{DelegatedProgram, Waiting, directory_of, label};
 
 /// What the model does with the person's other threads.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]

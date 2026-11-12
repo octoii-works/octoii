@@ -9,10 +9,10 @@ use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
 
+use siphon::agent::{Teller, Telling};
+use siphon::tools::projects::Place;
 use siphon::{Builder, Extension};
-use siphon_agent::{Teller, Telling};
 use siphon_runtime::Runtime;
-use siphon_tools::projects::Place;
 pub use tool::{ThreadAction, ThreadTool, ThreadToolInput, ThreadToolProgram};
 
 /// Threads, as a host adds them.

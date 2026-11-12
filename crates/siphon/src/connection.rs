@@ -13,8 +13,8 @@ mod subscriptions;
 
 use std::collections::HashMap;
 
+use crate::protocol::{Answer, Call, ConnectionEvent, Error, Machine, Scope, Subscribed, Unsubscribe};
 use serde::Deserialize;
-use siphon_protocol::{Answer, Call, ConnectionEvent, Error, Machine, Scope, Subscribed, Unsubscribe};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 

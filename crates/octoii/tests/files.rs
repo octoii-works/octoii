@@ -11,8 +11,8 @@ use octoii::access::Access;
 use octoii::home::Home;
 use octoii::http::{self, Node};
 use serde_json::Value;
-use siphon_protocol::{Machine, Scope};
-use siphon_threads::NewThread;
+use siphon::protocol::{Machine, Scope};
+use siphon::threads::NewThread;
 
 /// A PNG of `width` by `height`.
 fn png(width: u32, height: u32) -> Vec<u8> {

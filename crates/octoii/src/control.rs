@@ -14,7 +14,7 @@ use bytes::Bytes;
 use http_body_util::{BodyExt as _, Full};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use siphon_protocol::Scope;
+use siphon::protocol::Scope;
 
 use crate::access::{self, Refused};
 use crate::http::Node;

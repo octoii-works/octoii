@@ -5,10 +5,10 @@
 
 use std::collections::{BTreeSet, HashMap};
 
+use crate::protocol::siphon::{Settings, SiphonEvent, SiphonTopic};
+use crate::threads::{Listed, Status, log, thread};
 use bytes::Bytes;
 use serde_json::json;
-use siphon_protocol::siphon::{Settings, SiphonEvent, SiphonTopic};
-use siphon_threads::{Listed, Status, log, thread};
 
 use super::journal::{Followed, Since, is_at_or_under};
 use crate::Siphon;
@@ -204,18 +204,18 @@ async fn settings_told(subscription: &Subscription) -> Result<(), Full> {
     let Ok(mut followed) = context.siphon.runtime.snapshot().map(|snapshot| Followed::at(&snapshot)) else {
         return Ok(());
     };
-    let Ok(device_file) = siphon_settings::device_file(&context.session) else {
+    let Ok(device_file) = crate::settings::device_file(&context.session) else {
         return Ok(());
     };
-    let directory = Bytes::from_static(siphon_settings::DIRECTORY.as_bytes());
+    let directory = Bytes::from_static(crate::settings::DIRECTORY.as_bytes());
     let mut told = None;
     loop {
         let Ok(snapshot) = context.siphon.runtime.snapshot() else {
             return Ok(());
         };
         let (Ok(environment), Ok(device)) = (
-            siphon_settings::environment(&snapshot),
-            siphon_settings::device(&snapshot, &context.session),
+            crate::settings::environment(&snapshot),
+            crate::settings::device(&snapshot, &context.session),
         ) else {
             return Ok(());
         };

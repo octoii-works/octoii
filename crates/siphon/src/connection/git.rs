@@ -3,11 +3,11 @@
 
 use std::path::Path;
 
+use crate::machine::git::{Git, GitError};
+use crate::protocol::Error;
+use crate::protocol::siphon::{Commits, InRepository, Method, Patch, Versions};
 use bytes::Bytes;
 use serde::Serialize;
-use siphon_machine::git::{Git, GitError};
-use siphon_protocol::Error;
-use siphon_protocol::siphon::{Commits, InRepository, Method, Patch, Versions};
 use siphon_runtime::Changes;
 use tokio_util::sync::CancellationToken;
 

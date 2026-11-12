@@ -51,9 +51,9 @@ fn call() -> Call {
 fn claude_code(kernel: &beak::Kernel, state: &Path, program: Option<PathBuf>) -> ClaudeCode {
     let place = Place {
         kernel: kernel.clone(),
-        machine: siphon_machine::Host {
+        machine: siphon::machine::Host {
             home: Some(state.join("home")),
-            ..siphon_machine::Host::default()
+            ..siphon::machine::Host::default()
         },
         program,
         folder: state.to_owned(),

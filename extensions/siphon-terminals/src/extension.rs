@@ -3,8 +3,8 @@
 //! change, and a terminal as it writes, each piece once.
 
 use serde_json::{Value, json};
+use siphon::protocol::{Error, Nothing, Scope};
 use siphon::{Builder, Caller, Extension, Full, Lagged, Subscription};
-use siphon_protocol::{Error, Nothing, Scope};
 use tokio::sync::broadcast::error::RecvError;
 
 use crate::protocol::{self, Cells, Method, TerminalListed, TerminalsEvent, TerminalsTopic};

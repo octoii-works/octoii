@@ -5,8 +5,8 @@
 //! node's commands alike; a session or a link revoked.
 
 use serde::{Deserialize, Serialize};
+use siphon::protocol::{Error, Nothing, Scope};
 use siphon::{Building, Caller};
-use siphon_protocol::{Error, Nothing, Scope};
 use ts_rs::TS;
 
 use crate::access::{self, Access, AccessEntry, Refused};
@@ -56,7 +56,7 @@ impl Links {
     }
 }
 
-siphon_protocol::methods! {
+siphon::methods! {
     /// The sessions the node's clients hold and the links not yet used.
     "access.list" ListAccess(Nothing) -> AccessListed, Some(Scope::AccessRead);
     /// A link that pairs one client, once, while it lasts.

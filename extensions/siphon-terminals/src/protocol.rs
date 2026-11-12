@@ -3,10 +3,10 @@
 //! screen drawn first, then each piece it writes, from where the client stood.
 
 use serde::{Deserialize, Serialize};
-use siphon_protocol::{Nothing, Scope};
+use siphon::protocol::{Nothing, Scope};
 use ts_rs::TS;
 
-siphon_protocol::methods! {
+siphon::methods! {
     events: TerminalsEvent, topics: TerminalsTopic;
     /// A terminal opened for a thread, the person's login shell in its workspace, sized as the person's view of it is:
     /// its id.

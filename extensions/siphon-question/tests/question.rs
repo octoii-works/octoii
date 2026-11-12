@@ -2,8 +2,8 @@
 
 use octoii_ai::vocabulary::InputContent;
 use serde_json::json;
+use siphon::tools::Tool;
 use siphon_question::{QuestionArgs, QuestionTool};
-use siphon_tools::Tool;
 
 fn questions() -> QuestionArgs {
     serde_json::from_value(json!({ "questions": [

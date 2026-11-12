@@ -3,11 +3,11 @@
 //! a folder whose paths match what the person types, as a fuzzy finder matches them. The machine is the person's, read
 //! alone, what the node keeps for itself hidden from it as from every thread.
 
+use crate::machine::{Is, Machine, Read, ReadOptions};
+use crate::protocol::Error;
+use crate::protocol::siphon::{FileKind, FilePage, FolderEntry, FolderPage, FoundPath, FoundPaths, ListFolder, ReadFile, SearchFiles};
 use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher};
-use siphon_machine::{Is, Machine, Read, ReadOptions};
-use siphon_protocol::Error;
-use siphon_protocol::siphon::{FileKind, FilePage, FolderEntry, FolderPage, FoundPath, FoundPaths, ListFolder, ReadFile, SearchFiles};
 
 use super::refusal;
 use crate::Siphon;
@@ -21,10 +21,10 @@ fn absolute(path: &str) -> String {
     format!("/{path}")
 }
 
-fn failed(error: &siphon_machine::Error) -> Error {
+fn failed(error: &crate::machine::Error) -> Error {
     let code = match error {
-        siphon_machine::Error::NotFound => "not_found",
-        siphon_machine::Error::Directory => "a_folder",
+        crate::machine::Error::NotFound => "not_found",
+        crate::machine::Error::Directory => "a_folder",
         _ => "failed",
     };
     refusal(code, &error.to_string())

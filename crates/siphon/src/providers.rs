@@ -6,10 +6,10 @@
 
 use std::collections::HashMap;
 
+use crate::protocol::siphon::{Connects, CredentialKind, ProviderShown};
 use octoii_ai::driver::{Connection, SignInAttempt, SignInOptions};
 use octoii_ai::host::{Credential, Credentials};
 use octoii_ai::models::{Models, Provider};
-use siphon_protocol::siphon::{Connects, CredentialKind, ProviderShown};
 use siphon_runtime::Runtime;
 use tokio::sync::{mpsc, oneshot};
 
@@ -31,7 +31,7 @@ pub enum Refused {
     #[error("{0}")]
     Provider(String),
     #[error(transparent)]
-    Accounts(#[from] siphon_accounts::Error),
+    Accounts(#[from] crate::accounts::Error),
     #[error(transparent)]
     Beak(#[from] beak::Error),
 }
@@ -96,7 +96,7 @@ fn provider(models: &Models, id: &str) -> Result<Provider, Refused> {
 /// The volume's failure.
 pub fn shown(runtime: &Runtime, models: &Models, credentials: &dyn Credentials) -> Result<Vec<ProviderShown>, Refused> {
     let snapshot = runtime.snapshot()?;
-    let accounts = siphon_accounts::accounts(&snapshot)?;
+    let accounts = crate::accounts::accounts(&snapshot)?;
     let mut out = Vec::new();
     for provider in models.providers() {
         let (connects, through) = match provider.driver.connection() {
@@ -112,7 +112,7 @@ pub fn shown(runtime: &Runtime, models: &Models, credentials: &dyn Credentials) 
         });
         out.push(ProviderShown {
             account: accounts.iter().find(|account| account.id == provider.id).cloned(),
-            used_up: siphon_accounts::used_up(&snapshot, &provider.id)?,
+            used_up: crate::accounts::used_up(&snapshot, &provider.id)?,
             id: provider.id,
             name: provider.name,
             connects,
@@ -169,7 +169,7 @@ pub async fn finish_sign_in(models: &Models, sign_ins: &SignIns, id: &str, redir
 /// # Errors
 /// The volume's failure.
 pub fn refreshed(runtime: &Runtime, models: &Models, host: &[Provider]) -> Result<(), Refused> {
-    let accounts = siphon_accounts::accounts(&runtime.snapshot()?)?;
-    models.set_providers(siphon_accounts::providers(host, &accounts));
+    let accounts = crate::accounts::accounts(&runtime.snapshot()?)?;
+    models.set_providers(crate::accounts::providers(host, &accounts));
     Ok(())
 }

@@ -3924,20 +3924,15 @@ dependencies = [
  "serde_json",
  "sha2 0.11.1",
  "siphon",
- "siphon-agent",
  "siphon-browser",
  "siphon-claude-code",
  "siphon-delegate",
  "siphon-image",
- "siphon-machine",
  "siphon-mcp",
- "siphon-protocol",
  "siphon-question",
  "siphon-runtime",
- "siphon-settings",
  "siphon-terminals",
  "siphon-thread",
- "siphon-threads",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -5552,62 +5547,30 @@ dependencies = [
  "anyhow",
  "beak",
  "bytes",
+ "futures",
+ "globset",
+ "grep-matcher",
+ "grep-regex",
+ "grep-searcher",
+ "ignore",
+ "image",
+ "json-patch",
+ "jsonschema",
  "nucleo-matcher",
  "octoii-ai",
- "serde",
- "serde_json",
- "siphon-accounts",
- "siphon-agent",
- "siphon-machine",
- "siphon-protocol",
- "siphon-runtime",
- "siphon-settings",
- "siphon-text",
- "siphon-threads",
- "siphon-tools",
- "tempfile",
- "thiserror 2.0.21",
- "tokio",
- "tokio-util",
- "ts-rs",
-]
-
-[[package]]
-name = "siphon-accounts"
-version = "0.0.1"
-dependencies = [
- "beak",
- "bytes",
- "octoii-ai",
- "serde",
- "serde_json",
- "siphon-runtime",
- "siphon-threads",
- "thiserror 2.0.21",
- "tokio",
- "ts-rs",
-]
-
-[[package]]
-name = "siphon-agent"
-version = "0.0.1"
-dependencies = [
- "anyhow",
- "beak",
- "bytes",
- "futures",
- "octoii-ai",
+ "rayon",
  "schemars 1.2.3",
  "serde",
  "serde_json",
- "siphon-accounts",
+ "serde_with",
+ "sha2 0.11.1",
  "siphon-delegate",
- "siphon-machine",
+ "siphon-image",
  "siphon-runtime",
- "siphon-settings",
+ "siphon-script",
+ "siphon-shell",
+ "siphon-text",
  "siphon-thread",
- "siphon-threads",
- "siphon-tools",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -5629,9 +5592,6 @@ dependencies = [
  "serde",
  "serde_json",
  "siphon",
- "siphon-machine",
- "siphon-protocol",
- "siphon-tools",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -5649,8 +5609,6 @@ dependencies = [
  "serde",
  "serde_json",
  "siphon",
- "siphon-machine",
- "siphon-tools",
  "tempfile",
  "tokio",
  "tokio-util",
@@ -5669,11 +5627,7 @@ dependencies = [
  "serde",
  "serde_json",
  "siphon",
- "siphon-agent",
- "siphon-machine",
  "siphon-runtime",
- "siphon-threads",
- "siphon-tools",
 ]
 
 [[package]]
@@ -5683,28 +5637,6 @@ dependencies = [
  "fast_image_resize",
  "image",
  "thiserror 2.0.21",
-]
-
-[[package]]
-name = "siphon-machine"
-version = "0.0.1"
-dependencies = [
- "beak",
- "bytes",
- "futures",
- "globset",
- "grep-matcher",
- "grep-regex",
- "grep-searcher",
- "ignore",
- "rayon",
- "serde",
- "siphon-text",
- "tempfile",
- "thiserror 2.0.21",
- "tokio",
- "tokio-util",
- "ts-rs",
 ]
 
 [[package]]
@@ -5723,31 +5655,10 @@ dependencies = [
  "serde",
  "serde_json",
  "siphon",
- "siphon-agent",
- "siphon-machine",
- "siphon-protocol",
  "siphon-runtime",
- "siphon-threads",
- "siphon-tools",
  "tempfile",
  "tokio",
  "tokio-util",
- "ts-rs",
-]
-
-[[package]]
-name = "siphon-protocol"
-version = "0.0.1"
-dependencies = [
- "octoii-ai",
- "serde",
- "serde_json",
- "siphon-accounts",
- "siphon-agent",
- "siphon-machine",
- "siphon-settings",
- "siphon-threads",
- "siphon-tools",
  "ts-rs",
 ]
 
@@ -5761,8 +5672,6 @@ dependencies = [
  "serde",
  "serde_json",
  "siphon",
- "siphon-machine",
- "siphon-tools",
 ]
 
 [[package]]
@@ -5792,23 +5701,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "siphon-settings"
-version = "0.0.1"
-dependencies = [
- "beak",
- "bytes",
- "json-patch",
- "serde",
- "serde_json",
- "serde_with",
- "siphon-runtime",
- "siphon-threads",
- "thiserror 2.0.21",
- "tokio",
- "ts-rs",
-]
-
-[[package]]
 name = "siphon-shell"
 version = "0.0.1"
 dependencies = [
@@ -5829,11 +5721,7 @@ dependencies = [
  "serde",
  "serde_json",
  "siphon",
- "siphon-machine",
- "siphon-protocol",
  "siphon-runtime",
- "siphon-threads",
- "siphon-tools",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -5860,58 +5748,7 @@ dependencies = [
  "serde",
  "serde_json",
  "siphon",
- "siphon-agent",
- "siphon-machine",
  "siphon-runtime",
- "siphon-threads",
- "siphon-tools",
-]
-
-[[package]]
-name = "siphon-threads"
-version = "0.0.1"
-dependencies = [
- "anyhow",
- "beak",
- "bytes",
- "octoii-ai",
- "serde",
- "serde_json",
- "serde_with",
- "sha2 0.11.1",
- "siphon-image",
- "siphon-runtime",
- "thiserror 2.0.21",
- "tokio",
- "ts-rs",
-]
-
-[[package]]
-name = "siphon-tools"
-version = "0.0.1"
-dependencies = [
- "anyhow",
- "beak",
- "bytes",
- "globset",
- "image",
- "jsonschema",
- "octoii-ai",
- "schemars 1.2.3",
- "serde",
- "serde_json",
- "sha2 0.11.1",
- "siphon-machine",
- "siphon-runtime",
- "siphon-script",
- "siphon-shell",
- "siphon-text",
- "siphon-threads",
- "tempfile",
- "thiserror 2.0.21",
- "tokio",
- "tokio-util",
- "ts-rs",
 ]
 
 [[package]]

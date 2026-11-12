@@ -3,12 +3,12 @@
 
 use std::path::Path;
 
+use crate::protocol::siphon::{Created, Delivered, Method, ThreadRead, ThreadsListed, Withdrawn};
+use crate::protocol::{Error, Nothing};
+use crate::threads::inbox::Joins;
+use crate::threads::{NewThread, PERSON, log};
+use crate::tools::projects::Place;
 use serde::Serialize;
-use siphon_protocol::siphon::{Created, Delivered, Method, ThreadRead, ThreadsListed, Withdrawn};
-use siphon_protocol::{Error, Nothing};
-use siphon_threads::inbox::Joins;
-use siphon_threads::{NewThread, PERSON, log};
-use siphon_tools::projects::Place;
 
 use super::refusal;
 use crate::Siphon;
@@ -39,12 +39,12 @@ pub(crate) async fn answered(caller: Caller, method: Method) -> Result<serde_jso
         | Method::RefreshModels(_)) => super::providers::answered(siphon, method).await,
         Method::ListGrants(Nothing {}) => {
             let snapshot = siphon.runtime.snapshot().map_err(|error| refusal("failed", &error.to_string()))?;
-            let projects = siphon_tools::projects::all_grants(&snapshot).map_err(|error| refusal("failed", &error.to_string()))?;
-            json(&siphon_protocol::siphon::GrantsListed { projects })
+            let projects = crate::tools::projects::all_grants(&snapshot).map_err(|error| refusal("failed", &error.to_string()))?;
+            json(&crate::protocol::siphon::GrantsListed { projects })
         }
         Method::RevokeGrants(less) => {
             let snapshot = siphon.runtime.snapshot().map_err(|error| refusal("failed", &error.to_string()))?;
-            let changes = siphon_tools::projects::revoke(&snapshot, &less.folder, &less.grants)
+            let changes = crate::tools::projects::revoke(&snapshot, &less.folder, &less.grants)
                 .map_err(|error| refusal("failed", &error.to_string()))?;
             siphon
                 .runtime
@@ -55,18 +55,18 @@ pub(crate) async fn answered(caller: Caller, method: Method) -> Result<serde_jso
         }
         Method::ListMemory(asked) => {
             let folder = memory_of(siphon, &asked.path);
-            json(&siphon_protocol::siphon::MemoryListed {
-                memories: folder.as_deref().map(siphon_agent::memory::list).unwrap_or_default(),
+            json(&crate::protocol::siphon::MemoryListed {
+                memories: folder.as_deref().map(crate::agent::memory::list).unwrap_or_default(),
                 folder: folder.map(|folder| folder.to_string_lossy().into_owned()),
             })
         }
         Method::DeleteMemory(asked) => {
             let folder = memory_of(siphon, &asked.path).ok_or_else(|| refusal("no_memory", "this machine keeps no memory"))?;
-            siphon_agent::memory::delete(&folder, &asked.file).map_err(|error| refusal("failed", &error.to_string()))?;
+            crate::agent::memory::delete(&folder, &asked.file).map_err(|error| refusal("failed", &error.to_string()))?;
             json(&Nothing {})
         }
         Method::SetSettings(change) => {
-            siphon_settings::set(&siphon.runtime, session, &change)
+            crate::settings::set(&siphon.runtime, session, &change)
                 .await
                 .map_err(|error| refusal("bad_settings", &error.to_string()))?;
             json(&Nothing {})
@@ -148,14 +148,14 @@ async fn threads_answered(siphon: &Siphon, method: Method) -> Result<serde_json:
         Method::ThreadContext(of) => {
             let snapshot = siphon.runtime.snapshot().map_err(|error| refusal("failed", &error.to_string()))?;
             threads.listed(&of.thread).map_err(|error| failed(&error))?;
-            let window = siphon_threads::Window::read(&snapshot, &of.thread).map_err(|error| refusal("failed", &error.to_string()))?;
-            json(&siphon_agent::context::composition(&window))
+            let window = crate::threads::Window::read(&snapshot, &of.thread).map_err(|error| refusal("failed", &error.to_string()))?;
+            json(&crate::agent::context::composition(&window))
         }
         Method::CompactThread(of) => {
             threads.listed(&of.thread).map_err(|error| failed(&error))?;
             let snapshot = siphon.runtime.snapshot().map_err(|error| refusal("failed", &error.to_string()))?;
             let mut changes = siphon_runtime::Changes::new();
-            siphon_agent::compaction::start(&snapshot, &mut changes, &of.thread).map_err(|error| refusal("failed", &error.to_string()))?;
+            crate::agent::compaction::start(&snapshot, &mut changes, &of.thread).map_err(|error| refusal("failed", &error.to_string()))?;
             commit(siphon, changes).await?;
             json(&Nothing {})
         }
@@ -187,13 +187,13 @@ fn read_thread(siphon: &Siphon, thread: &str, before: Option<&str>, limit: u32) 
 async fn resume_thread(siphon: &Siphon, thread: &str, at: Option<i64>) -> Result<(), Error> {
     siphon.threads.listed(thread).map_err(|error| failed(&error))?;
     let mut changes = siphon_runtime::Changes::new();
-    siphon_agent::resume::disarm(&mut changes, thread);
+    crate::agent::resume::disarm(&mut changes, thread);
     commit(siphon, changes).await?;
     let Some(at) = at else { return Ok(()) };
     let snapshot = siphon.runtime.snapshot().map_err(|error| refusal("failed", &error.to_string()))?;
-    let input = siphon_agent::ResumeInput::now(&snapshot, thread, at, PERSON).map_err(|error| refusal("failed", &error.to_string()))?;
+    let input = crate::agent::ResumeInput::now(&snapshot, thread, at, PERSON).map_err(|error| refusal("failed", &error.to_string()))?;
     let mut changes = siphon_runtime::Changes::new();
-    siphon_agent::resume::arm(&snapshot, &mut changes, &input).map_err(|error| refusal("failed", &error.to_string()))?;
+    crate::agent::resume::arm(&snapshot, &mut changes, &input).map_err(|error| refusal("failed", &error.to_string()))?;
     commit(siphon, changes).await
 }
 
@@ -208,10 +208,10 @@ async fn commit(siphon: &Siphon, changes: siphon_runtime::Changes) -> Result<(),
 }
 
 /// Why an operation on threads was not done, as a client is told.
-fn failed(error: &siphon_threads::Error) -> Error {
+fn failed(error: &crate::threads::Error) -> Error {
     let code = match error {
-        siphon_threads::Error::NoSuchThread => "no_such_thread",
-        siphon_threads::Error::NotGiven(_) => "not_given",
+        crate::threads::Error::NoSuchThread => "no_such_thread",
+        crate::threads::Error::NotGiven(_) => "not_given",
         _ => "failed",
     };
     refusal(code, &error.to_string())

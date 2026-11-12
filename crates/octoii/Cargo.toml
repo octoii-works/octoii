@@ -36,17 +36,14 @@ serde_json = "1.0.154"
 sha2 = "0.11.1"
 siphon = { path = "../siphon" }
 siphon-browser = { path = "../../extensions/siphon-browser" }
-siphon-machine = { path = "../siphon-machine" }
 siphon-image = { path = "../siphon-image" }
 siphon-claude-code = { path = "../../extensions/siphon-claude-code" }
 siphon-mcp = { path = "../../extensions/siphon-mcp" }
-siphon-protocol = { path = "../siphon-protocol" }
 siphon-delegate = { path = "../../extensions/siphon-delegate" }
 siphon-question = { path = "../../extensions/siphon-question" }
 siphon-thread = { path = "../../extensions/siphon-thread" }
 siphon-runtime = { path = "../siphon-runtime" }
 siphon-terminals = { path = "../../extensions/siphon-terminals" }
-siphon-threads = { path = "../siphon-threads" }
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "net", "signal", "fs", "time"] }
 tokio-util = "0.7.20"
@@ -59,10 +56,7 @@ oauth2 = { version = "5.0.0", default-features = false }
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls"] }
 
 [dev-dependencies]
-siphon-agent = { path = "../siphon-agent" }
-siphon-settings = { path = "../siphon-settings" }
 insta = "1.49.0"
-siphon-threads = { path = "../siphon-threads" }
 net = { package = "iroh", version = "1.4.1", features = ["test-utils"] }
 futures-util = "0.3.34"
 tempfile = "3.27.0"

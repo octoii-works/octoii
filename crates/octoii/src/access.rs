@@ -11,7 +11,7 @@ use beak::{Range, Snapshot};
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use siphon_protocol::Scope;
+use siphon::protocol::Scope;
 use siphon_runtime::{Changes, Runtime};
 
 /// The kinds of the directories of sessions and of links.

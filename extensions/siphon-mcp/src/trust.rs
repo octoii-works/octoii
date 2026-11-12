@@ -12,7 +12,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use siphon_runtime::{Answer, AskedOfPerson, Changes, Ending, Program, Request, Run, Wait};
 
-use siphon_tools::projects;
+use siphon::tools::projects;
 
 /// The annotation that holds the decision.
 const ANNOTATION: &str = "siphon.trust";

@@ -20,7 +20,7 @@ use octoii_tunnel::{OnConnect, Remote};
 use serde::Deserialize;
 use siphon::Siphon;
 use siphon::connection::{Access as Client, OUTGOING_AHEAD, Outgoing, serve};
-use siphon_protocol::{Machine, SUBPROTOCOL};
+use siphon::protocol::{Machine, SUBPROTOCOL};
 use tokio::sync::mpsc;
 use tower_http::services::{ServeDir, ServeFile};
 
@@ -62,7 +62,7 @@ pub fn router(node: Node) -> Router {
         .route("/pair", pairing)
         .route(
             "/threads/{thread}/files",
-            post(crate::files::sent).layer(axum::extract::DefaultBodyLimit::max(siphon_threads::files::BYTES_MAX)),
+            post(crate::files::sent).layer(axum::extract::DefaultBodyLimit::max(siphon::threads::files::BYTES_MAX)),
         )
         .route("/threads/{thread}/files/{hash}", get(crate::files::kept))
         .route("/machine", get(crate::files::machined))
