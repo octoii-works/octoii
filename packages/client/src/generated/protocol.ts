@@ -857,7 +857,8 @@ export type Structured = { "type": "ran", ended: CommandEnd, } | { "type": "chan
 export type Subscribed = { subscription: string, };
 
 /**
- * A terminal of a thread's: its id, its number in the thread, its size, and the title its program set.
+ * A terminal of a thread's: its id, its number in the thread, its size, the title its program set, and the command line
+ * it runs where the model opened it.
  */
 export type TerminalListed = { id: string, number: number, size: Cells, title: string, 
 /**
