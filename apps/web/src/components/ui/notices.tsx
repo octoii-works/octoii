@@ -1,7 +1,7 @@
 /**
  * The app's notices, at the top right over everything: each floating as a menu does, its icon by its kind — a failure's in
- * the error's colour, never the colour alone telling it — its title and why, a way to copy a failure's words, and a
- * cross; stacked newest first, three at most, the rest waiting their turn; slid in from the edge, slid away to it by
+ * the error's colour, never the colour alone telling it — its title and why, what it offers to do, as taking a change
+ * back, a way to copy a failure's words, and a cross; stacked newest first, three at most, the rest waiting their turn; slid in from the edge, slid away to it by
  * a swipe, and held while pointed at or focused, as Base UI's toasts are. Moving nothing where the person asks for
  * less motion.
  */
@@ -58,6 +58,9 @@ function Notices(): ReactNode {
 									<Toast.Title className="font-medium break-words" />
 									<Toast.Description className="mt-0.5 text-xs break-words text-muted-foreground" />
 								</div>
+								{toast.actionProps === undefined ? null : (
+									<Toast.Action className="h-control-xs shrink-0 cursor-pointer rounded-md px-2 text-xs font-medium text-foreground hover:bg-accent" />
+								)}
 								{toast.type === "error" ? (
 									<CopyButton text={[toast.title, toast.description].filter((part) => typeof part === "string").join(": ")} label="Copy the words" />
 								) : null}

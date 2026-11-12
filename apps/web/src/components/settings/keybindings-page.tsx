@@ -20,6 +20,7 @@ function groupsOf(send: Device["send_shortcut"]): readonly Group[] {
 				{ title: "New thread", keys: ["⌘", "N"] },
 				{ title: "Show or hide the sidebar", keys: ["⌘", "B"] },
 				{ title: "Show or hide the panel", keys: ["⌘", "⌥", "B"] },
+				{ title: "Take back putting a thread away", keys: ["⌘", "Z"] },
 			],
 		},
 		{

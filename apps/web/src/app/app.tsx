@@ -20,6 +20,7 @@ import { NewThreadScreen } from "../screens/new-thread.tsx";
 import { ThreadScreen } from "../screens/thread.tsx";
 import { ConnectionLine, PairingPage, unpaired } from "./access.tsx";
 import { NoticesProvider } from "../components/ui/notices.tsx";
+import { useUndo } from "../components/state/marks.ts";
 
 /** The app. */
 export function App(): ReactNode {
@@ -30,6 +31,7 @@ export function App(): ReactNode {
 	const [paletteOpen, setPaletteOpen] = useState(false);
 	useShortcut("mod+k", () => setPaletteOpen(!paletteOpen));
 	useShortcut("mod+n", () => go({ place: "new" }));
+	useUndo();
 	if (unpaired(connection)) return <PairingPage />;
 	const settings = settingsOf(route);
 	const onSection = (section: SettingsSection | undefined, at?: string): void =>

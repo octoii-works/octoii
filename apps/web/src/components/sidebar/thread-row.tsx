@@ -18,6 +18,7 @@ import { runningTime, shortAgo, wakeLabel } from "../../core/time.ts";
 import type { Vendor } from "../../core/vendors.ts";
 import { Counting } from "../effects/now.ts";
 import { go } from "../state/navigation.ts";
+import { useMark } from "../state/marks.ts";
 import { failed } from "../state/notices.ts";
 import {
 	ContextMenu,
@@ -248,10 +249,10 @@ function SubThreads(props: { readonly count: number }): ReactNode {
 	);
 }
 
-/** How the person's marks of the thread go to the node, what it refused told as a notice. */
+/** How the person's marks of the thread go to the node: what it refused told as a notice, a thread put away offered back. */
 function useChange(row: Listed): (change: MarksChange) => void {
-	const client = useClient();
-	return (change) => void client.mark(row.id, change).catch((error: unknown) => failed("The thread could not be changed", error));
+	const mark = useMark();
+	return (change) => mark(row, change);
 }
 
 /** The field a title is written in, over the row's title: Enter keeps it; Escape or leaving drops it. */
