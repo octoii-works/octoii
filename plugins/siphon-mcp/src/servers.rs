@@ -448,5 +448,6 @@ async fn given(context: &Context, result: CallToolResult) -> Result<Told, Refusa
     Ok(Told {
         output: out,
         structured: result.structured_content,
+        instructions: Vec::new(),
     })
 }

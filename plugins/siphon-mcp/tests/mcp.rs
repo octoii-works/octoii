@@ -92,6 +92,7 @@ fn said(call: siphon_tools::Call) -> (CallStatus, String, usize, Option<serde_js
         status,
         output,
         structured,
+        ..
     } = call.state
     else {
         return (CallStatus::Interrupted, String::new(), 0, None);

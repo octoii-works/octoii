@@ -45,7 +45,7 @@ pub async fn answer_exec(tools: &Tools, host: &Host, asked: Asked<Exec>) -> Resu
         .map_err(|refusal| Unanswered::Failed(refusal.0))?;
     Ok(Told {
         output: bounded(&context, given.output).await,
-        structured: given.structured,
+        ..given
     })
 }
 

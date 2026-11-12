@@ -263,7 +263,7 @@ impl TurnProgram {
         };
         let wait = calls.advance(run, &setting)?;
         let mut writer = Writer::open(run.snapshot(), &input.thread)?;
-        let appended = append_results(run, &mut writer, &calls, appended)?;
+        let appended = append_results(run, &mut writer, &input.thread, &calls, appended)?;
         if let Some(wait) = wait {
             return Ok(Ending::Wait(TurnState::Calling { calls, appended }, wait));
         }
@@ -333,7 +333,7 @@ impl TurnProgram {
                     confines: beak::machine_confines(),
                 };
                 let wait = calls.stop(run, &setting)?;
-                let appended = append_results(run, &mut writer, &calls, appended)?;
+                let appended = append_results(run, &mut writer, &input.thread, &calls, appended)?;
                 match wait {
                     Some(wait) => Ok(Ending::Wait(TurnState::Calling { calls, appended }, wait)),
                     None => Ok(Ending::Stopped(None)),
@@ -377,25 +377,41 @@ fn calls_of(response: &Response, keys: &[CallKey]) -> (Vec<(CallKey, String, Str
 }
 
 /// Appends with the run's commit the result of each call from `appended` on that ended, while every call before it
-/// did: where the next result goes.
-fn append_results(run: &mut Run<'_>, writer: &mut Writer, calls: &Calls, appended: usize) -> anyhow::Result<usize> {
+/// did: where the next result goes. The instructions a call's tool came upon go after its output where the thread's
+/// window does not hold them yet, so the model is given each once a window.
+fn append_results(run: &mut Run<'_>, writer: &mut Writer, thread: &str, calls: &Calls, appended: usize) -> anyhow::Result<usize> {
     let mut at = appended;
+    let mut held: Option<String> = None;
     while let Some(call) = calls.0.get(at) {
         let State::Ended {
             status,
             output,
             structured,
+            instructions,
         } = &call.state
         else {
             break;
         };
+        let mut output = output.clone();
+        if !instructions.is_empty() {
+            let held = match &mut held {
+                Some(held) => held,
+                None => held.insert(window_text(&Window::read(run.snapshot(), thread)?)),
+            };
+            for each in instructions {
+                if !held.contains(&each.opening()) {
+                    output.push(InputContent::text(each.told()));
+                    held.push_str(&each.opening());
+                }
+            }
+        }
         let entry = Entry::Result {
             id: run.new_id()?,
             call: call.key.clone(),
             status: *status,
             output: FunctionCallOutput {
                 call_id: call.id.clone(),
-                output: output.clone(),
+                output,
                 is_error: *status != CallStatus::Ok,
             },
             structured: structured.clone(),
@@ -404,6 +420,29 @@ fn append_results(run: &mut Run<'_>, writer: &mut Writer, calls: &Calls, appende
         at += 1;
     }
     Ok(at)
+}
+
+/// The text of what `window` gave the model of its own: its sections and its calls' outputs.
+fn window_text(window: &Window) -> String {
+    let mut text = String::new();
+    for entry in window.told.iter().chain(&window.conversation) {
+        match entry {
+            Entry::System { sections, .. } => {
+                for section in sections {
+                    text.push_str(section.text.as_deref().unwrap_or_default());
+                }
+            }
+            Entry::Result { output, .. } => {
+                for part in &output.output {
+                    if let InputContent::InputText { text: words } = part {
+                        text.push_str(words);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    text
 }
 
 /// Appends the result of the call `call`, which was never run, saying why.

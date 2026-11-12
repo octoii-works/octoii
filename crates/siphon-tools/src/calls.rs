@@ -32,6 +32,9 @@ pub enum State {
         /// What it did, typed by its tool, where the tool told it.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         structured: Option<serde_json::Value>,
+        /// The instructions its tool came upon on its way, for the model where it was not given them yet.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        instructions: Vec<crate::told::Instructions>,
     },
 }
 
@@ -71,6 +74,7 @@ fn ended(status: CallStatus, words: impl Into<String>) -> State {
         status,
         output: vec![InputContent::text(words)],
         structured: None,
+        instructions: Vec::new(),
     }
 }
 
@@ -252,6 +256,7 @@ impl Calls {
                         status: CallStatus::Ok,
                         output: setting.tools.answered(&call.tool, &serde_json::from_str(&call.arguments)?, given),
                         structured: None,
+                        instructions: Vec::new(),
                     },
                     Answer::Failed(words) => ended(CallStatus::ToolError, words),
                     Answer::Interrupted => ended(CallStatus::Interrupted, "the call was cut off before the person answered"),
@@ -267,6 +272,7 @@ impl Calls {
                         status: CallStatus::Ok,
                         output: told.output,
                         structured: told.structured,
+                        instructions: told.instructions,
                     },
                     Answer::Failed(words) => ended(CallStatus::ToolError, words),
                     Answer::Interrupted => ended(CallStatus::Interrupted, "the call was cut off"),
@@ -286,6 +292,7 @@ impl Calls {
                     },
                     output: setting.tools.finished(&call.tool, &outcome),
                     structured: None,
+                    instructions: Vec::new(),
                 }
             }
             State::Waiting | State::Ended { .. } => return Ok(()),

@@ -12,7 +12,7 @@ use siphon_machine::{EditOutcome, GrepOptions, Machine, Read, ReadOptions};
 use siphon_text::{Bounds, Edit};
 
 use crate::effect::Effect;
-use crate::told::{Structured, Told};
+use crate::told::{INSTRUCTIONS_FILE, Instructions, Structured, Told};
 use crate::tool::{Context, Refusal, Tool};
 
 /// How many files a page of glob gives, matching lines a page of grep, and the characters of a line grep shows.
@@ -45,6 +45,39 @@ fn failed_at(machine: &Machine, path: &str, error: siphon_machine::Error) -> Ref
     }
     words.push(']');
     Refusal(words)
+}
+
+/// The instructions of each folder below `workspace` down to `folder`, both namespace paths, the farthest first: those
+/// of the workspace and the folders above it the model is told before each turn.
+fn on_the_way(machine: &Machine, workspace: &str, folder: &str) -> Vec<Instructions> {
+    let below = if workspace.is_empty() {
+        Some(folder)
+    } else {
+        folder.strip_prefix(workspace).and_then(|rest| rest.strip_prefix('/'))
+    };
+    let Some(below) = below else { return Vec::new() };
+    let mut at = workspace.to_owned();
+    let mut found = Vec::new();
+    for name in below.split('/').filter(|name| !name.is_empty()) {
+        if !at.is_empty() {
+            at.push('/');
+        }
+        at.push_str(name);
+        let file = format!("{at}/{INSTRUCTIONS_FILE}");
+        if let Ok(Read::Text { page, .. }) = machine.read(&file, &ReadOptions::default()) {
+            let lines: Vec<&str> = page.lines.iter().map(|line| line.text.as_str()).collect();
+            found.push(Instructions {
+                path: format!("/{file}"),
+                text: lines.join("\n"),
+            });
+        }
+    }
+    found
+}
+
+/// The folder of the namespace's `path`.
+fn folder_of(path: &str) -> &str {
+    path.rsplit_once('/').map_or("", |(folder, _)| folder)
 }
 
 /// Runs `work` on the machine off the async threads, as the namespace's reads and writes may wait on the disk.
@@ -96,17 +129,23 @@ impl Tool for ReadTool {
             bounds,
             ..ReadOptions::default()
         };
-        let (read, name) = blocking(context, move |machine| {
+        let workspace = context.base.workspace.clone();
+        let (read, name, found) = blocking(context, move |machine| {
             let path = machine.path(&args.path);
             let read = machine.read(&path, &options).map_err(|error| failed_at(machine, &path, error))?;
-            let name = match &read {
-                Read::Text { path, .. }
-                | Read::Directory { path, .. }
-                | Read::Media { path, .. }
-                | Read::Binary { path, .. }
-                | Read::TooLarge { path, .. } => machine.shown(path),
+            let (Read::Text { path, .. }
+            | Read::Directory { path, .. }
+            | Read::Media { path, .. }
+            | Read::Binary { path, .. }
+            | Read::TooLarge { path, .. }) = &read;
+            let folder = if matches!(read, Read::Directory { .. }) {
+                path.as_str()
+            } else {
+                folder_of(path)
             };
-            Ok((read, name))
+            let found = on_the_way(machine, &machine.path(&workspace.to_string_lossy()), folder);
+            let name = machine.shown(path);
+            Ok((read, name, found))
         })
         .await?;
         let lines = match &read {
@@ -126,10 +165,12 @@ impl Tool for ReadTool {
             _ => None,
         };
         let output = shown(context, &name, read).await?;
-        Ok(match lines {
+        let mut told = match lines {
             Some(lines) => Told::structured(output, &lines),
             None => Told::from(output),
-        })
+        };
+        told.instructions = found;
+        Ok(told)
     }
 }
 
@@ -206,6 +247,7 @@ impl Tool for WriteTool {
     }
 
     async fn exec(&self, context: &Context, args: WriteArgs) -> Result<Told, Refusal> {
+        let workspace = context.base.workspace.clone();
         blocking(context, move |machine| {
             let path = machine.path(&args.path);
             let shown = machine.shown(&path);
@@ -218,7 +260,9 @@ impl Tool for WriteTool {
                 additions: change.diff.additions,
                 deletions: change.diff.deletions,
             };
-            Ok(Told::structured(words, &changed))
+            let mut told = Told::structured(words, &changed);
+            told.instructions = on_the_way(machine, &machine.path(&workspace.to_string_lossy()), folder_of(&path));
+            Ok(told)
         })
         .await
     }
@@ -252,6 +296,7 @@ impl Tool for EditTool {
     }
 
     async fn exec(&self, context: &Context, args: EditArgs) -> Result<Told, Refusal> {
+        let workspace = context.base.workspace.clone();
         blocking(context, move |machine| {
             let path = machine.path(&args.path);
             let edit = Edit {
@@ -277,7 +322,9 @@ impl Tool for EditTool {
                     if edited.replacements > 1 {
                         let _ = write!(out, "\n[{} places replaced]", edited.replacements);
                     }
-                    Ok(Told::structured(text(out), &changed))
+                    let mut told = Told::structured(text(out), &changed);
+                    told.instructions = on_the_way(machine, &machine.path(&workspace.to_string_lossy()), folder_of(&path));
+                    Ok(told)
                 }
                 EditOutcome::Refused(siphon_text::Refusal::NotFound(nearest)) => Err(Refusal(not_found(&nearest))),
                 EditOutcome::Refused(siphon_text::Refusal::Many(count)) => {

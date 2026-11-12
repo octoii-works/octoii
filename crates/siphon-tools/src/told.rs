@@ -6,12 +6,40 @@ use octoii_ai::vocabulary::InputContent;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-/// What a tool told of a call: what the model reads, and what the call did, typed by the tool, where it tells it.
+/// What a tool told of a call: what the model reads, and what the call did, typed by the tool, where it tells it; and
+/// the instructions it came upon on its way — each folder's `AGENTS.md` below the workspace, down to what it reached —
+/// which its caller gives the model where the model was not given them yet.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Told {
     pub output: Vec<InputContent>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub structured: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub instructions: Vec<Instructions>,
+}
+
+/// The name of a folder's instructions file.
+pub const INSTRUCTIONS_FILE: &str = "AGENTS.md";
+
+/// A folder's instructions: its `AGENTS.md`, by its absolute path, and what it says.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Instructions {
+    pub path: String,
+    pub text: String,
+}
+
+impl Instructions {
+    /// The instructions as the model is given them: as the instructions it is told before each turn are.
+    #[must_use]
+    pub fn told(&self) -> String {
+        format!("{}\n{}\n</instructions>", self.opening(), self.text.trim_end())
+    }
+
+    /// The tag that opens them, by which the model was given them, wherever it was.
+    #[must_use]
+    pub fn opening(&self) -> String {
+        format!("<instructions path={}>", serde_json::json!(self.path))
+    }
 }
 
 impl Told {
@@ -21,13 +49,18 @@ impl Told {
         Self {
             output,
             structured: serde_json::to_value(structured).ok(),
+            instructions: Vec::new(),
         }
     }
 }
 
 impl From<Vec<InputContent>> for Told {
     fn from(output: Vec<InputContent>) -> Self {
-        Self { output, structured: None }
+        Self {
+            output,
+            structured: None,
+            instructions: Vec::new(),
+        }
     }
 }
 

@@ -382,6 +382,57 @@ async fn a_turn_takes_on_the_calls_its_replies_make_and_asks_again_till_one_call
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_folder_s_instructions_a_read_comes_upon_are_given_once_a_window() {
+    let script = script(vec![
+        Ok(vec![calls("c1", "read", &serde_json::json!({ "path": "pkg/a.txt" }))]),
+        Ok(vec![calls("c2", "read", &serde_json::json!({ "path": "pkg/b.txt" }))]),
+        Ok(vec![says("read")]),
+    ]);
+    let beak = Beak::new().expect("Beak");
+    let runtime = runtime(&beak, &script);
+    let threads = Threads::<ThreadProgram>::new(runtime.clone());
+    let (_folder, workspace) = folder();
+    std::fs::create_dir_all(workspace.join("pkg")).expect("a folder");
+    std::fs::write(workspace.join("pkg/AGENTS.md"), "Tabs, not spaces.\n").expect("its instructions");
+    std::fs::write(workspace.join("pkg/a.txt"), "a\n").expect("a file");
+    std::fs::write(workspace.join("pkg/b.txt"), "b\n").expect("a file");
+    let id = thread(&threads, &workspace).await;
+    threads
+        .deliver(&id, "person", vec![InputContent::text("read pkg")], "d1")
+        .await
+        .expect("delivered");
+    until(&threads, &id, Turn::Replied).await;
+    let outputs: Vec<String> = entries(&threads, &id)
+        .iter()
+        .filter_map(|entry| match entry {
+            Entry::Result { output, .. } => Some(
+                output
+                    .output
+                    .iter()
+                    .filter_map(|part| match part {
+                        InputContent::InputText { text } => Some(text.as_str()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            ),
+            _ => None,
+        })
+        .collect();
+    let opening = format!(
+        "<instructions path={}>",
+        serde_json::json!(workspace.join("pkg/AGENTS.md").display().to_string())
+    );
+    assert!(
+        outputs[0].contains(&opening) && outputs[0].contains("Tabs, not spaces."),
+        "{}",
+        outputs[0]
+    );
+    assert!(!outputs[1].contains(&opening), "given once a window: {}", outputs[1]);
+    runtime.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_failure_that_may_pass_is_kept_and_the_model_asked_again() {
     let mut failure = Failure::new(FailureKind::Server, "overloaded");
     failure.retry_after_ms = Some(10);

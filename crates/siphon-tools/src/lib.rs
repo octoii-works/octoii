@@ -30,5 +30,5 @@ pub use requests::{Asks, Decision, Exec, Judgment, Permission, Review, Shown};
 pub use shell::ShellTool;
 pub use siphon_threads::CallStatus;
 pub use todo::{Todo, TodoArgs, TodoStatus, TodoTool};
-pub use told::{CommandEnd, Structured, Told};
+pub use told::{CommandEnd, INSTRUCTIONS_FILE, Instructions, Structured, Told};
 pub use tool::{Context, Declared, Refusal, Tool, Tools, Toolset};
