@@ -1,14 +1,14 @@
 /**
- * Sub-threads in the timeline of the thread that delegated to them, as lines of its work: a row for each — a bot's
- * round mark with a dot of how it stands, its title, what it said or how it stands, how long it worked, and a way into
- * it — for the calls that gave them tasks, those of one step gathered under one mark of how they stand together, how
+ * Sub-threads in the timeline of the thread that delegated to them, as lines of its work: a thing's line for each — a
+ * bot's round mark with a dot of how it stands, its title, under it its task or what it said, how long it worked, and a
+ * way into it — for the calls that gave them tasks, those of one step gathered under one mark of how they stand together, how
  * many there are, how they stand and how long they worked, opened to list them at the same edges; and a row for what came of a task given in the
  * background, as the sub-thread told it, marked how its work ended and when.
  */
 import type { ReactNode } from "react";
 import type { Listed } from "@octoii-works/octoii-client";
 import { useThreads } from "@octoii-works/octoii-client/react";
-import { Bot, ChevronRight } from "lucide-react";
+import { Bot } from "lucide-react";
 import { plainLine, type Standing, standingOf, standingsSummary, type Worked, workedOf } from "../../core/sub-threads.ts";
 import { subThreadOf } from "../../core/threads.ts";
 import { duration } from "../../core/time.ts";
@@ -18,18 +18,10 @@ import { Counting } from "../effects/now.ts";
 import { go } from "../state/navigation.ts";
 import { cn } from "../ui/cn.ts";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger, FoldChevron } from "../ui/collapsible.tsx";
-import { Mark } from "./marks.tsx";
+import { EntityContent, EntityMark } from "./entity.tsx";
 
-/** Each way a sub-thread stands: its dot's colour, and its words. */
-const STANDINGS: Readonly<Record<Standing, { readonly dot: string; readonly label: string }>> = {
-	running: { dot: "bg-info", label: "Working" },
-	completed: { dot: "bg-success", label: "Done" },
-	failed: { dot: "bg-error", label: "Failed" },
-	stopped: { dot: "bg-faint-foreground", label: "Stopped" },
-};
-
-/** How a task given in the background ended, as its sub-thread told it, by how the sub-thread stands since. */
-const TOLD: Readonly<Record<Standing, string>> = { running: "Working", completed: "Done", failed: "Failed", stopped: "Stopped" };
+/** Each way a sub-thread stands: its avatar's dot's colour. */
+const DOTS: Readonly<Record<Standing, string>> = { running: "bg-info", completed: "bg-success", failed: "bg-error", stopped: "bg-faint-foreground" };
 
 /** The delegations of one step, made by the thread `thread`: one a row, several gathered. */
 export function Delegations(props: { readonly thread: string; readonly calls: readonly CallLine[] }): ReactNode {
@@ -72,88 +64,65 @@ function Gathered(props: { readonly delegated: readonly { readonly call: CallLin
 	);
 }
 
-/** A delegation's row: its sub-thread as it stands, or, where it is not listed, the call as it stands. */
+/** A delegation's line: its sub-thread as it stands, its task under its title where the title is its own; or, where it is not listed, the call as it stands. */
 function DelegationRow(props: { readonly call: CallLine; readonly row: Listed | undefined }): ReactNode {
 	const { call, row } = props;
 	const standing = standingOf(row, call);
 	const worked = workedOf([row]);
+	const title = row?.config.title ?? call.subject ?? callWords(call);
 	return (
 		<SubThreadRow
-			title={row?.config.title ?? call.subject ?? callWords(call)}
+			title={title}
 			standing={standing}
-			detail={undefined}
-			label={STANDINGS[standing].label}
+			detail={call.subject === undefined || call.subject === title ? undefined : call.subject}
 			time={worked === undefined ? undefined : <WorkedFor worked={worked} />}
 			thread={row?.id}
 		/>
 	);
 }
 
-/** What came of a task given in the background, as the sub-thread `said` it: marked as it ended, and when. */
+/** What came of a task given in the background, as the sub-thread `said` it: how it stands, what it said, and when. */
 export function SubThreadTold(props: { readonly said: Said }): ReactNode {
 	const { said } = props;
 	const row = useThreads()?.find((each) => each.id === said.from);
-	const standing = standingOf(row);
 	const detail = plainLine(said.text);
-	const when = new Date(said.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 	return (
-		<div>
-			<SubThreadRow
-				title={row?.config.title ?? "Sub-thread"}
-				standing={standing}
-				detail={detail === "" ? undefined : detail}
-				label={row === undefined ? "Deleted" : TOLD[standing]}
-				time={when}
-				thread={row?.id}
-			/>
-		</div>
+		<SubThreadRow
+			title={row?.config.title ?? "Sub-thread"}
+			standing={standingOf(row)}
+			detail={detail === "" ? undefined : detail}
+			time={new Date(said.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+			thread={row?.id}
+		/>
 	);
 }
 
-/**
- * A sub-thread's row, a line of the work: its mark, with a dot of how it stands; its title; what it said, where there
- * is that, else how it stands; how it stands again beside what it said, then its time — when it told, or how long it
- * worked; and, where it is listed, a way into it.
- */
+/** A sub-thread's line: its mark with a dot of how it stands, its title, what it does or said under it, its time, and, where it is listed, a way into it. */
 function SubThreadRow(props: {
 	readonly title: string;
 	readonly standing: Standing;
 	readonly detail: string | undefined;
-	readonly label: string;
 	readonly time: ReactNode;
 	readonly thread: string | undefined;
 }): ReactNode {
-	const content = (
-		<>
-			<SubThreadMark standing={props.standing} />
-			<span className="shrink-0 truncate text-foreground">{props.title}</span>
-			<span className="min-w-0 flex-1 truncate group-data-[standing=failed]/sub-thread:text-error-foreground">{props.detail ?? props.label}</span>
-			{props.detail === undefined ? null : (
-				<span className="shrink-0 text-xs text-muted-foreground group-data-[standing=failed]/sub-thread:text-error-foreground">{props.label}</span>
-			)}
-			{props.time === undefined ? null : <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{props.time}</span>}
-			{props.thread === undefined ? null : (
-				<ChevronRight className="size-3.5 shrink-0 text-faint-foreground opacity-0 transition-opacity group-hover/sub-thread:opacity-100 group-focus-visible/sub-thread:opacity-100 pointer-coarse:opacity-100" />
-			)}
-		</>
-	);
-	const className = "group/sub-thread work-line";
 	const thread = props.thread;
-	if (thread === undefined) {
-		return (
-			<div data-standing={props.standing} className={className}>
-				{content}
-			</div>
-		);
-	}
+	const content = (
+		<EntityContent
+			mark={<SubThreadMark standing={props.standing} />}
+			standing={props.standing}
+			name={props.title}
+			detail={props.detail}
+			time={props.time}
+			opens={thread !== undefined}
+		/>
+	);
+	if (thread === undefined) return <div className="work-line">{content}</div>;
 	return (
 		<button
 			type="button"
 			aria-label={`Open ${props.title}`}
-			aria-description={props.label}
-			data-standing={props.standing}
 			onClick={() => go({ place: "thread", thread })}
-			className={cn(className, "work-opens cursor-pointer")}
+			className="group/entity work-line work-opens cursor-pointer"
 		>
 			{content}
 		</button>
@@ -169,10 +138,9 @@ export function WorkedFor(props: { readonly worked: Worked }): ReactNode {
 /** A sub-thread's mark among the lines of the work: a bot on a round, with a dot of how it stands. */
 function SubThreadMark(props: { readonly standing: Standing }): ReactNode {
 	return (
-		<Mark className="relative">
+		<EntityMark standing={props.standing}>
 			<Bot />
-			<span className={cn("absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full ring-2 ring-background", STANDINGS[props.standing].dot)} />
-		</Mark>
+		</EntityMark>
 	);
 }
 
@@ -182,7 +150,7 @@ export function SubThreadAvatar(props: { readonly standing: Standing | undefined
 		<span className="relative inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-border bg-muted ring-2 ring-background">
 			<Bot className="size-3.5 text-muted-foreground" />
 			{props.standing === undefined ? null : (
-				<span className={cn("absolute -right-px -bottom-px size-2 rounded-full ring-2 ring-background", STANDINGS[props.standing].dot)} />
+				<span className={cn("absolute -right-px -bottom-px size-2 rounded-full ring-2 ring-background", DOTS[props.standing])} />
 			)}
 		</span>
 	);

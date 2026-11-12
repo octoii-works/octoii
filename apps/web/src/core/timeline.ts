@@ -667,6 +667,15 @@ export function isNotice(from: string | undefined): boolean {
 	return from === TERMINAL || from === SIPHON;
 }
 
+/** What Siphon told the thread itself, as a line says it: what happened, and what it did of it. */
+export type NoticeWords = { readonly event: string; readonly detail: string | undefined };
+
+/** The words of Siphon's own notice `text` — a reply cut off told to go on, as Siphon writes it — never its text whole, which is the model's. */
+export function siphonWords(text: string): NoticeWords {
+	if (text.startsWith("[the reply was cut off")) return { event: "Reply cut off", detail: "Octoii asked the model to go on" };
+	return { event: "Octoii told the model", detail: undefined };
+}
+
 /** The thread whose an input is, by its actor — a thread's id; none for the person's. */
 export function threadOfActor(actor: string): string | undefined {
 	return actor === PERSON ? undefined : actor;

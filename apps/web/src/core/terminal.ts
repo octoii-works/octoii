@@ -1,6 +1,6 @@
 /**
  * The terminal as the interface shows it: the sixteen colours programs pick by number, one set for a light page and one
- * for a dark, its font's size, and how a terminal is named on its tab.
+ * for a dark, its font's size, how a terminal is named on its tab, and a command line's end as its thread is told it.
  */
 import type { TerminalListed } from "@octoii-works/octoii-client";
 
@@ -24,4 +24,19 @@ export function terminalName(terminal: TerminalListed): string {
 	const title = terminal.title.trim();
 	if (title !== "") return title;
 	return terminal.line ?? `Terminal ${String(terminal.number)}`;
+}
+
+/** A command line the model ran in a terminal, ended of itself: the terminal's number, the line, how it ended, whether it went well, and its last screen. */
+export type Ended = { readonly number: number; readonly line: string; readonly how: string; readonly ok: boolean; readonly screen: string };
+
+/**
+ * The end the thread was told in `text`, as the terminals write it — `[terminal 2, which ran `npm run dev`, ended: exit
+ * 1]`, then the last screen; none where `text` tells no end.
+ */
+export function endedOf(text: string): Ended | undefined {
+	const [note = "", ...screen] = text.split("\n");
+	const found = /^\[terminal (\d+), which ran `(.*)`, ended: (.+)\]$/.exec(note);
+	if (found === null) return undefined;
+	const [, number = "0", line = "", how = ""] = found;
+	return { number: Number(number), line, how: how.replace(/^ended by /, ""), ok: how === "exit 0", screen: screen.join("\n") };
 }

@@ -9,16 +9,20 @@
  * moves back as it calls its tools.
  */
 import type { ReactNode } from "react";
-import { CircleAlert, Globe, Info, SquareTerminal } from "lucide-react";
+import { CircleAlert, CornerDownRight, Globe, SquareTerminal } from "lucide-react";
 import type { Doing, Foot, TurnEnd } from "../../core/rows.ts";
 import { pastLabel, runningTime } from "../../core/time.ts";
-import { isNotice, type Laid, type Said, TERMINAL, type Work } from "../../core/timeline.ts";
+import { endedOf } from "../../core/terminal.ts";
+import { type Laid, type Said, SIPHON, siphonWords, TERMINAL, type Work } from "../../core/timeline.ts";
 import { Counting, useNow } from "../effects/now.ts";
 import { cn } from "../ui/cn.ts";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible.tsx";
 import { CopyButton } from "../ui/copy-button.tsx";
 import { AskLine } from "./ask-line.tsx";
 import { Calls, Thought } from "./calls.tsx";
 import { TurnChanges } from "./changes.tsx";
+import { SystemDivider } from "./divider.tsx";
+import { EntityContent, EntityMark } from "./entity.tsx";
 import { Prose } from "./markdown.tsx";
 import { Mark } from "./marks.tsx";
 import { Delegations, SubThreadTold } from "./sub-thread.tsx";
@@ -27,24 +31,55 @@ import { UserMessage } from "./user-message.tsx";
 /** The words of a reply, as the page sets them: larger and airier than the work's lines. */
 export const WORDS = "text-body";
 
-/** Words a turn took: a notice — a command line's end in a terminal, Siphon's own — as a line of the work; what came of a task given to a sub-thread, as its row; the person's, or a task from `parent`, as theirs. */
+/**
+ * Words a turn took: a command line's end in a terminal, as the terminal's line; Siphon's own notice, as a divider in
+ * words of its own, never the model's text; what came of a task given to a sub-thread, as its line; the person's, or a
+ * task from `parent`, as theirs.
+ */
 export function Words(props: { readonly said: Said; readonly parent: string | undefined }): ReactNode {
 	const { said } = props;
-	if (isNotice(said.from)) return <Notice said={said} />;
+	if (said.from === TERMINAL) return <TerminalEnded said={said} />;
+	if (said.from === SIPHON) {
+		const words = siphonWords(said.text);
+		return <SystemDivider event={words.event} detail={words.detail} icon={<CornerDownRight />} />;
+	}
 	if (said.from !== undefined && said.from !== props.parent) return <SubThreadTold said={said} />;
 	return <UserMessage said={said} />;
 }
 
-/** A notice the thread was given — a command line the model ran in a terminal ending, Siphon's own — as its note says it, its brackets aside. */
-function Notice(props: { readonly said: Said }): ReactNode {
-	const note = props.said.text.split("\n")[0]?.replace(/^\[|\]$/g, "") ?? "";
-	const Icon = props.said.from === TERMINAL ? SquareTerminal : Info;
+/** A command line the model ran in a terminal, ended of itself, as the terminal's line: how it went by its dot, the line under its name, when; opened, its last screen. */
+function TerminalEnded(props: { readonly said: Said }): ReactNode {
+	const ended = endedOf(props.said.text);
+	if (ended === undefined) return <SystemDivider event="A terminal ended" />;
+	const standing = ended.ok ? "completed" : "failed";
 	return (
-		<div className="work-line">
-			<Icon className="size-3.5 shrink-0 text-muted-foreground" />
-			<span className="min-w-0 flex-1 truncate text-muted-foreground">{note.charAt(0).toUpperCase() + note.slice(1)}</span>
-		</div>
+		<Collapsible>
+			<CollapsibleTrigger className="group/entity work-line work-opens" aria-description={ended.how}>
+				<EntityContent
+					mark={
+						<EntityMark standing={standing}>
+							<SquareTerminal />
+						</EntityMark>
+					}
+					standing={standing}
+					name={`Terminal ${String(ended.number)}`}
+					detail={<span className="font-mono">{ended.line}</span>}
+					time={clockTime(props.said.at)}
+					opens
+				/>
+			</CollapsibleTrigger>
+			<CollapsiblePanel>
+				<div className="work-indent pt-0.5 pb-2">
+					<pre className="well overflow-x-auto px-3 py-2 font-mono text-xs whitespace-pre">{ended.screen === "" ? `[${ended.how}]` : ended.screen}</pre>
+				</div>
+			</CollapsiblePanel>
+		</Collapsible>
 	);
+}
+
+/** The time of day `at` was, as a line tells it. */
+function clockTime(at: number): string {
+	return new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 /** A part of a turn's work, as it is laid out: a stretch of calls, delegations as sub-threads, or a step on its own. */
@@ -132,13 +167,7 @@ function Ended(props: { readonly at: number }): ReactNode {
 
 /** That the thread's window was summed up there, as a rule across the column: within a turn's work, or between turns. */
 export function SummedUp(): ReactNode {
-	return (
-		<div className="flex items-center gap-3 py-2 text-xs text-muted-foreground">
-			<span className="h-px flex-1 bg-border" />
-			What came before was summed up
-			<span className="h-px flex-1 bg-border" />
-		</div>
-	);
+	return <SystemDivider event="Context compacted" detail="what came before was summed up" />;
 }
 
 /** Why something came to nothing, as a line of the work, red. */

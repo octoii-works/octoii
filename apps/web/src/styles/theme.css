@@ -150,6 +150,14 @@
 	 * size or place: a block of a reply fading in, rising a little.
 	 */
 	--animate-fade-in: fade-in 320ms var(--ease-drawer) both;
+	/* What goes on now, its dot breathing: its opacity alone, slowly. */
+	--animate-breathe: breathe 2s ease-in-out infinite;
+
+	@keyframes breathe {
+		50% {
+			opacity: 0.35;
+		}
+	}
 
 	@keyframes fade-in {
 		from {
