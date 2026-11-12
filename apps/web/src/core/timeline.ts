@@ -404,11 +404,11 @@ function lineOf(call: Call, turn: Turn, step: Step, ask: Ask | undefined): CallL
 }
 
 /**
- * The steps of `work` as the page lays them out: a stretch of calls one after another — what the model thought between
- * them among them, its words or a failure ending it, a call that waits on the person standing on its own — as one item
- * from its first call on, gathered where it made more than one, so a stretch that grows is the same item: one call the
- * line of its own, what was thought before it lines of their own; each call that delegates gathered with those made
- * straight after it; every other step on its own.
+ * The steps of `work` as the page lays them out: a stretch of calls one after another — what the model thought before
+ * each among them, its words or a failure ending it, a call that waits on the person standing on its own — as one item
+ * keyed by its first call, gathered where it made more than one, so a stretch that grows is the same item; what was
+ * thought after its last call, before the words, on its own; each call that delegates gathered with those made straight
+ * after it; every other step on its own.
  */
 export type Laid =
 	| { readonly kind: "step"; readonly step: Work }
@@ -419,10 +419,12 @@ export function laidOut(work: readonly Work[]): readonly Laid[] {
 	const laid: Laid[] = [];
 	let stretch: Work[] = [];
 	const close = (): void => {
-		const calls = stretch.flatMap((step) => (step.kind === "call" ? [step] : []));
+		const end = stretch.findLastIndex((step) => step.kind === "call") + 1;
+		const held = stretch.slice(0, end);
+		const calls = held.flatMap((step) => (step.kind === "call" ? [step] : []));
 		const [first] = calls;
-		if (first !== undefined && calls.length > 1) laid.push({ kind: "calls", key: first.id, steps: stretch, calls });
-		else for (const step of stretch) laid.push(step.kind === "call" ? { kind: "calls", key: step.id, steps: [step], calls: [step] } : { kind: "step", step });
+		if (first !== undefined) laid.push({ kind: "calls", key: first.id, steps: held, calls });
+		for (const step of stretch.slice(end)) laid.push({ kind: "step", step });
 		stretch = [];
 	};
 	for (const step of work) {
@@ -439,6 +441,36 @@ export function laidOut(work: readonly Work[]): readonly Laid[] {
 	}
 	close();
 	return laid;
+}
+
+/** A call of a stretch, with what the model thought before it, after the call before. */
+export type ThoughtCall = { readonly call: CallLine; readonly thoughts: readonly Extract<Work, { kind: "thought" }>[] };
+
+/** The calls of a stretch's `steps`, each with what was thought before it; what was thought after the last call left out, as the stretch holds none. */
+export function thoughtCalls(steps: readonly Work[]): readonly ThoughtCall[] {
+	const shown: ThoughtCall[] = [];
+	let thoughts: Extract<Work, { kind: "thought" }>[] = [];
+	for (const step of steps) {
+		if (step.kind === "thought") thoughts.push(step);
+		else if (step.kind === "call") {
+			shown.push({ call: step, thoughts });
+			thoughts = [];
+		}
+	}
+	return shown;
+}
+
+/**
+ * The call whose mark leads a stretch's line: while one runs or waits, the latest of those; once all ended, the latest
+ * of the kind of work the stretch did most.
+ */
+export function leadOf(calls: readonly CallLine[]): CallLine | undefined {
+	const going = calls.findLast((call) => call.state === "running" || call.state === "waiting");
+	if (going !== undefined) return going;
+	const counts = new Map<WorkKind, number>();
+	for (const call of calls) counts.set(call.work, (counts.get(call.work) ?? 0) + 1);
+	const most = Math.max(0, ...counts.values());
+	return calls.findLast((call) => counts.get(call.work) === most);
 }
 
 /** Whether `turn` waits on the person: a call of its work — or one a call made — waits for their answer, or something no call asks does. */

@@ -79,10 +79,13 @@ describe("what the page knows of each tool", () => {
 		expect(detailOf(called("github.create_issue", { title: "x" }, "done", "#12"))).toMatchObject({ shape: "fields", fields: [{ name: "title", value: "x" }] });
 	});
 
-	it("sums up a stretch of calls by the first two kinds of work it did, as they go where one runs, and how many more", () => {
-		const call = (work: "read" | "command" | "search" | "edit", state: CallState = "done") => ({ work, state });
+	it("sums up a stretch of calls by the first three kinds of work it did, as they go where one runs, and how many more", () => {
+		const call = (work: "read" | "command" | "search" | "edit" | "script", state: CallState = "done") => ({ work, state });
 		expect(summaryOf([call("read"), call("read"), call("read"), call("command")])).toBe("read 3 files and ran 1 command");
 		expect(summaryOf([call("read"), call("command", "running")])).toBe("read 1 file and running 1 command");
-		expect(summaryOf([call("read"), call("search"), call("edit"), call("edit")])).toBe("read 1 file, searched 1 time and 2 more");
+		expect(summaryOf([call("read"), call("search"), call("edit"), call("edit")])).toBe("read 1 file, searched 1 time and edited 2 files");
+		expect(summaryOf([call("read"), call("search"), call("edit"), call("script"), call("script")])).toBe(
+			"read 1 file, searched 1 time, edited 1 file and 2 more",
+		);
 	});
 });

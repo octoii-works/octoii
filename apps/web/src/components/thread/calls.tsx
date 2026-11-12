@@ -1,17 +1,18 @@
 /**
- * A stretch of calls as one line of the work — one call's own, or several gathered — led by their marks, stacked, so a
- * call that joins the stretch is pushed into the marks it joins. One call's line says what it does and on what — its
- * subject as code where it is code — and beside it what came of it: the lines a read held, what an edit changed, what
- * the calls made under it did, their marks stacked after its own; at its end, how it went wrong or how it stands, and
- * how long it took or has run; opened, the calls made under it, then what it was given and what it told. Several say
- * what they did as a person says it, how many failed, and how long they took; opened, each on a line of its own, closer
- * together, what was thought between them among them. What a command prints shows only opened: folded, the line holds
- * one height as calls join it — each pushed into the marks — so the work grows by whole lines alone.
+ * A stretch of calls as one line of the work — one call's own, or several gathered — led by one mark, in the slot every
+ * line of the work gives one, so its words stand where those of every other line do. One call's line says what it does
+ * and on what — its subject as code where it is code — and beside it what came of it: the lines a read held, what an
+ * edit changed, what the calls made under it did; a call that went wrong is marked red, its why told only opened; at its
+ * end how it stands where the person is to act, and how long it took or has run; opened, what the model thought before
+ * it, the calls made under it, then what it was given and what it told. Several say what they did as a person says it,
+ * how many failed, and how long they took, led by the mark of the call going on, else of the kind of work they did
+ * most; opened, the latest of them each on a line of its own, at the same edges, closer together, those before behind a
+ * line that shows them. What a command prints shows only opened, so the work grows by whole lines alone.
  */
-import { memo, type ReactNode } from "react";
+import { memo, type ReactNode, useState } from "react";
 import { Ban, Brain } from "lucide-react";
 import { callDuration, duration } from "../../core/time.ts";
-import { type CallLine, declinedText, type Work } from "../../core/timeline.ts";
+import { type CallLine, declinedText, leadOf, thoughtCalls, type ThoughtCall, type Work } from "../../core/timeline.ts";
 import { summaryOf } from "../../core/tools.ts";
 import { useArrived } from "../effects/arrived.ts";
 import { Counting } from "../effects/now.ts";
@@ -21,7 +22,7 @@ import { Waiting } from "./ask-line.tsx";
 import { CallDetail } from "./call-detail.tsx";
 import { ChangeCount } from "./changes.tsx";
 import { Prose } from "./markdown.tsx";
-import { CallMark, Mark, MarkStack } from "./marks.tsx";
+import { CallMark, Mark } from "./marks.tsx";
 
 /** What a stretch's line is given: the thread whose work it is, its steps — its calls and what was thought between them — and its calls. */
 type StretchProps = { readonly thread: string; readonly steps: readonly Work[]; readonly calls: readonly CallLine[] };
@@ -40,17 +41,17 @@ function sameItems<Item>(a: readonly Item[], b: readonly Item[]): boolean {
 export const Calls = memo(function Calls(props: StretchProps): ReactNode {
 	const [only] = props.calls;
 	const one = props.calls.length === 1 ? only : undefined;
-	const marked = one === undefined ? props.calls : [one, ...one.calls];
-	return <StretchLine thread={props.thread} steps={props.steps} calls={props.calls} one={one} marked={marked} />;
+	return <StretchLine thread={props.thread} steps={props.steps} calls={props.calls} one={one} />;
 }, sameStretch);
 
-/** The line of a stretch: its marks, its words, how it ends and its time; opened, what it holds. */
-function StretchLine(props: StretchProps & { readonly one: CallLine | undefined; readonly marked: readonly CallLine[] }): ReactNode {
-	const { one, marked } = props;
+/** The line of a stretch: its mark, its words, how it ends and its time; opened, what it holds. */
+function StretchLine(props: StretchProps & { readonly one: CallLine | undefined }): ReactNode {
+	const { one } = props;
+	const lead = one ?? leadOf(props.calls);
 	return (
 		<Collapsible>
 			<CollapsibleTrigger data-state={one?.state ?? stateOf(props.calls)} className="group/call work-line work-opens">
-				<MarkStack marks={marked.map((call) => ({ key: call.id, mark: <CallMark call={call} /> }))} />
+				{lead === undefined ? null : <CallMark call={lead} />}
 				{one === undefined ? <GatheredWords calls={props.calls} /> : <CallWords call={one} />}
 				<FoldChevron className="quiet-chevron" />
 				<span className="flex-1" />
@@ -64,6 +65,7 @@ function StretchLine(props: StretchProps & { readonly one: CallLine | undefined;
 					<Steps thread={props.thread} steps={props.steps} />
 				) : (
 					<div className="work-indent">
+						{props.steps.map((step) => (step.kind === "thought" ? <ThoughtNote key={step.key} text={step.text} took={step.took} /> : null))}
 						{one.calls.length === 0 ? null : (
 							<div className="work-list work-tight">
 								{one.calls.map((call) => (
@@ -79,29 +81,57 @@ function StretchLine(props: StretchProps & { readonly one: CallLine | undefined;
 	);
 }
 
-/** The steps a stretch gathered, opened, each on a line of its own: one that joins the stretch as it is open fading in. */
+/** How many of a stretch's calls show as it is opened, the latest; those before wait behind a line that shows them. */
+const SHOWN = 8;
+
+/**
+ * The calls a stretch gathered, opened, each on a line of its own at the stretch's own edges, what was thought before
+ * it held in it: the latest few, those before behind a line that shows them; one that joins as it is open fading in.
+ */
 function Steps(props: { readonly thread: string; readonly steps: readonly Work[] }): ReactNode {
-	const arrived = useArrived(props.steps.map(stepKey));
+	const [all, setAll] = useState(false);
+	const shown = thoughtCalls(props.steps);
+	const hidden = all ? 0 : Math.max(0, shown.length - SHOWN);
+	const arrived = useArrived(shown.map(({ call }) => call.id));
 	return (
-		<div className="work-list work-tight work-indent">
-			{props.steps.map((step) => (
-				<div key={stepKey(step)} className={cn(arrived(stepKey(step)) && "animate-fade-in motion-reduce:animate-none")}>
-					<Step thread={props.thread} step={step} />
+		<div className="work-list work-tight">
+			{hidden === 0 ? null : (
+				<button type="button" onClick={() => setAll(true)} className="work-line work-opens text-xs">
+					<span className="size-control-2xs shrink-0" />
+					{`Show ${String(hidden)} earlier`}
+				</button>
+			)}
+			{shown.slice(hidden).map((each) => (
+				<div key={each.call.id} className={cn(arrived(each.call.id) && "animate-fade-in motion-reduce:animate-none")}>
+					<ThoughtfulCall thread={props.thread} shown={each} />
 				</div>
 			))}
 		</div>
 	);
 }
 
-function stepKey(step: Work): string {
-	return step.kind === "call" ? step.id : step.key;
+/** A call among those a stretch gathered, as its own line, what was thought before it opening with it. */
+function ThoughtfulCall(props: { readonly thread: string; readonly shown: ThoughtCall }): ReactNode {
+	const { call, thoughts } = props.shown;
+	return <Calls thread={props.thread} steps={[...thoughts, call]} calls={[call]} />;
 }
 
-/** A step among those a stretch gathered: a call's line, or what was thought. */
-function Step(props: { readonly thread: string; readonly step: Work }): ReactNode {
-	const { step } = props;
-	if (step.kind === "call") return <Calls thread={props.thread} steps={[step]} calls={[step]} />;
-	return step.kind === "thought" ? <Thought text={step.text} took={step.took} /> : null;
+/** What the model thought before a call, as the call opens: how long it thought, then its words, quiet. */
+function ThoughtNote(props: { readonly text: string; readonly took: number | undefined }): ReactNode {
+	return (
+		<div className="flex flex-col gap-0.5 pt-0.5 pb-1.5 text-xs text-muted-foreground">
+			<span className="flex items-center gap-1 text-faint-foreground">
+				<Brain className="size-3" />
+				{thoughtWords(props.took)}
+			</span>
+			<Prose text={props.text} className="text-xs" />
+		</div>
+	);
+}
+
+/** How long the model thought, in words. */
+function thoughtWords(took: number | undefined): string {
+	return took === undefined || took <= 0 ? "Thought" : `Thought for ${duration(took)}`;
 }
 
 /** How a stretch of several stands, as its line marks it: running while one runs or waits on the person, else done. */
@@ -140,12 +170,17 @@ function Failed(props: { readonly calls: readonly CallLine[] }): ReactNode {
 	return failed === 0 ? null : <span className="shrink-0 text-xs text-error-foreground">{failed} failed</span>;
 }
 
-/** What a call's line says at its end of how it stands: failed, how it went wrong though it ran, waiting for the person, declined, or stopped; nothing while it runs or once it went well. */
+/**
+ * What a call's line says at its end of how it stands: waiting for the person, declined, or stopped; nothing while it
+ * runs, once it went well, or where it went wrong — its mark says so, its why told as it opens.
+ */
 function CallEnd(props: { readonly call: CallLine }): ReactNode {
 	const { call } = props;
 	switch (call.state) {
 		case "failed":
-			return <span className="shrink-0 text-xs text-error-foreground">Failed</span>;
+		case "done":
+		case "running":
+			return null;
 		case "waiting":
 			return <Waiting />;
 		case "rejected":
@@ -157,10 +192,6 @@ function CallEnd(props: { readonly call: CallLine }): ReactNode {
 			);
 		case "stopped":
 			return <span className="shrink-0 text-xs text-muted-foreground">Stopped</span>;
-		case "done":
-			return call.trouble === undefined ? null : <span className="shrink-0 font-mono text-xs text-error-foreground">{call.trouble}</span>;
-		case "running":
-			return null;
 	}
 }
 
@@ -181,7 +212,7 @@ export const Thought = memo(function Thought(props: { readonly text: string; rea
 				<Mark>
 					<Brain />
 				</Mark>
-				{props.took === undefined || props.took <= 0 ? "Thought" : `Thought for ${duration(props.took)}`}
+				{thoughtWords(props.took)}
 				<FoldChevron className="quiet-chevron" />
 			</CollapsibleTrigger>
 			<CollapsiblePanel>

@@ -11,6 +11,8 @@ import {
 	doingOf,
 	firstSaid,
 	laidOut,
+	leadOf,
+	thoughtCalls,
 	replyOf,
 	itemsOf,
 	type TimelineTurn,
@@ -344,11 +346,24 @@ describe("a thread's timeline", () => {
 		]);
 		const shown = laid.map((each) => (each.kind === "step" ? each.step.kind : [each.kind, ...each.calls.map((call) => call.id)]));
 		expect(shown).toEqual([["calls", "a", "c", "d"], "words", ["calls", "e"], ["delegations", "f", "g"], ["calls", "h"]]);
-		// What was thought before a stretch's one call stands on its own; once a second call joins, among the stretch's steps.
+		// What was thought before a call is held with it, in the stretch's steps; what was thought after its last call stands on its own.
 		const thought: Work = { kind: "thought", key: "t", text: "Hmm.", took: 1 };
-		expect(laidOut([thought, callOf("x", "read", "q1")]).map((each) => each.kind)).toEqual(["step", "calls"]);
-		expect(
-			laidOut([thought, callOf("x", "read", "q1"), callOf("y", "read", "q2")]).map((each) => (each.kind === "calls" ? each.steps.length : each.kind)),
-		).toEqual([3]);
+		const after: Work = { kind: "thought", key: "u", text: "Done.", took: 1 };
+		expect(laidOut([thought, callOf("x", "read", "q1"), after]).map((each) => (each.kind === "calls" ? each.steps.length : each.kind))).toEqual([2, "step"]);
+		const gathered = laidOut([thought, callOf("x", "read", "q1"), callOf("y", "read", "q2")]);
+		expect(gathered.map((each) => (each.kind === "calls" ? each.steps.length : each.kind))).toEqual([3]);
+		const [stretch] = gathered;
+		expect(stretch?.kind === "calls" ? thoughtCalls(stretch.steps).map(({ call, thoughts }) => [call.id, thoughts.length]) : []).toEqual([
+			["x", 1],
+			["y", 0],
+		]);
+	});
+
+	it("leads a stretch's line with the call going on, else the latest of the kind it did most", () => {
+		const read = (id: string): CallLine => ({ ...callOf(id, "read", "q1"), work: "read" });
+		const shell = (id: string): CallLine => ({ ...callOf(id, "shell", "q1"), work: "command" });
+		expect(leadOf([read("a"), shell("b"), read("c"), shell("d"), read("e")])?.id).toBe("e");
+		expect(leadOf([read("a"), shell("b"), read("c"), { ...shell("d"), state: "running" }])?.id).toBe("d");
+		expect(leadOf([])).toBeUndefined();
 	});
 });

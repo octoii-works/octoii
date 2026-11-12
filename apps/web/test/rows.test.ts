@@ -65,8 +65,8 @@ describe("the timeline's rows", () => {
 		expect(shape(rowsOf([{ kind: "turn", key: turn.key, turn }]))).toEqual([
 			"said turn said:i1",
 			"said message said:i2",
-			"work message work:r1:thought",
-			"work line work:c1",
+			// What was thought before a call is held in its line.
+			"work message work:c1",
 			"work line words:r2",
 			"work line work:c2",
 			"reply part words:r3",

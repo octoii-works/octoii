@@ -1,8 +1,8 @@
 /**
  * Sub-threads in the timeline of the thread that delegated to them, as lines of its work: a row for each — a bot's
  * round mark with a dot of how it stands, its title, what it said or how it stands, how long it worked, and a way into
- * it — for the calls that gave them tasks, those of one step gathered under their marks, stacked, how many there are,
- * how they stand and how long they worked, opened to list them; and a row for what came of a task given in the
+ * it — for the calls that gave them tasks, those of one step gathered under one mark of how they stand together, how
+ * many there are, how they stand and how long they worked, opened to list them at the same edges; and a row for what came of a task given in the
  * background, as the sub-thread told it, marked how its work ended and when.
  */
 import type { ReactNode } from "react";
@@ -18,7 +18,7 @@ import { Counting } from "../effects/now.ts";
 import { go } from "../state/navigation.ts";
 import { cn } from "../ui/cn.ts";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger, FoldChevron } from "../ui/collapsible.tsx";
-import { Mark, MarkStack } from "./marks.tsx";
+import { Mark } from "./marks.tsx";
 
 /** Each way a sub-thread stands: its dot's colour, and its words. */
 const STANDINGS: Readonly<Record<Standing, { readonly dot: string; readonly label: string }>> = {
@@ -48,7 +48,7 @@ function Gathered(props: { readonly delegated: readonly { readonly call: CallLin
 	return (
 		<Collapsible>
 			<CollapsibleTrigger data-tone={tone} className="work-line work-opens">
-				<MarkStack marks={props.delegated.map(({ call }, index) => ({ key: call.id, mark: <SubThreadMark standing={standings[index] ?? "running"} /> }))} />
+				<SubThreadMark standing={tone ?? (standings.every((standing) => standing === "stopped") ? "stopped" : "completed")} />
 				<span className="shrink-0 text-foreground">{`${String(standings.length)} sub-threads`}</span>
 				<span className="min-w-0 truncate group-data-[tone=failed]/fold:text-error-foreground group-data-[tone=running]/fold:text-info-foreground">
 					{standingsSummary(standings)}
@@ -62,7 +62,7 @@ function Gathered(props: { readonly delegated: readonly { readonly call: CallLin
 				)}
 			</CollapsibleTrigger>
 			<CollapsiblePanel>
-				<div className="work-list work-tight work-indent">
+				<div className="work-list work-tight">
 					{props.delegated.map(({ call, row }) => (
 						<DelegationRow key={call.id} call={call} row={row} />
 					))}

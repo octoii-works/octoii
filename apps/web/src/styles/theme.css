@@ -147,18 +147,9 @@
 	--animate-shimmer: shimmer 2.2s steps(30) infinite;
 	/*
 	 * What arrives while it is shown, moved by what the compositor moves alone — opacity and transform, never a box's
-	 * size or place: a mark that joins a stack pushed in from its end, growing to its own place; a block of a reply
-	 * fading in, rising a little.
+	 * size or place: a block of a reply fading in, rising a little.
 	 */
-	--animate-push-in: push-in 240ms var(--ease-drawer) both;
 	--animate-fade-in: fade-in 320ms var(--ease-drawer) both;
-
-	@keyframes push-in {
-		from {
-			opacity: 0;
-			transform: translateX(0.375rem) scale(0.6);
-		}
-	}
 
 	@keyframes fade-in {
 		from {
