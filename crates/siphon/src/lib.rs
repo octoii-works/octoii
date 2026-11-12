@@ -21,6 +21,7 @@ mod tests;
 pub mod threads;
 pub mod tools;
 pub mod trust;
+mod volume;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -45,6 +46,7 @@ use siphon_runtime::{Asked, Options, Runtime};
 
 pub use extension::{Caller, Extension, Full, Lagged, Registrar, Sink, Subscription};
 pub use kept::{Ends, Kept};
+pub use volume::Volume;
 
 /// What Siphon is built on: the machine its work is done on; the folder of the person's own configuration, for every
 /// project — their instructions, `AGENTS.md`, and their skills, `skills/` — where they keep one; the host's credentials
@@ -130,6 +132,14 @@ impl Siphon {
         }
         Ok(())
     }
+}
+
+/// Who calls a method of the host's own: Siphon whole, which the host is given and an extension is not, and the session
+/// of the client that called.
+#[derive(Debug, Clone)]
+pub struct HostCaller {
+    pub siphon: Siphon,
+    pub session: String,
 }
 
 /// Siphon being built: what its extensions add to, and what it is started with.
@@ -240,10 +250,18 @@ impl Building {
     ) -> Self
     where
         M: Send + 'static,
-        F: Fn(Caller, M) -> Done + Send + Sync + 'static,
+        F: Fn(HostCaller, M) -> Done + Send + Sync + 'static,
         Done: std::future::Future<Output = Result<serde_json::Value, crate::protocol::Error>> + Send + 'static,
     {
-        self.builder.methods(CORE, set, read, handle);
+        self.builder.methods(CORE, set, read, move |caller: Caller, method| {
+            handle(
+                HostCaller {
+                    siphon: caller.siphon,
+                    session: caller.session,
+                },
+                method,
+            )
+        });
         self
     }
 

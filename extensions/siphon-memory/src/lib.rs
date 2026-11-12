@@ -15,7 +15,6 @@ use siphon::machine::Host;
 use siphon::protocol::{Error, Nothing};
 use siphon::tools::Place;
 use siphon::{Caller, Extension, Registrar};
-use siphon_runtime::Runtime;
 
 use crate::protocol::{MemoryListed, Method};
 
@@ -58,7 +57,7 @@ struct Told {
 impl Teller for Told {
     fn tell<'a>(
         &'a self,
-        _: &'a Runtime,
+        _: &'a siphon::Volume,
         _: &'a str,
         place: Option<&'a Place>,
     ) -> Pin<Box<dyn Future<Output = anyhow::Result<Telling>> + Send + 'a>> {

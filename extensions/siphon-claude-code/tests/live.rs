@@ -29,10 +29,10 @@ impl Credentials for Nothing {
 async fn the_persons_own_claude_code_tells_how_it_stands_and_what_it_offers() {
     let folder = tempfile::tempdir().expect("a folder");
     let beak = beak::Beak::new().expect("Beak");
-    let kernel = beak::Kernel::open(&beak, &beak::Options::default()).expect("a kernel").0;
+    let commands = siphon::testing::commands(&beak);
     let home = std::env::home_dir();
     let place = Place {
-        kernel,
+        commands,
         machine: siphon::machine::Host {
             home: home.clone(),
             ..siphon::machine::Host::default()

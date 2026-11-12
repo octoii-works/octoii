@@ -131,8 +131,9 @@ async fn the_person_s_servers_tools_are_listed_and_called_as_the_model_s_own() {
     let beak = Beak::new().expect("Beak");
     let calling = calling(&beak, &servers);
     let runtime = &calling.runtime;
+    let volume = calling.volume();
     let (_folder, workspace) = folder();
-    let catalog = servers.catalog(runtime, &Place::of(&workspace)).await.expect("a catalog");
+    let catalog = servers.catalog(&volume, &Place::of(&workspace)).await.expect("a catalog");
     assert_eq!(catalog.problems, Vec::<String>::new());
     let names: Vec<&str> = catalog.tools.iter().map(|tool| tool.name.as_str()).collect();
     assert_eq!(names, ["test.say", "test.fail", "test.where", "test.picture"]);
@@ -188,6 +189,7 @@ async fn a_project_s_servers_run_once_the_person_trusts_its_configuration_as_it_
     let beak = Beak::new().expect("Beak");
     let calling = calling(&beak, &servers);
     let runtime = &calling.runtime;
+    let volume = calling.volume();
     let (_folder, project) = folder();
     std::fs::create_dir(project.join(".git")).expect("a repository");
     let workspace = project.join("app");
@@ -197,7 +199,7 @@ async fn a_project_s_servers_run_once_the_person_trusts_its_configuration_as_it_
     let place = Place::of(&workspace);
     assert_eq!(place.project, project);
 
-    let catalog = servers.catalog(runtime, &place).await.expect("a catalog");
+    let catalog = servers.catalog(&volume, &place).await.expect("a catalog");
     assert_eq!(catalog.tools, []);
     assert!(
         catalog.problems[0].ends_with("are not run till the person trusts them"),
@@ -238,13 +240,13 @@ async fn a_project_s_servers_run_once_the_person_trusts_its_configuration_as_it_
     .await
     .expect("decided in time");
 
-    let catalog = servers.catalog(runtime, &place).await.expect("a catalog");
+    let catalog = servers.catalog(&volume, &place).await.expect("a catalog");
     assert_eq!(catalog.tools.len(), 4, "{:?}", catalog.problems);
     assert!(catalog.asks.is_none());
 
     let other = json!({ "mcpServers": { "test": { "command": "python3", "args": [fixture(), "--more"] } } }).to_string();
     std::fs::write(project.join(".mcp.json"), other).expect("written");
-    let catalog = servers.catalog(runtime, &place).await.expect("a catalog");
+    let catalog = servers.catalog(&volume, &place).await.expect("a catalog");
     assert!(
         catalog.tools.is_empty() && catalog.asks.is_some(),
         "a changed configuration is asked again"

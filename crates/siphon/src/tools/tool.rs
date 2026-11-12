@@ -48,13 +48,21 @@ pub struct Context {
     pub writes: Writes,
     /// The places beside the workspace its work writes as freely.
     pub places: Vec<PathBuf>,
-    pub kernel: Kernel,
+    pub(crate) kernel: Kernel,
     pub host: Host,
-    pub runtime: Runtime,
+    pub(crate) runtime: Runtime,
     pub cancelled: CancellationToken,
 }
 
 impl Context {
+    /// The volume, as an extension reaches it.
+    #[must_use]
+    pub fn volume(&self) -> crate::Volume {
+        crate::Volume {
+            runtime: self.runtime.clone(),
+        }
+    }
+
     /// The machine, opened for this call: held to the thread's workspace and the places beside it written as freely, or
     /// writing anywhere, as its weighing said.
     ///

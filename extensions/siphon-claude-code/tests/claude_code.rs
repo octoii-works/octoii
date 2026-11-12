@@ -47,10 +47,10 @@ fn call() -> Call {
     }
 }
 
-/// Claude Code on `kernel` with its files under `state`, its `claude` the tests' own, which logs each start there.
-fn claude_code(kernel: &beak::Kernel, state: &Path, program: Option<PathBuf>) -> ClaudeCode {
+/// Claude Code running its commands by `commands`, with its files under `state`, its `claude` the tests' own, which logs each start there.
+fn claude_code(commands: &siphon::machine::Commands, state: &Path, program: Option<PathBuf>) -> ClaudeCode {
     let place = Place {
-        kernel: kernel.clone(),
+        commands: commands.clone(),
         machine: siphon::machine::Host {
             home: Some(state.join("home")),
             ..siphon::machine::Host::default()
@@ -172,8 +172,8 @@ async fn a_conversation_is_answered_in_a_live_session_resumed_in_place_forked_be
     let state = folder.path().canonicalize().expect("its real path");
     let log = state.join("starts.jsonl");
     let beak = beak::Beak::new().expect("Beak");
-    let kernel = beak::Kernel::open(&beak, &beak::Options::default()).expect("a kernel").0;
-    let claude = claude_code(&kernel, &state, Some(fake()));
+    let commands = siphon::testing::commands(&beak);
+    let claude = claude_code(&commands, &state, Some(fake()));
 
     let listed = claude.list(&call()).await.expect("listed").expect("a listing");
     assert_eq!(listed.len(), 1);
@@ -216,7 +216,7 @@ async fn a_conversation_is_answered_in_a_live_session_resumed_in_place_forked_be
     assert_eq!(sessions(&state), 1);
 
     // The node started again: the conversation goes on in the session where it ended, in place.
-    let claude = claude_code(&kernel, &state, Some(fake()));
+    let claude = claude_code(&commands, &state, Some(fake()));
     input.extend(done.output.clone());
     let mut again = input.clone();
     again.push(user("again"));
@@ -247,8 +247,8 @@ async fn an_account_stands_as_its_claude_code_tells_and_goes_signed_out_with_its
     let folder = tempfile::tempdir().expect("a folder");
     let state = folder.path().canonicalize().expect("its real path");
     let beak = beak::Beak::new().expect("Beak");
-    let kernel = beak::Kernel::open(&beak, &beak::Options::default()).expect("a kernel").0;
-    let claude = claude_code(&kernel, &state, Some(fake()));
+    let commands = siphon::testing::commands(&beak);
+    let claude = claude_code(&commands, &state, Some(fake()));
     let standing = claude.status(&call()).await.expect("told").expect("a standing");
     assert_eq!(
         (standing.account.as_deref(), standing.plan.as_deref(), standing.guidance),
@@ -275,8 +275,8 @@ async fn an_account_stands_as_its_claude_code_tells_and_goes_signed_out_with_its
 async fn a_computer_without_claude_is_told_how_to_install_it_and_sign_in() {
     let folder = tempfile::tempdir().expect("a folder");
     let beak = beak::Beak::new().expect("Beak");
-    let kernel = beak::Kernel::open(&beak, &beak::Options::default()).expect("a kernel").0;
-    let claude = claude_code(&kernel, folder.path(), None);
+    let commands = siphon::testing::commands(&beak);
+    let claude = claude_code(&commands, folder.path(), None);
     let guidance = claude.status(&call()).await.expect("told").and_then(|standing| standing.guidance);
     let commands = guidance.map(|guidance| guidance.commands).unwrap_or_default();
     assert!(commands.len() == 2 && commands[1].ends_with("claude auth login"), "{commands:?}");

@@ -11,12 +11,12 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use base64::Engine as _;
-use beak::{Exec, Kernel, Spec, Stdio};
+use beak::{Exec, Spec, Stdio};
 use bytes::Bytes;
 use chromiumoxide_cdp::cdp::{CdpEvent, CdpEventMessage};
 use serde_json::{Value, json};
 use siphon::machine::Base;
-use siphon::machine::{Host, Machine, Writes};
+use siphon::machine::{Commands, Host, Machine, Writes};
 use tokio::sync::{broadcast, mpsc, oneshot};
 
 use crate::cdp::{Cdp, CdpError, connect};
@@ -47,7 +47,7 @@ const TITLE_WATCH: &str = "(() => {
 /// the folder its profile is kept in, one that lasts as long as it runs where none.
 #[derive(Debug, Clone)]
 pub struct BrowserHost {
-    pub kernel: Kernel,
+    pub commands: Commands,
     pub machine: Host,
     pub program: Option<PathBuf>,
     pub profile: Option<PathBuf>,
@@ -619,7 +619,7 @@ impl Owner {
 
     async fn open(&mut self, thread: String, url: Option<String>, size: Size) -> Result<String, BrowserError> {
         let cdp = self.cdp().await?;
-        let id = self.host.kernel.new_id(now_ms())?;
+        let id = self.host.commands.new_id(now_ms())?;
         self.pages.push(Page {
             id: id.clone(),
             thread: thread.clone(),
@@ -981,7 +981,7 @@ impl Owner {
             && !self.pages.iter().any(|page| page.target.as_deref() == Some(target.as_str()))
             && let Some((thread, size)) = opened_by
         {
-            let Ok(id) = self.host.kernel.new_id(now_ms()) else { return };
+            let Ok(id) = self.host.commands.new_id(now_ms()) else { return };
             self.pages.push(Page {
                 id,
                 thread,
@@ -1145,7 +1145,7 @@ fn launch(host: &BrowserHost) -> Result<Running, BrowserError> {
         hidden: Vec::new(),
         ..host.machine.clone()
     };
-    let machine = Machine::open(&host.kernel, &open, base, &Writes::Anywhere, None)?;
+    let machine = host.commands.open(&open, base, &Writes::Anywhere)?;
     for own in host.profile.iter().chain(&host.downloads) {
         std::fs::create_dir_all(own).map_err(|error| BrowserError::Folders(error.to_string()))?;
     }
@@ -1153,7 +1153,7 @@ fn launch(host: &BrowserHost) -> Result<Running, BrowserError> {
         stdio: Stdio::Channel,
         ..Spec::new(Exec::Argv(argv), home.to_string_lossy())
     };
-    let (command, told) = host.kernel.spawn(now_ms(), b"", machine.namespace(), &spec)?;
+    let (command, told) = host.commands.spawn(now_ms(), b"", machine.namespace(), &spec)?;
     let (cdp, events) = connect(command, told);
     Ok(Running {
         cdp,

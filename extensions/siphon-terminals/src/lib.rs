@@ -15,10 +15,10 @@ pub use tool::{ACTOR, Action, TerminalTool};
 
 use std::path::{Path, PathBuf};
 
-use beak::{Command, CommandEvent, Exec, Kernel, Spec, Stdio};
+use beak::{Command, CommandEvent, Exec, Spec, Stdio};
 use bytes::Bytes;
 use siphon::machine::Base;
-use siphon::machine::{Host, Machine, Writes};
+use siphon::machine::{Commands, Host, Machine, Writes};
 use tokio::sync::{broadcast, mpsc, oneshot};
 
 /// How many lines of what scrolls off a terminal's screen it keeps, drawn again with it.
@@ -151,14 +151,14 @@ pub struct Terminals {
 }
 
 impl Terminals {
-    /// The terminals of the machine `host` gives, on `kernel`, owned by a task of their own on the current runtime
+    /// The terminals of the machine `host` gives, by `commands`, owned by a task of their own on the current runtime
     /// till every handle is let go of.
     #[must_use]
-    pub fn start(kernel: Kernel, host: Host) -> Self {
+    pub fn start(commands: Commands, host: Host) -> Self {
         let (messages, inbox) = mpsc::unbounded_channel();
         let (events, _) = broadcast::channel(EVENTS_MAX);
         let owner = Owner {
-            kernel,
+            commands,
             host,
             terminals: Vec::new(),
             events: events.clone(),
@@ -278,7 +278,7 @@ struct Terminal {
 
 /// The task that owns the terminals.
 struct Owner {
-    kernel: Kernel,
+    commands: Commands,
     host: Host,
     terminals: Vec<Terminal>,
     events: broadcast::Sender<Event>,
@@ -368,7 +368,7 @@ impl Owner {
             Running::Shell => (vec![shell, "-l".into()], Writes::Anywhere, Vec::new(), None),
             Running::Line { line, writes, set } => (vec![shell, "-l".into(), "-c".into(), line.clone()], writes, set, Some(line)),
         };
-        let machine = Machine::open(&self.kernel, &self.host, base, &writes, None)?;
+        let machine = self.commands.open(&self.host, base, &writes)?;
         let spec = Spec {
             set: [("TERM".into(), "xterm-256color".into()), ("COLORTERM".into(), "truecolor".into())]
                 .into_iter()
@@ -383,8 +383,8 @@ impl Owner {
             ..Spec::new(Exec::Argv(argv), cwd.to_string_lossy())
         };
         let now = now_ms();
-        let (command, mut events) = self.kernel.spawn(now, b"", machine.namespace(), &spec)?;
-        let id = self.kernel.new_id(now)?;
+        let (command, mut events) = self.commands.spawn(now, b"", machine.namespace(), &spec)?;
+        let id = self.commands.new_id(now)?;
         let taken: Vec<u32> = self
             .terminals
             .iter()

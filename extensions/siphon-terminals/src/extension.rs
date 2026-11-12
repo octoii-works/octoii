@@ -1,4 +1,4 @@
-//! The terminals as an extension of Siphon's: owned by a task started on the machine's kernel, and their methods and
+//! The terminals as an extension of Siphon's: owned by a task started on the machine's commands, and their methods and
 //! topics — a terminal opened in its thread's workspace, typed to, sized and closed; a thread's terminals as they
 //! change, and a terminal as it writes, each piece once.
 
@@ -28,7 +28,7 @@ impl Extension for TerminalsExtension {
     }
 
     fn build(self: Box<Self>, registrar: &mut Registrar<'_>) {
-        let terminals = Terminals::start(registrar.kernel().clone(), registrar.machine().clone());
+        let terminals = Terminals::start(registrar.commands(), registrar.machine().clone());
         let closing = terminals.clone();
         registrar.on_thread_deleted(move |thread| closing.close_thread(thread));
         let tool = TerminalTool {
@@ -58,12 +58,9 @@ fn size(cells: Cells) -> Size {
 async fn answered(terminals: &Terminals, context: &Caller, method: Method) -> Result<Value, Error> {
     match method {
         Method::Open(open) => {
-            let listed = context
-                .siphon
-                .threads
-                .listed(&open.thread)
-                .map_err(|error| refused("no_such_thread", &error))?;
-            let cwd = context.siphon.machine.workspace_of(listed.config.workspace.as_deref());
+            let cwd = context
+                .workspace_of(&open.thread)
+                .ok_or_else(|| refused("no_such_thread", &format!("no thread {}", open.thread)))?;
             let terminal = terminals
                 .open(&open.thread, cwd, size(open.size), Running::Shell)
                 .await

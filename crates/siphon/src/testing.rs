@@ -316,3 +316,23 @@ impl Calling {
         tokio::time::timeout(Duration::from_secs(30), waiting).await.expect("ended in time")
     }
 }
+
+/// The machine's commands on a kernel of `beak`'s own, in memory, for an extension's tests of what it runs.
+///
+/// # Panics
+/// Where the kernel cannot be opened.
+#[must_use]
+pub fn commands(beak: &beak::Beak) -> crate::machine::Commands {
+    let (kernel, _) = beak::Kernel::open(beak, &beak::Options::default()).expect("a kernel");
+    crate::machine::Commands { kernel }
+}
+
+impl Calling {
+    /// The volume of the calls' runtime, as an extension reaches it.
+    #[must_use]
+    pub fn volume(&self) -> crate::Volume {
+        crate::Volume {
+            runtime: self.runtime.clone(),
+        }
+    }
+}

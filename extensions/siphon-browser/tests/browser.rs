@@ -4,7 +4,7 @@
 
 use std::time::Duration;
 
-use beak::{Beak, Kernel, Options};
+use beak::Beak;
 use serde_json::json;
 use siphon::machine::Host;
 use siphon_browser::{Action, Browser, BrowserHost, Change, Outcome, Place, Refusal};
@@ -79,7 +79,7 @@ async fn serve() -> String {
     format!("http://127.0.0.1:{port}")
 }
 
-/// A browser on a kernel of its own, its profile and downloads in folders of the test's; none where the machine has
+/// A browser running its commands on a kernel of its own, its profile and downloads in folders of the test's; none where the machine has
 /// no browser.
 fn browser(beak: &Beak, profile: &std::path::Path, downloads: &std::path::Path) -> Option<Browser> {
     let found = [
@@ -93,9 +93,9 @@ fn browser(beak: &Beak, profile: &std::path::Path, downloads: &std::path::Path) 
         eprintln!("no browser on this machine");
         return None;
     }
-    let kernel = Kernel::open(beak, &Options::default()).expect("a kernel").0;
+    let commands = siphon::testing::commands(beak);
     Some(Browser::start(BrowserHost {
-        kernel,
+        commands,
         machine: Host {
             home: std::env::var_os("HOME").map(Into::into),
             ..Host::default()

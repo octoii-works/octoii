@@ -35,7 +35,7 @@ impl Extension for ClaudeCodeExtension {
     fn build(self: Box<Self>, registrar: &mut Registrar<'_>) {
         let program = self.program.or_else(|| account::found(registrar.machine().home.as_deref()));
         let place = Place {
-            kernel: registrar.kernel().clone(),
+            commands: registrar.commands(),
             machine: registrar.machine().clone(),
             program,
             folder: self.folder,

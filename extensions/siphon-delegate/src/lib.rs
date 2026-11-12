@@ -94,16 +94,16 @@ fn planned(context: &Context, args: DelegateArgs) -> Result<Told, Refusal> {
     let mut plan = Plan::default();
     let child = match &args.thread {
         Some(named) => {
-            let parent = parent_of(&context.runtime, named).map_err(|error| Refusal(error.to_string()))?;
+            let parent = parent_of(&context.volume(), named).map_err(|error| Refusal(error.to_string()))?;
             if parent.as_deref() != Some(context.thread.as_str()) {
                 return Err(Refusal(format!("the thread {named} is no sub-thread of yours")));
             }
             named.clone()
         }
-        None => plan.spawn(&context.runtime, args.title.clone(), Spawned::SubThread)?,
+        None => plan.spawn(&context.volume(), args.title.clone(), Spawned::SubThread)?,
     };
     let report = if args.background { Report::Inbox } else { Report::Call };
-    plan.deliver(&context.runtime, &child, vec![InputContent::text(args.task)], Joins::Step, report)?;
+    plan.deliver(&context.volume(), &child, vec![InputContent::text(args.task)], Joins::Step, report)?;
     let text = if args.background {
         format!(
             "<system-reminder>sub-thread {child} is working on it in the background; you will get a message with its final answer when it finishes</system-reminder>\n<system-reminder>do not wait, poll or ask about its progress, and do not do its work; continue with work that does not depend on it, or tell the person what you started and end your reply</system-reminder>\n<system-reminder>to give it more work, call delegate with thread {child}</system-reminder>"

@@ -1,4 +1,4 @@
-//! The browser as an extension of Siphon's: started on the machine's kernel as the host gives its program and folders,
+//! The browser as an extension of Siphon's: started on the machine's commands as the host gives its program and folders,
 //! the `browser` tool its model calls, and its methods and topics — a page opened, moved, answered and closed, the
 //! person's mouse, keys and text on it, a thread's pages as they change and a page as it is painted.
 
@@ -34,7 +34,7 @@ impl Extension for BrowserExtension {
 
     fn build(self: Box<Self>, registrar: &mut Registrar<'_>) {
         let browser = Browser::start(BrowserHost {
-            kernel: registrar.kernel().clone(),
+            commands: registrar.commands(),
             machine: registrar.machine().clone(),
             program: self.program,
             profile: self.profile,

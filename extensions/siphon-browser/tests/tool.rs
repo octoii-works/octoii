@@ -12,9 +12,9 @@ use siphon::tools::{Effect, Tools};
 #[tokio::test(flavor = "multi_thread")]
 async fn the_browser_tool_reads_a_page_at_once_and_works_one_after_what_came_before() {
     let beak = Beak::new().expect("Beak");
-    let kernel = beak::Kernel::open(&beak, &beak::Options::default()).expect("a kernel").0;
+    let commands = siphon::testing::commands(&beak);
     let browser = siphon_browser::Browser::start(siphon_browser::BrowserHost {
-        kernel,
+        commands,
         machine: Host::default(),
         program: None,
         profile: None,

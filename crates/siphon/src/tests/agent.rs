@@ -1074,7 +1074,7 @@ impl crate::tools::Tool for DelegateTool {
             let mut plan = crate::tools::Plan::default();
             let child = match args.thread {
                 Some(named) => named,
-                None => plan.spawn(&context.runtime, args.title, crate::tools::Spawned::SubThread)?,
+                None => plan.spawn(&context.volume(), args.title, crate::tools::Spawned::SubThread)?,
             };
             let report = if args.background {
                 crate::tools::Report::Inbox
@@ -1082,7 +1082,7 @@ impl crate::tools::Tool for DelegateTool {
                 crate::tools::Report::Call
             };
             plan.deliver(
-                &context.runtime,
+                &context.volume(),
                 &child,
                 vec![InputContent::text(args.task)],
                 crate::threads::inbox::Joins::Step,
@@ -1153,9 +1153,11 @@ impl crate::tools::Tool for ThreadTool {
             let own = context.thread.as_str();
             let mut plan = crate::tools::Plan::default();
             let (thread, message, report) = match action {
-                ThreadAction::Start { message, title, report } => {
-                    (plan.spawn(&context.runtime, title, crate::tools::Spawned::Thread)?, message, report)
-                }
+                ThreadAction::Start { message, title, report } => (
+                    plan.spawn(&context.volume(), title, crate::tools::Spawned::Thread)?,
+                    message,
+                    report,
+                ),
                 ThreadAction::Send { thread, message, report } => (thread, message, report),
             };
             let delivered = vec![
@@ -1167,7 +1169,7 @@ impl crate::tools::Tool for ThreadTool {
             } else {
                 crate::tools::Report::None
             };
-            plan.deliver(&context.runtime, &thread, delivered, crate::threads::inbox::Joins::Step, reported)?;
+            plan.deliver(&context.volume(), &thread, delivered, crate::threads::inbox::Joins::Step, reported)?;
             Ok(crate::tools::Told {
                 plan,
                 ..crate::tools::Told::from(vec![InputContent::text(format!("thread {thread} has your message"))])

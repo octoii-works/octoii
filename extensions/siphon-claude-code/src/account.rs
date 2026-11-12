@@ -68,12 +68,12 @@ const COLLECT_AFTER: Duration = Duration::from_hours(24);
 /// The longest a folder's name may be in Claude Code's projects before it is cut and hashed.
 const PROJECT_NAME_MAX: usize = 200;
 
-/// Where Claude Code runs: the kernel and the machine, the person's `claude` — none, where it is not installed — and
+/// Where Claude Code runs: the machine's commands and the machine, the person's `claude` — none, where it is not installed — and
 /// the extension's own folder, among what the host keeps for itself: the folder Claude Code works in, which holds nothing
 /// of the person's, and each account's files.
 #[derive(Debug, Clone)]
 pub struct Place {
-    pub kernel: beak::Kernel,
+    pub commands: siphon::machine::Commands,
     pub machine: siphon::machine::Host,
     pub program: Option<PathBuf>,
     pub folder: PathBuf,
@@ -249,7 +249,9 @@ impl Account {
             workspace: self.place.work(),
             home: self.place.machine.home.clone(),
         };
-        Machine::open(&self.place.kernel, &self.place.machine, base, &Writes::Anywhere, None)
+        self.place
+            .commands
+            .open(&self.place.machine, base, &Writes::Anywhere)
             .and_then(|machine| machine.bind(&self.place.folder).map(|()| machine))
             .map_err(|error| Failure::new(FailureKind::Server, error.to_string()))
     }

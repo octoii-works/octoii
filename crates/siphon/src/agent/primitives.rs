@@ -20,7 +20,7 @@ use siphon_runtime::{Changes, Run};
 /// # Errors
 /// The volume's failure.
 pub async fn deliver(
-    runtime: &siphon_runtime::Runtime,
+    volume: &crate::Volume,
     thread: &str,
     actor: &str,
     content: Vec<octoii_ai::vocabulary::InputContent>,
@@ -32,8 +32,8 @@ pub async fn deliver(
         joins: crate::threads::inbox::Joins::Step,
     };
     let mut changes = Changes::new();
-    inbox::put(&mut changes, thread, &runtime.new_id()?, &inbound)?;
-    runtime.commit(changes).await?;
+    inbox::put(&mut changes, thread, &volume.new_id()?, &inbound)?;
+    volume.runtime.commit(changes).await?;
     Ok(())
 }
 
@@ -42,8 +42,8 @@ pub async fn deliver(
 ///
 /// # Errors
 /// The volume's failure.
-pub fn parent_of(runtime: &siphon_runtime::Runtime, thread: &str) -> anyhow::Result<Option<String>> {
-    let directory = runtime.snapshot()?.stat(&thread::path(thread))?.and_then(|entry| entry.directory);
+pub fn parent_of(volume: &crate::Volume, thread: &str) -> anyhow::Result<Option<String>> {
+    let directory = volume.snapshot()?.stat(&thread::path(thread))?.and_then(|entry| entry.directory);
     Ok(directory.and_then(|directory| label(&directory, thread::PARENT_LABEL)))
 }
 

@@ -12,7 +12,6 @@ use std::sync::Arc;
 use siphon::agent::{Shared, Teller, Telling};
 use siphon::tools::Place;
 use siphon::{Extension, Registrar};
-use siphon_runtime::Runtime;
 pub use tool::{ThreadAction, ThreadTool};
 
 /// Threads, as a host adds them.
@@ -46,7 +45,7 @@ struct Folder(PathBuf);
 impl Teller for Folder {
     fn tell<'a>(
         &'a self,
-        _: &'a Runtime,
+        _: &'a siphon::Volume,
         thread: &'a str,
         _: Option<&'a Place>,
     ) -> Pin<Box<dyn Future<Output = anyhow::Result<Telling>> + Send + 'a>> {

@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use beak::{Beak, Kernel, Options};
+use beak::Beak;
 use bytes::Bytes;
 use siphon::machine::Host;
 use siphon_terminals::{Error, Event, Running, Size, Terminals};
@@ -26,14 +26,14 @@ async fn until(events: &mut tokio::sync::broadcast::Receiver<Event>, done: impl 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_terminal_runs_the_person_s_shell_in_its_folder_numbered_in_its_thread_till_its_shell_ends() {
     let beak = Beak::new().expect("Beak");
-    let kernel = Kernel::open(&beak, &Options::default()).expect("a kernel").0;
+    let commands = siphon::testing::commands(&beak);
     let folder = tempfile::tempdir().expect("a folder");
     let cwd = folder.path().canonicalize().expect("its real path");
     let host = Host {
         shell: Some(PathBuf::from("/bin/sh")),
         ..Host::default()
     };
-    let terminals = Terminals::start(kernel, host);
+    let terminals = Terminals::start(commands, host);
     let mut events = terminals.events();
     let first = terminals.open("t1", cwd.clone(), SIZE, Running::Shell).await.expect("opened");
     let second = terminals.open("t1", cwd.clone(), SIZE, Running::Shell).await.expect("opened");
@@ -101,14 +101,14 @@ async fn a_terminal_runs_the_person_s_shell_in_its_folder_numbered_in_its_thread
 #[tokio::test(flavor = "multi_thread")]
 async fn a_command_line_the_model_runs_tells_its_end_with_its_screen_and_one_closed_tells_none() {
     let beak = Beak::new().expect("Beak");
-    let kernel = Kernel::open(&beak, &Options::default()).expect("a kernel").0;
+    let commands = siphon::testing::commands(&beak);
     let folder = tempfile::tempdir().expect("a folder");
     let cwd = folder.path().canonicalize().expect("its real path");
     let host = Host {
         shell: Some(PathBuf::from("/bin/sh")),
         ..Host::default()
     };
-    let terminals = Terminals::start(kernel, host);
+    let terminals = Terminals::start(commands, host);
     let mut events = terminals.events();
     let writes = siphon::machine::Writes::Within(vec![cwd.clone()]);
     let running = Running::Line {
@@ -160,14 +160,14 @@ async fn a_command_line_the_model_runs_tells_its_end_with_its_screen_and_one_clo
 #[tokio::test(flavor = "multi_thread")]
 async fn a_terminal_closed_ends_what_it_runs_though_it_hangs_up_on_nothing() {
     let beak = Beak::new().expect("Beak");
-    let kernel = Kernel::open(&beak, &Options::default()).expect("a kernel").0;
+    let commands = siphon::testing::commands(&beak);
     let folder = tempfile::tempdir().expect("a folder");
     let cwd = folder.path().canonicalize().expect("its real path");
     let host = Host {
         shell: Some(PathBuf::from("/bin/sh")),
         ..Host::default()
     };
-    let terminals = Terminals::start(kernel, host);
+    let terminals = Terminals::start(commands, host);
     let pid_file = cwd.join("pid");
     let running = Running::Line {
         line: format!("trap '' HUP; echo $$ > {}; exec sleep 60", pid_file.display()),

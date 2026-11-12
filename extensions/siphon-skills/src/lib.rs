@@ -12,7 +12,6 @@ use std::sync::Arc;
 use siphon::agent::{Shared, Teller, Telling};
 use siphon::tools::Place;
 use siphon::{Extension, Registrar};
-use siphon_runtime::Runtime;
 
 /// Skills, as a host adds them: the person's own found in the folder of their configuration `config`.
 #[derive(Debug, Clone, Default)]
@@ -47,7 +46,7 @@ struct Told {
 impl Teller for Told {
     fn tell<'a>(
         &'a self,
-        _: &'a Runtime,
+        _: &'a siphon::Volume,
         _: &'a str,
         place: Option<&'a Place>,
     ) -> Pin<Box<dyn Future<Output = anyhow::Result<Telling>> + Send + 'a>> {

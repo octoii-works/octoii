@@ -8,12 +8,12 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
+use siphon::Volume;
 use siphon::agent::{Shared, Teller, Telling};
 use siphon::protocol::Error;
 use siphon::tools::Place;
 use siphon::tools::{Context, Refusal, Toolset};
 use siphon::{Caller, Extension, Registrar};
-use siphon_runtime::Runtime;
 
 use crate::protocol;
 use crate::{Catalog, Servers};
@@ -70,16 +70,16 @@ impl Toolset for Servers {
 impl Teller for Servers {
     fn tell<'a>(
         &'a self,
-        runtime: &'a Runtime,
+        volume: &'a Volume,
         thread: &'a str,
         place: Option<&'a Place>,
     ) -> Pin<Box<dyn Future<Output = anyhow::Result<Telling>> + Send + 'a>> {
         Box::pin(async move {
             // The servers are configured for the person and a project: a thread of no folder has none of a project's.
             let Some(place) = place else { return Ok(Telling::default()) };
-            let catalog = self.catalog(runtime, place).await?;
+            let catalog = self.catalog(volume, place).await?;
             if let Some(trust) = &catalog.asks {
-                siphon::trust::ask(runtime, thread, trust).await?;
+                siphon::trust::ask(volume, thread, trust).await?;
             }
             let mut telling = Telling::default();
             if !catalog.tools.is_empty() || !catalog.problems.is_empty() {
@@ -93,7 +93,7 @@ impl Teller for Servers {
 
 /// Does `method` on the servers, for the client of `caller`.
 async fn answered(servers: &Servers, caller: &Caller, method: protocol::Method) -> Result<serde_json::Value, Error> {
-    let runtime = &caller.siphon.runtime;
+    let volume = caller.volume();
     let failed = |error: &dyn std::fmt::Display| Error {
         code: "failed".into(),
         message: error.to_string(),
@@ -104,7 +104,7 @@ async fn answered(servers: &Servers, caller: &Caller, method: protocol::Method) 
                 .workspace
                 .as_deref()
                 .map(|workspace| Place::of(std::path::Path::new(workspace)));
-            let listed = servers.listed(runtime, place.as_ref()).await.map_err(|error| failed(&error))?;
+            let listed = servers.listed(&volume, place.as_ref()).await.map_err(|error| failed(&error))?;
             serde_json::to_value(listed).map_err(|error| failed(&error))
         }
     }

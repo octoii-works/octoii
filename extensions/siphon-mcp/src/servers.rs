@@ -17,10 +17,10 @@ use octoii_ai::vocabulary::InputContent;
 use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, ResourceContents};
 use rmcp::service::{Peer, RoleClient, RunningService, ServiceExt};
 use rmcp::transport::{StreamableHttpClientTransport, streamable_http_client::StreamableHttpClientTransportConfig};
+use siphon::Volume;
 use siphon::machine::Base;
-use siphon::machine::{Host, Machine, Variables, Writes};
+use siphon::machine::{Host, Variables, Writes};
 use siphon::{Ends, Kept};
-use siphon_runtime::Runtime;
 
 use crate::config::{Configured, Launch, OWN_FILE, PROJECT_FILE, Server, parse};
 use siphon::tools::Place;
@@ -127,14 +127,14 @@ impl Servers {
     }
 
     /// What a thread working at `place` is told of the servers it reaches, each connected and its tools listed, as
-    /// `runtime` holds the person's trust.
+    /// `volume` holds the person's trust.
     ///
     /// # Errors
     /// The volume's failure.
-    pub async fn catalog(&self, runtime: &Runtime, place: &Place) -> beak::Result<Catalog> {
-        let found = self.configured(&runtime.snapshot()?, place, &host_variable)?;
+    pub async fn catalog(&self, volume: &Volume, place: &Place) -> beak::Result<Catalog> {
+        let found = self.configured(&volume.snapshot()?, place, &host_variable)?;
         let listing = found.configured.servers.iter().map(|server| async move {
-            let peer = self.peer(server, runtime).await?;
+            let peer = self.peer(server, volume).await?;
             peer.list_all_tools().await.map_err(|error| error.to_string())
         });
         let listed = futures::future::join_all(listing).await;
@@ -164,7 +164,7 @@ impl Servers {
     /// A `Refusal` where no server has the name, the server could not be reached, or the tool said it failed.
     pub async fn call(&self, context: &Context, name: &str, arguments: serde_json::Value) -> Result<Told, Refusal> {
         let (named, tool) = name.split_once('.').ok_or_else(|| Refusal(format!("no tool {name}")))?;
-        let snapshot = context.runtime.snapshot().map_err(|error| Refusal(error.to_string()))?;
+        let snapshot = context.volume().snapshot().map_err(|error| Refusal(error.to_string()))?;
         let found = self
             .configured(&snapshot, &Place::of(&context.base.workspace), &host_variable)
             .map_err(|error| Refusal(error.to_string()))?;
@@ -181,7 +181,7 @@ impl Servers {
             _ => return Err(Refusal("its arguments are not an object".into())),
         };
         let peer = self
-            .peer(&server, &context.runtime)
+            .peer(&server, &context.volume())
             .await
             .map_err(|why| Refusal(format!("the MCP server {named}: {why}")))?;
         let result = tokio::select! {
@@ -240,8 +240,8 @@ impl Servers {
     ///
     /// # Errors
     /// The volume's failure.
-    pub async fn listed(&self, runtime: &Runtime, place: Option<&Place>) -> beak::Result<ServersListed> {
-        let snapshot = runtime.snapshot()?;
+    pub async fn listed(&self, volume: &Volume, place: Option<&Place>) -> beak::Result<ServersListed> {
+        let snapshot = volume.snapshot()?;
         let found = match place {
             Some(place) => self.configured(&snapshot, place, &host_variable)?,
             None => Found {
@@ -281,9 +281,9 @@ impl Servers {
         })
     }
 
-    /// The peer of `server`, connected now where it is not, its command started by `runtime`'s kernel.
-    async fn peer(&self, server: &Server, runtime: &Runtime) -> Result<Peer<RoleClient>, String> {
-        let connecting = connect(runtime.clone(), self.host.clone(), server.clone());
+    /// The peer of `server`, connected now where it is not, its command started by `volume`'s commands.
+    async fn peer(&self, server: &Server, volume: &Volume) -> Result<Peer<RoleClient>, String> {
+        let connecting = connect(volume.clone(), self.host.clone(), server.clone());
         let connection = self.kept.get(server.clone(), connecting).await?;
         Ok(connection.0.peer().clone())
     }
@@ -354,19 +354,22 @@ fn read(path: &Path, problems: &mut Vec<String>) -> Option<String> {
         .ok()
 }
 
-/// `server` connected, its command started by `runtime`'s kernel on the machine `host` gives; else why it could not be.
-async fn connect(runtime: Runtime, host: Host, server: Server) -> Result<Connection, String> {
+/// `server` connected, its command started by `volume`'s commands on the machine `host` gives; else why it could not be.
+async fn connect(volume: Volume, host: Host, server: Server) -> Result<Connection, String> {
     match &server.launch {
         Launch::Command { command, args, env, cwd } => {
             let base = Base {
                 workspace: cwd.clone(),
                 home: host.home.clone(),
             };
-            let machine = Machine::open(runtime.kernel(), &host, base, &Writes::Anywhere, None).map_err(|error| error.to_string())?;
+            let machine = volume
+                .commands()
+                .open(&host, base, &Writes::Anywhere)
+                .map_err(|error| error.to_string())?;
             let mut argv = vec![command.clone()];
             argv.extend(args.iter().cloned());
             let coprocess = machine
-                .coprocess(runtime.now_ms(), b"", argv, cwd, Variables::Over(env.clone()))
+                .coprocess(volume.now_ms(), b"", argv, cwd, Variables::Over(env.clone()))
                 .map_err(|error| error.to_string())?;
             let serving = ().serve((coprocess.stdout, coprocess.stdin));
             match tokio::time::timeout(CONNECTING_MAX, serving).await {

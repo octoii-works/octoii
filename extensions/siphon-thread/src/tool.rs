@@ -71,15 +71,15 @@ fn planned(context: &Context, action: ThreadAction) -> Result<Told, Refusal> {
     let mut plan = Plan::default();
     let text = match action {
         ThreadAction::Start { message, title, report } => {
-            let started = plan.spawn(&context.runtime, title, Spawned::Thread)?;
-            plan.deliver(&context.runtime, &started, from(own, &message), Joins::Step, reported(report))?;
+            let started = plan.spawn(&context.volume(), title, Spawned::Thread)?;
+            plan.deliver(&context.volume(), &started, from(own, &message), Joins::Step, reported(report))?;
             format!(
                 "<system-reminder>thread {started} started with your message{}</system-reminder>\n<system-reminder>link it for the person as :thread{{id={started}}}</system-reminder>",
                 told_note(report)
             )
         }
         ThreadAction::Send { thread, message, report } => {
-            plan.deliver(&context.runtime, &thread, from(own, &message), Joins::Step, reported(report))?;
+            plan.deliver(&context.volume(), &thread, from(own, &message), Joins::Step, reported(report))?;
             format!(
                 "<system-reminder>thread {thread} has your message{}</system-reminder>",
                 told_note(report)

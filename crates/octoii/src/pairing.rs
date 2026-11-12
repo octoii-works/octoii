@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 use siphon::protocol::{Error, Nothing, Scope};
-use siphon::{Building, Caller};
+use siphon::{Building, HostCaller};
 use ts_rs::TS;
 
 use crate::access::{self, Access, AccessEntry, Refused};
@@ -98,7 +98,7 @@ pub struct Revoked {
 /// own, as Siphon's are Siphon's, which no setting switches off.
 #[must_use]
 pub fn with_access(building: Building, links: Links) -> Building {
-    building.methods(set(), Method::read, move |caller: Caller, method| {
+    building.methods(set(), Method::read, move |caller: HostCaller, method| {
         let links = links.clone();
         async move { answered(&links, &caller, method).await }
     })
@@ -115,7 +115,7 @@ fn failed(error: &Refused) -> Error {
     }
 }
 
-async fn answered(links: &Links, caller: &Caller, method: Method) -> Result<serde_json::Value, Error> {
+async fn answered(links: &Links, caller: &HostCaller, method: Method) -> Result<serde_json::Value, Error> {
     let access = Access::new(caller.siphon.runtime.clone());
     let json = |value: serde_json::Result<serde_json::Value>| {
         value.map_err(|error| Error {

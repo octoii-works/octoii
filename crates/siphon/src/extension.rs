@@ -36,8 +36,39 @@ pub trait Extension {
 /// Who a call or a subscription is for: Siphon, and the session of the client that made it.
 #[derive(Debug, Clone)]
 pub struct Caller {
-    pub siphon: Siphon,
+    pub(crate) siphon: Siphon,
     pub session: String,
+}
+
+impl Caller {
+    /// The volume, as an extension reaches it.
+    #[must_use]
+    pub fn volume(&self) -> crate::Volume {
+        crate::Volume {
+            runtime: self.siphon.runtime.clone(),
+        }
+    }
+
+    /// The machine Siphon runs on, as its host describes it.
+    #[must_use]
+    pub fn host(&self) -> &crate::machine::Host {
+        &self.siphon.machine
+    }
+
+    /// The folder the thread `thread` works in, on the machine; none where there is no such thread.
+    #[must_use]
+    pub fn workspace_of(&self, thread: &str) -> Option<std::path::PathBuf> {
+        let listed = self.siphon.threads.listed(thread).ok()?;
+        Some(self.siphon.machine.workspace_of(listed.config.workspace.as_deref()))
+    }
+
+    /// The machine as the person reaches it through a client: every file, the threads read alone.
+    ///
+    /// # Errors
+    /// Beak's failure to open its namespace.
+    pub fn person_machine(&self) -> beak::Result<crate::machine::Machine> {
+        self.siphon.person_machine()
+    }
 }
 
 /// A future of the extensions', boxed.
@@ -253,10 +284,12 @@ impl std::fmt::Debug for Registrar<'_> {
 }
 
 impl Registrar<'_> {
-    /// The kernel opened, for what the extension starts on it.
+    /// The machine's commands, for what the extension runs on it.
     #[must_use]
-    pub fn kernel(&self) -> &Kernel {
-        &self.builder.kernel
+    pub fn commands(&self) -> crate::machine::Commands {
+        crate::machine::Commands {
+            kernel: self.builder.kernel.clone(),
+        }
     }
 
     /// The machine, for what the extension starts on it.

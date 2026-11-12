@@ -11,7 +11,6 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use siphon::machine::Base;
 use siphon::tools::{Context, Effect, Refusal, Told, Tool};
-use siphon_runtime::Runtime;
 use tokio::sync::broadcast;
 
 use crate::{Event, Running, Shown, Size, Terminals};
@@ -149,10 +148,10 @@ impl TerminalTool {
             return Ok(ended_words(&ended));
         }
         let text = self.terminals.text(&id).await.unwrap_or_default();
-        let runtime = context.runtime.clone();
+        let volume = context.volume();
         tokio::spawn(async move {
             if let Some(ended) = end_of(&mut events, &id).await {
-                let _ = tell(&runtime, &ended).await;
+                let _ = tell(&volume, &ended).await;
             }
         });
         Ok(format!(
@@ -222,8 +221,8 @@ async fn end_of(events: &mut broadcast::Receiver<Event>, id: &str) -> Option<End
 }
 
 /// Tells the thread that a command line it ran ended, in its inbox.
-async fn tell(runtime: &Runtime, ended: &Ended) -> anyhow::Result<()> {
-    siphon::agent::deliver(runtime, &ended.thread, ACTOR, vec![InputContent::text(ended_words(ended))]).await
+async fn tell(volume: &siphon::Volume, ended: &Ended) -> anyhow::Result<()> {
+    siphon::agent::deliver(volume, &ended.thread, ACTOR, vec![InputContent::text(ended_words(ended))]).await
 }
 
 /// A command line's end as the model is told it: the note, then its last screen.

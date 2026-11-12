@@ -35,14 +35,14 @@ impl Request for Gather {
 /// What tells a thread's model of itself and the place it works in, gathered before each turn: sections of what it is
 /// told, and the names of the tools its scripts may call beside its own — as the MCP servers tell their catalog.
 pub trait Teller: Send + Sync + 'static {
-    /// What it tells the model of the thread `thread`, working at `place` — none for a thread of no folder — on
-    /// `runtime`.
+    /// What it tells the model of the thread `thread`, working at `place` — none for a thread of no folder — reading
+    /// `volume`.
     ///
     /// # Errors
     /// What keeps it from telling.
     fn tell<'a>(
         &'a self,
-        runtime: &'a Runtime,
+        volume: &'a crate::Volume,
         thread: &'a str,
         place: Option<&'a Place>,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<Telling>> + Send + 'a>>;
@@ -144,9 +144,10 @@ pub async fn gathered(sources: &Sources, runtime: &Runtime, id: &str) -> anyhow:
         .workspace
         .as_deref()
         .map(|workspace| Place::of(std::path::Path::new(workspace)));
+    let volume = crate::Volume { runtime: runtime.clone() };
     let mut told = Told::default();
     for owned in sources.tellers.iter().filter(|owned| on(&owned.extension)) {
-        let telling = owned.teller.tell(runtime, id, place.as_ref()).await?;
+        let telling = owned.teller.tell(&volume, id, place.as_ref()).await?;
         told.sections.extend(telling.sections);
         told.catalog.extend(telling.tools);
     }

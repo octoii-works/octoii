@@ -6,7 +6,7 @@
 
 use octoii_ai::vocabulary::InputContent;
 use serde::{Deserialize, Serialize};
-use siphon_runtime::{Run, Runtime};
+use siphon_runtime::Run;
 
 use crate::threads::inbox::Joins;
 use crate::tools::tool::Refusal;
@@ -76,9 +76,9 @@ impl Plan {
     ///
     /// # Errors
     /// A `Refusal` where no id could be minted.
-    pub fn spawn(&mut self, runtime: &Runtime, title: Option<String>, spawned: Spawned) -> Result<String, Refusal> {
-        let thread = minted(runtime)?;
-        let entry = minted(runtime)?;
+    pub fn spawn(&mut self, volume: &crate::Volume, title: Option<String>, spawned: Spawned) -> Result<String, Refusal> {
+        let thread = minted(volume)?;
+        let entry = minted(volume)?;
         self.steps.push(Step::Spawn {
             thread: thread.clone(),
             entry,
@@ -95,13 +95,13 @@ impl Plan {
     /// A `Refusal` where no id could be minted.
     pub fn deliver(
         &mut self,
-        runtime: &Runtime,
+        volume: &crate::Volume,
         thread: &str,
         content: Vec<InputContent>,
         joins: Joins,
         report: Report,
     ) -> Result<String, Refusal> {
-        let delivery = minted(runtime)?;
+        let delivery = minted(volume)?;
         if report == Report::Call {
             self.awaits = Some(Awaited {
                 thread: thread.to_owned(),
@@ -131,8 +131,8 @@ impl Plan {
 }
 
 /// An id minted from the volume.
-fn minted(runtime: &Runtime) -> Result<String, Refusal> {
-    runtime.new_id().map_err(|error| Refusal(format!("no id was minted: {error}")))
+fn minted(volume: &crate::Volume) -> Result<String, Refusal> {
+    volume.new_id().map_err(|error| Refusal(format!("no id was minted: {error}")))
 }
 
 /// What does a call's plan, in the commit of its caller's `run` that ends the call: the thread above Siphon's tools,

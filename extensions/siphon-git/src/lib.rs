@@ -6,12 +6,10 @@ pub mod protocol;
 
 use std::path::Path;
 
-use bytes::Bytes;
 use serde::Serialize;
 use siphon::connection::refusal;
 use siphon::protocol::Error;
-use siphon::{Caller, Extension, Registrar, Siphon};
-use siphon_runtime::Changes;
+use siphon::{Caller, Extension, Registrar};
 use tokio_util::sync::CancellationToken;
 
 use crate::git::{Git, GitError};
@@ -36,13 +34,13 @@ impl Extension for GitExtension {
 
     fn build(self: Box<Self>, registrar: &mut Registrar<'_>) {
         registrar.methods(protocol::set(), Method::read, |caller: Caller, method| async move {
-            answered(&caller.siphon, method).await
+            answered(&caller, method).await
         });
     }
 }
 
 /// The kind of the directory a run of git is recorded under.
-const RECORD_KIND: &[u8] = b"siphon.git";
+const RECORD_KIND: &str = "siphon.git";
 
 fn failed(error: impl std::fmt::Display) -> Error {
     refusal("failed", &error.to_string())
@@ -55,25 +53,23 @@ fn told(error: &GitError) -> Error {
     }
 }
 
-/// Does the git method `method` on `siphon`.
-async fn answered(siphon: &Siphon, method: Method) -> Result<serde_json::Value, Error> {
-    let machine = siphon.person_machine().map_err(failed)?;
-    let runtime = &siphon.runtime;
-    let record = beak::layout::child(b"", RECORD_KIND, runtime.new_id().map_err(failed)?.as_bytes());
-    let mut changes = Changes::new();
-    changes.mkdir(record.clone());
-    runtime.commit(changes).await.map_err(failed)?;
-    let git = Git {
-        machine: &machine,
-        under: &record,
-        time: runtime.now_ms(),
-        cancelled: CancellationToken::new(),
-    };
-    let answer = told_by(&git, method).await;
-    let mut changes = Changes::new();
-    changes.force_remove(Bytes::clone(&record), None);
-    let _ = runtime.commit(changes).await;
-    answer
+/// Does the git method `method` for the client of `caller`, its runs recorded while they run.
+async fn answered(caller: &Caller, method: Method) -> Result<serde_json::Value, Error> {
+    let machine = caller.person_machine().map_err(failed)?;
+    let volume = caller.volume();
+    let time = volume.now_ms();
+    volume
+        .recorded(RECORD_KIND, |record| async move {
+            let git = Git {
+                machine: &machine,
+                under: &record,
+                time,
+                cancelled: CancellationToken::new(),
+            };
+            told_by(&git, method).await
+        })
+        .await
+        .map_err(failed)?
 }
 
 fn json(value: &impl Serialize) -> Result<serde_json::Value, Error> {

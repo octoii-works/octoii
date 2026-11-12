@@ -11,7 +11,7 @@ use beak::Snapshot;
 use bytes::Bytes;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use siphon_runtime::{Answer, AskedOfPerson, Changes, Ending, Program, Request, Run, Runtime, Wait};
+use siphon_runtime::{Answer, AskedOfPerson, Changes, Ending, Program, Request, Run, Wait};
 
 use crate::threads::thread;
 use crate::tools::projects;
@@ -130,14 +130,14 @@ impl Program for TrustProgram {
 ///
 /// # Errors
 /// The volume's failure.
-pub async fn ask(runtime: &Runtime, thread: &str, trust: &Trust) -> anyhow::Result<()> {
+pub async fn ask(volume: &crate::Volume, thread: &str, trust: &Trust) -> anyhow::Result<()> {
     let main = thread::main(thread);
     let asking = beak::layout::process(&main, TrustProgram::KEY.as_bytes());
-    if runtime.snapshot()?.record(&asking)?.is_some() {
+    if volume.snapshot()?.record(&asking)?.is_some() {
         return Ok(());
     }
     let mut changes = Changes::new();
     changes.start::<TrustProgram>(main, TrustProgram::KEY, trust)?;
-    runtime.commit(changes).await?;
+    volume.runtime.commit(changes).await?;
     Ok(())
 }
