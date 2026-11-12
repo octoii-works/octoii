@@ -156,3 +156,48 @@ async fn a_command_line_the_model_runs_tells_its_end_with_its_screen_and_one_clo
     .await;
     assert!(told_end.is_err(), "a terminal closed tells no end");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_terminal_closed_ends_what_it_runs_though_it_hangs_up_on_nothing() {
+    let beak = Beak::new().expect("Beak");
+    let kernel = Kernel::open(&beak, &Options::default()).expect("a kernel").0;
+    let folder = tempfile::tempdir().expect("a folder");
+    let cwd = folder.path().canonicalize().expect("its real path");
+    let host = Host {
+        shell: Some(PathBuf::from("/bin/sh")),
+        ..Host::default()
+    };
+    let terminals = Terminals::start(kernel, host);
+    let pid_file = cwd.join("pid");
+    let running = Running::Line {
+        line: format!("trap '' HUP; echo $$ > {}; exec sleep 60", pid_file.display()),
+        writes: siphon_machine::Writes::Within(vec![cwd.clone()]),
+        set: Vec::new(),
+    };
+    let id = terminals.open("t1", cwd.clone(), SIZE, running).await.expect("opened");
+    let pid = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if let Ok(text) = std::fs::read_to_string(&pid_file)
+                && let Ok(pid) = text.trim().parse::<i32>()
+            {
+                return pid;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("its pid");
+    terminals.close(&id);
+    let gone = tokio::time::timeout(Duration::from_secs(15), async {
+        // The process is gone once the system knows no process of its id.
+        while std::process::Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .status()
+            .is_ok_and(|status| status.success())
+        {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await;
+    assert!(gone.is_ok(), "what the terminal ran, {pid}, ends though it ignores a hang-up");
+}
