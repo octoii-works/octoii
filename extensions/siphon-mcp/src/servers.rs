@@ -17,13 +17,13 @@ use octoii_ai::vocabulary::InputContent;
 use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, ResourceContents};
 use rmcp::service::{Peer, RoleClient, RunningService, ServiceExt};
 use rmcp::transport::{StreamableHttpClientTransport, streamable_http_client::StreamableHttpClientTransportConfig};
-use siphon::machine::paths::Base;
+use siphon::machine::Base;
 use siphon::machine::{Host, Machine, Variables, Writes};
 use siphon::{Ends, Kept};
 use siphon_runtime::Runtime;
 
 use crate::config::{Configured, Launch, OWN_FILE, PROJECT_FILE, Server, parse};
-use siphon::tools::projects::Place;
+use siphon::tools::Place;
 use siphon::tools::{Context, Declared, Refusal, Told};
 use siphon::trust::{self, ShownServer, Trust};
 

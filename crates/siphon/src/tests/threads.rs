@@ -4,8 +4,9 @@
 
 use std::time::Duration;
 
+use crate::threads::config::{Changed, ConfigChange, ConfigChanged};
 use crate::threads::log::{self, Entry, Writer};
-use crate::threads::{Changed, Config, ConfigChange, ConfigChanged, MainInput, MarksChange, Mode, NewThread, Parent, Threads, Turn, inbox};
+use crate::threads::{Config, MainInput, MarksChange, Mode, NewThread, Parent, Threads, Turn, inbox};
 use beak::Beak;
 use bytes::Bytes;
 use octoii_ai::vocabulary::{InputContent, ReasoningEffort};

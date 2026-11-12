@@ -6,7 +6,8 @@ use std::time::Duration;
 
 use crate::machine::Host;
 use crate::machine::paths::Base;
-use crate::tools::{Context, EditTool, Effect, GlobTool, GrepTool, ReadTool, ShellTool, Tools, WriteTool, Writes};
+use crate::tools::permissions::Writes;
+use crate::tools::{Context, EditTool, Effect, GlobTool, GrepTool, ReadTool, ShellTool, Tools, WriteTool};
 use beak::Beak;
 use bytes::Bytes;
 use octoii_ai::vocabulary::InputContent;

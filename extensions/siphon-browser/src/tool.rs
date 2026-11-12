@@ -3,7 +3,7 @@
 //! before it, as every call that acts does.
 
 use octoii_ai::vocabulary::InputContent;
-use siphon::machine::paths::Base;
+use siphon::machine::Base;
 use siphon::tools::{Context, Effect, Refusal, Told, Tool};
 
 use crate::{Action, Browser};

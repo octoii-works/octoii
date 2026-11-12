@@ -5,19 +5,16 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use beak::{Beak, Outcome, layout};
+use beak::{Beak, layout};
 use bytes::Bytes;
-use octoii_ai::vocabulary::InputContent;
-use serde::{Deserialize, Serialize};
 use serde_json::json;
 use siphon::machine::Host;
-use siphon::machine::paths::Base;
-use siphon::threads::Mode;
-use siphon::tools::projects::Place;
-use siphon::tools::{CallStatus, Calls, Exec, ExecuteTool, ReadTool, ScriptProgram, Setting, Tools, answer_exec};
-use siphon::trust::{self, Trust, TrustProgram};
+use siphon::testing::{Called, Calling};
+use siphon::tools::CallStatus;
+use siphon::tools::Place;
+use siphon::trust::{self, TrustProgram};
 use siphon_mcp::{Launch, Servers, parse};
-use siphon_runtime::{Asked, Changes, Ending, Options, Program, Run, Runtime};
+use siphon_runtime::Changes;
 
 fn fixture() -> String {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -44,110 +41,15 @@ fn home() -> (tempfile::TempDir, PathBuf) {
     (kept, home)
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct Asking {
-    workspace: PathBuf,
-    catalog: Vec<String>,
-    calls: Vec<(String, String, String)>,
+/// Calls run by Siphon's own tools and the servers' `servers`.
+fn calling(beak: &Beak, servers: &Servers) -> Calling {
+    let servers = servers.clone();
+    Calling::start(beak, move |tools| tools.with_toolset(std::sync::Arc::new(servers)))
 }
 
-/// Takes its calls on in full access, then ends with how each did and what it said, and how many images it showed.
-struct Caller {
-    tools: Tools,
-}
-
-impl Program for Caller {
-    const KIND: &'static str = "test.caller";
-    type Input = Asking;
-    type Checkpoint = Calls;
-    type Output = Vec<(CallStatus, String, usize, Option<serde_json::Value>)>;
-
-    fn run(&self, run: &mut Run<'_>, input: Asking, checkpoint: Option<Calls>) -> anyhow::Result<Ending<Calls, Self::Output>> {
-        let mut calls = match checkpoint {
-            Some(calls) => calls,
-            None => Calls::new(run, input.calls.clone())?,
-        };
-        let base = Base {
-            workspace: input.workspace.clone(),
-            home: None,
-        };
-        let setting = Setting {
-            primitives: &siphon::agent::ThreadPrimitives,
-            thread: "t1",
-            tools: &self.tools,
-            catalog: &input.catalog,
-            mode: Mode::FullAccess,
-            base: &base,
-            project: None,
-            places: &[],
-            confines: beak::machine_confines(),
-        };
-        if let Some(wait) = calls.advance(run, &setting)? {
-            return Ok(Ending::Wait(calls, wait));
-        }
-        Ok(Ending::Done(calls.0.into_iter().map(said).collect()))
-    }
-}
-
-fn said(call: siphon::tools::Call) -> (CallStatus, String, usize, Option<serde_json::Value>) {
-    let siphon::tools::State::Ended {
-        status,
-        output,
-        structured,
-        ..
-    } = call.state
-    else {
-        return (CallStatus::Interrupted, String::new(), 0, None);
-    };
-    let mut texts = Vec::new();
-    let mut images = 0;
-    for part in &output {
-        match part {
-            InputContent::InputText { text } => texts.push(text.as_str()),
-            InputContent::InputImage { .. } => images += 1,
-            InputContent::InputFile { .. } => {}
-        }
-    }
-    (status, texts.join("\n"), images, structured)
-}
-
-fn tools(servers: &Servers) -> (Tools, Tools) {
-    let inner = Tools::new().with(ReadTool).with_toolset(std::sync::Arc::new(servers.clone()));
-    let outer = inner.clone().with(ExecuteTool);
-    (inner, outer.with_toolset(std::sync::Arc::new(servers.clone())))
-}
-
-fn runtime(beak: &Beak, servers: &Servers) -> Runtime {
-    let (inner, outer) = tools(servers);
-    let execs = outer.clone();
-    Runtime::builder()
-        .program(Caller { tools: outer })
-        .program(ScriptProgram {
-            tools: inner,
-            primitives: std::sync::Arc::new(siphon::agent::ThreadPrimitives),
-        })
-        .program(TrustProgram)
-        .ask_person::<Trust>()
-        .handle(move |asked: Asked<Exec>| {
-            let tools = execs.clone();
-            async move { answer_exec(&tools, &Host::default(), asked).await }
-        })
-        .start(beak, Options::default())
-        .expect("started")
-}
-
-async fn ended(runtime: &Runtime, path: &[u8]) -> Vec<(CallStatus, String, usize, Option<serde_json::Value>)> {
-    let mut committed = runtime.committed();
-    let waiting = async {
-        loop {
-            let record = runtime.snapshot().expect("a snapshot").record(path).expect("a record");
-            if let Some(Outcome::Completed(Some(result))) = record.and_then(|record| record.outcome) {
-                return serde_json::from_slice(&result).expect("what it said");
-            }
-            committed.changed().await.expect("the runtime runs");
-        }
-    };
-    tokio::time::timeout(Duration::from_secs(30), waiting).await.expect("ended in time")
+/// What a call came to, as these tests compare it: how it ended, its text, its images, and what it told typed.
+fn said(called: Called) -> (CallStatus, String, usize, Option<serde_json::Value>) {
+    (called.status, called.text, called.images, called.structured)
 }
 
 fn call(id: &str, tool: &str, arguments: &serde_json::Value) -> (String, String, String) {
@@ -227,36 +129,39 @@ async fn the_person_s_servers_tools_are_listed_and_called_as_the_model_s_own() {
     let (_home_folder, home) = home();
     let servers = Servers::start(Host::default(), Some(&home));
     let beak = Beak::new().expect("Beak");
-    let runtime = runtime(&beak, &servers);
+    let calling = calling(&beak, &servers);
+    let runtime = &calling.runtime;
     let (_folder, workspace) = folder();
-    let catalog = servers.catalog(&runtime, &Place::of(&workspace)).await.expect("a catalog");
+    let catalog = servers.catalog(runtime, &Place::of(&workspace)).await.expect("a catalog");
     assert_eq!(catalog.problems, Vec::<String>::new());
     let names: Vec<&str> = catalog.tools.iter().map(|tool| tool.name.as_str()).collect();
     assert_eq!(names, ["test.say", "test.fail", "test.where", "test.picture"]);
     let told = siphon::tools::declarations(&catalog.tools);
     assert!(told.starts_with("interface Tools {\n  test: {\n"), "{told}");
     assert!(told.contains("    /**\n     * Says the words back.\n     */\n    say(args: {\n      /**\n       * What to say.\n       */\n      words: string;\n    }): Promise<string>;\n"), "{told}");
-    let asking = Asking {
-        workspace: workspace.clone(),
-        catalog: names.iter().map(|name| (*name).to_owned()).collect(),
-        calls: vec![
-            call("a", "test.say", &json!({ "words": "hello" })),
-            call("b", "test.fail", &json!({})),
-            call("c", "test.where", &json!({})),
-            call("d", "test.picture", &json!({})),
-            call("e", "other.say", &json!({})),
-            call(
-                "f",
-                "execute",
-                &json!({ "code": "return await tools.test.say({ words: 'from a script' });" }),
-            ),
-        ],
-    };
-    let mut changes = Changes::new();
-    changes.mkdir(siphon::threads::thread::path("t1"));
-    changes.start::<Caller>(Bytes::new(), "p1", &asking).expect("an input");
-    runtime.commit(changes).await.expect("started");
-    let said = ended(&runtime, &layout::process(b"", b"p1")).await;
+    let catalog: Vec<String> = names.iter().map(|name| (*name).to_owned()).collect();
+    let said: Vec<_> = calling
+        .called(
+            "p1",
+            workspace.clone(),
+            catalog,
+            vec![
+                call("a", "test.say", &json!({ "words": "hello" })),
+                call("b", "test.fail", &json!({})),
+                call("c", "test.where", &json!({})),
+                call("d", "test.picture", &json!({})),
+                call("e", "other.say", &json!({})),
+                call(
+                    "f",
+                    "execute",
+                    &json!({ "code": "return await tools.test.say({ words: 'from a script' });" }),
+                ),
+            ],
+        )
+        .await
+        .into_iter()
+        .map(said)
+        .collect();
     assert_eq!(
         said[0],
         (CallStatus::Ok, "hello".into(), 0, Some(json!({ "words": "hello" }))),
@@ -281,7 +186,8 @@ async fn the_person_s_servers_tools_are_listed_and_called_as_the_model_s_own() {
 async fn a_project_s_servers_run_once_the_person_trusts_its_configuration_as_it_is() {
     let servers = Servers::start(Host::default(), None);
     let beak = Beak::new().expect("Beak");
-    let runtime = runtime(&beak, &servers);
+    let calling = calling(&beak, &servers);
+    let runtime = &calling.runtime;
     let (_folder, project) = folder();
     std::fs::create_dir(project.join(".git")).expect("a repository");
     let workspace = project.join("app");
@@ -291,7 +197,7 @@ async fn a_project_s_servers_run_once_the_person_trusts_its_configuration_as_it_
     let place = Place::of(&workspace);
     assert_eq!(place.project, project);
 
-    let catalog = servers.catalog(&runtime, &place).await.expect("a catalog");
+    let catalog = servers.catalog(runtime, &place).await.expect("a catalog");
     assert_eq!(catalog.tools, []);
     assert!(
         catalog.problems[0].ends_with("are not run till the person trusts them"),
@@ -332,13 +238,13 @@ async fn a_project_s_servers_run_once_the_person_trusts_its_configuration_as_it_
     .await
     .expect("decided in time");
 
-    let catalog = servers.catalog(&runtime, &place).await.expect("a catalog");
+    let catalog = servers.catalog(runtime, &place).await.expect("a catalog");
     assert_eq!(catalog.tools.len(), 4, "{:?}", catalog.problems);
     assert!(catalog.asks.is_none());
 
     let other = json!({ "mcpServers": { "test": { "command": "python3", "args": [fixture(), "--more"] } } }).to_string();
     std::fs::write(project.join(".mcp.json"), other).expect("written");
-    let catalog = servers.catalog(&runtime, &place).await.expect("a catalog");
+    let catalog = servers.catalog(runtime, &place).await.expect("a catalog");
     assert!(
         catalog.tools.is_empty() && catalog.asks.is_some(),
         "a changed configuration is asked again"

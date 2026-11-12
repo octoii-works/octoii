@@ -2,13 +2,18 @@
 //! written and edited, folders paged, searched as ripgrep searches, and programs run to their end or beside the host as
 //! coprocesses — each held to what the namespace reaches.
 
-mod coprocess;
-mod files;
-mod namespace;
-pub mod paths;
-mod search;
+pub(crate) mod coprocess;
+pub(crate) mod files;
+pub(crate) mod namespace;
+pub(crate) mod paths;
+pub(crate) mod search;
 
+pub(crate) use files::{EditOutcome, Is};
+pub(crate) use namespace::Errors;
+pub(crate) use search::{GrepOptions, Grepped};
+
+/// What extensions and hosts use of it.
 pub use coprocess::{Coprocess, Stderr, Stdin, Stdout, Variables};
-pub use files::{Change, EditOutcome, Error, Is, Missing, Read, ReadOptions, Stat, media_type};
-pub use namespace::{Errors, Host, Machine, Program, Ran, RunError, ThreadsView, Writes, inside};
-pub use search::{Globbed, GrepError, GrepFile, GrepLine, GrepOptions, Grepped, Listed, Walked};
+pub use files::{Error, Read, ReadOptions, media_type};
+pub use namespace::{Host, Machine, Program, RunError, Writes, inside};
+pub use paths::Base;

@@ -4,7 +4,10 @@
 use std::path::PathBuf;
 
 use crate::threads::Mode;
-use crate::tools::{Bounds, Effect, Grants, Line, Verdict, Writes, patterns_of, weigh};
+use crate::tools::Effect;
+use crate::tools::effect::Line;
+use crate::tools::permissions::Writes;
+use crate::tools::permissions::{Bounds, Grants, Verdict, patterns_of, weigh};
 
 fn runs(line: &str) -> Effect {
     Effect::Runs {

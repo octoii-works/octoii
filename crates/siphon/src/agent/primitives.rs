@@ -14,6 +14,29 @@ use crate::tools::{Awaited, Plan, Primitives, Report, Spawned, Step};
 use beak::layout;
 use siphon_runtime::{Changes, Run};
 
+/// Delivers `content` from `actor` to the inbox of the thread `thread` at once, outside any call — as a terminal tells
+/// its thread that the command it ran ended: it joins the thread's work at its next step, and no one is told of it.
+///
+/// # Errors
+/// The volume's failure.
+pub async fn deliver(
+    runtime: &siphon_runtime::Runtime,
+    thread: &str,
+    actor: &str,
+    content: Vec<octoii_ai::vocabulary::InputContent>,
+) -> anyhow::Result<()> {
+    let inbound = Inbound::Input {
+        actor: actor.to_owned(),
+        content,
+        reply_to: None,
+        joins: crate::threads::inbox::Joins::Step,
+    };
+    let mut changes = Changes::new();
+    inbox::put(&mut changes, thread, &runtime.new_id()?, &inbound)?;
+    runtime.commit(changes).await?;
+    Ok(())
+}
+
 /// The thread that made the thread `thread`, as a sub-thread of one of its calls, on `runtime`; none for a thread of the
 /// person's, or one that is not there.
 ///

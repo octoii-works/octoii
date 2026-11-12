@@ -12,8 +12,8 @@ use std::future::Future;
 use octoii_ai::vocabulary::InputContent;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use siphon::machine::paths::Base;
-use siphon::threads::inbox::Joins;
+use siphon::machine::Base;
+use siphon::threads::Joins;
 use siphon::tools::{Context, Effect, Plan, Refusal, Report, Spawned, Told, Tool};
 
 /// What the model does with the person's other threads.

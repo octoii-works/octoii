@@ -13,7 +13,7 @@ use serde_json::json;
 use siphon::agent::{Shared, Teller, Telling};
 use siphon::machine::Host;
 use siphon::protocol::{Error, Nothing};
-use siphon::tools::projects::Place;
+use siphon::tools::Place;
 use siphon::{Caller, Extension, Registrar};
 use siphon_runtime::Runtime;
 

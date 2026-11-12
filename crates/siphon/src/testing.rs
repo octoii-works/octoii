@@ -1,6 +1,6 @@
 //! What tests of Siphon, of its extensions and of a host build on: Siphon's setup on a volume in memory that asks no
-//! model, and a client of a connection — its calls made, its answers and events read, a binary frame's event with the
-//! bytes it carries.
+//! model; a client of a connection — its calls made, its answers and events read, a binary frame's event with the
+//! bytes it carries; and model calls run as a turn runs them, for an extension's tests of its tools.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -8,6 +8,7 @@ use std::time::Duration;
 use crate::protocol::{Machine, Scope};
 use bytes::Bytes;
 use octoii_ai::host::{Credential, Credentials, Unavailable};
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use siphon_runtime::Options;
 use tokio::sync::mpsc;
@@ -151,5 +152,167 @@ impl Client {
                 return (message, payload);
             }
         }
+    }
+}
+
+/// What a call came to, as a test reads it: how it ended, its text, how many images it showed, and what it told typed.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Called {
+    pub status: crate::threads::CallStatus,
+    pub text: String,
+    pub images: usize,
+    pub structured: Option<Value>,
+}
+
+/// Model calls run as a turn runs them, for an extension's tests of its tools: in full access, of the thread `t1`, each
+/// exec'd by Siphon's own tools and those a test adds, a script's calls too; the person's trust asked as Siphon asks it.
+#[derive(Debug)]
+pub struct Calling {
+    pub runtime: siphon_runtime::Runtime,
+}
+
+/// What the caller of a test's calls is started with: where they work, the tools of <catalog>, and the calls.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Asking {
+    workspace: std::path::PathBuf,
+    catalog: Vec<String>,
+    calls: Vec<(String, String, String)>,
+}
+
+/// Takes a test's calls on in full access, then ends with what each came to.
+struct Caller {
+    tools: crate::tools::Tools,
+}
+
+impl siphon_runtime::Program for Caller {
+    const KIND: &'static str = "siphon.testing.caller";
+    type Input = Asking;
+    type Checkpoint = crate::tools::Calls;
+    type Output = Vec<Called>;
+
+    fn run(
+        &self,
+        run: &mut siphon_runtime::Run<'_>,
+        input: Asking,
+        checkpoint: Option<crate::tools::Calls>,
+    ) -> anyhow::Result<siphon_runtime::Ending<crate::tools::Calls, Vec<Called>>> {
+        let mut calls = match checkpoint {
+            Some(calls) => calls,
+            None => crate::tools::Calls::new(run, input.calls.clone())?,
+        };
+        let base = crate::machine::paths::Base {
+            workspace: input.workspace.clone(),
+            home: None,
+        };
+        let setting = crate::tools::Setting {
+            primitives: &crate::agent::ThreadPrimitives,
+            thread: "t1",
+            tools: &self.tools,
+            catalog: &input.catalog,
+            mode: crate::threads::Mode::FullAccess,
+            base: &base,
+            project: None,
+            places: &[],
+            confines: beak::machine_confines(),
+        };
+        if let Some(wait) = calls.advance(run, &setting)? {
+            return Ok(siphon_runtime::Ending::Wait(calls, wait));
+        }
+        Ok(siphon_runtime::Ending::Done(calls.0.into_iter().map(called).collect()))
+    }
+}
+
+/// What `call` came to.
+fn called(call: crate::tools::Call) -> Called {
+    let crate::tools::State::Ended {
+        status,
+        output,
+        structured,
+        ..
+    } = call.state
+    else {
+        return Called {
+            status: crate::threads::CallStatus::Interrupted,
+            text: String::new(),
+            images: 0,
+            structured: None,
+        };
+    };
+    let mut texts = Vec::new();
+    let mut images = 0;
+    for part in &output {
+        match part {
+            octoii_ai::vocabulary::InputContent::InputText { text } => texts.push(text.as_str()),
+            octoii_ai::vocabulary::InputContent::InputImage { .. } => images += 1,
+            octoii_ai::vocabulary::InputContent::InputFile { .. } => {}
+        }
+    }
+    Called {
+        status,
+        text: texts.join("\n"),
+        images,
+        structured,
+    }
+}
+
+impl Calling {
+    /// Calls run on `beak`'s volume in memory, by Siphon's own tools and those `add` adds.
+    ///
+    /// # Panics
+    /// Where the volume cannot be opened.
+    #[must_use]
+    pub fn start(beak: &beak::Beak, add: impl FnOnce(crate::tools::Tools) -> crate::tools::Tools) -> Self {
+        let tools = add(crate::tools::Tools::new()
+            .with(crate::tools::ReadTool)
+            .with(crate::tools::WriteTool)
+            .with(crate::tools::ShellTool)
+            .with(crate::tools::ExecuteTool));
+        let execs = tools.clone();
+        let runtime = siphon_runtime::Runtime::builder()
+            .program(Caller { tools: tools.clone() })
+            .program(crate::tools::ScriptProgram {
+                tools,
+                primitives: Arc::new(crate::agent::ThreadPrimitives),
+            })
+            .program(crate::trust::TrustProgram)
+            .ask_person::<crate::trust::Trust>()
+            .handle(move |asked: siphon_runtime::Asked<crate::tools::Exec>| {
+                let tools = execs.clone();
+                async move { crate::tools::answer_exec(&tools, &crate::machine::Host::default(), asked).await }
+            })
+            .start(beak, Options::default())
+            .expect("started");
+        Self { runtime }
+    }
+
+    /// What `calls` — each its id, its tool and its arguments as JSON — came to, made in `workspace` with the tools of
+    /// <catalog> `catalog`, run under `key`.
+    ///
+    /// # Panics
+    /// Where the volume fails, or the calls do not end in 30 s.
+    pub async fn called(
+        &self,
+        key: &str,
+        workspace: std::path::PathBuf,
+        catalog: Vec<String>,
+        calls: Vec<(String, String, String)>,
+    ) -> Vec<Called> {
+        let asking = Asking { workspace, catalog, calls };
+        let mut changes = siphon_runtime::Changes::new();
+        changes.mkdir(crate::threads::thread::path("t1"));
+        changes.start::<Caller>(Bytes::new(), key, &asking).expect("an input");
+        self.runtime.commit(changes).await.expect("started");
+        let path = beak::layout::process(b"", key.as_bytes());
+        let mut committed = self.runtime.committed();
+        let waiting = async {
+            loop {
+                let record = self.runtime.snapshot().expect("a snapshot").record(&path).expect("a record");
+                if let Some(beak::Outcome::Completed(Some(result))) = record.and_then(|record| record.outcome) {
+                    return serde_json::from_slice(&result).expect("what it came to");
+                }
+                committed.changed().await.expect("the runtime runs");
+            }
+        };
+        tokio::time::timeout(Duration::from_secs(30), waiting).await.expect("ended in time")
     }
 }

@@ -5,7 +5,7 @@
 //! compacts it; the extensions a host builds Siphon with; the protocol a client speaks, and its connection — started as
 //! one with the programs of a thread's and the handlers of its requests.
 
-pub mod accounts;
+pub(crate) mod accounts;
 pub mod agent;
 pub mod connection;
 mod extension;

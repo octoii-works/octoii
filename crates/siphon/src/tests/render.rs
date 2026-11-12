@@ -2,7 +2,8 @@
 
 use crate::agent::render::{STOPPED_NOTE, request};
 use crate::agent::told::{held, news};
-use crate::threads::{Changed, ConfigChanged, Entry, Outcome, Section, Window};
+use crate::threads::config::{Changed, ConfigChanged};
+use crate::threads::{Entry, Outcome, Section, Window};
 use octoii_ai::catalogue::{Features, InputLimits, Model};
 use octoii_ai::vocabulary::{
     ConfigurationUpdate, FileRef, ImageDetail, InputContent, Item, Message, ReasoningConfig, ReasoningEffort, Response, ResponseStatus,

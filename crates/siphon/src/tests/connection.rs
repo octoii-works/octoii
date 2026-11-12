@@ -4,14 +4,14 @@
 
 use std::time::Duration;
 
+use crate::protocol::Scope;
+use crate::testing::{self, Client};
+use crate::{Caller, Extension, Lagged, Registrar, Siphon, Subscription};
 use beak::Beak;
 use serde_json::{Value, json};
-use siphon::protocol::Scope;
-use siphon::testing::{self, Client};
-use siphon::{Caller, Extension, Lagged, Registrar, Siphon, Subscription};
 
 fn siphon(beak: &Beak) -> Siphon {
-    let setup = testing::setup(siphon::machine::Host::default());
+    let setup = testing::setup(crate::machine::Host::default());
     Siphon::builder(beak, setup)
         .expect("built")
         .extension(Echo)
@@ -21,11 +21,11 @@ fn siphon(beak: &Beak) -> Siphon {
 
 /// An extension of the test's: a method that says back what it is given, and a topic that tells it thrice.
 mod echo {
+    use crate::protocol::Scope;
     use serde::{Deserialize, Serialize};
-    use siphon::protocol::Scope;
     use ts_rs::TS;
 
-    siphon::methods! {
+    crate::methods! {
         events: EchoEvent, topics: EchoTopic;
         /// What it is given, said back.
         "echo.say" Say(Said) -> Said, Some(Scope::ThreadsRead);
@@ -93,7 +93,7 @@ const ALL: [Scope; 2] = [Scope::ThreadsRead, Scope::ThreadsOperate];
 
 /// The welcome a client of the session `session-1` with `scopes` is sent: its session, its scopes, the machine, and its
 /// extensions.
-fn welcome_of(siphon: &siphon::Siphon, scopes: &[&str]) -> serde_json::Value {
+fn welcome_of(siphon: &crate::Siphon, scopes: &[&str]) -> serde_json::Value {
     json!({
         "event": "welcome",
         "session": "session-1",
@@ -298,10 +298,12 @@ async fn a_extension_s_methods_and_topics_are_the_protocol_s_beside_siphon_s() {
     let id = operator.call("subscribe", json!({ "topic": { "type": "nowhere" } })).await;
     assert_eq!(operator.answer(&id).await["error"]["code"], "no_such_topic");
 
-    let typescript = siphon::protocol::typescript(&[siphon::protocol::siphon::set(), echo::set()]);
+    let typescript = crate::protocol::typescript(&[crate::protocol::siphon::set(), echo::set()]);
     assert!(typescript.contains("export type Topic = SiphonTopic | EchoTopic;"));
     assert!(typescript.contains("export type Event = ConnectionEvent | SiphonEvent | EchoEvent;"));
     assert!(typescript.contains("'echo.say': { params: Said; result: Said };"));
+    let said = echo::Method::Say(echo::Said { words: "hi".into() });
+    assert_eq!(said.name(), "echo.say", "a method is named as its set declares it");
     siphon.runtime.close().await;
 }
 
@@ -335,13 +337,13 @@ async fn an_extension_switched_off_answers_nothing_till_it_is_switched_on() {
 async fn what_a_project_was_granted_is_listed_and_taken_back_in_part() {
     let beak = Beak::new().expect("Beak");
     let siphon = siphon(&beak);
-    let granted = siphon::tools::Grants {
+    let granted = crate::tools::permissions::Grants {
         commands: vec!["git push *".into(), "cargo test *".into()],
         paths: vec!["/work/app/docs/**".into()],
         tools: Vec::new(),
     };
     let snapshot = siphon.runtime.snapshot().expect("a snapshot");
-    let changes = siphon::tools::projects::grant(&snapshot, "/work/app", granted).expect("granted");
+    let changes = crate::tools::projects::grant(&snapshot, "/work/app", granted).expect("granted");
     siphon.runtime.commit(changes).await.expect("committed");
     let mut client = Client::connect(&siphon, ALL.to_vec(), 64);
     client.message().await;

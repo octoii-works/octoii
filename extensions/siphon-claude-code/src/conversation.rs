@@ -6,7 +6,7 @@
 //! `<conversation-checkpoint>` tags, calls and results written out; then the person's latest words as they are.
 
 use serde_json::{Value, json};
-use siphon::tools::projects::sha256_hex;
+use siphon::tools::sha256_hex;
 
 /// The hash a conversation under `system` begins from, before its first message.
 #[must_use]

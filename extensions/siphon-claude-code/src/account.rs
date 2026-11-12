@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use octoii_ai::vocabulary::{Failure, FailureKind, ReasoningEffort};
 use serde_json::{Value, json};
-use siphon::machine::paths::Base;
+use siphon::machine::Base;
 use siphon::machine::{Machine, Writes};
 use tokio::sync::watch;
 

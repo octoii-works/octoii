@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use siphon::agent::{Shared, Teller, Telling};
 use siphon::protocol::Error;
-use siphon::tools::projects::Place;
+use siphon::tools::Place;
 use siphon::tools::{Context, Refusal, Toolset};
 use siphon::{Caller, Extension, Registrar};
 use siphon_runtime::Runtime;

@@ -2,31 +2,37 @@
 //! conversation it is sent, rendered from its log; the calls its replies make taken on; its title, its compaction and
 //! its sub-threads; and the second model that judges its calls in auto.
 
-pub mod compaction;
-pub mod context;
+pub(crate) mod compaction;
+pub(crate) mod context;
 pub mod front_matter;
-pub mod gather;
-pub mod model;
-pub mod primitives;
-pub mod render;
-pub mod resume;
-pub mod review;
-pub mod sections;
-pub mod thread;
-pub mod title;
-pub mod told;
-pub mod turn;
-pub mod waiting;
+pub(crate) mod gather;
+pub(crate) mod model;
+pub(crate) mod primitives;
+pub(crate) mod render;
+pub(crate) mod resume;
+pub(crate) mod review;
+pub(crate) mod sections;
+pub(crate) mod thread;
+pub(crate) mod title;
+pub(crate) mod told;
+pub(crate) mod turn;
+pub(crate) mod waiting;
 
-pub use compaction::{CompactInput, CompactProgram};
-pub use context::{Composition, ContextPart, Share};
-pub use gather::{CORE, Gather, OwnedTeller, Shared, Sources, Teller, Telling, answer_gather};
-pub use model::{ModelRequest, Streamed, answer_model};
-pub use primitives::ThreadPrimitives;
-pub use resume::{ResumeInput, ResumeProgram};
-pub use review::answer_review;
-pub use thread::{MainState, ThreadProgram};
-pub use title::{TitleInput, TitleProgram};
+pub(crate) use compaction::CompactProgram;
+pub(crate) use context::Composition;
+pub(crate) use gather::{CORE, Gather, OwnedTeller, Sources, answer_gather};
+pub(crate) use model::{ModelRequest, Streamed, answer_model};
+pub(crate) use primitives::ThreadPrimitives;
+pub(crate) use resume::{ResumeInput, ResumeProgram};
+pub(crate) use review::answer_review;
+pub(crate) use thread::ThreadProgram;
+pub(crate) use title::TitleProgram;
+
+pub(crate) use turn::TurnProgram;
+pub(crate) use waiting::DelegatedProgram;
+
+/// What extensions and hosts use of it.
+pub use gather::{Shared, Teller, Telling};
+pub use primitives::{deliver, parent_of};
 pub use told::Told;
-pub use turn::{TurnInput, TurnProgram, TurnState};
-pub use waiting::{DelegatedProgram, Waiting};
+pub use waiting::how;

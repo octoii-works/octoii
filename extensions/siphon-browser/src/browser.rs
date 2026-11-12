@@ -15,7 +15,7 @@ use beak::{Exec, Kernel, Spec, Stdio};
 use bytes::Bytes;
 use chromiumoxide_cdp::cdp::{CdpEvent, CdpEventMessage};
 use serde_json::{Value, json};
-use siphon::machine::paths::Base;
+use siphon::machine::Base;
 use siphon::machine::{Host, Machine, Writes};
 use tokio::sync::{broadcast, mpsc, oneshot};
 

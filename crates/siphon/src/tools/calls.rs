@@ -199,12 +199,6 @@ impl Calls {
         )
     }
 
-    /// Whether every call ended.
-    #[must_use]
-    pub fn ended(&self) -> bool {
-        self.0.iter().all(|call| matches!(call.state, State::Ended { .. }))
-    }
-
     /// Takes the calls on as far as they go with the run's commit: the answers come taken, the calls free to start
     /// started. What to wait for till they go on; none once every call ended.
     ///

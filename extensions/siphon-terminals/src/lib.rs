@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 
 use beak::{Command, CommandEvent, Exec, Kernel, Spec, Stdio};
 use bytes::Bytes;
-use siphon::machine::paths::Base;
+use siphon::machine::Base;
 use siphon::machine::{Host, Machine, Writes};
 use tokio::sync::{broadcast, mpsc, oneshot};
 

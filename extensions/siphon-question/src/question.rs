@@ -8,7 +8,7 @@ use octoii_ai::vocabulary::InputContent;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
-use siphon::machine::paths::Base;
+use siphon::machine::Base;
 
 use siphon::tools::{Context, Effect, Refusal, Told, Tool};
 

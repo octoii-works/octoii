@@ -96,7 +96,7 @@ fn provider(models: &Models, id: &str) -> Result<Provider, Refused> {
 ///
 /// # Errors
 /// The volume's failure.
-pub fn shown(runtime: &Runtime, models: &Models, credentials: &dyn Credentials) -> Result<Vec<ProviderShown>, Refused> {
+pub(crate) fn shown(runtime: &Runtime, models: &Models, credentials: &dyn Credentials) -> Result<Vec<ProviderShown>, Refused> {
     let snapshot = runtime.snapshot()?;
     let accounts = crate::accounts::accounts(&snapshot)?;
     let mut out = Vec::new();
@@ -129,7 +129,7 @@ pub fn shown(runtime: &Runtime, models: &Models, credentials: &dyn Credentials) 
 ///
 /// # Errors
 /// `NoSuchProvider`; the provider's refusal.
-pub async fn sign_in(models: &Models, sign_ins: &SignIns, setup: &SignInSetup, id: &str) -> Result<String, Refused> {
+pub(crate) async fn sign_in(models: &Models, sign_ins: &SignIns, setup: &SignInSetup, id: &str) -> Result<String, Refused> {
     let provider = provider(models, id)?;
     let options = SignInOptions {
         redirect_uri: setup.callback.replace("{provider}", id),
@@ -171,7 +171,7 @@ pub async fn finish_sign_in(models: &Models, sign_ins: &SignIns, id: &str, redir
 ///
 /// # Errors
 /// The volume's failure.
-pub fn refreshed(siphon: &Siphon) -> Result<(), Refused> {
+pub(crate) fn refreshed(siphon: &Siphon) -> Result<(), Refused> {
     let snapshot = siphon.runtime.snapshot()?;
     let accounts = crate::accounts::accounts(&snapshot)?;
     let on: Vec<Provider> = siphon

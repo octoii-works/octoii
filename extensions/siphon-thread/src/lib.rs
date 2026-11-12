@@ -10,7 +10,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use siphon::agent::{Shared, Teller, Telling};
-use siphon::tools::projects::Place;
+use siphon::tools::Place;
 use siphon::{Extension, Registrar};
 use siphon_runtime::Runtime;
 pub use tool::{ThreadAction, ThreadTool};

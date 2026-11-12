@@ -13,10 +13,10 @@ use std::future::Future;
 use octoii_ai::vocabulary::InputContent;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use siphon::agent::primitives::parent_of;
-use siphon::agent::waiting::how;
-use siphon::machine::paths::Base;
-use siphon::threads::inbox::{Ended, Joins};
+use siphon::agent::how;
+use siphon::agent::parent_of;
+use siphon::machine::Base;
+use siphon::threads::{Ended, Joins};
 use siphon::tools::{Context, Effect, Plan, Refusal, Report, Spawned, Told, Tool};
 use siphon::{Extension, Registrar};
 

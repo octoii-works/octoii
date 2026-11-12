@@ -9,10 +9,9 @@ use std::time::Duration;
 use octoii_ai::vocabulary::InputContent;
 use schemars::JsonSchema;
 use serde::Deserialize;
-use siphon::machine::paths::Base;
-use siphon::threads::inbox::{self, Inbound, Joins};
+use siphon::machine::Base;
 use siphon::tools::{Context, Effect, Refusal, Told, Tool};
-use siphon_runtime::{Changes, Runtime};
+use siphon_runtime::Runtime;
 use tokio::sync::broadcast;
 
 use crate::{Event, Running, Shown, Size, Terminals};
@@ -224,16 +223,7 @@ async fn end_of(events: &mut broadcast::Receiver<Event>, id: &str) -> Option<End
 
 /// Tells the thread that a command line it ran ended, in its inbox.
 async fn tell(runtime: &Runtime, ended: &Ended) -> anyhow::Result<()> {
-    let inbound = Inbound::Input {
-        actor: ACTOR.to_owned(),
-        content: vec![InputContent::text(ended_words(ended))],
-        reply_to: None,
-        joins: Joins::Step,
-    };
-    let mut changes = Changes::new();
-    inbox::put(&mut changes, &ended.thread, &runtime.new_id()?, &inbound)?;
-    runtime.commit(changes).await?;
-    Ok(())
+    siphon::agent::deliver(runtime, &ended.thread, ACTOR, vec![InputContent::text(ended_words(ended))]).await
 }
 
 /// A command line's end as the model is told it: the note, then its last screen.

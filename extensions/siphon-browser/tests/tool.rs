@@ -5,8 +5,8 @@ use std::path::PathBuf;
 
 use beak::Beak;
 use serde_json::json;
+use siphon::machine::Base;
 use siphon::machine::Host;
-use siphon::machine::paths::Base;
 use siphon::tools::{Effect, Tools};
 
 #[tokio::test(flavor = "multi_thread")]
