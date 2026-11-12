@@ -50,22 +50,30 @@ import { useFolder } from "../state/folder.ts";
 
 /**
  * What waits on the person in `thread`, docked in the composer's place while it waits: the oldest of `asks`, in the
- * composer's frame, how many wait over it where more than one does — each docking as the one before is answered; the
- * folder the thread works in and its project's read from its row.
+ * composer's frame, how many wait over it where more than one does — each docking as the one before is answered.
  */
 export function AskDock(props: { readonly thread: string; readonly asks: readonly Ask[] }): ReactNode {
-	const row = useThreads()?.find((each) => each.id === props.thread);
-	const workspace = useFolder(row);
-	const [first] = props.asks.toSorted((a, b) => (a.key < b.key ? -1 : 1));
-	if (first === undefined) return null;
+	if (props.asks.length === 0) return null;
 	return (
 		<section aria-label="Waiting for you">
 			{props.asks.length > 1 ? <p className="mb-1.5 px-1 text-end text-xs text-muted-foreground tabular-nums">1 of {props.asks.length}</p> : null}
 			<div className="max-h-[70dvh] overflow-y-auto rounded-lg border border-border bg-card p-4 shadow-raised">
-				<AskForm key={first.key} thread={props.thread} workspace={workspace} project={row?.project ?? undefined} ask={first} />
+				<OldestAsk thread={props.thread} asks={props.asks} />
 			</div>
 		</section>
 	);
+}
+
+/**
+ * The oldest of what waits on the person in `thread`, as it is answered, in the frame it is set in — the composer's, or
+ * a card that opens over another thread's; the folder the thread works in and its project's read from its row.
+ */
+export function OldestAsk(props: { readonly thread: string; readonly asks: readonly Ask[] }): ReactNode {
+	const row = useThreads()?.find((each) => each.id === props.thread);
+	const workspace = useFolder(row);
+	const [first] = props.asks.toSorted((a, b) => (a.key < b.key ? -1 : 1));
+	if (first === undefined) return null;
+	return <AskForm key={first.key} thread={props.thread} workspace={workspace} project={row?.project ?? undefined} ask={first} />;
 }
 
 /** The answer of one request, by what its form asks. */

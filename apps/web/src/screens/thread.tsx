@@ -13,7 +13,7 @@ import type { Device } from "../core/device.ts";
 import { projectOf, statusOf, titleOf } from "../core/threads.ts";
 import { contentOf } from "../core/attachments.ts";
 import { limitedOf } from "../core/limits.ts";
-import { inBackground } from "../core/sub-threads.ts";
+import { inBackground, waitingOn } from "../core/sub-threads.ts";
 import { firstSaid, itemsOf, withLimited, withNow } from "../core/timeline.ts";
 import { AskDock } from "../components/asks/asks.tsx";
 import { Composer } from "../components/composer/composer.tsx";
@@ -55,9 +55,13 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 	const timeline = useRef<TimelineHandle>(null);
 	const limited = limitedOf(conversation, row?.config.model ?? undefined, now);
 	const turnsAndLimit = withLimited(itemsOf(conversation), limited, conversation.status?.resuming_at ?? undefined);
-	// What works in the background stands as the timeline's last line: the model's own command lines in their terminals, and the sub-threads it gave a task in the background.
 	const work = turnsAndLimit.flatMap((item) => (item.kind === "turn" ? item.turn.work : []));
-	const items = withNow(turnsAndLimit, { terminals: terminals.filter((terminal) => terminal.line !== undefined), threads: inBackground(work, rows, thread) });
+	// The thread's present stands as the timeline's last lines: its sub-threads that wait on the person, where it waits on them for nothing itself; then what works in its background.
+	const items = withNow(turnsAndLimit, {
+		waiting: conversation.asks.length > 0 ? [] : waitingOn(rows, thread),
+		terminals: terminals.filter((terminal) => terminal.line !== undefined),
+		threads: inBackground(work, rows, thread),
+	});
 	const project = row === undefined ? undefined : projectOf(row);
 	const workspace = useFolder(row);
 	const said = firstSaid(items);

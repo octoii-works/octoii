@@ -375,10 +375,10 @@ describe("a thread's timeline", () => {
 		expect(runsOf(shown).map((run) => run.map(({ call }) => call.id))).toEqual([["a", "b", "c"], ["d"], ["e"]]);
 	});
 
-	it("ends the items with what works in the background, where something does", () => {
+	it("ends the items with the thread's present, where it has one to tell", () => {
 		const terminal = { id: "t1", number: 1, size: { rows: 24, cols: 80 }, title: "", line: "bun run dev" };
-		expect(withNow([], { terminals: [], threads: [] })).toEqual([]);
-		expect(withNow([], { terminals: [terminal], threads: [] }).map((item) => item.kind)).toEqual(["now"]);
+		expect(withNow([], { waiting: [], terminals: [], threads: [] })).toEqual([]);
+		expect(withNow([], { waiting: [], terminals: [terminal], threads: [] }).map((item) => item.kind)).toEqual(["now"]);
 	});
 
 	it("leads a stretch's line with the call going on, else the latest of the kind it did most", () => {

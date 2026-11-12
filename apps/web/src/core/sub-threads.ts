@@ -4,7 +4,7 @@
  * a sub-thread said, in a line; and those that work in the background.
  */
 import type { Listed } from "@octoii-works/octoii-client";
-import { subThreadOf } from "./threads.ts";
+import { subThreadOf, subThreadsOf } from "./threads.ts";
 import type { CallLine, Work } from "./timeline.ts";
 import { givenOf } from "./tools.ts";
 
@@ -74,6 +74,11 @@ export function plainLine(text: string): string {
 		.replace(/^[ \t]*[-*][ \t]+/gm, "")
 		.replace(/\s+/g, " ")
 		.trim();
+}
+
+/** The sub-threads of the thread `thread` among `rows` that wait on the person: asking a question, or for a call to be allowed. */
+export function waitingOn(rows: readonly Listed[], thread: string): readonly Listed[] {
+	return subThreadsOf(rows, thread).filter((row) => row.status.asks.length > 0);
 }
 
 /** The sub-threads of the thread `thread` among `rows` that `work`'s calls gave a task in the background, which work on it still. */

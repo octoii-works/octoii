@@ -146,15 +146,19 @@ export type TimelineItem =
 	| { readonly kind: "summed-up"; readonly key: string }
 	| { readonly kind: "ask"; readonly key: string; readonly ask: Ask }
 	| { readonly kind: "limited"; readonly key: string; readonly limited: Limited; readonly resumingAt: number | undefined }
-	| { readonly kind: "now"; readonly key: string; readonly background: Background };
+	| { readonly kind: "now"; readonly key: string; readonly now: Now };
 
-/** What works in a thread's background now: the command lines its model runs in terminals of their own, and the sub-threads it gave a task in the background. */
-export type Background = { readonly terminals: readonly TerminalListed[]; readonly threads: readonly Listed[] };
+/**
+ * A thread's present, beside what its turns did: its sub-threads that wait on the person, and what works in its
+ * background — the command lines its model runs in terminals of their own, and the sub-threads it gave a task in the
+ * background.
+ */
+export type Now = { readonly waiting: readonly Listed[]; readonly terminals: readonly TerminalListed[]; readonly threads: readonly Listed[] };
 
-/** `items`, and, where something works in the background, the line of that at their end, the thread's present. */
-export function withNow(items: readonly TimelineItem[], background: Background): readonly TimelineItem[] {
-	if (background.terminals.length === 0 && background.threads.length === 0) return items;
-	return [...items, { kind: "now", key: "now", background }];
+/** `items`, and, where the thread has a present to tell, its lines at their end. */
+export function withNow(items: readonly TimelineItem[], now: Now): readonly TimelineItem[] {
+	if (now.waiting.length === 0 && now.terminals.length === 0 && now.threads.length === 0) return items;
+	return [...items, { kind: "now", key: "now", now }];
 }
 
 /** `items`, and, where the thread's model's quota limits it, the card of that at their end, with when it goes on, where it does. */

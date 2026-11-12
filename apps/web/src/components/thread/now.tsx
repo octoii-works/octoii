@@ -1,15 +1,18 @@
 /**
- * What works in a thread's background now, as the last line of its timeline, the thread's present beside what its turns
- * did: quiet, in the words of a turn's last line — what runs, a command line the model runs in a terminal of its own or
- * a sub-thread given its task in the background, and how long; one thing opened or stopped from the line, several
- * listed in a card the line opens, each opened or stopped there.
+ * A thread's present, as the last lines of its timeline beside what its turns did, quiet, in the words of a turn's last
+ * line: first, told to screen readers as it comes, each sub-thread that waits on the person — what it asks, reviewed
+ * and answered in a card the line opens, the ask whole, or gone into; then what works in the background — a command
+ * line the model runs in a terminal of its own or a sub-thread given its task in the background, and how long — one
+ * thing opened or stopped from its line, several listed in a card the line opens, each opened or stopped there.
  */
 import type { ReactNode } from "react";
 import type { Listed, TerminalListed } from "@octoii-works/octoii-client";
 import { useClient } from "@octoii-works/octoii-client/react";
-import { Bot, SquareTerminal } from "lucide-react";
+import { Bot, MessageCircle, ShieldQuestion, SquareTerminal } from "lucide-react";
+import { askTitle, formOf } from "../../core/asks.ts";
 import { workedOf } from "../../core/sub-threads.ts";
-import type { Background } from "../../core/timeline.ts";
+import type { Now } from "../../core/timeline.ts";
+import { OldestAsk } from "../asks/asks.tsx";
 import { go } from "../state/navigation.ts";
 import { failed } from "../state/notices.ts";
 import { showSurface, terminalKey } from "../state/panel.ts";
@@ -22,9 +25,53 @@ import { WorkedFor } from "./sub-thread.tsx";
 const ACTION =
 	"shrink-0 cursor-pointer rounded-sm text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none";
 
+/** The present of `thread`: its sub-threads that wait on the person, then what works in its background. */
+export function ThreadNow(props: { readonly thread: string; readonly now: Now }): ReactNode {
+	const { waiting, terminals, threads } = props.now;
+	return (
+		<div className="flex flex-col">
+			{waiting.map((row) => (
+				<WaitingLine key={row.id} row={row} />
+			))}
+			{terminals.length === 0 && threads.length === 0 ? null : <BackgroundLine thread={props.thread} terminals={terminals} threads={threads} />}
+		</div>
+	);
+}
+
+/** A sub-thread that waits on the person: what it asks first, how many more, reviewed in a card or gone into. */
+function WaitingLine(props: { readonly row: Listed }): ReactNode {
+	const { row } = props;
+	const asks = row.status.asks;
+	const [first] = asks;
+	if (first === undefined) return null;
+	const allows = formOf(first).kind === "permission";
+	const Icon = allows ? ShieldQuestion : MessageCircle;
+	return (
+		<p role="alert" className="meta-line">
+			<Icon className="size-3.5 shrink-0 text-info-foreground" />
+			<span className="min-w-0 truncate">
+				<span className="text-foreground">{row.config.title ?? "A sub-thread"}</span>
+				{` ${allows ? "asks to go ahead" : "has a question"} · `}
+				<span className="text-faint-foreground">{asks.length > 1 ? `${askTitle(first)}, and ${String(asks.length - 1)} more` : askTitle(first)}</span>
+			</span>
+			<Actions>
+				<Popover>
+					<PopoverTrigger className={ACTION}>Review</PopoverTrigger>
+					<PopoverPopup side="top" align="start" className="max-h-[70dvh] w-[min(36rem,calc(100vw-2rem))] overflow-y-auto p-4">
+						<OldestAsk thread={row.id} asks={asks} />
+					</PopoverPopup>
+				</Popover>
+				<button type="button" className={ACTION} onClick={() => go({ place: "thread", thread: row.id })}>
+					Open
+				</button>
+			</Actions>
+		</p>
+	);
+}
+
 /** The line of what works in the background of `thread`. */
-export function NowLine(props: { readonly thread: string; readonly background: Background }): ReactNode {
-	const { terminals, threads } = props.background;
+function BackgroundLine(props: { readonly thread: string; readonly terminals: readonly TerminalListed[]; readonly threads: readonly Listed[] }): ReactNode {
+	const { terminals, threads } = props;
 	const names = [...terminals.map((terminal) => `Terminal ${String(terminal.number)}`), ...threads.map((row) => row.config.title ?? "Sub-thread")];
 	const [terminal] = terminals;
 	const [row] = threads;
