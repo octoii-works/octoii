@@ -8,7 +8,7 @@ use siphon_protocol::{Error, Nothing, Scope};
 use tokio::sync::broadcast::error::RecvError;
 
 use crate::protocol::{self, Cells, Method, TerminalListed, TerminalsEvent, TerminalsTopic};
-use crate::{Event, Size, Terminals};
+use crate::{Event, Running, Size, TerminalTool, Terminals};
 
 /// The terminals, as a host adds them.
 #[derive(Debug, Clone, Copy, Default)]
@@ -23,6 +23,10 @@ impl Plugin for TerminalsPlugin {
         let terminals = Terminals::start(builder.kernel.clone(), builder.machine.clone());
         let closing = terminals.clone();
         builder.on_thread_deleted(move |thread| closing.close_thread(thread));
+        let tool = TerminalTool {
+            terminals: terminals.clone(),
+        };
+        builder.tools(|tools| tools.with(tool));
         let doing = terminals.clone();
         builder.methods(protocol::set(), Method::read, move |context: Caller, method| {
             let terminals = doing.clone();
@@ -53,7 +57,7 @@ async fn answered(terminals: &Terminals, context: &Caller, method: Method) -> Re
                 .map_err(|error| refused("no_such_thread", &error))?;
             let cwd = context.siphon.machine.workspace_of(listed.config.workspace.as_deref());
             let terminal = terminals
-                .open(&open.thread, cwd, size(open.size))
+                .open(&open.thread, cwd, size(open.size), Running::Shell)
                 .await
                 .map_err(|error| failed(&error))?;
             return Ok(json!(protocol::TerminalOpened { terminal }));

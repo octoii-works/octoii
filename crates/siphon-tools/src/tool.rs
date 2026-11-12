@@ -57,15 +57,22 @@ impl Context {
     /// # Errors
     /// Beak's failure to open its namespace.
     pub fn machine(&self) -> Result<Machine, Refusal> {
-        let writes = match self.writes {
+        Machine::open(&self.kernel, &self.host, self.base.clone(), &self.writes_of(), None)
+            .map_err(|error| Refusal(format!("the machine: {error}")))
+    }
+
+    /// Where this call's work may write, as its weighing said: its thread's workspace and the machine's temporary
+    /// folders, or anywhere.
+    #[must_use]
+    pub fn writes_of(&self) -> siphon_machine::Writes {
+        match self.writes {
             Writes::Anywhere => siphon_machine::Writes::Anywhere,
             Writes::Workspace => {
                 let mut places = vec![self.base.workspace.clone()];
                 places.extend(self.host.temporary.iter().cloned());
                 siphon_machine::Writes::Within(places)
             }
-        };
-        Machine::open(&self.kernel, &self.host, self.base.clone(), &writes, None).map_err(|error| Refusal(format!("the machine: {error}")))
+        }
     }
 
     /// The image `bytes`, named `name` where it has one, as the model is shown it: fitted to what every model reads,

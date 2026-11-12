@@ -58,6 +58,7 @@ const GivenSchema = Type.Object({
 	action: Type.Optional(Type.String()),
 	expression: Type.Optional(Type.String()),
 	text: Type.Optional(Type.String()),
+	terminal: Type.Optional(Type.Number()),
 });
 
 /** A call's arguments as far as the page reads them. */
@@ -155,6 +156,12 @@ const TOOLS: Readonly<Partial<Record<string, ToolView>>> = {
 		work: "ask",
 		verbs: ["Ask about", "Asking about", "Asked about"],
 		subject: (given) => given.questions?.map((question) => question.header).join(", "),
+	}),
+	terminal: toolView({
+		work: "command",
+		verbs: ["Use a terminal", "Using a terminal", "Used a terminal"],
+		subject: (given) => given.command ?? (given.terminal === undefined ? undefined : `${given.action ?? ""} terminal ${String(given.terminal)}`.trim()),
+		code: true,
 	}),
 	todo: toolView({
 		work: "other",

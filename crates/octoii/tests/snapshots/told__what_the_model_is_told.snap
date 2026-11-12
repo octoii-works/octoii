@@ -729,7 +729,7 @@ Replaces text in a file: `old` must match one place, or every place with `all`. 
 }
 
 === tool execute
-Runs JavaScript as the body of an async function, calling tools through `tools`: `await tools.read({ path: "a.txt" })` resolves to what the tool gives, as text, and rejects where the tool refuses. Call them in loops, at once with Promise.all, and work on what they give in code. Gives what the script returned, as JSON, and what it wrote with console.log. Use it for work of many steps: many files read or changed, a page's many actions, a batch extracted. `tools` holds browser, edit, glob, grep, read, shell, write, each taking the arguments its function does, and the MCP servers' tools of <catalog>.
+Runs JavaScript as the body of an async function, calling tools through `tools`: `await tools.read({ path: "a.txt" })` resolves to what the tool gives, as text, and rejects where the tool refuses. Call them in loops, at once with Promise.all, and work on what they give in code. Gives what the script returned, as JSON, and what it wrote with console.log. Use it for work of many steps: many files read or changed, a page's many actions, a batch extracted. `tools` holds browser, edit, glob, grep, read, shell, terminal, write, each taking the arguments its function does, and the MCP servers' tools of <catalog>.
 --- parameters
 {
   "properties": {
@@ -936,7 +936,7 @@ Reads a file, or lists a directory, a / after each directory's name. Text comes 
 }
 
 === tool shell
-Runs a command line in bash in the workspace, its input closed. Gives its output and errors as one stream, then how it ended: [exit N], the signal that ended it, or its time run out. It may run 120 seconds, or up to 600 with `timeout_seconds`; one that does not end by itself — a server, a watcher — is ended when its time runs out. In the default mode it runs in a sandbox that writes only the workspace and the temporary folders; one that must write beyond them — installing for the whole machine, writing elsewhere — is run again with `escalate` and a justification, and the person decides.
+Runs a command line in bash in the workspace, its input closed. Gives its output and errors as one stream, then how it ended: [exit N], the signal that ended it, or its time run out. It may run 120 seconds, or up to 600 with `timeout_seconds`; one that does not end by itself — a server, a watcher — belongs in a terminal. In the default mode it runs in a sandbox that writes only the workspace and the temporary folders; one that must write beyond them — installing for the whole machine, writing elsewhere — is run again with `escalate` and a justification, and the person decides.
 --- parameters
 {
   "properties": {
@@ -971,6 +971,108 @@ Runs a command line in bash in the workspace, its input closed. Gives its output
     "command"
   ],
   "type": "object"
+}
+
+=== tool terminal
+Works the thread's terminals, which the person sees beside the chat. open runs a command line that does not end by itself — a server, a watcher — in a terminal of its own, in the workspace, held as the shell's commands are; it gives the terminal's number and its screen after a moment, and when the command ends of itself you are told how, with its last screen. read gives what a terminal shows, the person's too; write types to a terminal you opened (`\u0003` for Ctrl-C, `\r` for Enter) and gives its screen after; close ends one you opened. For a command that ends by itself, use shell.
+--- parameters
+{
+  "oneOf": [
+    {
+      "description": "Runs a command line in a terminal of its own.",
+      "properties": {
+        "action": {
+          "const": "open",
+          "type": "string"
+        },
+        "command": {
+          "description": "The command line.",
+          "type": "string"
+        },
+        "escalate": {
+          "default": false,
+          "description": "Run it beyond the sandbox, once the person lets it.",
+          "type": "boolean"
+        },
+        "justification": {
+          "description": "Why it must write beyond the sandbox, in a sentence the person reads.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "action",
+        "command"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "What a terminal of the thread shows, the person's too.",
+      "properties": {
+        "action": {
+          "const": "read",
+          "type": "string"
+        },
+        "terminal": {
+          "description": "The terminal's number.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "action",
+        "terminal"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "Types to a terminal the model opened: keys as text, `\\u0003` for Ctrl-C, `\\r` for Enter.",
+      "properties": {
+        "action": {
+          "const": "write",
+          "type": "string"
+        },
+        "terminal": {
+          "description": "The terminal's number.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "terminal",
+        "text"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "Closes a terminal the model opened, ending what it runs.",
+      "properties": {
+        "action": {
+          "const": "close",
+          "type": "string"
+        },
+        "terminal": {
+          "description": "The terminal's number.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "action",
+        "terminal"
+      ],
+      "type": "object"
+    }
+  ]
 }
 
 === tool todo

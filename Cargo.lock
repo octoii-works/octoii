@@ -5782,13 +5782,19 @@ dependencies = [
 name = "siphon-terminals"
 version = "0.0.1"
 dependencies = [
+ "anyhow",
  "beak",
  "bytes",
+ "octoii-ai",
+ "schemars 1.2.3",
  "serde",
  "serde_json",
  "siphon",
  "siphon-machine",
  "siphon-protocol",
+ "siphon-runtime",
+ "siphon-threads",
+ "siphon-tools",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",

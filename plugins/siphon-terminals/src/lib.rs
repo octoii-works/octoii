@@ -1,14 +1,17 @@
 //! The terminals of the threads, where the person works on the machine beside the model, as tmux's server keeps its
-//! panes: each the person's login shell in its thread's folder, on a terminal Beak keeps — which answers its program's
-//! queries, keeps the title it sets and draws itself again whole. Each is numbered in its thread as tmux numbers
-//! windows, the lowest number free; sized as its views ask; gone as its shell ends; closed with its thread. One task
-//! owns them all and does what it is asked in the order asked, telling whoever listens as a thread's terminals come,
-//! take titles and go, and as each writes.
+//! panes: each the person's login shell in its thread's folder — or a command line the model runs in it, held to what
+//! its thread may write — on a terminal Beak keeps, which answers its program's queries, keeps the title it sets and
+//! draws itself again whole. Each is numbered in its thread as tmux numbers windows, the lowest number free; sized as
+//! its views ask; gone as its program ends; closed with its thread. One task owns them all and does what it is asked in
+//! the order asked, telling whoever listens as a thread's terminals come, take titles and go, as each writes, and as a
+//! command line the model ran ends of itself, with what its screen showed.
 
 mod plugin;
 pub mod protocol;
+mod tool;
 
 pub use plugin::TerminalsPlugin;
+pub use tool::{ACTOR, Action, TerminalTool};
 
 use std::path::{Path, PathBuf};
 
@@ -32,13 +35,22 @@ pub struct Size {
     pub cols: u16,
 }
 
-/// A terminal as a list of a thread's shows it: its id, its number in its thread, its size and its title.
+/// A terminal as a list of a thread's shows it: its id, its number in its thread, its size, its title, and the command
+/// line it runs where it runs one rather than the person's shell.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Shown {
     pub id: String,
     pub number: u32,
     pub size: Size,
     pub title: String,
+    pub line: Option<String>,
+}
+
+/// What a terminal runs: the person's login shell, or a command line in it, held to what it may write.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Running {
+    Shell,
+    Line { line: String, writes: Writes },
 }
 
 /// What the terminals tell.
@@ -48,6 +60,17 @@ pub enum Event {
     Changed { thread: String },
     /// The terminal wrote; it has written `written` bytes in all.
     Wrote { id: String, written: u64 },
+    /// The terminal is gone: closed, or its program ended.
+    Closed { id: String },
+    /// A command line a terminal ran ended of itself, not closed: how, and what its screen showed as it did.
+    Ended {
+        id: String,
+        thread: String,
+        number: u32,
+        line: String,
+        exit: beak::Exit,
+        screen: String,
+    },
 }
 
 /// Why a terminal was not opened or reached.
@@ -73,6 +96,7 @@ enum Message {
         thread: String,
         cwd: PathBuf,
         size: Size,
+        running: Running,
         reply: Reply<String>,
     },
     Write {
@@ -88,6 +112,10 @@ enum Message {
     Screen {
         id: String,
         reply: Reply<beak::Screen>,
+    },
+    Text {
+        id: String,
+        reply: Reply<String>,
     },
     ReadAt {
         id: String,
@@ -147,13 +175,20 @@ impl Terminals {
         answer.await.map_err(|_| Error::Gone)?
     }
 
-    /// Opens a terminal for the thread `thread`, `size` big: the person's login shell in `cwd`. Its id.
+    /// Opens a terminal for the thread `thread`, `size` big, in `cwd`, running `running`. Its id.
     ///
     /// # Errors
     /// `EmptySize`, `NoShell`; Beak's failure to start it.
-    pub async fn open(&self, thread: &str, cwd: PathBuf, size: Size) -> Result<String, Error> {
+    pub async fn open(&self, thread: &str, cwd: PathBuf, size: Size, running: Running) -> Result<String, Error> {
         let thread = thread.to_owned();
-        self.ask(|reply| Message::Open { thread, cwd, size, reply }).await
+        self.ask(|reply| Message::Open {
+            thread,
+            cwd,
+            size,
+            running,
+            reply,
+        })
+        .await
     }
 
     /// Keys the person typed, and what they pasted, to the terminal's program.
@@ -181,6 +216,15 @@ impl Terminals {
     pub async fn screen(&self, id: &str) -> Result<beak::Screen, Error> {
         let id = id.to_owned();
         self.ask(|reply| Message::Screen { id, reply }).await
+    }
+
+    /// What the terminal shows, as text.
+    ///
+    /// # Errors
+    /// `NoSuchTerminal`; Beak's failure.
+    pub async fn text(&self, id: &str) -> Result<String, Error> {
+        let id = id.to_owned();
+        self.ask(|reply| Message::Text { id, reply }).await
     }
 
     /// What the terminal wrote from `offset` on, as Beak keeps it.
@@ -220,6 +264,7 @@ struct Terminal {
     number: u32,
     size: Size,
     title: String,
+    line: Option<String>,
     written: u64,
     command: Command,
     /// The machine its shell was started in, kept as long as it runs.
@@ -245,8 +290,14 @@ impl Owner {
 
     fn handle(&mut self, message: Message) {
         match message {
-            Message::Open { thread, cwd, size, reply } => {
-                let _ = reply.send(self.open(&thread, &cwd, size));
+            Message::Open {
+                thread,
+                cwd,
+                size,
+                running,
+                reply,
+            } => {
+                let _ = reply.send(self.open(&thread, &cwd, size, running));
             }
             Message::Write { id, bytes, reply } => {
                 let _ = reply.send(self.find(&id).and_then(|terminal| Ok(terminal.command.write(&bytes)?)));
@@ -256,6 +307,9 @@ impl Owner {
             }
             Message::Screen { id, reply } => {
                 let _ = reply.send(self.find(&id).and_then(|terminal| Ok(terminal.command.screen()?)));
+            }
+            Message::Text { id, reply } => {
+                let _ = reply.send(self.find(&id).and_then(|terminal| Ok(terminal.command.screen_text()?)));
             }
             Message::ReadAt { id, offset, reply } => {
                 let _ = reply.send(self.find(&id).and_then(|terminal| Ok(terminal.command.read_output_at(offset)?)));
@@ -296,16 +350,20 @@ impl Owner {
         let _ = self.events.send(Event::Changed { thread: thread.to_owned() });
     }
 
-    fn open(&mut self, thread: &str, cwd: &Path, size: Size) -> Result<String, Error> {
+    fn open(&mut self, thread: &str, cwd: &Path, size: Size, running: Running) -> Result<String, Error> {
         if size.rows == 0 || size.cols == 0 {
             return Err(Error::EmptySize);
         }
-        let shell = self.host.shell.clone().ok_or(Error::NoShell)?;
+        let shell = self.host.shell.clone().ok_or(Error::NoShell)?.to_string_lossy().into_owned();
         let base = Base {
             workspace: cwd.to_owned(),
             home: self.host.home.clone(),
         };
-        let machine = Machine::open(&self.kernel, &self.host, base, &Writes::Anywhere, None)?;
+        let (argv, writes, line) = match running {
+            Running::Shell => (vec![shell, "-l".into()], Writes::Anywhere, None),
+            Running::Line { line, writes } => (vec![shell, "-l".into(), "-c".into(), line.clone()], writes, Some(line)),
+        };
+        let machine = Machine::open(&self.kernel, &self.host, base, &writes, None)?;
         let spec = Spec {
             set: vec![("TERM".into(), "xterm-256color".into()), ("COLORTERM".into(), "truecolor".into())],
             stdio: Stdio::Terminal {
@@ -314,10 +372,7 @@ impl Owner {
                 scrollback_lines: SCROLLBACK_LINES,
             },
             tail_bytes: KEPT_BYTES,
-            ..Spec::new(
-                Exec::Argv(vec![shell.to_string_lossy().into_owned(), "-l".into()]),
-                cwd.to_string_lossy(),
-            )
+            ..Spec::new(Exec::Argv(argv), cwd.to_string_lossy())
         };
         let now = now_ms();
         let (command, mut events) = self.kernel.spawn(now, b"", machine.namespace(), &spec)?;
@@ -344,6 +399,7 @@ impl Owner {
             number,
             size,
             title: String::new(),
+            line,
             written: 0,
             command,
             _machine: machine,
@@ -375,6 +431,7 @@ impl Owner {
         };
         // Let go of, Beak hangs up on a shell still running, and reaps it.
         let terminal = self.terminals.remove(at);
+        let _ = self.events.send(Event::Closed { id: terminal.id.clone() });
         self.changed(&terminal.thread);
     }
 
@@ -395,7 +452,20 @@ impl Owner {
                 let thread = terminal.thread.clone();
                 self.changed(&thread);
             }
-            CommandEvent::Exit(_) => self.close(id),
+            CommandEvent::Exit(exit) => {
+                if let Some(line) = terminal.line.clone() {
+                    let screen = terminal.command.screen_text().unwrap_or_default();
+                    let _ = self.events.send(Event::Ended {
+                        id: id.to_owned(),
+                        thread: terminal.thread.clone(),
+                        number: terminal.number,
+                        line,
+                        exit,
+                        screen,
+                    });
+                }
+                self.close(id);
+            }
         }
     }
 }
@@ -406,6 +476,7 @@ fn shown(terminal: &Terminal) -> Shown {
         number: terminal.number,
         size: terminal.size,
         title: terminal.title.clone(),
+        line: terminal.line.clone(),
     }
 }
 

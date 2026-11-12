@@ -9,10 +9,10 @@
  * moves back as it calls its tools.
  */
 import type { ReactNode } from "react";
-import { CircleAlert, Globe } from "lucide-react";
+import { CircleAlert, Globe, SquareTerminal } from "lucide-react";
 import type { Doing, Foot, TurnEnd } from "../../core/rows.ts";
 import { pastLabel, runningTime } from "../../core/time.ts";
-import type { Laid, Said, Work } from "../../core/timeline.ts";
+import { type Laid, type Said, TERMINAL, type Work } from "../../core/timeline.ts";
 import { Counting, useNow } from "../effects/now.ts";
 import { cn } from "../ui/cn.ts";
 import { CopyButton } from "../ui/copy-button.tsx";
@@ -27,11 +27,23 @@ import { UserMessage } from "./user-message.tsx";
 /** The words of a reply, as the page sets them: larger and airier than the work's lines. */
 export const WORDS = "text-body";
 
-/** Words a turn took: what came of a task given to a sub-thread, as its row; the person's, or a task from `parent`, as theirs. */
+/** Words a turn took: a command line's end in a terminal, as a line of the work; what came of a task given to a sub-thread, as its row; the person's, or a task from `parent`, as theirs. */
 export function Words(props: { readonly said: Said; readonly parent: string | undefined }): ReactNode {
 	const { said } = props;
+	if (said.from === TERMINAL) return <TerminalTold said={said} />;
 	if (said.from !== undefined && said.from !== props.parent) return <SubThreadTold said={said} />;
 	return <UserMessage said={said} />;
+}
+
+/** That a command line the model ran in a terminal ended, as Siphon's note says it, its brackets aside. */
+function TerminalTold(props: { readonly said: Said }): ReactNode {
+	const note = props.said.text.split("\n")[0]?.replace(/^\[|\]$/g, "") ?? "";
+	return (
+		<div className="work-line">
+			<SquareTerminal className="size-3.5 shrink-0 text-muted-foreground" />
+			<span className="min-w-0 flex-1 truncate text-muted-foreground">{note.charAt(0).toUpperCase() + note.slice(1)}</span>
+		</div>
+	);
 }
 
 /** A part of a turn's work, as it is laid out: a stretch of calls, delegations as sub-threads, or a step on its own. */
