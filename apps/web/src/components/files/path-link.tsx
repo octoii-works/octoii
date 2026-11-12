@@ -4,12 +4,13 @@
  * thread the message is shown in works in a folder; else its words alone.
  */
 import { type ReactNode, useContext } from "react";
+import type { Lines } from "../../core/links.ts";
 import { openPath } from "../state/panel.ts";
 import { MessageThreadContext } from "../thread/message-thread.ts";
 import { PathIcon } from "./path-icon.tsx";
 
-/** The link to `path`, its words `children`. */
-export function PathLink(props: { readonly path: string; readonly children: ReactNode }): ReactNode {
+/** The link to `path`, at the `lines` it names where it names any, its words `children`. */
+export function PathLink(props: { readonly path: string; readonly lines?: Lines | undefined; readonly children: ReactNode }): ReactNode {
 	const shown = useContext(MessageThreadContext);
 	const { path } = props;
 	const icon = <PathIcon path={path} kind={path.endsWith("/") ? "directory" : "file"} className="mr-0.5 inline size-[1em] -translate-y-px align-middle" />;
@@ -23,7 +24,7 @@ export function PathLink(props: { readonly path: string; readonly children: Reac
 		);
 	}
 	return (
-		<button type="button" data-link title={path} onClick={() => openPath(shown.thread, workspace, path)} className="cursor-pointer text-left">
+		<button type="button" data-link title={path} onClick={() => openPath(shown.thread, workspace, path, props.lines)} className="cursor-pointer text-left">
 			{icon}
 			{props.children}
 		</button>

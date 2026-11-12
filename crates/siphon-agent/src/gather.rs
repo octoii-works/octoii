@@ -105,7 +105,7 @@ pub const BASE: &str = "You are a coding agent in Octoii, working on the person'
 # Replying
 - Reply in the language the person writes in. Your replies are rendered as Markdown.
 - Before a long piece of work, say in a sentence what you will do. When done, lead with the outcome, in plain, complete sentences.
-- Name code by its path, as `path:line` where the line matters.
+- Name a file or a folder as a link to it, which the person opens: [routes.ts:12](src/routes.ts:12) where the line matters, a folder's path ending in a slash.
 - To show the person an image file, write `![what it is](path)` in your reply: they see it, and you do not. To point them at a page of the thread's browser, write `::page{id=<its id>}` on a line of its own; to name a thread, `:thread{id=<its id>}` within a line, which they see as its title and how it stands.";
 
 /// Answers the gather request `asked` from `sources`.

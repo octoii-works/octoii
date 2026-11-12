@@ -79,7 +79,12 @@ function ImageLink(props: { readonly src: string; readonly words: string }): Rea
 function Link(props: { readonly href: string; readonly children: ReactNode }): ReactNode {
 	if (props.href === "") return props.children;
 	const target = targetOf(props.href);
-	if ("path" in target) return <PathLink path={target.path}>{props.children}</PathLink>;
+	if ("path" in target)
+		return (
+			<PathLink path={target.path} lines={target.lines}>
+				{props.children}
+			</PathLink>
+		);
 	return (
 		<a href={target.url} target="_blank" rel="noopener noreferrer">
 			{props.children}

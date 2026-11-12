@@ -10,6 +10,8 @@ import type { FilePage } from "@octoii-works/octoii-client";
 import { File } from "@pierre/diffs/react";
 import { machineAddress } from "../../core/attachments.ts";
 import { bytesText, crumbsOf, isMarkdown, nameOf } from "../../core/files.ts";
+import type { Lines } from "../../core/links.ts";
+import { useLineInView } from "../effects/line-in-view.ts";
 import { useFileSource } from "../effects/file-source.ts";
 import { usePages } from "../effects/pages.ts";
 import { CODE_THEMES, useDarkPage } from "../effects/theme.ts";
@@ -20,7 +22,15 @@ import { KeptImage } from "../ui/kept-image.tsx";
  * What the view is given: the file at `path`, under the folder `root` the tree shows; whether its long lines wrap; whether
  * one written in markdown is drawn; what stands beside its names.
  */
-export type FileViewProps = { readonly root: string; readonly path: string; readonly wrap: boolean; readonly preview: boolean; readonly actions: ReactNode };
+export type FileViewProps = {
+	readonly root: string;
+	readonly path: string;
+	/** The lines a link named, shown as it opens: marked, and scrolled to. */
+	readonly lines?: Lines | undefined;
+	readonly wrap: boolean;
+	readonly preview: boolean;
+	readonly actions: ReactNode;
+};
 
 /** The view. */
 export function FileView(props: FileViewProps): ReactNode {
@@ -38,7 +48,7 @@ export function FileView(props: FileViewProps): ReactNode {
 				{read === undefined ? (
 					<Note>Reading…</Note>
 				) : "pages" in read ? (
-					<Contents pages={read.pages} path={props.path} wrap={props.wrap} preview={props.preview} readMore={read.readMore} />
+					<Contents pages={read.pages} path={props.path} lines={props.lines} wrap={props.wrap} preview={props.preview} readMore={read.readMore} />
 				) : null}
 				{read?.failure === undefined ? null : <Note>{read.failure}</Note>}
 			</div>
@@ -70,6 +80,7 @@ function Note(props: { readonly children: ReactNode }): ReactNode {
 function Contents(props: {
 	readonly pages: readonly [FilePage, ...FilePage[]];
 	readonly path: string;
+	readonly lines: Lines | undefined;
 	readonly wrap: boolean;
 	readonly preview: boolean;
 	readonly readMore: (() => void) | undefined;
@@ -81,7 +92,7 @@ function Contents(props: {
 			return props.preview && isMarkdown(props.path) ? (
 				<DrawnFile lines={lines} readMore={props.readMore} />
 			) : (
-				<TextFile name={nameOf(props.path)} lines={lines} wrap={props.wrap} readMore={props.readMore} />
+				<TextFile name={nameOf(props.path)} lines={lines} marked={props.lines} wrap={props.wrap} readMore={props.readMore} />
 			);
 		}
 		case "media":
@@ -95,20 +106,26 @@ function Contents(props: {
 	}
 }
 
-/** The lines read of a file, numbered and coloured as its name says its language is; and where more follow, what reads them. */
+/**
+ * The lines read of a file, numbered and coloured as its name says its language is, those `marked` marked and scrolled
+ * to — read on to them where they lie past what is read; and where more follow, what reads them.
+ */
 function TextFile(props: {
 	readonly name: string;
 	readonly lines: readonly string[];
+	readonly marked: Lines | undefined;
 	readonly wrap: boolean;
 	readonly readMore: (() => void) | undefined;
 }): ReactNode {
 	const dark = useDarkPage();
+	const view = useLineInView(props.marked?.start, props.lines.length, props.readMore);
 	if (props.lines.length === 0) return <Note>An empty file.</Note>;
 	return (
 		<>
-			<div className="code-view">
+			<div ref={view} className="code-view">
 				<File
 					file={{ name: props.name, contents: props.lines.join("\n") }}
+					selectedLines={props.marked ?? null}
 					disableWorkerPool
 					options={{ theme: CODE_THEMES, themeType: dark ? "dark" : "light", overflow: props.wrap ? "wrap" : "scroll", disableFileHeader: true }}
 				/>

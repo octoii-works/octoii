@@ -5,11 +5,12 @@ import { linksAsWords, linkTo, targetOf } from "../src/core/links.ts";
 describe("a link", () => {
 	it("points at a path of the machine — from the thread's folder, whole, or a file address — its line let go", () => {
 		expect(targetOf("src/main.zig")).toEqual({ path: "src/main.zig" });
-		expect(targetOf("src/main.zig#L12-L20")).toEqual({ path: "src/main.zig" });
-		expect(targetOf("src/main.zig:12:4")).toEqual({ path: "src/main.zig" });
+		expect(targetOf("src/main.zig#L12-L20")).toEqual({ path: "src/main.zig", lines: { start: 12, end: 20 } });
+		expect(targetOf("src/main.zig:12:4")).toEqual({ path: "src/main.zig", lines: { start: 12, end: 12 } });
+		expect(targetOf("src/main.zig#L7")).toEqual({ path: "src/main.zig", lines: { start: 7, end: 7 } });
 		expect(targetOf("/Users/me/app/README.md")).toEqual({ path: "/Users/me/app/README.md" });
 		expect(targetOf("docs/my%20notes.md")).toEqual({ path: "docs/my notes.md" });
-		expect(targetOf("file:///Users/me/app/main.zig#L3")).toEqual({ path: "/Users/me/app/main.zig" });
+		expect(targetOf("file:///Users/me/app/main.zig#L3")).toEqual({ path: "/Users/me/app/main.zig", lines: { start: 3, end: 3 } });
 		expect(targetOf("apps/web/")).toEqual({ path: "apps/web/" });
 		expect(targetOf("C:\\work\\main.zig")).toEqual({ path: "C:\\work\\main.zig" });
 	});

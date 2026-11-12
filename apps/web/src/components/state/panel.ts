@@ -10,6 +10,7 @@
 import { useSyncExternalStore } from "react";
 import type { ChangesScope } from "@octoii-works/octoii-client";
 import { childPath, crumbsOf, isWholePath } from "../../core/files.ts";
+import type { Lines } from "../../core/links.ts";
 
 /** A view of a thread's the panel opens: its files, or the changes in its repository. */
 export type View = "files" | "diff";
@@ -25,6 +26,8 @@ export type ThreadPanel = {
 	readonly views: readonly View[];
 	readonly shown: SurfaceKey | undefined;
 	readonly file?: string;
+	/** The lines of the file read that a link named, shown as it opens. */
+	readonly lines?: Lines;
 	readonly folders: ReadonlySet<string>;
 	readonly scope: ChangesScope | undefined;
 };
@@ -115,8 +118,11 @@ export function closeSurface(thread: string, key: SurfaceKey, next: SurfaceKey |
 }
 
 /** Shows the panel with the file at `path` read in it, for `thread`. */
-export function openFile(thread: string, path: string): void {
-	changeThread(thread, shownPlace(), (place) => ({ ...withShown(place, "files"), file: path }));
+export function openFile(thread: string, path: string, lines?: Lines): void {
+	changeThread(thread, shownPlace(), (place) => {
+		const { lines: _before, ...rest } = withShown(place, "files");
+		return lines === undefined ? { ...rest, file: path } : { ...rest, file: path, lines };
+	});
 }
 
 /** Puts away the file read in `thread`'s Files view, its tree shown in its place. */
@@ -143,13 +149,13 @@ export function toggleFolder(thread: string, path: string): void {
 
 /**
  * Opens a path a message of `thread`'s names, from the thread's folder `root` or whole: a folder — its path ending in a
- * slash, as a mention writes one — opened in the tree, a file read.
+ * slash, as a mention writes one — opened in the tree, a file read, at the `lines` the message names where it names any.
  */
-export function openPath(thread: string, root: string, named: string): void {
+export function openPath(thread: string, root: string, named: string, lines?: Lines): void {
 	const bare = named.replace(/\/$/, "");
 	const path = isWholePath(bare) ? bare : childPath(root, bare);
 	if (named.endsWith("/")) revealFolder(thread, root, path);
-	else openFile(thread, path);
+	else openFile(thread, path, lines);
 }
 
 /** Shows the panel with the folder at `path` open in `thread`'s tree, and every folder on the way to it from `root`. */

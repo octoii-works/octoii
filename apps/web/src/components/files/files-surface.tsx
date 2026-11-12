@@ -82,6 +82,7 @@ function FolderSurface(props: { readonly thread: string; readonly folder: string
 						key={`${place.file} ${String(generation)}`}
 						root={folder}
 						path={place.file}
+						lines={place.lines}
 						wrap={device.wrap_lines}
 						preview={device.files_preview}
 						actions={
