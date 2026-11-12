@@ -298,12 +298,6 @@ impl Registrar<'_> {
         });
     }
 
-    /// The runtime's builder, as `add` leaves it: programs, handlers and requests the person answers added.
-    pub fn runtime(&mut self, add: impl FnOnce(siphon_runtime::Builder) -> siphon_runtime::Builder) {
-        let runtime = std::mem::replace(&mut self.builder.runtime, siphon_runtime::Runtime::builder());
-        self.builder.runtime = add(runtime);
-    }
-
     /// What to do as a thread is deleted, given its id: what the extension held for it let go of, as a process's
     /// resources go with it.
     pub fn on_thread_deleted(&mut self, deleted: impl Fn(&str) + Send + Sync + 'static) {

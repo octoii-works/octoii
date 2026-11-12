@@ -23,9 +23,9 @@ use siphon::{Ends, Kept};
 use siphon_runtime::Runtime;
 
 use crate::config::{Configured, Launch, OWN_FILE, PROJECT_FILE, Server, parse};
-use crate::trust::{self, ShownServer, Trust};
 use siphon::tools::projects::Place;
 use siphon::tools::{Context, Declared, Refusal, Told};
+use siphon::trust::{self, ShownServer, Trust};
 
 /// How long a server nothing uses keeps running before it is stopped.
 pub const IDLE: Duration = Duration::from_secs(600);

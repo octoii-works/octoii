@@ -1,6 +1,7 @@
 //! Siphon, Octoii's runtime of agents on Beak, in layers, each module using only those above it in this list: the
 //! machine a thread reaches; the threads themselves, their store; the environment's settings and the providers'
-//! accounts; the tools a thread's model calls and the weighing of its calls; the agent that runs a thread's turns,
+//! accounts; the tools a thread's model calls and the weighing of its calls; the person's trust in what a project's
+//! configuration runs; the agent that runs a thread's turns,
 //! tells its model and compacts it; the extensions a host builds Siphon with; the protocol a client speaks, and its
 //! connection — started as one with the programs of a thread's and the handlers of its requests.
 
@@ -16,6 +17,7 @@ pub mod settings;
 pub mod testing;
 pub mod threads;
 pub mod tools;
+pub mod trust;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -362,4 +364,6 @@ fn programs(
         })
         .ask_person::<Permission>()
         .ask_person::<Asks>()
+        .program(trust::TrustProgram)
+        .ask_person::<trust::Trust>()
 }

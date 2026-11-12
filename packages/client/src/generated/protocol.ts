@@ -185,6 +185,9 @@ export type CredentialKind = "api_key" | "oauth" | "none";
  */
 export type Cursor = { segment: string, offset: number, };
 
+/**
+ * The person's decision on a project's configuration as it is, by its digest: whether what it names may run.
+ */
 export type DecideTrust = { folder: string, digest: string, trusted: boolean, };
 
 /**
@@ -833,7 +836,7 @@ export type SettingsChange = { environment?: EnvironmentChange | null, device?: 
 export type Share = { part: ContextPart, tokens: number, };
 
 /**
- * A server as the person is shown it: its name, and what it runs, or where it is reached.
+ * What a configuration names as the person is shown it: its name, and what it runs, or where it is reached.
  */
 export type ShownServer = { name: string, runs: string, };
 
@@ -946,7 +949,7 @@ export type Tool = { "type": "function", name: string, description: string, para
 
 /**
  * What the person is asked: whether what the project of `folder` names in its configuration — the file at `path`, of
- * the digest `digest` — may run: the servers it names, each as it would run.
+ * the digest `digest` — may run: what it names, each as it would run.
  */
 export type Trust = { folder: string, path: string, digest: string, servers: Array<ShownServer>, };
 
@@ -1064,6 +1067,7 @@ export type Methods = {
   'models.refresh': { params: Nothing; result: Nothing };
   'grants.list': { params: Nothing; result: GrantsListed };
   'grants.revoke': { params: Granted; result: Nothing };
+  'trust.decide': { params: DecideTrust; result: Nothing };
   'settings.set': { params: SettingsChange; result: Nothing };
   'browser.open': { params: OpenPage; result: PageOpened };
   'browser.navigate': { params: Navigate; result: Nothing };
@@ -1089,7 +1093,6 @@ export type Methods = {
   'git.versions': { params: GitVersions; result: Versions };
   'git.commits': { params: GitCommits; result: Commits };
   'servers.list': { params: ListServers; result: ServersListed };
-  'trust.decide': { params: DecideTrust; result: Nothing };
   'access.list': { params: Nothing; result: AccessListed };
   'access.pair': { params: PairWith; result: LinkMade };
   'access.revoke': { params: OfAccessEntry; result: Revoked };

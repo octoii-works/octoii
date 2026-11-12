@@ -13,10 +13,9 @@ use siphon::protocol::Error;
 use siphon::tools::projects::Place;
 use siphon::tools::{Context, Refusal, Toolset};
 use siphon::{Caller, Extension, Registrar};
-use siphon_runtime::{Changes, Runtime};
+use siphon_runtime::Runtime;
 
 use crate::protocol;
-use crate::trust::{self, Trust, TrustProgram};
 use crate::{Catalog, Servers};
 
 /// The MCP servers, as a host adds them: the folder of the person's own configuration, whose `mcp.json` names their
@@ -43,7 +42,6 @@ impl Extension for McpExtension {
         let servers = Servers::start(registrar.machine().clone(), self.config.as_deref());
         let toolset: Arc<dyn Toolset> = Arc::new(servers.clone());
         registrar.toolset(toolset);
-        registrar.runtime(|runtime| runtime.program(TrustProgram).ask_person::<Trust>());
         let listing = servers.clone();
         registrar.methods(protocol::set(), protocol::Method::read, move |caller: Caller, method| {
             let servers = listing.clone();
@@ -81,7 +79,7 @@ impl Teller for Servers {
             let Some(place) = place else { return Ok(Telling::default()) };
             let catalog = self.catalog(runtime, place).await?;
             if let Some(trust) = &catalog.asks {
-                asked(runtime, thread, trust).await?;
+                siphon::trust::ask(runtime, thread, trust).await?;
             }
             let mut telling = Telling::default();
             if !catalog.tools.is_empty() || !catalog.problems.is_empty() {
@@ -109,26 +107,7 @@ async fn answered(servers: &Servers, caller: &Caller, method: protocol::Method) 
             let listed = servers.listed(runtime, place.as_ref()).await.map_err(|error| failed(&error))?;
             serde_json::to_value(listed).map_err(|error| failed(&error))
         }
-        protocol::Method::DecideTrust(decided) => {
-            let snapshot = runtime.snapshot().map_err(|error| failed(&error))?;
-            let changes = trust::decide(&snapshot, &decided.folder, &decided.digest, decided.trusted).map_err(|error| failed(&error))?;
-            runtime.commit(changes).await.map_err(|error| failed(&error))?;
-            Ok(serde_json::json!({}))
-        }
     }
-}
-
-/// Asks the person `trust` under the thread `thread`'s main process, where nothing asks it there yet.
-async fn asked(runtime: &Runtime, thread: &str, trust: &Trust) -> anyhow::Result<()> {
-    let main = siphon::threads::thread::main(thread);
-    let asking = beak::layout::process(&main, TrustProgram::KEY.as_bytes());
-    if runtime.snapshot()?.record(&asking)?.is_some() {
-        return Ok(());
-    }
-    let mut changes = Changes::new();
-    changes.start::<TrustProgram>(main, TrustProgram::KEY, trust)?;
-    runtime.commit(changes).await?;
-    Ok(())
 }
 
 /// The catalog of the MCP servers' tools as the model is told it: how they are called, their declarations, and what

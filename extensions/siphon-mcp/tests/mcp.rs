@@ -15,7 +15,7 @@ use siphon::machine::paths::Base;
 use siphon::threads::Mode;
 use siphon::tools::projects::Place;
 use siphon::tools::{CallStatus, Calls, Exec, ExecuteTool, ReadTool, ScriptProgram, Setting, Tools, answer_exec};
-use siphon_mcp::trust::{self, Trust, TrustProgram};
+use siphon::trust::{self, Trust, TrustProgram};
 use siphon_mcp::{Launch, Servers, parse};
 use siphon_runtime::{Asked, Changes, Ending, Options, Program, Run, Runtime};
 

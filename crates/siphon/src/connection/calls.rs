@@ -48,6 +48,17 @@ pub(crate) async fn answered(caller: Caller, method: Method) -> Result<serde_jso
                 .map_err(|error| refusal("failed", &error.to_string()))?;
             json(&Nothing {})
         }
+        Method::DecideTrust(decided) => {
+            let snapshot = siphon.runtime.snapshot().map_err(|error| refusal("failed", &error.to_string()))?;
+            let changes = crate::trust::decide(&snapshot, &decided.folder, &decided.digest, decided.trusted)
+                .map_err(|error| refusal("failed", &error.to_string()))?;
+            siphon
+                .runtime
+                .commit(changes)
+                .await
+                .map_err(|error| refusal("failed", &error.to_string()))?;
+            json(&Nothing {})
+        }
         Method::SetSettings(change) => {
             crate::settings::set(&siphon.runtime, session, &change)
                 .await

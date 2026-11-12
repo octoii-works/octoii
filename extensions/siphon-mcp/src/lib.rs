@@ -7,9 +7,7 @@ mod config;
 mod extension;
 pub mod protocol;
 mod servers;
-pub mod trust;
 
 pub use config::{Configured, Launch, OWN_FILE, PROJECT_FILE, Server, parse};
 pub use extension::McpExtension;
 pub use servers::{Catalog, Found, IDLE, ProjectServers, ServerListed, Servers, ServersListed};
-pub use trust::{ShownServer, Trust, TrustProgram, Trusted};

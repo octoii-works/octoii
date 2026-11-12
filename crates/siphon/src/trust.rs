@@ -1,5 +1,6 @@
-//! The person's trust in what a project's configuration runs — the MCP servers its `.mcp.json` names run once the
-//! person trusts them, as a shell's hook loads a folder's environment file once the person allowed it. A decision is on
+//! The person's trust in what a project's configuration runs — what an extension runs that a project names, as the MCP
+//! servers its `.mcp.json` names, run once the person trusts them, as a shell's hook loads a folder's environment file
+//! once the person allowed it. A decision is on
 //! the configuration as it was as they decided, by the SHA-256 of its bytes, kept in the project's `siphon.trust`
 //! annotation, so a configuration changed since is one they have not decided on. A thread whose project's
 //! configuration they have not decided on asks them by a process of its own, beside its turns, which ends once they
@@ -10,15 +11,16 @@ use beak::Snapshot;
 use bytes::Bytes;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use siphon_runtime::{Answer, AskedOfPerson, Changes, Ending, Program, Request, Run, Wait};
+use siphon_runtime::{Answer, AskedOfPerson, Changes, Ending, Program, Request, Run, Runtime, Wait};
 
-use siphon::tools::projects;
+use crate::threads::thread;
+use crate::tools::projects;
 
 /// The annotation that holds the decision.
 const ANNOTATION: &str = "siphon.trust";
 
 /// What the person is asked: whether what the project of `folder` names in its configuration — the file at `path`, of
-/// the digest `digest` — may run: the servers it names, each as it would run.
+/// the digest `digest` — may run: what it names, each as it would run.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, ts_rs::TS)]
 pub struct Trust {
     pub folder: String,
@@ -27,7 +29,7 @@ pub struct Trust {
     pub servers: Vec<ShownServer>,
 }
 
-/// A server as the person is shown it: its name, and what it runs, or where it is reached.
+/// What a configuration names as the person is shown it: its name, and what it runs, or where it is reached.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, ts_rs::TS)]
 pub struct ShownServer {
     pub name: String,
@@ -121,4 +123,21 @@ impl Program for TrustProgram {
         }
         Ok(Ending::Done(()))
     }
+}
+
+/// Asks the person `trust` beside the main process of the thread `thread`, which needs it — where nothing asks it there
+/// yet.
+///
+/// # Errors
+/// The volume's failure.
+pub async fn ask(runtime: &Runtime, thread: &str, trust: &Trust) -> anyhow::Result<()> {
+    let main = thread::main(thread);
+    let asking = beak::layout::process(&main, TrustProgram::KEY.as_bytes());
+    if runtime.snapshot()?.record(&asking)?.is_some() {
+        return Ok(());
+    }
+    let mut changes = Changes::new();
+    changes.start::<TrustProgram>(main, TrustProgram::KEY, trust)?;
+    runtime.commit(changes).await?;
+    Ok(())
 }

@@ -75,8 +75,18 @@ crate::methods! {
     "grants.list" ListGrants(Nothing) -> GrantsListed, Some(Scope::ThreadsRead);
     /// What a project was granted, taken back in part.
     "grants.revoke" RevokeGrants(crate::tools::projects::Granted) -> Nothing, Some(Scope::ThreadsOperate);
+    /// Whether the person trusts a project's configuration as it is, by its digest.
+    "trust.decide" DecideTrust(DecideTrust) -> Nothing, Some(Scope::ThreadsOperate);
     /// The settings changed: the environment's each given, the device's merged.
     "settings.set" SetSettings(SettingsChange) -> Nothing, Some(Scope::ThreadsOperate);
+}
+
+/// The person's decision on a project's configuration as it is, by its digest: whether what it names may run.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct DecideTrust {
+    pub folder: String,
+    pub digest: String,
+    pub trusted: bool,
 }
 
 /// A thread, by its id.
