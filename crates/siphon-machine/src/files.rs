@@ -107,6 +107,51 @@ fn not_found(error: beak::Error) -> Error {
     }
 }
 
+/// Where the namespace came nearest to a path at which nothing is: the nearest folder on its way that is there, and
+/// the names in it most like the one missing from it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Missing {
+    pub folder: String,
+    pub like: Vec<String>,
+}
+
+/// The most names like a missing one given.
+const LIKE_MAX: usize = 3;
+
+/// How unlike `wanted` the name `name` is, lower nearer: the same but for case, the same but for its extension, one
+/// holding the other, or within two edits of it; none where it is none of these.
+fn likeness(wanted: &str, name: &str) -> Option<usize> {
+    let (wanted, name) = (wanted.to_lowercase(), name.to_lowercase());
+    let stem = |name: &str| name.split_once('.').map_or(name, |(stem, _)| stem).to_owned();
+    if wanted == name {
+        return Some(0);
+    }
+    if !stem(&wanted).is_empty() && stem(&wanted) == stem(&name) {
+        return Some(1);
+    }
+    if wanted.chars().count() >= 3 && (name.contains(&wanted) || wanted.contains(&name)) {
+        return Some(2);
+    }
+    let distance = edits(&wanted, &name);
+    (wanted.chars().count() >= 4 && distance <= 2).then_some(2 + distance)
+}
+
+/// How many characters must be put in, taken out or changed to make `a` of `b`.
+fn edits(a: &str, b: &str) -> usize {
+    let b: Vec<char> = b.chars().collect();
+    let mut row: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.chars().enumerate() {
+        let mut diagonal = row[0];
+        row[0] = i + 1;
+        for (j, cb) in b.iter().enumerate() {
+            let above = row[j + 1];
+            row[j + 1] = (above + 1).min(row[j] + 1).min(diagonal + usize::from(ca != *cb));
+            diagonal = above;
+        }
+    }
+    row[b.len()]
+}
+
 /// What a file is, by its first bytes: a PNG, a JPEG, a GIF, a WebP or a PDF; none for any other.
 #[must_use]
 pub fn media_type(head: &[u8]) -> Option<&'static str> {
@@ -188,6 +233,29 @@ impl Machine {
             }
         }
         Ok(None)
+    }
+
+    /// Where the namespace came nearest to `path`, at which nothing is: the nearest folder on its way that is there,
+    /// and the names in that folder most like the one missing from it, at most three, as a shell's `cd` suggests.
+    ///
+    /// # Errors
+    /// The namespace's failure.
+    pub fn missing(&self, path: &str) -> Result<Missing, Error> {
+        let (mut folder, mut name) = split(path);
+        while !folder.is_empty() && self.namespace.stat(folder)?.is_none() {
+            (folder, name) = split(folder);
+        }
+        let entries = self.namespace.list(folder, &all()).unwrap_or_default();
+        let mut like: Vec<(usize, String)> = entries
+            .iter()
+            .map(|entry| String::from_utf8_lossy(&entry.name).into_owned())
+            .filter_map(|entry| likeness(name, &entry).map(|distance| (distance, entry)))
+            .collect();
+        like.sort();
+        Ok(Missing {
+            folder: folder.to_owned(),
+            like: like.into_iter().take(LIKE_MAX).map(|(_, entry)| entry).collect(),
+        })
     }
 
     /// What is at the namespace's `path`, as `file(1)` tells it: its path, its size, and whether it is a folder, an

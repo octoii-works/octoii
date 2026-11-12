@@ -698,7 +698,7 @@ Hands a task to a sub-thread of your own, which works on it with the same tools 
 }
 
 === tool edit
-Replaces text in a file: `old` must match one place, or every place with `all`. Give in `old` just the lines that make it unique. It is matched exactly, else with typographic characters (curly quotes, dashes, special spaces) read as plain ones, else line by line ignoring trailing whitespace; a match not exact is noted with how it matched. Gives the change as a unified diff. A refusal gives its reason: empty, same (`new` is `old`), not-found (`old` is nowhere in the file), unchanged, many (how many places matched: give more of `old`, or set `all`).
+Replaces text in a file: `old` must match one place, or every place with `all`. Give in `old` just the lines that make it unique. It is matched exactly, else with typographic characters (curly quotes, dashes, special spaces) read as plain ones, else line by line ignoring trailing whitespace; a match not exact is noted with how it matched. Gives the change as a unified diff. A refusal gives its reason: empty, same (`new` is `old`), not-found (`old` is nowhere in the file; the lines nearest to it follow, as the file holds them, or a note that `new` is there already), unchanged, many (how many places matched: give more of `old`, or set `all`).
 --- parameters
 {
   "properties": {

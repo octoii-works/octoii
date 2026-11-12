@@ -142,6 +142,16 @@ pub trait Tool: Send + Sync + 'static {
 
 type Execing = Pin<Box<dyn Future<Output = Result<Told, Refusal>> + Send>>;
 
+/// The most characters of a call's arguments told back where they do not fit its tool.
+const GIVEN_CHARS_MAX: usize = 1000;
+
+/// The refusal of arguments `given` that do not fit their tool, for `error`: the error, then the arguments as they came.
+pub(crate) fn invalid(error: &serde_json::Error, given: &str) -> Refusal {
+    let shown: String = given.chars().take(GIVEN_CHARS_MAX).collect();
+    let cut = if shown.len() < given.len() { " …" } else { "" };
+    Refusal(format!("invalid arguments: {error}\n[given: {shown}{cut}]"))
+}
+
 /// A tool of any kind, as a table holds it: its arguments as JSON.
 trait Erased: Send + Sync {
     fn effect(&self, arguments: &serde_json::Value, base: &Base) -> Result<Effect, Refusal>;
@@ -161,7 +171,7 @@ trait Erased: Send + Sync {
 
 impl<T: Tool> Erased for T {
     fn effect(&self, arguments: &serde_json::Value, base: &Base) -> Result<Effect, Refusal> {
-        let args: T::Args = serde_json::from_value(arguments.clone()).map_err(|error| Refusal(format!("invalid arguments: {error}")))?;
+        let args: T::Args = serde_json::from_value(arguments.clone()).map_err(|error| invalid(&error, &arguments.to_string()))?;
         Ok(Tool::effect(self, &args, base))
     }
 
@@ -195,7 +205,8 @@ impl<T: Tool> Erased for T {
 
     fn exec(self: Arc<Self>, context: Context, arguments: serde_json::Value) -> Execing {
         Box::pin(async move {
-            let args: T::Args = serde_json::from_value(arguments).map_err(|error| Refusal(format!("invalid arguments: {error}")))?;
+            let given = arguments.to_string();
+            let args: T::Args = serde_json::from_value(arguments).map_err(|error| invalid(&error, &given))?;
             Tool::exec(&*self, &context, args).await
         })
     }

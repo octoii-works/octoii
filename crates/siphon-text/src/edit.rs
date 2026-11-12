@@ -7,6 +7,8 @@
 
 use similar::{Algorithm, DiffOp};
 
+use crate::nearest::{Nearest, nearest};
+
 /// How an edit found what it replaced.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Matching {
@@ -35,16 +37,16 @@ pub struct Edit<'a> {
     pub all: bool,
 }
 
-/// Why an edit is refused, its reason as a failure tells it: `old` empty, or the same as `new`; no match; more than
-/// one, not asked to replace every one; or a text the edit leaves as it was.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+/// Why an edit is refused, its reason as a failure tells it: `old` empty, or the same as `new`; no match, with where
+/// the text came nearest; more than one, not asked to replace every one; or a text the edit leaves as it was.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum Refusal {
     #[error("empty")]
     Empty,
     #[error("same")]
     Same,
     #[error("not-found")]
-    NotFound,
+    NotFound(Nearest),
     #[error("many")]
     Many(usize),
     #[error("unchanged")]
@@ -80,24 +82,28 @@ impl Edit<'_> {
         }
         if self.old.replace('\r', "") == self.new.replace('\r', "") {
             let spans = occurrences(text, self.old);
-            check(spans.len(), self.all)?;
+            self.check(text, spans.len())?;
             return made(text, replaced_as_written(text, &spans, self.new), spans.len(), Matching::Exact);
         }
         let old = lf_view(self.old).text;
         let view = lf_view(text);
         let (spans, matching) = matched(&view.text, &old);
-        check(spans.len(), self.all)?;
+        self.check(text, spans.len())?;
         let after = replaced(text, &view, &spans, &old, &lf_view(self.new).text);
         made(text, after, spans.len(), matching)
     }
 }
 
-fn check(matches: usize, all: bool) -> Result<(), Refusal> {
-    match matches {
-        0 => Err(Refusal::NotFound),
-        1 => Ok(()),
-        many if !all => Err(Refusal::Many(many)),
-        _ => Ok(()),
+impl Edit<'_> {
+    /// Whether `matches` matches of `old` in `text` are what the edit asks: none refused, with where `text` came nearest;
+    /// more than one refused where every match is not asked for.
+    fn check(&self, text: &str, matches: usize) -> Result<(), Refusal> {
+        match matches {
+            0 => Err(Refusal::NotFound(nearest(text, self.old, self.new))),
+            1 => Ok(()),
+            many if !self.all => Err(Refusal::Many(many)),
+            _ => Ok(()),
+        }
     }
 }
 

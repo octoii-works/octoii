@@ -301,7 +301,7 @@ impl Calls {
             if self.0[at].state == State::Waiting {
                 let call = &self.0[at];
                 let effect = serde_json::from_str(&call.arguments)
-                    .map_err(|error| crate::tool::Refusal(format!("invalid arguments: {error}")))
+                    .map_err(|error| crate::tool::invalid(&error, &call.arguments))
                     .and_then(|arguments| setting.tools.effect(&call.tool, &arguments, setting.base));
                 match effect {
                     Err(refusal) => {

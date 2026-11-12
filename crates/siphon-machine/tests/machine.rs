@@ -406,3 +406,26 @@ async fn a_folder_bound_back_over_what_the_host_hides_is_reached_by_a_command_an
     assert_eq!(told, if beak::machine_confines() { "ok hidden" } else { "oks" });
     assert!(own.join("made").is_file(), "its own folder written");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_path_at_which_nothing_is_is_told_the_nearest_folder_and_the_names_like_it() {
+    let beak = Beak::new().expect("Beak");
+    let kernel = kernel(&beak);
+    let (machine, _folder, workspace) = machine(&kernel, &Host::default());
+    std::fs::create_dir_all(workspace.join("src")).expect("a folder");
+    for name in ["main.rs", "lib.rs", "Mainly.txt", "other.md"] {
+        std::fs::write(workspace.join("src").join(name), "").expect("a file");
+    }
+    let missing = machine.missing(&machine.path("src/mian.rs")).expect("looked");
+    assert_eq!(machine.shown(&missing.folder), "src");
+    assert_eq!(missing.like, vec!["main.rs".to_owned()], "within two edits");
+    let deeper = machine.missing(&machine.path("src/gone/away/main.rs")).expect("looked");
+    assert_eq!(machine.shown(&deeper.folder), "src", "the nearest folder on its way");
+    assert!(deeper.like.is_empty(), "nothing in it like gone");
+    let cased = machine.missing(&machine.path("src/MAIN")).expect("looked");
+    assert_eq!(
+        cased.like,
+        vec!["main.rs".to_owned(), "Mainly.txt".to_owned()],
+        "the same stem first, then one holding it"
+    );
+}

@@ -29,6 +29,24 @@ fn failed(error: siphon_machine::Error) -> Refusal {
     })
 }
 
+/// The refusal of a call on `path` for `error`, where nothing is there with where the machine came nearest: the
+/// nearest folder on its way, and the names in it most like the one missing.
+fn failed_at(machine: &Machine, path: &str, error: siphon_machine::Error) -> Refusal {
+    if !matches!(error, siphon_machine::Error::NotFound) {
+        return failed(error);
+    }
+    let Ok(missing) = machine.missing(path) else { return failed(error) };
+    let mut words = format!(
+        "not-found: nothing is there\n[the nearest folder there is {}",
+        machine.shown(&missing.folder)
+    );
+    if !missing.like.is_empty() {
+        let _ = write!(words, "; in it, names like the one asked: {}", missing.like.join(", "));
+    }
+    words.push(']');
+    Refusal(words)
+}
+
 /// Runs `work` on the machine off the async threads, as the namespace's reads and writes may wait on the disk.
 async fn blocking<T: Send + 'static>(
     context: &Context,
@@ -80,7 +98,7 @@ impl Tool for ReadTool {
         };
         let (read, name) = blocking(context, move |machine| {
             let path = machine.path(&args.path);
-            let read = machine.read(&path, &options).map_err(failed)?;
+            let read = machine.read(&path, &options).map_err(|error| failed_at(machine, &path, error))?;
             let name = match &read {
                 Read::Text { path, .. }
                 | Read::Directory { path, .. }
@@ -226,7 +244,7 @@ pub struct EditTool;
 
 impl Tool for EditTool {
     const NAME: &'static str = "edit";
-    const DESCRIPTION: &'static str = "Replaces text in a file: `old` must match one place, or every place with `all`. Give in `old` just the lines that make it unique. It is matched exactly, else with typographic characters (curly quotes, dashes, special spaces) read as plain ones, else line by line ignoring trailing whitespace; a match not exact is noted with how it matched. Gives the change as a unified diff. A refusal gives its reason: empty, same (`new` is `old`), not-found (`old` is nowhere in the file), unchanged, many (how many places matched: give more of `old`, or set `all`).";
+    const DESCRIPTION: &'static str = "Replaces text in a file: `old` must match one place, or every place with `all`. Give in `old` just the lines that make it unique. It is matched exactly, else with typographic characters (curly quotes, dashes, special spaces) read as plain ones, else line by line ignoring trailing whitespace; a match not exact is noted with how it matched. Gives the change as a unified diff. A refusal gives its reason: empty, same (`new` is `old`), not-found (`old` is nowhere in the file; the lines nearest to it follow, as the file holds them, or a note that `new` is there already), unchanged, many (how many places matched: give more of `old`, or set `all`).";
     type Args = EditArgs;
 
     fn effect(&self, args: &EditArgs, base: &Base) -> Effect {
@@ -241,7 +259,10 @@ impl Tool for EditTool {
                 new: &args.new,
                 all: args.all,
             };
-            match machine.edit(&path, &edit, &machine.shown(&path)).map_err(failed)? {
+            match machine
+                .edit(&path, &edit, &machine.shown(&path))
+                .map_err(|error| failed_at(machine, &path, error))?
+            {
                 EditOutcome::Made { change, edited } => {
                     let changed = Structured::Changed {
                         path: machine.shown(&path),
@@ -258,6 +279,7 @@ impl Tool for EditTool {
                     }
                     Ok(Told::structured(text(out), &changed))
                 }
+                EditOutcome::Refused(siphon_text::Refusal::NotFound(nearest)) => Err(Refusal(not_found(&nearest))),
                 EditOutcome::Refused(siphon_text::Refusal::Many(count)) => {
                     Err(Refusal(format!("many: {count} places match; give more of old, or set all")))
                 }
@@ -265,6 +287,17 @@ impl Tool for EditTool {
             }
         })
         .await
+    }
+}
+
+/// The refusal of an edit whose `old` is nowhere in its file, with where the file came nearest.
+fn not_found(nearest: &siphon_text::Nearest) -> String {
+    match nearest {
+        siphon_text::Nearest::Made => "not-found\n[`new` is in the file already: the edit may have been made]".into(),
+        siphon_text::Nearest::Lines { first, lines } => {
+            format!("not-found\n[the nearest lines, from line {first}:]\n{}", lines.join("\n"))
+        }
+        siphon_text::Nearest::Nowhere => "not-found".into(),
     }
 }
 
