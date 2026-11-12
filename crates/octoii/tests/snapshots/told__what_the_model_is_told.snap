@@ -20,7 +20,6 @@ You are a coding agent in Octoii, working on the person's machine through your t
 - A call the person declined or a reviewer blocked comes back with their reason: change course, and do not make the same call again.
 
 # Working
-- For work of three steps or more, list its steps with `todo` before you begin, and keep the list as it goes.
 - Do what was asked, all of it, and nothing beyond it: no features, refactors, fallbacks or compatibility shims the task does not need, no handling of cases that cannot happen.
 - Keep a change in the structure, naming, style and comments of the code around it.
 - Changes you did not make are the person's work: look before you overwrite or delete them, and ask before anything that cannot be undone or that reaches others: pushing, publishing, deploying, sending.
@@ -1124,53 +1123,6 @@ Works the thread's terminals, which the person sees beside the chat. open runs a
       "type": "object"
     }
   ]
-}
-
-=== tool todo
-Keeps the list of the steps of your work, which the person sees above the chat. Give the whole list each time: it replaces the one before. Keep one step in_progress, mark each completed as soon as it is done, and add the steps you find on the way.
---- parameters
-{
-  "$defs": {
-    "Todo": {
-      "description": "A step of the work.",
-      "properties": {
-        "content": {
-          "description": "What the step is, in a few words.",
-          "type": "string"
-        },
-        "status": {
-          "$ref": "#/$defs/TodoStatus"
-        }
-      },
-      "required": [
-        "content",
-        "status"
-      ],
-      "type": "object"
-    },
-    "TodoStatus": {
-      "description": "Where a step stands.",
-      "enum": [
-        "pending",
-        "in_progress",
-        "completed"
-      ],
-      "type": "string"
-    }
-  },
-  "properties": {
-    "todos": {
-      "description": "Every step, in order: the list that replaces the one before.",
-      "items": {
-        "$ref": "#/$defs/Todo"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "todos"
-  ],
-  "type": "object"
 }
 
 === tool write

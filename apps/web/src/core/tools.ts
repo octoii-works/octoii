@@ -25,7 +25,7 @@ import {
 } from "./calls.ts";
 
 /** The kind of work a call does, by its tool: its mark, and how a stretch of calls says it. */
-export type WorkKind = "read" | "edit" | "search" | "command" | "script" | "browse" | "ask" | "delegate" | "plan" | "other";
+export type WorkKind = "read" | "edit" | "search" | "command" | "script" | "browse" | "ask" | "delegate" | "other";
 
 /** What a call's line says beside what it works on: quiet words — the lines a read held, how many a search found, what a script's calls did — or the lines an edit or a write added and took out. */
 export type Aside = { readonly kind: "words"; readonly text: string } | { readonly kind: "change"; readonly added: number; readonly removed: number };
@@ -163,14 +163,6 @@ const TOOLS: Readonly<Partial<Record<string, ToolView>>> = {
 		subject: (given) => given.command ?? (given.terminal === undefined ? undefined : `${given.action ?? ""} terminal ${String(given.terminal)}`.trim()),
 		code: true,
 	}),
-	todo: toolView({
-		work: "plan",
-		verbs: ["Update the plan", "Updating the plan", "Updated the plan"],
-		aside: (call) =>
-			call.structured?.type === "todos"
-				? { kind: "words", text: `${call.structured.todos.filter((todo) => todo.status === "completed").length}/${call.structured.todos.length} done` }
-				: undefined,
-	}),
 	delegate: toolView({ work: "delegate", verbs: ["Delegate", "Delegating", "Delegated"], subject: (given) => given.title ?? given.task?.split("\n")[0] }),
 	browser_navigate: toolView({ work: "browse", verbs: ["Open", "Opening", "Opened"], subject: (given) => given.url ?? given.go }),
 	browser_snapshot: toolView({ work: "browse", verbs: ["Read the page", "Reading the page", "Read the page"] }),
@@ -235,7 +227,6 @@ const ACTIONS: Readonly<Record<WorkKind, readonly [went: (count: number) => stri
 	browse: [(n) => `used the browser ${counted(n, "time", "times")}`, () => "using the browser"],
 	ask: [(n) => `asked ${counted(n, "question", "questions")}`, (n) => `asking ${counted(n, "question", "questions")}`],
 	delegate: [(n) => `delegated ${counted(n, "task", "tasks")}`, (n) => `delegating ${counted(n, "task", "tasks")}`],
-	plan: [() => "updated the plan", () => "updating the plan"],
 	other: [(n) => `used ${counted(n, "tool", "tools")}`, (n) => `using ${counted(n, "tool", "tools")}`],
 };
 
