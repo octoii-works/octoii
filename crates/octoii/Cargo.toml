@@ -40,6 +40,7 @@ siphon-image = { path = "../siphon-image" }
 siphon-claude-code = { path = "../../extensions/siphon-claude-code" }
 siphon-mcp = { path = "../../extensions/siphon-mcp" }
 siphon-delegate = { path = "../../extensions/siphon-delegate" }
+siphon-git = { path = "../../extensions/siphon-git" }
 siphon-memory = { path = "../../extensions/siphon-memory" }
 siphon-question = { path = "../../extensions/siphon-question" }
 siphon-skills = { path = "../../extensions/siphon-skills" }

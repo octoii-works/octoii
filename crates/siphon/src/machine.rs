@@ -4,12 +4,11 @@
 
 mod coprocess;
 mod files;
-pub mod git;
 mod namespace;
 pub mod paths;
 mod search;
 
 pub use coprocess::{Coprocess, Stderr, Stdin, Stdout, Variables};
 pub use files::{Change, EditOutcome, Error, Is, Missing, Read, ReadOptions, Stat, media_type};
-pub use namespace::{Errors, Host, Machine, Program, Ran, RunError, ThreadsView, Writes};
+pub use namespace::{Errors, Host, Machine, Program, Ran, RunError, ThreadsView, Writes, inside};
 pub use search::{Globbed, GrepError, GrepFile, GrepLine, GrepOptions, Grepped, Listed, Walked};

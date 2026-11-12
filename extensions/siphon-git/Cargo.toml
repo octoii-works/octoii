@@ -1,0 +1,26 @@
+[package]
+name = "siphon-git"
+description = "Git: the repository a folder of the machine's is in, its changes, patches, versions and commits, as git tells of them, for the Diff view"
+version = "0.0.1"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+beak = { path = "../../vendor/beak/crates/beak" }
+bytes = "1.12.1"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+siphon = { path = "../../crates/siphon" }
+siphon-runtime = { path = "../../crates/siphon-runtime" }
+thiserror = "2.0.21"
+tokio-util = { version = "0.7.20", features = ["io"] }
+ts-rs = { version = "12.0.1", features = ["serde-json-impl", "no-serde-warnings"] }
+
+[dev-dependencies]
+tempfile = "3.27.0"
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "time"] }

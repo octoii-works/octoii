@@ -290,6 +290,7 @@ impl Machine {
 }
 
 /// The namespace's path of the absolute `place`: the place without its root.
-pub(crate) fn inside(place: &Path) -> String {
+#[must_use]
+pub fn inside(place: &Path) -> String {
     place.to_string_lossy().trim_start_matches('/').to_owned()
 }

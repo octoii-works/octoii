@@ -17,6 +17,7 @@ use siphon::{Setup, Siphon};
 use siphon_browser::BrowserExtension;
 use siphon_claude_code::ClaudeCodeExtension;
 use siphon_delegate::DelegateExtension;
+use siphon_git::GitExtension;
 use siphon_mcp::McpExtension;
 use siphon_memory::MemoryExtension;
 use siphon_question::QuestionExtension;
@@ -130,6 +131,7 @@ pub fn building(home: &Home, sign_in: SignInSetup) -> anyhow::Result<siphon::Bui
         .extension(DelegateExtension)
         .extension(ThreadExtension)
         .extension(MemoryExtension)
+        .extension(GitExtension)
         .extension(SkillsExtension {
             config: Some(home.config()),
         })

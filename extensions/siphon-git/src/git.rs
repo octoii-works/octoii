@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 use ts_rs::TS;
 
-use crate::machine::namespace::{Machine, Program, RunError};
+use siphon::machine::{Machine, Program, RunError};
 
 /// The most commits of a branch told at once.
 const COMMITS_MAX: usize = 200;
@@ -450,7 +450,7 @@ impl Git<'_> {
                 &self.output(root, &["cat-file", "blob", &format!("{new}:{}", file.path)]).await?,
             )),
             (None, _) => {
-                let path = crate::machine::namespace::inside(&root.join(&file.path));
+                let path = siphon::machine::inside(&root.join(&file.path));
                 let namespace = self.machine.namespace();
                 let size = namespace.stat(&path).map_err(RunError::Beak)?.map_or(0, |stat| stat.size);
                 Some(text(&namespace.read(&path, 0, size).map_err(RunError::Beak)?))

@@ -1051,11 +1051,6 @@ export type Methods = {
   'files.list': { params: ListFolder; result: FolderPage };
   'files.read': { params: ReadFile; result: FilePage };
   'files.search': { params: SearchFiles; result: FoundPaths };
-  'git.repository': { params: InFolder; result: InRepository };
-  'git.changes': { params: GitChanges; result: Changes };
-  'git.patch': { params: GitPatch; result: Patch };
-  'git.versions': { params: GitVersions; result: Versions };
-  'git.commits': { params: GitCommits; result: Commits };
   'providers.list': { params: Nothing; result: ProvidersListed };
   'providers.status': { params: OfProvider; result: ProviderStatus };
   'providers.sign-in': { params: OfProvider; result: SignInBegun };
@@ -1088,6 +1083,11 @@ export type Methods = {
   'terminals.text': { params: OfTerminal; result: TerminalText };
   'memory.list': { params: InFolder; result: MemoryListed };
   'memory.delete': { params: DeleteMemory; result: Nothing };
+  'git.repository': { params: InFolder; result: InRepository };
+  'git.changes': { params: GitChanges; result: Changes };
+  'git.patch': { params: GitPatch; result: Patch };
+  'git.versions': { params: GitVersions; result: Versions };
+  'git.commits': { params: GitCommits; result: Commits };
   'servers.list': { params: ListServers; result: ServersListed };
   'trust.decide': { params: DecideTrust; result: Nothing };
   'access.list': { params: Nothing; result: AccessListed };

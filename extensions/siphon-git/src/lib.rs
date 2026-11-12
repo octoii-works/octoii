@@ -1,18 +1,45 @@
-//! The machine's repositories as the person reads them, by git run on the machine as the person reads it: each run
-//! recorded in the volume as every program is, under a directory of its own that goes as it ends.
+//! Git as an extension of Siphon's: the repository a folder of the machine's is in, as git tells of it — its changes, a
+//! file's patch and its two versions, a branch's commits — each run of git recorded while it runs, for the Diff view.
+
+pub mod git;
+pub mod protocol;
 
 use std::path::Path;
 
-use crate::machine::git::{Git, GitError};
-use crate::protocol::Error;
-use crate::protocol::siphon::{Commits, InRepository, Method, Patch, Versions};
 use bytes::Bytes;
 use serde::Serialize;
+use siphon::connection::refusal;
+use siphon::protocol::Error;
+use siphon::{Caller, Extension, Registrar, Siphon};
 use siphon_runtime::Changes;
 use tokio_util::sync::CancellationToken;
 
-use super::refusal;
-use crate::Siphon;
+use crate::git::{Git, GitError};
+use crate::protocol::{Commits, InRepository, Method, Patch, Versions};
+
+/// Git, as a host adds it.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct GitExtension;
+
+impl Extension for GitExtension {
+    fn name(&self) -> &'static str {
+        "git"
+    }
+
+    fn title(&self) -> &'static str {
+        "Git"
+    }
+
+    fn description(&self) -> &'static str {
+        "What git tells of a thread's repository — its changes, patches and commits — for the Diff view."
+    }
+
+    fn build(self: Box<Self>, registrar: &mut Registrar<'_>) {
+        registrar.methods(protocol::set(), Method::read, |caller: Caller, method| async move {
+            answered(&caller.siphon, method).await
+        });
+    }
+}
 
 /// The kind of the directory a run of git is recorded under.
 const RECORD_KIND: &[u8] = b"siphon.git";
@@ -29,7 +56,7 @@ fn told(error: &GitError) -> Error {
 }
 
 /// Does the git method `method` on `siphon`.
-pub(super) async fn answered(siphon: &Siphon, method: Method) -> Result<serde_json::Value, Error> {
+async fn answered(siphon: &Siphon, method: Method) -> Result<serde_json::Value, Error> {
     let machine = siphon.person_machine().map_err(failed)?;
     let runtime = &siphon.runtime;
     let record = beak::layout::child(b"", RECORD_KIND, runtime.new_id().map_err(failed)?.as_bytes());
@@ -85,6 +112,5 @@ async fn told_by(git: &Git<'_>, method: Method) -> Result<serde_json::Value, Err
                 .map_err(|error| told(&error))?;
             json(&Commits { commits, truncated })
         }
-        _ => Err(refusal("bad_call", "no method of git's")),
     }
 }

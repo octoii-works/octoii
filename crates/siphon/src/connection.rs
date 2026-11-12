@@ -5,7 +5,6 @@
 //! does not keep up with is let go, told it lagged and where it stood, for the client to make again from there.
 
 mod calls;
-mod git;
 mod journal;
 mod machine;
 mod providers;
@@ -198,7 +197,8 @@ fn answer(id: String, result: Result<serde_json::Value, Error>) -> Answer {
 }
 
 /// An error of `code`, saying `message`.
-pub(crate) fn refusal(code: &str, message: &str) -> Error {
+#[must_use]
+pub fn refusal(code: &str, message: &str) -> Error {
     Error {
         code: code.to_owned(),
         message: message.to_owned(),

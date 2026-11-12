@@ -55,6 +55,7 @@ async fn git_tells_a_repository_s_changes_patches_versions_and_commits() {
     std::fs::write(root.join("new.txt"), "fresh\n").expect("written");
     let beak = Beak::new().expect("Beak");
     let siphon = Siphon::builder(&beak, testing::setup(siphon::machine::Host::default()))
+        .map(|building| building.extension(siphon_git::GitExtension))
         .expect("built")
         .start()
         .expect("started");

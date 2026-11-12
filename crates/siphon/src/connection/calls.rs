@@ -21,11 +21,6 @@ pub(crate) async fn answered(caller: Caller, method: Method) -> Result<serde_jso
         Method::ListFolder(asked) => json(&super::machine::list(siphon, &asked)?),
         Method::ReadFile(asked) => json(&super::machine::read(siphon, &asked)?),
         Method::SearchFiles(asked) => json(&super::machine::search(siphon, &asked)?),
-        method @ (Method::GitRepository(_)
-        | Method::GitChanges(_)
-        | Method::GitPatch(_)
-        | Method::GitVersions(_)
-        | Method::GitCommits(_)) => super::git::answered(siphon, method).await,
         method @ (Method::ListProviders(_)
         | Method::StatusOfProvider(_)
         | Method::SignIn(_)

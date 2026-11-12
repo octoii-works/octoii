@@ -3927,6 +3927,7 @@ dependencies = [
  "siphon-browser",
  "siphon-claude-code",
  "siphon-delegate",
+ "siphon-git",
  "siphon-image",
  "siphon-mcp",
  "siphon-memory",
@@ -5625,6 +5626,23 @@ dependencies = [
  "schemars 1.2.3",
  "serde",
  "siphon",
+]
+
+[[package]]
+name = "siphon-git"
+version = "0.0.1"
+dependencies = [
+ "beak",
+ "bytes",
+ "serde",
+ "serde_json",
+ "siphon",
+ "siphon-runtime",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
+ "ts-rs",
 ]
 
 [[package]]
