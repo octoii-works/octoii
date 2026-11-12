@@ -7,8 +7,8 @@ import { useTransition } from "react";
 import type { MemoryListed } from "@octoii-works/octoii-client";
 import { useClient } from "@octoii-works/octoii-client/react";
 import { Trash2 } from "lucide-react";
-import { failed } from "../state/notices.ts";
-import { IconButton } from "../ui/button.tsx";
+import { failed } from "../../components/state/notices.ts";
+import { IconButton } from "../../components/ui/button.tsx";
 
 /** The project's memories, under where they are kept; `onDeleted` told once one is gone, for them to be read again. */
 export function MemoryCard(props: { readonly path: string; readonly listed: MemoryListed; readonly onDeleted: () => void }): ReactNode {

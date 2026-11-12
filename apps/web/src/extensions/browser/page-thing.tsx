@@ -6,11 +6,11 @@ import { type ReactNode, useContext } from "react";
 import type { PageListed } from "@octoii-works/octoii-client";
 import { Globe } from "lucide-react";
 import { pageName } from "../../core/things.ts";
-import { pageKey, showSurface } from "../state/panel.ts";
-import { cn } from "../ui/cn.ts";
-import { IconTile } from "../ui/icon-tile.tsx";
-import { MessageThreadContext } from "../thread/message-thread.ts";
-import { CARD, CardWords, CHIP, CHIP_ICON, GONE_CHIP, type ThingView } from "../thread/thing-look.tsx";
+import { pageKey, showSurface } from "../../components/state/panel.ts";
+import { cn } from "../../components/ui/cn.ts";
+import { IconTile } from "../../components/ui/icon-tile.tsx";
+import { MessageThreadContext } from "../../components/thread/message-thread.ts";
+import { CARD, CardWords, CHIP, CHIP_ICON, GONE_CHIP, type ThingView } from "../../components/thread/thing-look.tsx";
 
 /** The page `page` of the thread shown, as its browser lists it, and the way to show it; none where it is closed. */
 function usePage(page: string): { readonly listed: PageListed; readonly show: () => void } | undefined {

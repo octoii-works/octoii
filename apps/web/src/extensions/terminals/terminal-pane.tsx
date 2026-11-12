@@ -1,6 +1,6 @@
 /** A terminal of the thread's, filling its tab of the right panel: drawn, typed into and sized as its view. */
 import type { ReactNode } from "react";
-import { useTerminalView } from "../effects/terminal.ts";
+import { useTerminalView } from "../../components/effects/terminal.ts";
 
 /** The terminal `terminal`. */
 export function TerminalPane(props: { readonly terminal: string }): ReactNode {

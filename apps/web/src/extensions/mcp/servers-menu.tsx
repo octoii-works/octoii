@@ -12,11 +12,11 @@ import { useClient } from "@octoii-works/octoii-client/react";
 import { ChevronDown, Plug, ShieldQuestion, TriangleAlert } from "lucide-react";
 import { countOf, groupsOf, type ProjectGroup } from "../../core/servers.ts";
 import { nameOf } from "../../core/files.ts";
-import { useOutcome } from "../effects/read.ts";
-import { failed } from "../state/notices.ts";
-import { Button } from "../ui/button.tsx";
-import { Monogram } from "../ui/monogram.tsx";
-import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover.tsx";
+import { useOutcome } from "../../components/effects/read.ts";
+import { failed } from "../../components/state/notices.ts";
+import { Button } from "../../components/ui/button.tsx";
+import { Monogram } from "../../components/ui/monogram.tsx";
+import { Popover, PopoverPopup, PopoverTrigger } from "../../components/ui/popover.tsx";
 
 /** The chip and its card, for a thread that would work in `folder`, none where it works in none. */
 export function ServersMenu(props: { readonly folder: string | undefined }): ReactNode {

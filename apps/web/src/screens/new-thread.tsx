@@ -24,7 +24,7 @@ import { go } from "../components/state/navigation.ts";
 import { ChatHeader } from "../components/thread/header.tsx";
 import { Menu, MenuItem, MenuItemLabel, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuTrigger } from "../components/ui/menu.tsx";
 import { ProjectMark } from "../components/files/project-mark.tsx";
-import { ServersMenu } from "../components/servers/servers-menu.tsx";
+import { ServersMenu } from "../extensions/mcp/servers-menu.tsx";
 
 /** What the new thread's page is given: the project's folder asked for, and the device's settings. */
 export type NewThreadScreenProps = {

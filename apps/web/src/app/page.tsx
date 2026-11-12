@@ -10,6 +10,8 @@ import { type Reach, ReachContext } from "../components/state/reach.ts";
 import { PairingPage } from "./access.tsx";
 import { App } from "./app.tsx";
 import { connect } from "./connect.ts";
+import { ContributionsContext } from "../components/state/contributions.ts";
+import { CONTRIBUTIONS } from "../extensions/contributions.ts";
 
 /** The root the page draws in. */
 export function pageRoot(): Root {
@@ -49,7 +51,9 @@ export function showApp(root: Root, reach: Reach): void {
 	root.render(
 		<ReachContext value={reach}>
 			<ClientProvider client={connect(reach)} frame={nextFrame}>
-				<App />
+				<ContributionsContext value={CONTRIBUTIONS}>
+					<App />
+				</ContributionsContext>
 			</ClientProvider>
 		</ReachContext>,
 	);

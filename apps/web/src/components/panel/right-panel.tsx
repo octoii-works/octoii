@@ -1,116 +1,56 @@
 /**
  * The panel's tabs, in the place the frame gives the panel: a bar of them, which the arrow keys walk — the thread's
- * views open, its files and its changes, then each of its terminals, named by the title its program set,
- * then each of its pages in the browser, named by its title — each as wide as its name, narrower where the bar runs
- * out of room; `+` to open a terminal, a page or a view, by its letter while the menu is open; the tab chosen shown
+ * Files view where it is open, then what the extensions show, as the page gives it: the changes, the terminals, the
+ * pages — each as wide as its name, narrower where the bar runs out of room; `+` to open what the extensions offer or
+ * the Files view, by its letter while the menu is open; the tab chosen shown
  * below, each other kept as it was while it is hidden, its terminal or page no longer followed; and the frame's own
  * buttons — at the bar's left the one that shows the sidebar, where the panel stands at the page's left edge, at its
  * right those that have the panel fill the page's column and that hide it. A view's tab is named by what it
- * shows, the Files view's by its file and that file's icon. A tab closes from its cross: a view's is taken out, a
- * terminal's closes the terminal, a page's the page.
+ * shows, the Files view's by its file and that file's icon. A tab closes from its cross, taken out, and what its
+ * extension ends with it ended: a terminal's closes the terminal, a page's the page.
  */
 import { Activity, type KeyboardEvent, type ReactNode, useState } from "react";
 import { Tabs } from "@base-ui/react/tabs";
-import type { PageListed, TerminalListed } from "@octoii-works/octoii-client";
-import { useClient } from "@octoii-works/octoii-client/react";
-import { FileDiff, Files, Globe, Plus, SquareTerminal, X } from "lucide-react";
-import { pageName } from "../../core/browser.ts";
+import { Files, Plus, X } from "lucide-react";
 import { nameOf } from "../../core/files.ts";
-import { terminalName } from "../../core/terminal.ts";
-import { isOn, useExtensions } from "../state/extensions.ts";
-import { closeSurface, pageKey, type SurfaceKey, showSurface, terminalKey, type ThreadPanel, useThreadPanel, type View } from "../state/panel.ts";
+import { closeSurface, type SurfaceKey, showSurface, type ThreadPanel, useThreadPanel, type View } from "../state/panel.ts";
 import { PathIcon } from "../files/path-icon.tsx";
 import { FillPanel, HidePanel, ShowSidebarFromPanel } from "../frame/frame.tsx";
 import { Button, IconButton } from "../ui/button.tsx";
 import { Menu, MenuItem, MenuItemLabel, MenuPopup, MenuShortcut, MenuTrigger } from "../ui/menu.tsx";
-import { BrowserPane } from "../browser/browser-pane.tsx";
-import { DiffSurface } from "../diff/diff-surface.tsx";
 import { FilesSurface } from "../files/files-surface.tsx";
-import { TerminalPane } from "../terminal/terminal-pane.tsx";
-import { failed } from "../state/notices.ts";
 
-/** The size a terminal opens at, before the view that opens it sizes it to its room. */
-const OPENED_SIZE = { rows: 24, cols: 80 } as const;
-
-/** The size a page opens at, before the view that opens it lays it out at its room. */
-const OPENED_PAGE = { width: 1280, height: 800, scale: 1 } as const;
-
-/** What the panel is given: its thread, the folder it works in — none where it works in none — its terminals and its pages. */
+/** What the panel is given: its thread, the folder it works in — none where it works in none — where its turns stand,
+ * which its views are read again at, and what the extensions show in it and offer to open. */
 export type RightPanelProps = {
 	readonly thread: string;
 	readonly folder: string | undefined;
-	readonly terminals: readonly TerminalListed[];
-	readonly pages: readonly PageListed[];
-	/** Where the thread's turns stand, which its changes are read again at. */
 	readonly revision: string;
+	readonly surfaces: readonly Surface[];
+	readonly openings: readonly Opening[];
 };
 
-/** What a tab shows: a view of the thread's, one of its terminals, or one of its pages. */
-type Shows = { readonly view: View } | { readonly terminal: string } | { readonly page: PageListed };
-
-/** A tab: what it shows, and its key, its icon and its name. */
-type Tab = { readonly key: SurfaceKey; readonly icon: ReactNode; readonly label: string; readonly shows: Shows };
+/** What an extension shows in the panel: its tab — its key, its icon, its name — what it shows, and what closing it ends beside the tab. */
+export type Surface = {
+	readonly key: SurfaceKey;
+	readonly icon: ReactNode;
+	readonly label: string;
+	readonly body: ReactNode;
+	readonly close?: () => void;
+};
 
 /** What `+` opens: its name, icon and letter, and how. */
-type Opening = { readonly label: string; readonly icon: typeof Files; readonly letter: string; readonly open: () => void };
+export type Opening = { readonly label: string; readonly icon: typeof Files; readonly letter: string; readonly open: () => void };
 
 /** The panel. */
 export function RightPanel(props: RightPanelProps): ReactNode {
-	const client = useClient();
 	const place = useThreadPanel(props.thread);
-	const extensions = useExtensions();
-	const terminals = isOn(extensions, "terminals");
-	const browser = isOn(extensions, "browser");
-	const git = isOn(extensions, "git");
-	const tabs: readonly Tab[] = [
-		...place.views.filter((view) => git || view !== "diff").map((view) => viewTab(view, place)),
-		...props.terminals.map((terminal): Tab => ({
-			key: terminalKey(terminal.id),
-			icon: <SquareTerminal />,
-			label: terminalName(terminal),
-			shows: { terminal: terminal.id },
-		})),
-		...props.pages.map((page): Tab => ({ key: pageKey(page.id), icon: <Globe />, label: pageName(page), shows: { page } })),
-	];
+	const tabs: readonly Surface[] = [...place.views.filter((view) => view === "files").map((view) => filesTab(view, place, props)), ...props.surfaces];
 	const shown = tabs.find((tab) => tab.key === place.shown) ?? tabs[0];
-	const openings: readonly Opening[] = [
-		...(terminals
-			? [
-					{
-						label: "Terminal",
-						icon: SquareTerminal,
-						letter: "T",
-						open: () => {
-							client.openTerminal(props.thread, OPENED_SIZE).then(
-								(id) => showSurface(props.thread, terminalKey(id)),
-								(error: unknown) => failed("A terminal could not be opened", error),
-							);
-						},
-					},
-				]
-			: []),
-		...(browser
-			? [
-					{
-						label: "Browser",
-						icon: Globe,
-						letter: "B",
-						open: () => {
-							client.openPage(props.thread, undefined, OPENED_PAGE).then(
-								(id) => showSurface(props.thread, pageKey(id)),
-								(error: unknown) => failed("A page could not be opened", error),
-							);
-						},
-					},
-				]
-			: []),
-		{ label: "Files", icon: Files, letter: "F", open: () => showSurface(props.thread, "files") },
-		...(git ? [{ label: "Diff", icon: FileDiff, letter: "D", open: () => showSurface(props.thread, "diff") }] : []),
-	];
-	const close = (tab: Tab, index: number): void => {
+	const openings: readonly Opening[] = [...props.openings, { label: "Files", icon: Files, letter: "F", open: () => showSurface(props.thread, "files") }];
+	const close = (tab: Surface, index: number): void => {
 		closeSurface(props.thread, tab.key, (tabs[index - 1] ?? tabs[index + 1])?.key);
-		if ("terminal" in tab.shows) client.closeTerminal(tab.shows.terminal).catch((error: unknown) => failed("The terminal could not be closed", error));
-		if ("page" in tab.shows) client.closePage(tab.shows.page.id).catch((error: unknown) => failed("The page could not be closed", error));
+		tab.close?.();
 	};
 	return (
 		<Tabs.Root value={shown?.key ?? null} onValueChange={(key: SurfaceKey) => showSurface(props.thread, key)} className="flex min-h-0 flex-1 flex-col">
@@ -130,40 +70,21 @@ export function RightPanel(props: RightPanelProps): ReactNode {
 			{shown === undefined ? <Empty openings={openings} /> : null}
 			{tabs.map((tab) => (
 				<Tabs.Panel key={tab.key} value={tab.key} keepMounted className="flex min-h-0 flex-1 flex-col">
-					<Activity mode={tab === shown ? "visible" : "hidden"}>
-						<Shown shows={tab.shows} thread={props.thread} folder={props.folder} revision={props.revision} />
-					</Activity>
+					<Activity mode={tab === shown ? "visible" : "hidden"}>{tab.body}</Activity>
 				</Tabs.Panel>
 			))}
 		</Tabs.Root>
 	);
 }
 
-/** The tab of a view of a thread's: its files, named by the file read; or its changes. */
-function viewTab(view: View, place: ThreadPanel): Tab {
-	switch (view) {
-		case "files":
-			return {
-				key: view,
-				icon: place.file === undefined ? <Files /> : <PathIcon path={place.file} kind="file" />,
-				label: place.file === undefined ? "Files" : nameOf(place.file),
-				shows: { view },
-			};
-		case "diff":
-			return { key: view, icon: <FileDiff />, label: "Diff", shows: { view } };
-	}
-}
-
-/** A tab's surface. */
-function Shown(props: { readonly shows: Shows; readonly thread: string; readonly folder: string | undefined; readonly revision: string }): ReactNode {
-	if ("terminal" in props.shows) return <TerminalPane terminal={props.shows.terminal} />;
-	if ("page" in props.shows) return <BrowserPane page={props.shows.page} />;
-	switch (props.shows.view) {
-		case "files":
-			return <FilesSurface thread={props.thread} folder={props.folder} />;
-		case "diff":
-			return <DiffSurface thread={props.thread} folder={props.folder} revision={props.revision} />;
-	}
+/** The tab of the Files view, named by the file read. */
+function filesTab(view: View, place: ThreadPanel, props: RightPanelProps): Surface {
+	return {
+		key: view,
+		icon: place.file === undefined ? <Files /> : <PathIcon path={place.file} kind="file" />,
+		label: place.file === undefined ? "Files" : nameOf(place.file),
+		body: <FilesSurface thread={props.thread} folder={props.folder} />,
+	};
 }
 
 /**
@@ -171,7 +92,7 @@ function Shown(props: { readonly shows: Shows; readonly thread: string; readonly
  * cut short, where the bar runs out of room — never past its icon and a few letters; its cross shown as it is pointed at or focused, and always, larger, where a finger
  * points.
  */
-function TabButton(props: { readonly tab: Tab; readonly onClose: () => void }): ReactNode {
+function TabButton(props: { readonly tab: Surface; readonly onClose: () => void }): ReactNode {
 	const { icon, label } = props.tab;
 	return (
 		<span className="group/tab flex h-control-sm max-w-48 min-w-16 items-center rounded-md text-ui text-muted-foreground hover:bg-accent has-data-active:bg-accent has-data-active:text-foreground">

@@ -9,23 +9,19 @@
  * full its window is, which opens what fills it and compacts it; and what its model's requests read, wrote and cost,
  * which opens where it went, request by request.
  */
-import { type ReactNode, useState } from "react";
-import type { Conversation, Listed, Repository, ThreadUsage as Usage, Turn } from "@octoii-works/octoii-client";
-import { useConnection, useTerminals, useThreads } from "@octoii-works/octoii-client/react";
-import { Brain, Coins, CornerLeftUp, FileDiff, Folder, FolderX, Gauge, GitBranch, Laptop, SquareMenu, SquareTerminal } from "lucide-react";
+import type { ReactNode } from "react";
+import type { Conversation, Listed, ThreadUsage as Usage, Turn } from "@octoii-works/octoii-client";
+import { useConnection, useThreads } from "@octoii-works/octoii-client/react";
+import { Coins, CornerLeftUp, Folder, FolderX, Gauge, Laptop, SquareMenu } from "lucide-react";
 import { cachedShare, type Context, contextOf, fullnessOf } from "../../core/details.ts";
-import { defaultScope, scopeName, shortCount, totalsOf } from "../../core/diff.ts";
 import { modelOf } from "../../core/models.ts";
 import { dollarsFormat, tokens, TOKENS_FORMAT } from "../../core/numbers.ts";
 import { standingOf, workedOf } from "../../core/sub-threads.ts";
 import { folderName, subThreadsOf, threadTitle } from "../../core/threads.ts";
 import { useDirectory } from "../composer/directory.ts";
-import { useOutcome } from "../effects/read.ts";
 import { showDetails, useDetailsShown } from "../state/details.ts";
 import { go } from "../state/navigation.ts";
-import { useExtension } from "../state/extensions.ts";
-import { showSurface, terminalKey, useThreadPanel } from "../state/panel.ts";
-import { terminalName } from "../../core/terminal.ts";
+import { showSurface } from "../state/panel.ts";
 import { IconButton, ToggleButton } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
 import { Meter } from "../ui/meter.tsx";
@@ -33,7 +29,6 @@ import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover.tsx";
 import { RollingNumber } from "../ui/rolling-number.tsx";
 import { SpendingCard } from "./spending.tsx";
 import { ContextCard } from "./context-card.tsx";
-import { MemoryCard } from "./memory-card.tsx";
 import { isCompacting } from "../../core/context.ts";
 import { SubThreadAvatar, WorkedFor } from "./sub-thread.tsx";
 import { useFolder } from "../state/folder.ts";
@@ -46,7 +41,12 @@ export type DetailsProps = {
 	/** The thread's compactions, whose requests' spending its card tells among the turns'. */
 	readonly compactions: Conversation["compactions"];
 	readonly revision: string;
+	/** What the extensions add: rows under the thread's folder, and sections after the place it works in. */
+	readonly parts: DetailParts;
 };
+
+/** What the extensions add to the card: rows under the thread's folder — what is remembered of its project — and sections after where it works — its repository, its terminals. */
+export type DetailParts = { readonly folder: ReactNode; readonly sections: ReactNode };
 
 /**
  * The header's buttons of the card: where the page's column is wide enough, one that shows the card floating over the
@@ -92,9 +92,8 @@ function DetailsCard(props: DetailsProps): ReactNode {
 	const folder = useFolder(props.row);
 	return (
 		<div className="flex flex-col divide-y divide-border text-ui">
-			<Workspace thread={props.thread} folder={folder} revision={props.revision} />
-			{folder === undefined ? null : <VersionControl thread={props.thread} folder={folder} revision={props.revision} />}
-			<Terminals thread={props.thread} />
+			<Workspace thread={props.thread} folder={folder} parts={props.parts.folder} />
+			{props.parts.sections}
 			<Lineage thread={props.thread} row={props.row} />
 			<Spending thread={props.thread} row={props.row} turns={props.turns} compactions={props.compactions} />
 		</div>
@@ -102,7 +101,7 @@ function DetailsCard(props: DetailsProps): ReactNode {
 }
 
 /** A row of the card: its icon, its words and what it says at its end; a button where it opens something. */
-function DetailRow(props: {
+export function DetailRow(props: {
 	readonly icon: ReactNode;
 	readonly label: ReactNode;
 	readonly aside?: ReactNode;
@@ -125,12 +124,12 @@ function DetailRow(props: {
 }
 
 /** A row's look, and that of one that opens something. */
-const ROW = "flex h-control w-full min-w-0 items-center gap-2.5 rounded-md px-2 text-left [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-muted-foreground";
-const OPENING =
+export const ROW = "flex h-control w-full min-w-0 items-center gap-2.5 rounded-md px-2 text-left [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-muted-foreground";
+export const OPENING =
 	"cursor-pointer hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset data-popup-open:bg-accent";
 
 /** A row's icon, its words, and what stands beside them. */
-function RowContent(props: { readonly icon: ReactNode; readonly label: ReactNode; readonly aside?: ReactNode }): ReactNode {
+export function RowContent(props: { readonly icon: ReactNode; readonly label: ReactNode; readonly aside?: ReactNode }): ReactNode {
 	return (
 		<>
 			{props.icon}
@@ -140,35 +139,14 @@ function RowContent(props: { readonly icon: ReactNode; readonly label: ReactNode
 	);
 }
 
-/** The terminals open in the thread, each by the command line the model runs in it or by its name, opened in the panel; nothing where none is. */
-function Terminals(props: { readonly thread: string }): ReactNode {
-	const terminals = useTerminals(useExtension("terminals") ? props.thread : undefined) ?? [];
-	if (terminals.length === 0) return null;
-	return (
-		<section className="p-1.5">
-			{terminals.map((terminal) => (
-				<DetailRow
-					key={terminal.id}
-					icon={<SquareTerminal />}
-					label={terminal.line === undefined ? terminalName(terminal) : <code className="font-mono text-xs">{terminal.line}</code>}
-					aside={`Terminal ${String(terminal.number)}`}
-					title={terminal.line ?? terminalName(terminal)}
-					onOpen={() => showSurface(props.thread, terminalKey(terminal.id))}
-				/>
-			))}
-		</section>
-	);
-}
-
 /**
  * The machine the thread works on, by the name it goes by; and its folder, opened in the Files view, or that it works in
  * none; and what is remembered of its project.
  */
-function Workspace(props: { readonly thread: string; readonly folder: string | undefined; readonly revision: string }): ReactNode {
+function Workspace(props: { readonly thread: string; readonly folder: string | undefined; readonly parts: ReactNode }): ReactNode {
 	const connection = useConnection();
 	const machine = connection.status === "open" ? connection.machine.name : undefined;
 	const { folder } = props;
-	const memory = useExtension("memory");
 	return (
 		<section className="p-1.5">
 			<DetailRow icon={<Laptop />} label={machine ?? "This machine"} />
@@ -177,84 +155,10 @@ function Workspace(props: { readonly thread: string; readonly folder: string | u
 			) : (
 				<>
 					<DetailRow icon={<Folder />} label={folderName(folder)} title={folder} onOpen={() => showSurface(props.thread, "files")} />
-					{memory ? <MemoryRow folder={folder} revision={props.revision} /> : null}
+					{props.parts}
 				</>
 			)}
 		</section>
-	);
-}
-
-/** What the models remember of the project the folder is in, by how many memories, opening them; nothing where there are none. */
-function MemoryRow(props: { readonly folder: string; readonly revision: string }): ReactNode {
-	const [deleted, setDeleted] = useState(0);
-	const outcome = useOutcome("memory.list", { path: props.folder }, `${props.revision}:${String(deleted)}`);
-	if (outcome === undefined || "failure" in outcome || outcome.result.memories.length === 0) return null;
-	const count = outcome.result.memories.length;
-	return (
-		<Popover>
-			<PopoverTrigger render={<button type="button" title={outcome.result.folder ?? undefined} className={cn(ROW, OPENING)} />}>
-				<RowContent icon={<Brain />} label="Memory" aside={count === 1 ? "1 memory" : `${String(count)} memories`} />
-			</PopoverTrigger>
-			<PopoverPopup side="left" align="start" sideOffset={12} className="w-[min(24rem,calc(100vw-2rem))] p-0">
-				<MemoryCard path={props.folder} listed={outcome.result} onDeleted={() => setDeleted((count) => count + 1)} />
-			</PopoverPopup>
-		</Popover>
-	);
-}
-
-/** The repository the thread's folder is in: its branch and how it stands against its upstream, and its changes; or that it is in none. */
-function VersionControl(props: { readonly thread: string; readonly folder: string; readonly revision: string }): ReactNode {
-	const outcome = useOutcome("git.repository", { path: props.folder }, props.revision);
-	if (outcome === undefined) return null;
-	if ("failure" in outcome) {
-		return (
-			<section className="p-1.5">
-				<DetailRow icon={<GitBranch />} label={outcome.failure} title={outcome.failure} />
-			</section>
-		);
-	}
-	const repository = outcome.result.repository;
-	if (repository === undefined) {
-		return (
-			<section className="p-1.5">
-				<DetailRow icon={<GitBranch />} label="Not a git repository" />
-			</section>
-		);
-	}
-	const tracking = [repository.ahead > 0 ? `↑${String(repository.ahead)}` : "", repository.behind > 0 ? `↓${String(repository.behind)}` : ""].join(" ").trim();
-	return (
-		<section className="p-1.5">
-			<DetailRow
-				icon={<GitBranch />}
-				label={repository.branch ?? `Detached at ${repository.head?.slice(0, 7) ?? "no commit"}`}
-				title={repository.upstream === undefined ? repository.branch : `${repository.branch ?? "HEAD"} → ${repository.upstream}`}
-				{...(tracking === "" ? {} : { aside: tracking })}
-			/>
-			<Changes thread={props.thread} folder={props.folder} repository={repository} revision={props.revision} />
-		</section>
-	);
-}
-
-/** The changes the thread's Diff view shows — the branch's where the person chose none — by the lines they gained and lost, which open the view. */
-function Changes(props: { readonly thread: string; readonly folder: string; readonly repository: Repository; readonly revision: string }): ReactNode {
-	const scope = useThreadPanel(props.thread).scope ?? defaultScope(props.repository);
-	const outcome = useOutcome("git.changes", { path: props.folder, scope }, props.revision);
-	const totals = outcome !== undefined && "result" in outcome ? totalsOf(outcome.result.files) : undefined;
-	return (
-		<DetailRow
-			icon={<FileDiff />}
-			label={scopeName(scope, [])}
-			onOpen={() => showSurface(props.thread, "diff")}
-			{...(totals === undefined
-				? {}
-				: {
-						aside: (
-							<span className="font-mono">
-								<span className="text-diff-add">+{shortCount(totals.additions)}</span> <span className="text-diff-remove">−{shortCount(totals.deletions)}</span>
-							</span>
-						),
-					})}
-		/>
 	);
 }
 

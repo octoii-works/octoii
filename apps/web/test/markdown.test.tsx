@@ -6,9 +6,17 @@
 import { describe, expect, it } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Prose } from "../src/components/thread/markdown.tsx";
+import { ContributionsContext } from "../src/components/state/contributions.ts";
 import { MessageThreadContext } from "../src/components/thread/message-thread.ts";
+import { CONTRIBUTIONS } from "../src/extensions/contributions.ts";
 
-const drawn = (text: string): string => renderToStaticMarkup(<Prose text={text} />);
+/** `text` drawn as a message's Markdown, its things by the views the extensions give. */
+const drawn = (text: string): string =>
+	renderToStaticMarkup(
+		<ContributionsContext value={CONTRIBUTIONS}>
+			<Prose text={text} />
+		</ContributionsContext>,
+	);
 
 describe("a message's Markdown", () => {
 	it("keeps the words a line holds whole, however many colons they hold", () => {
@@ -29,9 +37,11 @@ describe("a message's Markdown", () => {
 			{ id: "p1", title: "Docs", url: "https://example.com/docs", view: { width: 1280, height: 800 }, loading: false, back: false, forward: false },
 		];
 		const html = renderToStaticMarkup(
-			<MessageThreadContext value={{ thread: "t1", workspace: undefined, pages, terminals: [] }}>
-				<Prose text={"see :page{id=p1} here\n\n::page{id=p1}"} />
-			</MessageThreadContext>,
+			<ContributionsContext value={CONTRIBUTIONS}>
+				<MessageThreadContext value={{ thread: "t1", workspace: undefined, pages, terminals: [] }}>
+					<Prose text={"see :page{id=p1} here\n\n::page{id=p1}"} />
+				</MessageThreadContext>
+			</ContributionsContext>,
 		);
 		expect(html).toContain("<p>see <button");
 		expect(html).toContain("Docs</button> here</p>");

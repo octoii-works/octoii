@@ -8,12 +8,12 @@ import type { Listed } from "@octoii-works/octoii-client";
 import { useThreads } from "@octoii-works/octoii-client/react";
 import { standingOf, workedOf } from "../../core/sub-threads.ts";
 import { statusOf, threadTitle } from "../../core/threads.ts";
-import { cn } from "../ui/cn.ts";
-import { IconTile } from "../ui/icon-tile.tsx";
-import { standingDot } from "./entity.tsx";
-import { StatusMark } from "./status-mark.tsx";
-import { WorkedFor } from "./sub-thread.tsx";
-import { CARD, CardWords, CHIP, GONE_CHIP, type ThingView } from "./thing-look.tsx";
+import { cn } from "../../components/ui/cn.ts";
+import { IconTile } from "../../components/ui/icon-tile.tsx";
+import { standingDot } from "../../components/thread/entity.tsx";
+import { StatusMark } from "../../components/thread/status-mark.tsx";
+import { WorkedFor } from "../../components/thread/sub-thread.tsx";
+import { CARD, CardWords, CHIP, GONE_CHIP, type ThingView } from "../../components/thread/thing-look.tsx";
 
 /** The thread `thread` as the person's threads list it; none where it is not listed. */
 function useListed(thread: string): Listed | undefined {

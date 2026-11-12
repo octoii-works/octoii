@@ -154,7 +154,7 @@
 					"error",
 					{
 						"root": "apps/web/src",
-						"layers": ["core", "components", "screens", "app"],
+						"layers": ["core", "components", "extensions", "screens", "app"],
 						"packages": {
 							"@octoii-works/octoii-client": "core",
 							"typebox": "core",

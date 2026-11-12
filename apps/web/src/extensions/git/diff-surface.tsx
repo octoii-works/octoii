@@ -10,13 +10,13 @@ import { type ReactNode, useState } from "react";
 import type { Changes, ChangesScope, Commit, Repository } from "@octoii-works/octoii-client";
 import { ChevronDown, ChevronsDownUp, ChevronsUpDown, Columns2, RefreshCw, Rows2, WrapText } from "lucide-react";
 import { defaultScope, scopeKey, scopeName, shortCount, totalsOf } from "../../core/diff.ts";
-import { useOutcome } from "../effects/read.ts";
-import { useDarkPage } from "../effects/theme.ts";
-import { useDevice } from "../state/device.ts";
-import { showChanges, useThreadPanel } from "../state/panel.ts";
-import { IconButton, ToggleButton } from "../ui/button.tsx";
-import { Menu, MenuItemLabel, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuTrigger } from "../ui/menu.tsx";
-import { Segmented } from "../ui/segmented.tsx";
+import { useOutcome } from "../../components/effects/read.ts";
+import { useDarkPage } from "../../components/effects/theme.ts";
+import { useDevice } from "../../components/state/device.ts";
+import { showChanges, useThreadPanel } from "../../components/state/panel.ts";
+import { IconButton, ToggleButton } from "../../components/ui/button.tsx";
+import { Menu, MenuItemLabel, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuTrigger } from "../../components/ui/menu.tsx";
+import { Segmented } from "../../components/ui/segmented.tsx";
 import { FileChange, type Layout } from "./file-change.tsx";
 
 /** What the view is given: its thread, the folder it works in — none where it works in none — and the revision its turns stand at. */

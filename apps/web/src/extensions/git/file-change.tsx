@@ -10,9 +10,9 @@ import { PatchDiff } from "@pierre/diffs/react";
 import type { FileDiffLoadedFiles, FileDiffMetadata } from "@pierre/diffs";
 import { ArrowRight, SquareDot, SquareMinus, SquarePlus } from "lucide-react";
 import { pathParts } from "../../core/diff.ts";
-import { useOutcome } from "../effects/read.ts";
-import { CODE_THEMES } from "../effects/theme.ts";
-import { Collapsible, CollapsiblePanel, CollapsibleTrigger, FoldChevron } from "../ui/collapsible.tsx";
+import { useOutcome } from "../../components/effects/read.ts";
+import { CODE_THEMES } from "../../components/effects/theme.ts";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger, FoldChevron } from "../../components/ui/collapsible.tsx";
 
 /** How a file's patch is laid out: stacked or side by side, its long lines wrapped or scrolled, light or dark. */
 export type Layout = { readonly split: boolean; readonly wrap: boolean; readonly dark: boolean };

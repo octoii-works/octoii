@@ -21,7 +21,7 @@ import { Composer } from "../components/composer/composer.tsx";
 import { Queued } from "../components/composer/queued.tsx";
 import { Pane, PanelFrame, ShowPanel } from "../components/frame/frame.tsx";
 import { ChatHeader } from "../components/thread/header.tsx";
-import { DetailsButtons, type DetailsProps, InlineDetails } from "../components/thread/details.tsx";
+import { type DetailParts, DetailsButtons, type DetailsProps, InlineDetails } from "../components/thread/details.tsx";
 import { Timeline, type TimelineHandle } from "../components/thread/timeline.tsx";
 import { RightPanel } from "../components/panel/right-panel.tsx";
 import { MessageThreadContext } from "../components/thread/message-thread.ts";
@@ -32,6 +32,12 @@ import { failed } from "../components/state/notices.ts";
 import { useSeen } from "../components/effects/seen.ts";
 import { useNow } from "../components/effects/now.ts";
 import { useFolder } from "../components/state/folder.ts";
+import { useBrowserPanel } from "../extensions/browser/panel.tsx";
+import { useGitPanel } from "../extensions/git/panel.tsx";
+import { useTerminalsPanel } from "../extensions/terminals/panel.tsx";
+import { VersionControl } from "../extensions/git/version-control.tsx";
+import { MemoryRow } from "../extensions/memory/memory-row.tsx";
+import { TerminalRows } from "../extensions/terminals/terminal-rows.tsx";
 
 /** How often a page looks again whether the quota that limits its thread is given again: a minute. */
 const LIMITED_CHECKED_MS = 60_000;
@@ -49,8 +55,12 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 	const conversation = useConversation(thread);
 	const rows = useThreads() ?? [];
 	const row = rows.find((each) => each.id === thread);
-	const terminals = useTerminals(useExtension("terminals") ? thread : undefined) ?? [];
-	const pages = usePages(useExtension("browser") ? thread : undefined) ?? [];
+	const terminalsOn = useExtension("terminals");
+	const browserOn = useExtension("browser");
+	const terminals = useTerminals(terminalsOn ? thread : undefined) ?? [];
+	const pages = usePages(browserOn ? thread : undefined) ?? [];
+	const terminalsPanel = useTerminalsPanel(thread, terminals, terminalsOn);
+	const browserPanel = useBrowserPanel(thread, pages, browserOn);
 	const reachesThreads = useExtension("thread");
 	const now = useNow(LIMITED_CHECKED_MS);
 	useSeen(thread);
@@ -76,7 +86,18 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 	const said = firstSaid(items);
 	// Where the thread's turns stand, which its repository and its changes are read again at.
 	const revision = `${conversation.status?.turn ?? ""} ${String(conversation.status?.ended_at ?? "")}`;
-	const details: DetailsProps = { thread, row, turns: conversation.turns, compactions: conversation.compactions, revision };
+	const gitOn = useExtension("git");
+	const git = useGitPanel(thread, workspace, revision, gitOn);
+	const parts: DetailParts = {
+		folder: useExtension("memory") && workspace !== undefined ? <MemoryRow folder={workspace} revision={revision} /> : null,
+		sections: (
+			<>
+				{gitOn && workspace !== undefined ? <VersionControl thread={thread} folder={workspace} revision={revision} /> : null}
+				{terminalsOn ? <TerminalRows thread={thread} terminals={terminals} /> : null}
+			</>
+		),
+	};
+	const details: DetailsProps = { thread, row, turns: conversation.turns, compactions: conversation.compactions, revision, parts };
 	return (
 		<>
 			<Pane>
@@ -123,7 +144,13 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 				/>
 			</Pane>
 			<PanelFrame>
-				<RightPanel thread={thread} folder={workspace} terminals={terminals} pages={pages} revision={revision} />
+				<RightPanel
+					thread={thread}
+					folder={workspace}
+					revision={revision}
+					surfaces={[...git.surfaces, ...terminalsPanel.surfaces, ...browserPanel.surfaces]}
+					openings={[...terminalsPanel.openings, ...browserPanel.openings, ...git.openings]}
+				/>
 			</PanelFrame>
 		</>
 	);

@@ -7,13 +7,13 @@ import { type ReactNode, useContext } from "react";
 import type { TerminalListed } from "@octoii-works/octoii-client";
 import { SquareTerminal } from "lucide-react";
 import { terminalName } from "../../core/terminal.ts";
-import { useNow } from "../effects/now.ts";
-import { useOutcome } from "../effects/read.ts";
-import { showSurface, terminalKey } from "../state/panel.ts";
-import { cn } from "../ui/cn.ts";
-import { IconTile } from "../ui/icon-tile.tsx";
-import { MessageThreadContext } from "../thread/message-thread.ts";
-import { CARD, CardWords, CHIP, CHIP_ICON, GONE_CHIP, type ThingView } from "../thread/thing-look.tsx";
+import { useNow } from "../../components/effects/now.ts";
+import { useOutcome } from "../../components/effects/read.ts";
+import { showSurface, terminalKey } from "../../components/state/panel.ts";
+import { cn } from "../../components/ui/cn.ts";
+import { IconTile } from "../../components/ui/icon-tile.tsx";
+import { MessageThreadContext } from "../../components/thread/message-thread.ts";
+import { CARD, CardWords, CHIP, CHIP_ICON, GONE_CHIP, type ThingView } from "../../components/thread/thing-look.tsx";
 
 /** The terminal numbered `number` in the thread shown, and the way to show it; none where it is closed. */
 function useTerminal(number: string): { readonly listed: TerminalListed; readonly show: () => void } | undefined {

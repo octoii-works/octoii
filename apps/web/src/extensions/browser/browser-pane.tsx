@@ -9,9 +9,9 @@ import type { PageDialog, PageListed } from "@octoii-works/octoii-client";
 import { useClient } from "@octoii-works/octoii-client/react";
 import { ArrowLeft, ArrowRight, Globe, LoaderCircle, MessageSquareWarning, RotateCw } from "lucide-react";
 import { addressOf, shownAddress } from "../../core/browser.ts";
-import { usePageView } from "../effects/page.ts";
-import { Button, IconButton } from "../ui/button.tsx";
-import { failed } from "../state/notices.ts";
+import { usePageView } from "../../components/effects/page.ts";
+import { Button, IconButton } from "../../components/ui/button.tsx";
+import { failed } from "../../components/state/notices.ts";
 
 /** The page `page`. */
 export function BrowserPane(props: { readonly page: PageListed }): ReactNode {
