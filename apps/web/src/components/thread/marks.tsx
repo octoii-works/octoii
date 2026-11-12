@@ -3,7 +3,7 @@
  * a round — a tool the page has no icon for, its name's first letter — red where it went wrong.
  */
 import type { ReactNode } from "react";
-import { Code, FilePen, FileText, Globe, type LucideIcon, MessageCircleQuestion, Search, Split, SquareTerminal } from "lucide-react";
+import { Code, FilePen, FileText, Globe, type LucideIcon, MessageCircleQuestion, MessagesSquare, Search, Split, SquareTerminal } from "lucide-react";
 import type { WorkKind } from "../../core/tools.ts";
 import { cn } from "../ui/cn.ts";
 
@@ -17,6 +17,7 @@ const ICONS: Readonly<Record<Exclude<WorkKind, "other">, LucideIcon>> = {
 	browse: Globe,
 	ask: MessageCircleQuestion,
 	delegate: Split,
+	thread: MessagesSquare,
 };
 
 /** A line's mark: `children` on a round, red where what it marks went wrong. */

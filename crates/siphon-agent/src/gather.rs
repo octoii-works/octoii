@@ -19,6 +19,7 @@ use siphon_tools::{INSTRUCTIONS_FILE, Instructions, Tool as _, Tools};
 
 use crate::delegate::DelegateTool;
 use crate::skills;
+use crate::thread_tool::ThreadTool;
 use crate::told::Told;
 
 /// What a gather request asks: what the model of the thread `thread`, by its id, is told now.
@@ -105,7 +106,7 @@ pub const BASE: &str = "You are a coding agent in Octoii, working on the person'
 - Reply in the language the person writes in. Your replies are rendered as Markdown.
 - Before a long piece of work, say in a sentence what you will do. When done, lead with the outcome, in plain, complete sentences.
 - Name code by its path, as `path:line` where the line matters.
-- To show the person an image file, write `![what it is](path)` in your reply: they see it, and you do not. To point them at a page of the thread's browser, write `::page{id=\"its id\"}` on a line of its own.";
+- To show the person an image file, write `![what it is](path)` in your reply: they see it, and you do not. To point them at a page of the thread's browser, write `::page{id=<its id>}` on a line of its own; to name a thread, `:thread{id=<its id>}` within a line, which they see as its title and how it stands.";
 
 /// Answers the gather request `asked` from `sources`.
 ///
@@ -180,13 +181,13 @@ pub async fn gathered(sources: &Sources, runtime: &Runtime, id: &str) -> anyhow:
             parameters: declared.parameters,
         })
         .collect();
-    // A sub-thread delegates no further.
+    // A sub-thread delegates no further, and works with no other thread.
     if directory
         .label(thread::PARENT_LABEL.as_bytes())
         .is_some_and(|parent| !parent.is_empty())
     {
         told.tools
-            .retain(|tool| !matches!(tool, Tool::Function { name, .. } if name == DelegateTool::NAME));
+            .retain(|tool| !matches!(tool, Tool::Function { name, .. } if name == DelegateTool::NAME || name == ThreadTool::NAME));
     }
     let searches = config
         .model

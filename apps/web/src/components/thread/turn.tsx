@@ -9,6 +9,7 @@
  * moves back as it calls its tools.
  */
 import type { ReactNode } from "react";
+import { useThreads } from "@octoii-works/octoii-client/react";
 import { CircleAlert, CornerDownRight, Globe, SquareTerminal } from "lucide-react";
 import type { Doing, Foot, TurnEnd } from "../../core/rows.ts";
 import { pastLabel, runningTime } from "../../core/time.ts";
@@ -26,6 +27,7 @@ import { EntityContent, EntityMark } from "./entity.tsx";
 import { Prose } from "./markdown.tsx";
 import { Mark } from "./marks.tsx";
 import { Delegations, SubThreadTold } from "./sub-thread.tsx";
+import { ThreadMessage } from "./thread-message.tsx";
 import { UserMessage } from "./user-message.tsx";
 
 /** The words of a reply, as the page sets them: larger and airier than the work's lines. */
@@ -33,18 +35,24 @@ export const WORDS = "text-body";
 
 /**
  * Words a turn took: a command line's end in a terminal, as the terminal's line; Siphon's own notice, as a divider in
- * words of its own, never the model's text; what came of a task given to a sub-thread, as its line; the person's, or a
- * task from `parent`, as theirs.
+ * words of its own, never the model's text; what came of a task given to a sub-thread of `thread`, as its line; a
+ * message another thread gave it, folded on the input side; the person's, or a task from `parent`, as theirs.
  */
-export function Words(props: { readonly said: Said; readonly parent: string | undefined }): ReactNode {
+export function Words(props: { readonly said: Said; readonly thread: string; readonly parent: string | undefined }): ReactNode {
 	const { said } = props;
 	if (said.from === TERMINAL) return <TerminalEnded said={said} />;
 	if (said.from === SIPHON) {
 		const words = siphonWords(said.text);
 		return <SystemDivider event={words.event} detail={words.detail} icon={<CornerDownRight />} />;
 	}
-	if (said.from !== undefined && said.from !== props.parent) return <SubThreadTold said={said} />;
+	if (said.from !== undefined && said.from !== props.parent) return <FromThread said={said} thread={props.thread} />;
 	return <UserMessage said={said} />;
+}
+
+/** Words from another thread: what a sub-thread of `thread` told of a task, as its line; any other thread's, as its message. */
+function FromThread(props: { readonly said: Said; readonly thread: string }): ReactNode {
+	const row = useThreads()?.find((each) => each.id === props.said.from);
+	return row?.parent?.thread === props.thread ? <SubThreadTold said={props.said} /> : <ThreadMessage said={props.said} />;
 }
 
 /** A command line the model ran in a terminal, ended of itself, as the terminal's line: how it went by its dot, the line under its name, when; opened, its last screen. */

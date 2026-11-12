@@ -25,7 +25,7 @@ import {
 } from "./calls.ts";
 
 /** The kind of work a call does, by its tool: its mark, and how a stretch of calls says it. */
-export type WorkKind = "read" | "edit" | "search" | "command" | "script" | "browse" | "ask" | "delegate" | "other";
+export type WorkKind = "read" | "edit" | "search" | "command" | "script" | "browse" | "ask" | "delegate" | "thread" | "other";
 
 /** What a call's line says beside what it works on: quiet words — the lines a read held, how many a search found, what a script's calls did — or the lines an edit or a write added and took out. */
 export type Aside = { readonly kind: "words"; readonly text: string } | { readonly kind: "change"; readonly added: number; readonly removed: number };
@@ -60,6 +60,7 @@ const GivenSchema = Type.Object({
 	text: Type.Optional(Type.String()),
 	terminal: Type.Optional(Type.Number()),
 	background: Type.Optional(Type.Boolean()),
+	message: Type.Optional(Type.String()),
 });
 
 /** A call's arguments as far as the page reads them. */
@@ -81,8 +82,8 @@ type Verbs = readonly [asked: string, going: string, went: string];
 /** What the page knows of a tool. */
 type ToolView = {
 	readonly work: WorkKind;
-	/** None for a tool the page has no words for, which its line names. */
-	readonly verbs: Verbs | undefined;
+	/** None for a tool the page has no words for, which its line names; by what it is given, for a tool of several actions. */
+	readonly verbs: Verbs | ((given: Given) => Verbs) | undefined;
 	readonly subject: (given: Given) => string | undefined;
 	/** Whether what it works on is code — a command, a pattern, an expression — as its line sets it. */
 	readonly code: boolean;
@@ -165,6 +166,11 @@ const TOOLS: Readonly<Partial<Record<string, ToolView>>> = {
 		code: true,
 	}),
 	delegate: toolView({ work: "delegate", verbs: ["Delegate", "Delegating", "Delegated"], subject: (given) => given.title ?? given.task?.split("\n")[0] }),
+	thread: toolView({
+		work: "thread",
+		verbs: (given) => THREAD_VERBS[given.action ?? ""] ?? ["Work with a thread", "Working with a thread", "Worked with a thread"],
+		subject: (given) => given.title ?? given.message?.split("\n")[0],
+	}),
 	browser_navigate: toolView({ work: "browse", verbs: ["Open", "Opening", "Opened"], subject: (given) => given.url ?? given.go }),
 	browser_snapshot: toolView({ work: "browse", verbs: ["Read the page", "Reading the page", "Read the page"] }),
 	browser_act: toolView({
@@ -186,6 +192,13 @@ const TOOLS: Readonly<Partial<Record<string, ToolView>>> = {
 	}),
 };
 
+/** The `thread` tool's verbs, by its action. */
+const THREAD_VERBS: Readonly<Record<string, Verbs>> = {
+	start: ["Start a thread", "Starting a thread", "Started a thread"],
+	send: ["Message a thread", "Messaging a thread", "Messaged a thread"],
+	stop: ["Stop a thread", "Stopping a thread", "Stopped a thread"],
+};
+
 /** A tool the page knows nothing of: named as it is, as code. */
 const UNKNOWN = toolView({ work: "other", verbs: undefined, code: true });
 
@@ -195,10 +208,10 @@ export function toolOf(name: string): ToolView {
 }
 
 /** A call's verb as it stands — as it is asked while it waits on the person or where it never went ahead, as it goes while it runs, as it went once it ran; none for a tool the page has no verb for. */
-export function verbOf(call: { readonly tool: string; readonly state: CallState }): string | undefined {
-	const verbs = toolOf(call.tool).verbs;
-	if (verbs === undefined) return undefined;
-	const [asked, going, went] = verbs;
+export function verbOf(call: { readonly tool: string; readonly state: CallState; readonly arguments?: string }): string | undefined {
+	const view = toolOf(call.tool).verbs;
+	if (view === undefined) return undefined;
+	const [asked, going, went] = typeof view === "function" ? view(givenOf(call.arguments ?? "{}")) : view;
 	if (call.state === "running") return going;
 	return call.state === "waiting" || call.state === "rejected" || call.state === "stopped" ? asked : went;
 }
@@ -228,6 +241,7 @@ const ACTIONS: Readonly<Record<WorkKind, readonly [went: (count: number) => stri
 	browse: [(n) => `used the browser ${counted(n, "time", "times")}`, () => "using the browser"],
 	ask: [(n) => `asked ${counted(n, "question", "questions")}`, (n) => `asking ${counted(n, "question", "questions")}`],
 	delegate: [(n) => `delegated ${counted(n, "task", "tasks")}`, (n) => `delegating ${counted(n, "task", "tasks")}`],
+	thread: [(n) => `worked with ${counted(n, "thread", "threads")}`, (n) => `working with ${counted(n, "thread", "threads")}`],
 	other: [(n) => `used ${counted(n, "tool", "tools")}`, (n) => `using ${counted(n, "tool", "tools")}`],
 };
 

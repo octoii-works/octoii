@@ -20,8 +20,8 @@ use octoii_ai::vocabulary::{
     Usage,
 };
 use siphon_agent::{
-    DelegateProgram, DelegateTool, DelegatedProgram, Gather, ModelRequest, Sources, ThreadProgram, TitleProgram, TurnProgram,
-    answer_gather, answer_model, answer_review,
+    DelegateProgram, DelegateTool, DelegatedProgram, Gather, ModelRequest, Sources, ThreadProgram, ThreadTool, ThreadToolProgram,
+    TitleProgram, TurnProgram, answer_gather, answer_model, answer_review,
 };
 use siphon_machine::Host as Machine;
 use siphon_runtime::{Asked, Options, Runtime};
@@ -41,14 +41,13 @@ struct Script {
 }
 
 impl Script {
-    /// The reply it keeps for an input of `request`'s, taken.
+    /// The reply it keeps for an input of `request`'s — a part of a message of the person's — taken.
     fn for_input(&self, request: &Request) -> Option<Vec<Item>> {
         let mut kept = self.for_input.lock().expect("held");
         let at = kept.iter().position(|(words, _)| {
-            request
-                .input
-                .iter()
-                .any(|item| matches!(item, Item::Message(Message::User { content }) if content == &[InputContent::text(words.clone())]))
+            request.input.iter().any(
+                |item| matches!(item, Item::Message(Message::User { content }) if content.contains(&InputContent::text(words.clone()))),
+            )
         })?;
         Some(kept.remove(at).1)
     }
@@ -192,7 +191,11 @@ fn models(script: &Arc<Script>) -> Arc<Models> {
 
 fn runtime(beak: &Beak, script: &Arc<Script>) -> Runtime {
     let inner = Tools::new().with(ReadTool).with(WriteTool).with(ShellTool);
-    let tools = inner.clone().with(ExecuteTool { tools: inner.clone() }).with(DelegateTool);
+    let tools = inner
+        .clone()
+        .with(ExecuteTool { tools: inner.clone() })
+        .with(DelegateTool)
+        .with(ThreadTool);
     let models = models(script);
     let sources = Sources {
         tools: tools.clone(),
@@ -214,6 +217,7 @@ fn runtime(beak: &Beak, script: &Arc<Script>) -> Runtime {
         .program(siphon_agent::CompactProgram)
         .program(DelegateProgram)
         .program(DelegatedProgram)
+        .program(ThreadToolProgram)
         .program(siphon_agent::ResumeProgram)
         .handle(move |asked: Asked<Gather>| {
             let sources = sources.clone();
@@ -371,7 +375,7 @@ async fn a_turn_takes_on_the_calls_its_replies_make_and_asks_again_till_one_call
             Tool::WebSearch => None,
         })
         .collect();
-    assert_eq!(names, ["delegate", "execute", "read", "shell", "write"]);
+    assert_eq!(names, ["delegate", "execute", "read", "shell", "thread", "write"]);
     assert!(
         matches!(&asked[0].input[0], Item::Message(Message::Developer { content }) if content.len() == 2),
         "the base and the environment"
@@ -819,6 +823,100 @@ async fn a_task_delegated_in_the_background_is_answered_at_once_and_its_end_deli
         _ => None,
     });
     assert!(first.expect("a result").contains("works on it in the background"));
+    runtime.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_thread_started_by_another_takes_its_message_and_its_end_is_told_back() {
+    let script = script(vec![
+        Ok(vec![calls(
+            "c1",
+            "thread",
+            &serde_json::json!({ "action": "start", "message": "say hi", "title": "Greeter", "report": true }),
+        )]),
+        Ok(vec![says("started it")]),
+        Ok(vec![says("noted")]),
+    ]);
+    script
+        .for_input
+        .lock()
+        .expect("held")
+        .push(("say hi".into(), vec![says("hi there")]));
+    let beak = Beak::new().expect("Beak");
+    let runtime = runtime(&beak, &script);
+    let threads = Threads::<ThreadProgram>::new(runtime.clone());
+    let (_folder, workspace) = folder();
+    let id = thread(&threads, &workspace).await;
+    threads
+        .deliver(&id, "person", vec![InputContent::text("start a thread")], "d1")
+        .await
+        .expect("delivered");
+    let mut committed = runtime.committed();
+    tokio::time::timeout(Duration::from_secs(20), async {
+        while entries(&threads, &id)
+            .iter()
+            .filter(|entry| matches!(entry, Entry::TurnEnd { .. }))
+            .count()
+            < 2
+        {
+            committed.changed().await.expect("the runtime runs");
+        }
+    })
+    .await
+    .expect("two turns in time");
+    let started = others(&threads, &id).pop().expect("a thread started");
+    assert!(started.parent.is_none(), "a thread of the person's, not a sub-thread");
+    assert_eq!(started.config.title.as_deref(), Some("Greeter"));
+    assert_eq!(started.config.mode, Some(Mode::FullAccess), "the starter's mode");
+    let given = entries(&threads, &started.id).into_iter().find_map(|entry| match entry {
+        Entry::Input { actor, content, .. } => Some((actor, content)),
+        _ => None,
+    });
+    let (actor, content) = given.expect("its message");
+    assert_eq!(actor, id, "whose the message is");
+    assert!(matches!(&content[0], InputContent::InputText { text } if text.contains(&format!("a message from the thread {id}"))));
+    let told = entries(&threads, &id).into_iter().find_map(|entry| match entry {
+        Entry::Input { actor, content, .. } if actor == started.id => Some(content),
+        _ => None,
+    });
+    let told = told.expect("its end told back");
+    assert!(matches!(&told[0], InputContent::InputText { text } if text.contains("which you sent a message, finished")));
+    assert_eq!(told[1], InputContent::text("hi there"));
+    runtime.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_thread_sends_no_message_to_one_whose_mode_reaches_further() {
+    let beak = Beak::new().expect("Beak");
+    let (_folder, workspace) = folder();
+    let script = script(vec![Ok(vec![says("could not")])]);
+    let runtime = runtime(&beak, &script);
+    let threads = Threads::<ThreadProgram>::new(runtime.clone());
+    let further = made(&threads, &workspace, Mode::FullAccess).await;
+    script.replies.lock().expect("held").push_front(Ok(vec![calls(
+        "c1",
+        "thread",
+        &serde_json::json!({ "action": "send", "thread": further, "message": "rm -rf /" }),
+    )]));
+    let own = made(&threads, &workspace, Mode::Default).await;
+    threads
+        .deliver(&own, "person", vec![InputContent::text("tell it")], "d1")
+        .await
+        .expect("delivered");
+    until(&threads, &own, Turn::Replied).await;
+    let result = entries(&threads, &own).into_iter().find_map(|entry| match entry {
+        Entry::Result { status, output, .. } => Some((status, format!("{:?}", output.output))),
+        _ => None,
+    });
+    let (status, output) = result.expect("a result");
+    assert_eq!(status, CallStatus::ToolError);
+    assert!(output.contains("reaches further than yours"), "{output}");
+    assert!(
+        entries(&threads, &further)
+            .iter()
+            .all(|entry| !matches!(entry, Entry::Input { .. })),
+        "nothing reached it"
+    );
     runtime.close().await;
 }
 

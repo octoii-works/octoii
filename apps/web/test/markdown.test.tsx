@@ -1,6 +1,6 @@
 /**
- * A message's Markdown as the page draws it: its directives — a page of the thread's as its card, any other as it was
- * written, and the words a line holds whole however many colons they hold — an image of the web as a link, never
+ * A message's Markdown as the page draws it: its directives — a page of the thread's as its card, a thread it names as
+ * its chip, any other as it was written, and the words a line holds whole however many colons they hold — an image of the web as a link, never
  * fetched, and a bare address ended at the full-width mark after it.
  */
 import { describe, expect, it } from "bun:test";
@@ -17,9 +17,15 @@ describe("a message's Markdown", () => {
 
 	it("draws a page the reply points at as its card, and gives any other directive back as it was written", () => {
 		expect(drawn('::page{id="p1"}')).toContain("A page no longer open");
+		expect(drawn("::page{id=01a1-p1}")).toContain("A page no longer open");
 		expect(drawn('::video{src="a.mp4"}')).toContain("<p>::video{src=&quot;a.mp4&quot;}</p>");
 		expect(drawn(":::note\nsome words\n:::")).toContain("<p>:::note\nsome words\n:::</p>");
 		expect(drawn("::page")).toContain("<p>::page</p>");
+	});
+
+	it("gives a name of no thread back as it was written, the chip of a thread drawn where the threads are read", () => {
+		expect(drawn("see :thread here")).toContain("see :thread here");
+		expect(drawn("a :thread{} of none")).toContain("a :thread{} of none");
 	});
 
 	it("ends a bare address at the full-width mark after it, keeping a path of Chinese words whole", () => {

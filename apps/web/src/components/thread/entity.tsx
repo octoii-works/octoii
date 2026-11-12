@@ -24,6 +24,11 @@ export function StandingDot(props: { readonly standing: Standing }): ReactNode {
 	return <span className={cn("absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full ring-2 ring-background", STANDINGS[props.standing].dot)} />;
 }
 
+/** The colour of the dot of how a thing stands, and its breath while it goes on, for a dot set among words. */
+export function standingDot(standing: Standing): string {
+	return STANDINGS[standing].dot;
+}
+
 /** A thing's mark: `children` on a round, with a dot of how it stands. */
 export function EntityMark(props: { readonly standing: Standing; readonly children: ReactNode }): ReactNode {
 	return (

@@ -46,7 +46,7 @@ pub struct DelegateTool;
 
 impl Tool for DelegateTool {
     const NAME: &'static str = "delegate";
-    const DESCRIPTION: &'static str = "Hands a task to a sub-thread of your own, which works on it with the same tools in this folder. Call it only when the person asks you to delegate work, to use sub-agents, or to work on several things at once — never on your own initiative. A new sub-thread sees nothing of this conversation: give `task` all it needs. You wait for it to finish and are given what it said last, several calls in one reply running at once; or, with `background`, you are answered at once and told when it finishes, for work that does not hold up yours. Every answer names the sub-thread, which `thread` gives more to do. What it says it did is not proof: look at what it changed before you report it done. The person sees each sub-thread, and can follow and steer it.";
+    const DESCRIPTION: &'static str = "Hands a task to a sub-thread of your own, which works on it with the same tools in this folder. Call it only when the person asks you to delegate work, to use sub-agents, or to work on several things at once — never on your own initiative, and never for a new thread the person asks for, which `thread` starts. A new sub-thread sees nothing of this conversation: give `task` all it needs. You wait for it to finish and are given what it said last, several calls in one reply running at once; or, with `background`, you are answered at once and told when it finishes, for work that does not hold up yours. Every answer names the sub-thread, which `thread` gives more to do. What it says it did is not proof: look at what it changed before you report it done. The person sees each sub-thread, and can follow and steer it.";
     type Args = DelegateArgs;
 
     fn effect(&self, _: &DelegateArgs, _: &Base) -> Effect {
@@ -168,11 +168,11 @@ fn how(ended: Option<&Ended>) -> String {
 }
 
 /// The directory of the thread `id`, as the run's snapshot holds it.
-fn directory_of(run: &Run<'_>, id: &str) -> anyhow::Result<Option<beak::Directory>> {
+pub(crate) fn directory_of(run: &Run<'_>, id: &str) -> anyhow::Result<Option<beak::Directory>> {
     Ok(run.snapshot().stat(&thread::path(id))?.and_then(|entry| entry.directory))
 }
 
-fn label(directory: &beak::Directory, name: &str) -> Option<String> {
+pub(crate) fn label(directory: &beak::Directory, name: &str) -> Option<String> {
     directory
         .label(name.as_bytes())
         .filter(|value| !value.is_empty())
@@ -271,8 +271,9 @@ fn stop(run: &mut Run<'_>, waiting: &Waiting) -> anyhow::Result<Ending<Waiting, 
     Ok(Ending::Stopped(Some("stopped, and the sub-thread's work on it with it".into())))
 }
 
-/// The program of a task delegated in the background, beside its thread's main process: waits on the sub-thread till
-/// the turn that took the task ends, then ends, what came of it delivered to the thread's inbox in the same commit.
+/// The program of a task given in the background — delegated to a sub-thread, or a message sent to another thread to be
+/// told of — beside its thread's main process: waits on the thread that took it till the turn that took it ends, then
+/// ends, what came of it delivered to the thread's inbox in the same commit.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct DelegatedProgram;
 
@@ -291,11 +292,19 @@ impl Program for DelegatedProgram {
                 return Ok(Ending::Wait((), wait));
             }
         };
-        let note = format!(
-            "[the sub-thread {}, which you gave a task in the background, {}]",
-            waiting.child,
-            how(ended.as_ref())
-        );
+        let ours = directory_of(run, &waiting.child)?
+            .and_then(|child| label(&child, thread::PARENT_LABEL))
+            .as_deref()
+            == Some(waiting.thread.as_str());
+        let note = if ours {
+            format!(
+                "[the sub-thread {}, which you gave a task in the background, {}]",
+                waiting.child,
+                how(ended.as_ref())
+            )
+        } else {
+            format!("[the thread {}, which you sent a message, {}]", waiting.child, how(ended.as_ref()))
+        };
         let mut content = vec![InputContent::text(note)];
         if let Some(Ended::Replied { said }) = ended {
             content.push(InputContent::text(said));

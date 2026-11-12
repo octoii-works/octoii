@@ -176,7 +176,7 @@ function Row(props: { readonly thread: string; readonly parent: string | undefin
 	const { row } = props;
 	switch (row.kind) {
 		case "said":
-			return <Words said={row.said} parent={props.parent} />;
+			return <Words said={row.said} thread={props.thread} parent={props.parent} />;
 		case "work":
 			return (
 				<div className="flex flex-col gap-0.5">
