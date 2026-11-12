@@ -187,6 +187,11 @@ export type Cursor = { segment: string, offset: number, };
 
 export type DecideTrust = { folder: string, digest: string, trusted: boolean, };
 
+/**
+ * A memory of the project the folder `path` is in, by its file's name.
+ */
+export type DeleteMemory = { path: string, file: string, };
+
 export type Deliver = { thread: string, content: Array<InputContent>, key: string, };
 
 export type Delivered = { delivery: string, };
@@ -457,6 +462,16 @@ unsettled_at?: number | null, };
  * till a time past ends it.
  */
 export type MarksChange = { pinned?: boolean | null, archived?: boolean | null, snoozed_until?: number | null, seen_until?: number | null, settled_at?: number | null, unsettled_at?: number | null, };
+
+/**
+ * A memory, as the person sees it: its file's name in the folder, and its front matter's name, description and type.
+ */
+export type Memory = { file: string, name: string, description: string, type: string, };
+
+/**
+ * The memory of a project: the folder it is kept in, none where the machine keeps none; and each memory.
+ */
+export type MemoryListed = { folder: string | null, memories: Array<Memory>, };
 
 /**
  * A message: the person's, a developer's or the system's, which update the instructions from where they stand; or
@@ -1026,6 +1041,8 @@ export type Methods = {
   'models.refresh': { params: Nothing; result: Nothing };
   'grants.list': { params: Nothing; result: GrantsListed };
   'grants.revoke': { params: Granted; result: Nothing };
+  'memory.list': { params: InFolder; result: MemoryListed };
+  'memory.delete': { params: DeleteMemory; result: Nothing };
   'settings.set': { params: SettingsChange; result: Nothing };
   'browser.open': { params: OpenPage; result: PageOpened };
   'browser.navigate': { params: Navigate; result: Nothing };

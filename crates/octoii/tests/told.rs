@@ -30,12 +30,18 @@ fn shown(told: &siphon_agent::Told) -> String {
 }
 
 /// `text` with what differs from one run, machine or day to the next put as a placeholder: the thread's id, the
-/// test's folder, the platform and the date.
-fn steady(text: &str, id: &str, folder: &std::path::Path) -> String {
+/// test's folder — as a path and as a memory's folder spells it — the Home's temporary folder, the system's, the
+/// platform and the date.
+fn steady(text: &str, id: &str, folder: &std::path::Path, temporary: &std::path::Path) -> String {
     let real = folder.canonicalize().expect("its path");
+    let spelt = |path: &std::path::Path| path.display().to_string().replace(['/', '\\', ':'], "-");
     text.replace(id, "<thread>")
+        .replace(&temporary.display().to_string(), "<temporary>")
+        .replace(&spelt(&real), "-<folder>")
+        .replace(&spelt(folder), "-<folder>")
         .replace(&real.display().to_string(), "<folder>")
         .replace(&folder.display().to_string(), "<folder>")
+        .replace(&std::env::temp_dir().display().to_string(), "<system temporary>/")
         .lines()
         .map(|line| {
             if line.starts_with("platform: ") {
@@ -66,6 +72,9 @@ async fn what_the_model_is_told() {
     let workspace = folder.path().join("project");
     std::fs::create_dir_all(&workspace).expect("a workspace");
     std::fs::write(workspace.join("AGENTS.md"), "The project's instructions.").expect("the project's");
+    let memory = home.memory().join(workspace.display().to_string().replace(['/', '\\', ':'], "-"));
+    std::fs::create_dir_all(&memory).expect("the project's memory");
+    std::fs::write(memory.join("MEMORY.md"), "- [Tests](tests.md) — the suite runs with `cargo test`\n").expect("its index");
     let siphon = octoii::serve::siphon(&home, siphon::providers::SignInSetup::default()).expect("Siphon");
     let new = NewThread {
         actor: "person".into(),
@@ -78,5 +87,6 @@ async fn what_the_model_is_told() {
     let key = siphon.runtime.new_id().expect("an id");
     let id = siphon.threads.create(&new, &key).await.expect("a thread");
     let told = siphon.told(&id).await.expect("told");
-    insta::assert_snapshot!(steady(&shown(&told), &id, folder.path()));
+    let temporary = home.temporary().expect("the Home's temporary folder");
+    insta::assert_snapshot!(steady(&shown(&told), &id, folder.path(), &temporary));
 }

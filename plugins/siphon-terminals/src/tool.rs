@@ -124,6 +124,7 @@ impl TerminalTool {
         let running = Running::Line {
             line: command.clone(),
             writes: context.writes_of(),
+            set: context.variables(),
         };
         let id = self
             .terminals

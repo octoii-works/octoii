@@ -14,7 +14,9 @@ use crate::paths::Base;
 
 /// The machine as the host gives it: the home folder of the person it runs for and their shell; their own ignore file,
 /// git's `core.excludesFile`; what the host keeps for itself, by absolute paths, which nothing reaches through it; the
-/// folder the threads are shown in, where the host lays them out; and the folder a thread of no folder works in.
+/// folder the threads are shown in, where the host lays them out; the folder a thread of no folder works in; the folder
+/// of the person's memory, a folder for each project; and the folder of the threads' scratchpads, in the system's
+/// temporary folder, a folder for each thread.
 #[derive(Debug, Clone, Default)]
 pub struct Host {
     pub home: Option<PathBuf>,
@@ -26,6 +28,8 @@ pub struct Host {
     pub threads: Option<PathBuf>,
     /// The folder a thread of no folder of its own works in, no project's.
     pub workspace: Option<PathBuf>,
+    pub memory: Option<PathBuf>,
+    pub scratch: Option<PathBuf>,
 }
 
 impl Host {
@@ -38,6 +42,30 @@ impl Host {
             .or_else(|| self.workspace.clone())
             .or_else(|| self.home.clone())
             .unwrap_or_else(|| PathBuf::from("/"))
+    }
+
+    /// The folder of the person's memory of the project at `project`: a folder named after its path, as a path is
+    /// spelt with each separator a `-`.
+    #[must_use]
+    pub fn memory_of(&self, project: &Path) -> Option<PathBuf> {
+        let name = project.to_string_lossy().replace(['/', '\\', ':'], "-");
+        self.memory.as_ref().map(|memory| memory.join(name))
+    }
+
+    /// The places beside its workspace that the thread `thread`'s work writes as freely as it: the person's memory, the
+    /// thread's scratchpad and the machine's temporary folders.
+    #[must_use]
+    pub fn places_of(&self, thread: &str) -> Vec<PathBuf> {
+        let mut places: Vec<PathBuf> = self.memory.iter().cloned().collect();
+        places.extend(self.scratchpad_of(thread));
+        places.extend(self.temporary.iter().cloned());
+        places
+    }
+
+    /// The scratchpad of the thread `thread`: a folder for what its work leaves that is not to be kept.
+    #[must_use]
+    pub fn scratchpad_of(&self, thread: &str) -> Option<PathBuf> {
+        self.scratch.as_ref().map(|scratch| scratch.join(thread))
     }
 }
 

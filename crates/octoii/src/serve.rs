@@ -5,7 +5,7 @@
 //! then every listener closes, the tunnel's sessions with them, and Siphon last.
 
 use std::net::{Ipv4Addr, SocketAddr};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::Context as _;
@@ -58,8 +58,9 @@ fn providers() -> Vec<Provider> {
 
 /// The machine as the person's own: their home folder and shell, the system's temporary folder, the threads shown at
 /// the Home's `threads/`, what the node keeps for itself — its credentials and its state — hidden from what reaches the
-/// machine through Siphon, and `~/octoii`, where a thread of no folder works.
-fn machine(home: &Home) -> siphon_machine::Host {
+/// machine through Siphon, `~/octoii`, where a thread of no folder works, the person's memory in the Home, and the
+/// threads' scratchpads in the Home's `temporary` folder.
+fn machine(home: &Home, temporary: &Path) -> siphon_machine::Host {
     let person = std::env::home_dir();
     siphon_machine::Host {
         workspace: person.as_ref().map(|person| person.join("octoii")),
@@ -69,6 +70,8 @@ fn machine(home: &Home) -> siphon_machine::Host {
         temporary: vec![std::env::temp_dir()],
         hidden: vec![home.credstore(), home.state()],
         threads: Some(home.threads()),
+        memory: Some(home.memory()),
+        scratch: Some(temporary.join("threads")),
     }
 }
 
@@ -88,8 +91,9 @@ pub fn siphon(home: &Home, sign_in: SignInSetup) -> anyhow::Result<Siphon> {
 pub fn building(home: &Home, sign_in: SignInSetup) -> anyhow::Result<siphon::Building> {
     let beak = beak::Beak::new().context("Beak")?;
     let providers = providers();
+    let temporary = home.temporary().context("the Home's temporary folder")?;
     let setup = Setup {
-        machine: machine(home),
+        machine: machine(home, &temporary),
         config: Some(home.config()),
         sign_in,
         credentials: Arc::new(Credstore::new(home.credstore(), &providers)),
@@ -104,7 +108,7 @@ pub fn building(home: &Home, sign_in: SignInSetup) -> anyhow::Result<siphon::Bui
     let browser = BrowserPlugin {
         program: None,
         profile: Some(home.browser().join("profile")),
-        downloads: Some(home.browser().join("downloads")),
+        downloads: Some(temporary.join("downloads")),
     };
     let built = Siphon::builder(&beak, setup).context("the volume")?;
     let config = McpPlugin {

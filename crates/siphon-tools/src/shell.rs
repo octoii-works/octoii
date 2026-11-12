@@ -1,5 +1,5 @@
 //! `shell`: a command line run in the workspace by the machine's shell, its input closed, its output and errors one
-//! stream — held to the workspace and the temporary folders in a sandbox where its weighing said so, or anywhere — and
+//! stream — held to the workspace and the places beside it in a sandbox where its weighing said so, or anywhere — and
 //! a line after it of how it ended.
 
 use std::time::Duration;
@@ -39,7 +39,7 @@ pub struct ShellTool;
 
 impl Tool for ShellTool {
     const NAME: &'static str = "shell";
-    const DESCRIPTION: &'static str = "Runs a command line in bash, its input closed, in the workspace: no need to cd there first. Gives its output and errors as one stream, then how it ended: [exit N], the signal that ended it, or its time run out. It may run 120 seconds, or up to 600 with `timeout_seconds`; one that does not end by itself — a server, a watcher — belongs in a terminal. In the default mode it runs in a sandbox that writes only the workspace and the temporary folders; one that must write beyond them — installing for the whole machine, writing elsewhere — is run again with `escalate` and a justification, and the person decides.";
+    const DESCRIPTION: &'static str = "Runs a command line in bash, its input closed, in the workspace: no need to cd there first. Gives its output and errors as one stream, then how it ended: [exit N], the signal that ended it, or its time run out. It may run 120 seconds, or up to 600 with `timeout_seconds`; one that does not end by itself — a server, a watcher — belongs in a terminal. In the default mode it runs in a sandbox that writes only the workspace, the memory, the scratchpad and the temporary folders; one that must write beyond them — installing for the whole machine, writing elsewhere — is run again with `escalate` and a justification, and the person decides.";
     type Args = ShellArgs;
 
     fn effect(&self, args: &ShellArgs, _: &Base) -> Effect {
@@ -55,6 +55,7 @@ impl Tool for ShellTool {
         let program = Program {
             timeout: Duration::from_secs(seconds),
             errors: Errors::WithOutput,
+            set: context.variables(),
             ..Program::new(vec!["bash".into(), "-c".into(), args.command], &context.base.workspace)
         };
         let machine = context.machine()?;

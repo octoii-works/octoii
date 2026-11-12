@@ -30,14 +30,17 @@ fn a_line_runs_each_of_its_commands_each_granted_by_the_words_that_name_what_it_
 }
 
 #[test]
-fn each_mode_weighs_a_call_by_what_it_does() {
+fn each_mode_weighs_a_call_by_what_it_does_the_places_beside_the_workspace_its_own() {
     let bounds = Bounds {
         workspace: PathBuf::from("/work/app"),
+        places: vec![PathBuf::from("/home/me/.octoii/etc/memory"), PathBuf::from("/tmp")],
         confines: true,
     };
     let none = Grants::default();
     let inside = Effect::Edits(vec![PathBuf::from("/work/app/src/main.rs")]);
     let outside = Effect::Edits(vec![PathBuf::from("/etc/hosts")]);
+    let remembered = Effect::Edits(vec![PathBuf::from("/home/me/.octoii/etc/memory/-work-app/MEMORY.md")]);
+    let scratch = Effect::Edits(vec![PathBuf::from("/tmp/octoii-501/home/threads/t1/count.sh")]);
     let tool = Effect::Acts {
         tool: "github.create_issue".into(),
     };
@@ -45,6 +48,8 @@ fn each_mode_weighs_a_call_by_what_it_does() {
         (Mode::Default, Effect::Reads, Verdict::Go(Writes::Workspace)),
         (Mode::Default, inside.clone(), Verdict::Go(Writes::Workspace)),
         (Mode::Default, outside.clone(), Verdict::Ask),
+        (Mode::Default, remembered, Verdict::Go(Writes::Workspace)),
+        (Mode::Default, scratch, Verdict::Go(Writes::Workspace)),
         (Mode::Default, runs("cargo build"), Verdict::Go(Writes::Workspace)),
         (Mode::Default, tool.clone(), Verdict::Ask),
         (Mode::Auto, inside.clone(), Verdict::Go(Writes::Workspace)),
@@ -78,6 +83,7 @@ fn each_mode_weighs_a_call_by_what_it_does() {
 fn what_the_person_granted_goes_ahead_writing_anywhere() {
     let bounds = Bounds {
         workspace: PathBuf::from("/work/app"),
+        places: Vec::new(),
         confines: true,
     };
     let mut grants = Grants::default();

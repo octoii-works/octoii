@@ -98,12 +98,17 @@ impl Siphon {
         )
     }
 
-    /// Deletes the thread `id` and every thread under it, each plugin letting go of what it held for each.
+    /// Deletes the thread `id` and every thread under it, the scratchpad of each, each plugin letting go of what it
+    /// held for each.
     ///
     /// # Errors
     /// `NoSuchThread`; the volume's failure.
     pub async fn delete_thread(&self, id: &str) -> Result<(), siphon_threads::Error> {
         for deleted in self.threads.delete(id).await? {
+            if let Some(scratchpad) = self.machine.scratchpad_of(&deleted) {
+                // What is left there is the system's to clear in time, where it cannot be removed now.
+                let _ = std::fs::remove_dir_all(scratchpad);
+            }
             for plugin in &self.registry.deleted {
                 plugin(&deleted);
             }

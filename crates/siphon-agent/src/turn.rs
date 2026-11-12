@@ -267,6 +267,7 @@ impl TurnProgram {
         let config = config_of(run, &input.thread)?;
         let base = self.base(&config);
         let project = Place::of(&base.workspace).project.to_string_lossy().into_owned();
+        let places = self.machine.places_of(&input.thread);
         let setting = Setting {
             thread: &input.thread,
             tools: &self.tools,
@@ -274,6 +275,7 @@ impl TurnProgram {
             mode: config.mode.unwrap_or_default(),
             base: &base,
             project: Some(&project),
+            places: &places,
             confines: beak::machine_confines(),
         };
         let wait = calls.advance(run, &setting)?;
@@ -345,6 +347,7 @@ impl TurnProgram {
                     mode: config.mode.unwrap_or_default(),
                     base: &base,
                     project: None,
+                    places: &[],
                     confines: beak::machine_confines(),
                 };
                 let wait = calls.stop(run, &setting)?;

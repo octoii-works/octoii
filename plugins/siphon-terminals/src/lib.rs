@@ -46,11 +46,16 @@ pub struct Shown {
     pub line: Option<String>,
 }
 
-/// What a terminal runs: the person's login shell, or a command line in it, held to what it may write.
+/// What a terminal runs: the person's login shell, or a command line in it, held to what it may write, with the
+/// variables set over the machine's own.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Running {
     Shell,
-    Line { line: String, writes: Writes },
+    Line {
+        line: String,
+        writes: Writes,
+        set: Vec<(String, String)>,
+    },
 }
 
 /// What the terminals tell.
@@ -359,13 +364,16 @@ impl Owner {
             workspace: cwd.to_owned(),
             home: self.host.home.clone(),
         };
-        let (argv, writes, line) = match running {
-            Running::Shell => (vec![shell, "-l".into()], Writes::Anywhere, None),
-            Running::Line { line, writes } => (vec![shell, "-l".into(), "-c".into(), line.clone()], writes, Some(line)),
+        let (argv, writes, set, line) = match running {
+            Running::Shell => (vec![shell, "-l".into()], Writes::Anywhere, Vec::new(), None),
+            Running::Line { line, writes, set } => (vec![shell, "-l".into(), "-c".into(), line.clone()], writes, set, Some(line)),
         };
         let machine = Machine::open(&self.kernel, &self.host, base, &writes, None)?;
         let spec = Spec {
-            set: vec![("TERM".into(), "xterm-256color".into()), ("COLORTERM".into(), "truecolor".into())],
+            set: [("TERM".into(), "xterm-256color".into()), ("COLORTERM".into(), "truecolor".into())]
+                .into_iter()
+                .chain(set)
+                .collect(),
             stdio: Stdio::Terminal {
                 rows: size.rows,
                 cols: size.cols,

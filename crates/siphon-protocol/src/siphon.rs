@@ -84,6 +84,10 @@ crate::methods! {
     "grants.list" ListGrants(Nothing) -> GrantsListed, Some(Scope::ThreadsRead);
     /// What a project was granted, taken back in part.
     "grants.revoke" RevokeGrants(siphon_tools::projects::Granted) -> Nothing, Some(Scope::ThreadsOperate);
+    /// The memory of the project a folder is in: where it is kept, and each memory.
+    "memory.list" ListMemory(InFolder) -> MemoryListed, Some(Scope::ThreadsRead);
+    /// A memory of the project a folder is in deleted: its file, and its line of the index.
+    "memory.delete" DeleteMemory(DeleteMemory) -> Nothing, Some(Scope::ThreadsOperate);
     /// The settings changed: the environment's each given, the device's merged.
     "settings.set" SetSettings(SettingsChange) -> Nothing, Some(Scope::ThreadsOperate);
 }
@@ -463,6 +467,20 @@ pub struct OfAccount {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 pub struct ModelsListed {
     pub models: Vec<octoii_ai::catalogue::Model>,
+}
+
+/// The memory of a project: the folder it is kept in, none where the machine keeps none; and each memory.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct MemoryListed {
+    pub folder: Option<String>,
+    pub memories: Vec<siphon_agent::memory::Memory>,
+}
+
+/// A memory of the project the folder `path` is in, by its file's name.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct DeleteMemory {
+    pub path: String,
+    pub file: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

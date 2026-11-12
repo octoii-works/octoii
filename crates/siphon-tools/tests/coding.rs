@@ -181,6 +181,33 @@ async fn a_command_line_runs_in_the_workspace_held_there_and_tells_how_it_ended(
     let _ = Duration::ZERO;
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn a_call_writes_the_memory_of_its_project_and_a_command_its_scratchpad_as_its_tmpdir() {
+    let beak = Beak::new().expect("Beak");
+    let (mut context, _folder) = context(&beak, Writes::Workspace).await;
+    let kept = tempfile::tempdir().expect("a folder");
+    let kept = kept.path().canonicalize().expect("its real path");
+    context.host.memory = Some(kept.join("memory"));
+    context.host.scratch = Some(kept.join("scratch"));
+    let memory = context.host.memory_of(&context.base.workspace).expect("its memory");
+    let tools = tools();
+    let index = memory.join("MEMORY.md");
+    let wrote = exec(
+        &tools,
+        &context,
+        "write",
+        json!({ "path": index, "content": "- [a](a.md) — one\n" }),
+    )
+    .await;
+    assert!(wrote.is_ok(), "the first memory makes its folder: {wrote:?}");
+    let line = format!("echo kept > \"$TMPDIR/note\" && echo remembered > {}/a.md", memory.display());
+    let ran = exec(&tools, &context, "shell", json!({ "command": line })).await.expect("ran");
+    assert_eq!(ran, "[exit 0]");
+    let note = kept.join("scratch/t1/note");
+    assert_eq!(std::fs::read_to_string(note).expect("in the scratchpad"), "kept\n");
+    assert_eq!(std::fs::read_to_string(memory.join("a.md")).expect("in the memory"), "remembered\n");
+}
+
 #[test]
 fn the_tools_are_told_with_their_schemas_and_a_call_s_arguments_checked_against_them() {
     let tools = tools();

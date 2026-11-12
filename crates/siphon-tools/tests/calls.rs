@@ -60,6 +60,7 @@ impl Program for Caller {
             mode: input.mode,
             base: &base,
             project: Some(&folder),
+            places: &[],
             confines: beak::machine_confines(),
         };
         match calls.advance(run, &setting)? {

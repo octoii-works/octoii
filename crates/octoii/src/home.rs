@@ -1,9 +1,11 @@
 //! The node's Home, laid out as a system's folders are: `etc/` the person's own configuration, for every project —
-//! their instructions, `AGENTS.md`, their skills, `skills/`, their MCP servers, `mcp.json` — and the providers'
-//! credentials, `etc/credstore/`; `var/lib/` the node's state — the volume, the key its tunnel sessions show, the
-//! address its account gave the machine, the browser's profile; `var/cache/` what is fetched again at need; `var/log/` its logs; and `threads/`, where a thread's
-//! calls read the threads. The Home is the person's alone. Its control socket is kept in the person's runtime folder,
-//! as tmux keeps its sockets, since a socket's path is bounded and a Home may lie anywhere.
+//! their instructions, `AGENTS.md`, their skills, `skills/`, their MCP servers, `mcp.json`, their memory of each
+//! project, `memory/` — and the providers' credentials, `etc/credstore/`; `var/lib/` the node's state — the volume,
+//! the key its tunnel sessions show, the address its account gave the machine, the browser's profile; `var/log/` its
+//! logs; and `threads/`, where a thread's calls read the threads. The Home is the person's alone. Its control socket is
+//! kept in the person's runtime folder, as tmux keeps its sockets, since a socket's path is bounded and a Home may lie
+//! anywhere; what its work leaves for a while — the threads' scratchpads, the browser's downloads — in the system's
+//! temporary folder, which the system clears.
 
 use std::path::{Path, PathBuf};
 
@@ -38,7 +40,6 @@ impl Home {
             self.skills(),
             self.volume(),
             self.browser(),
-            self.cache(),
             self.log(),
             self.threads(),
         ] {
@@ -67,6 +68,12 @@ impl Home {
     #[must_use]
     pub fn skills(&self) -> PathBuf {
         self.config().join("skills")
+    }
+
+    /// The person's memory, a folder for each project.
+    #[must_use]
+    pub fn memory(&self) -> PathBuf {
+        self.config().join("memory")
     }
 
     /// The providers' credentials, a file each.
@@ -99,15 +106,10 @@ impl Home {
         self.state().join("address")
     }
 
-    /// The browser's profile, and where its pages' downloads go.
+    /// The browser's profile.
     #[must_use]
     pub fn browser(&self) -> PathBuf {
         self.state().join("browser")
-    }
-
-    #[must_use]
-    pub fn cache(&self) -> PathBuf {
-        self.root.join("var/cache")
     }
 
     #[must_use]
@@ -122,28 +124,31 @@ impl Home {
     /// Where the folder cannot be made, or is not the person's alone — another may have made it to listen in their
     /// place.
     pub fn socket(&self) -> std::io::Result<PathBuf> {
-        let uid = rustix::process::getuid().as_raw();
         let folder = std::env::var_os("XDG_RUNTIME_DIR").map_or_else(
-            || std::env::temp_dir().join(format!("octoii-{uid}")),
+            || std::env::temp_dir().join(format!("octoii-{}", uid())),
             |runtime| PathBuf::from(runtime).join("octoii"),
         );
-        let mut builder = std::fs::DirBuilder::new();
-        builder.recursive(true);
-        #[cfg(unix)]
-        std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
-        builder.create(&folder)?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::MetadataExt as _;
-            let found = std::fs::symlink_metadata(&folder)?;
-            if !found.is_dir() || found.uid() != uid || found.mode() & 0o077 != 0 {
-                let why = format!("{} is not a folder of this person's alone", folder.display());
-                return Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, why));
-            }
-        }
+        private_folder(&folder)?;
+        Ok(folder.join(format!("{}.sock", self.name())))
+    }
+
+    /// The Home's temporary folder, for what its work leaves for a while: `octoii-<uid>` in the system's temporary
+    /// folder, a folder there named by the Home, made where it is not.
+    ///
+    /// # Errors
+    /// Where the folder cannot be made, or is not the person's alone.
+    pub fn temporary(&self) -> std::io::Result<PathBuf> {
+        let folder = std::env::temp_dir().join(format!("octoii-{}", uid()));
+        private_folder(&folder)?;
+        let temporary = folder.join(self.name());
+        private_folder(&temporary)?;
+        Ok(temporary)
+    }
+
+    /// The Home's name among the person's Homes: of its path, however spelled, whether or not it is there yet.
+    fn name(&self) -> String {
         let digest = sha2::Sha256::digest(real_path(&self.root).as_os_str().as_encoded_bytes());
-        let name = u64::from_be_bytes(digest[..8].try_into().unwrap_or_default());
-        Ok(folder.join(format!("{name:016x}.sock")))
+        format!("{:016x}", u64::from_be_bytes(digest[..8].try_into().unwrap_or_default()))
     }
 
     /// Where a thread's calls read the threads.
@@ -151,6 +156,33 @@ impl Home {
     pub fn threads(&self) -> PathBuf {
         self.root.join("threads")
     }
+}
+
+/// The person's id on the system.
+fn uid() -> u32 {
+    rustix::process::getuid().as_raw()
+}
+
+/// Makes `folder` where it is not, the person's alone.
+///
+/// # Errors
+/// Where it cannot be made, or is not the person's alone — another may have made it to read or listen in their place.
+fn private_folder(folder: &Path) -> std::io::Result<()> {
+    let mut builder = std::fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+    builder.create(folder)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt as _;
+        let found = std::fs::symlink_metadata(folder)?;
+        if !found.is_dir() || found.uid() != uid() || found.mode() & 0o077 != 0 {
+            let why = format!("{} is not a folder of this person's alone", folder.display());
+            return Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, why));
+        }
+    }
+    Ok(())
 }
 
 /// `path` with its links followed, as far as it is there, the rest as given: one Home names one socket whether or not

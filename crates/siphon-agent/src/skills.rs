@@ -47,15 +47,11 @@ fn skill(path: &Path, folder: &str) -> Option<Skill> {
         .ok()?;
     let mut name = folder.to_owned();
     let mut description = String::new();
-    if let Some(matter) = head.strip_prefix("---\n").and_then(|rest| rest.split("\n---").next()) {
-        for line in matter.lines() {
-            let Some((key, value)) = line.split_once(':') else { continue };
-            let value = value.trim().trim_matches(|quote| quote == '"' || quote == '\'').to_owned();
-            match key.trim() {
-                "name" if !value.is_empty() => name = value,
-                "description" => description = value,
-                _ => {}
-            }
+    for (key, value) in crate::front_matter::of(&head) {
+        match key {
+            "name" if !value.is_empty() => value.clone_into(&mut name),
+            "description" => value.clone_into(&mut description),
+            _ => {}
         }
     }
     Some(Skill {

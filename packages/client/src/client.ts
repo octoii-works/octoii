@@ -104,6 +104,8 @@ export type Client = {
 	grants(): Promise<readonly Granted[]>;
 	/** Takes back from the project at its folder what `granted` names of its grants. */
 	revokeGrant(granted: Granted): Promise<void>;
+	/** Deletes the memory `file` of the project the folder `path` is in. */
+	deleteMemory(path: string, file: string): Promise<void>;
 	/** The node's providers: how each is connected, and the kind of credential the node keeps for it. */
 	providers(): Promise<readonly ProviderShown[]>;
 	/** How the provider `id`'s account stands, as its driver tells it. */
@@ -193,6 +195,7 @@ export function createClient(options: ClientOptions): Client {
 		closePage: (id) => done(connection.call("browser.close", { page: id })),
 		grants: async () => (await connection.call("grants.list", {})).projects,
 		revokeGrant: (granted) => done(connection.call("grants.revoke", granted)),
+		deleteMemory: (path, file) => done(connection.call("memory.delete", { path, file })),
 		providers: async () => (await connection.call("providers.list", {})).providers,
 		providerStatus: (id) => connection.call("providers.status", { provider: id }),
 		signIn: async (id) => (await connection.call("providers.sign-in", { provider: id })).url,

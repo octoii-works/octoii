@@ -1,11 +1,11 @@
 //! Whether a call goes ahead, and where it may write, as its thread's mode and what the person granted its project say:
 //! weighed by its effect alone.
 //!
-//! - In `default`, a read goes ahead; an edit within the workspace, and a command within the system's sandbox — writing
-//!   the workspace and the temporary folders alone — go ahead held there; a command that asks to write beyond the
-//!   sandbox, every command where the machine confines none, an edit beyond the workspace and a tool that may do
-//!   anything ask the person.
-//! - In `auto`, nothing is sandboxed: a read, an edit within the workspace and a line that reads alone go ahead; all
+//! - In `default`, a read goes ahead; an edit within the workspace or the places beside it written as freely — the
+//!   person's memory, the thread's scratchpad, the temporary folders — and a command within the system's sandbox,
+//!   writing those alone, go ahead held there; a command that asks to write beyond the sandbox, every command where the
+//!   machine confines none, an edit elsewhere and a tool that may do anything ask the person.
+//! - In `auto`, nothing is sandboxed: a read, an edit within those places and a line that reads alone go ahead; all
 //!   else a second model judges.
 //! - In `full-access`, everything goes ahead.
 //!
@@ -23,7 +23,7 @@ use crate::effect::{Effect, Line};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Writes {
-    /// Its thread's workspace and the machine's temporary folders alone.
+    /// Its thread's workspace and the places beside it written as freely alone.
     Workspace,
     Anywhere,
 }
@@ -113,10 +113,12 @@ fn matches_glob(glob: &str, path: &Path) -> bool {
     globset::Glob::new(glob).is_ok_and(|built| built.compile_matcher().is_match(path))
 }
 
-/// The workspace a weighing holds edits and commands to, and whether the machine confines a command to a sandbox.
+/// The workspace a weighing holds edits and commands to, the places beside it written as freely, and whether the
+/// machine confines a command to a sandbox.
 #[derive(Debug, Clone)]
 pub struct Bounds {
     pub workspace: PathBuf,
+    pub places: Vec<PathBuf>,
     pub confines: bool,
 }
 
@@ -128,7 +130,12 @@ pub fn weigh(effect: &Effect, mode: Mode, grants: &Grants, bounds: &Bounds) -> V
     {
         return Verdict::Go(Writes::Anywhere);
     }
-    let within = |paths: &[PathBuf]| paths.iter().all(|path| path.starts_with(&bounds.workspace));
+    let own = |path: &PathBuf| {
+        std::iter::once(&bounds.workspace)
+            .chain(&bounds.places)
+            .any(|place| path.starts_with(place))
+    };
+    let within = |paths: &[PathBuf]| paths.iter().all(own);
     match (mode, effect) {
         (_, Effect::Reads | Effect::Browses | Effect::Calls | Effect::Delegates) => Verdict::Go(Writes::Workspace),
         (_, Effect::Edits(paths)) if within(paths) => Verdict::Go(Writes::Workspace),

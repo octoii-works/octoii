@@ -58,6 +58,7 @@ impl Program for Caller {
             mode: Mode::Default,
             base: &base,
             project: None,
+            places: &[],
             confines: beak::machine_confines(),
         };
         if let Some(wait) = calls.advance(run, &setting)? {

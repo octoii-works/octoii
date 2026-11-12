@@ -5,7 +5,9 @@
 pub mod compaction;
 pub mod context;
 pub mod delegate;
+mod front_matter;
 pub mod gather;
+pub mod memory;
 pub mod model;
 pub mod render;
 pub mod resume;

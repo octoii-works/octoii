@@ -114,6 +114,7 @@ async fn a_command_line_the_model_runs_tells_its_end_with_its_screen_and_one_clo
     let running = Running::Line {
         line: "echo served; exit 3".into(),
         writes: writes.clone(),
+        set: Vec::new(),
     };
     let id = terminals.open("t1", cwd.clone(), SIZE, running).await.expect("opened");
     let ended = tokio::time::timeout(Duration::from_secs(10), async {
@@ -139,6 +140,7 @@ async fn a_command_line_the_model_runs_tells_its_end_with_its_screen_and_one_clo
     let lasting = Running::Line {
         line: "sleep 30".into(),
         writes,
+        set: Vec::new(),
     };
     let id = terminals.open("t1", cwd.clone(), SIZE, lasting).await.expect("opened");
     assert_eq!(terminals.of_thread("t1").await[0].line.as_deref(), Some("sleep 30"));

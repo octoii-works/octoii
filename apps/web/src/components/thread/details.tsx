@@ -3,15 +3,16 @@
  * enough, the chat's column staying centred under it, or in a popover from the header's button where it is not: the
  * machine the thread works on and its folder, which opens in
  * the Files view; the folder's repository — its branch, how far ahead of its upstream and behind, and the lines the
- * changes the Diff view shows gained and lost, which open it; the terminals open in the thread, the model's by the
+ * changes the Diff view shows gained and lost, which open it; what the models remember of its project, which opens
+ * each memory to delete; the terminals open in the thread, the model's by the
  * command line each runs, which open in the panel; the thread it came from and those it delegated to; how
  * full its window is, which opens what fills it and compacts it; and what its model's requests read, wrote and cost,
  * which opens where it went, request by request.
  */
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import type { Conversation, Listed, Repository, ThreadUsage as Usage, Turn } from "@octoii-works/octoii-client";
 import { useConnection, useTerminals, useThreads } from "@octoii-works/octoii-client/react";
-import { Coins, CornerLeftUp, FileDiff, Folder, FolderX, Gauge, GitBranch, Laptop, SquareMenu, SquareTerminal } from "lucide-react";
+import { Brain, Coins, CornerLeftUp, FileDiff, Folder, FolderX, Gauge, GitBranch, Laptop, SquareMenu, SquareTerminal } from "lucide-react";
 import { cachedShare, type Context, contextOf, fullnessOf } from "../../core/details.ts";
 import { defaultScope, scopeName, shortCount, totalsOf } from "../../core/diff.ts";
 import { modelOf } from "../../core/models.ts";
@@ -31,6 +32,7 @@ import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover.tsx";
 import { RollingNumber } from "../ui/rolling-number.tsx";
 import { SpendingCard } from "./spending.tsx";
 import { ContextCard } from "./context-card.tsx";
+import { MemoryCard } from "./memory-card.tsx";
 import { isCompacting } from "../../core/context.ts";
 import { SubThreadAvatar, WorkedFor } from "./sub-thread.tsx";
 import { useFolder } from "../state/folder.ts";
@@ -89,7 +91,7 @@ function DetailsCard(props: DetailsProps): ReactNode {
 	const folder = useFolder(props.row);
 	return (
 		<div className="flex flex-col divide-y divide-border text-ui">
-			<Workspace thread={props.thread} folder={folder} />
+			<Workspace thread={props.thread} folder={folder} revision={props.revision} />
 			{folder === undefined ? null : <VersionControl thread={props.thread} folder={folder} revision={props.revision} />}
 			<Terminals thread={props.thread} />
 			<Lineage thread={props.thread} row={props.row} />
@@ -157,8 +159,11 @@ function Terminals(props: { readonly thread: string }): ReactNode {
 	);
 }
 
-/** The machine the thread works on, by the name it goes by; and its folder, opened in the Files view, or that it works in none. */
-function Workspace(props: { readonly thread: string; readonly folder: string | undefined }): ReactNode {
+/**
+ * The machine the thread works on, by the name it goes by; and its folder, opened in the Files view, or that it works in
+ * none; and what is remembered of its project.
+ */
+function Workspace(props: { readonly thread: string; readonly folder: string | undefined; readonly revision: string }): ReactNode {
 	const connection = useConnection();
 	const machine = connection.status === "open" ? connection.machine.name : undefined;
 	const { folder } = props;
@@ -168,9 +173,30 @@ function Workspace(props: { readonly thread: string; readonly folder: string | u
 			{folder === undefined ? (
 				<DetailRow icon={<FolderX />} label="Works in no folder" />
 			) : (
-				<DetailRow icon={<Folder />} label={folderName(folder)} title={folder} onOpen={() => showSurface(props.thread, "files")} />
+				<>
+					<DetailRow icon={<Folder />} label={folderName(folder)} title={folder} onOpen={() => showSurface(props.thread, "files")} />
+					<MemoryRow folder={folder} revision={props.revision} />
+				</>
 			)}
 		</section>
+	);
+}
+
+/** What the models remember of the project the folder is in, by how many memories, opening them; nothing where there are none. */
+function MemoryRow(props: { readonly folder: string; readonly revision: string }): ReactNode {
+	const [deleted, setDeleted] = useState(0);
+	const outcome = useOutcome("memory.list", { path: props.folder }, `${props.revision}:${String(deleted)}`);
+	if (outcome === undefined || "failure" in outcome || outcome.result.memories.length === 0) return null;
+	const count = outcome.result.memories.length;
+	return (
+		<Popover>
+			<PopoverTrigger render={<button type="button" title={outcome.result.folder ?? undefined} className={cn(ROW, OPENING)} />}>
+				<RowContent icon={<Brain />} label="Memory" aside={count === 1 ? "1 memory" : `${String(count)} memories`} />
+			</PopoverTrigger>
+			<PopoverPopup side="left" align="start" sideOffset={12} className="w-[min(24rem,calc(100vw-2rem))] p-0">
+				<MemoryCard path={props.folder} listed={outcome.result} onDeleted={() => setDeleted((count) => count + 1)} />
+			</PopoverPopup>
+		</Popover>
 	);
 }
 

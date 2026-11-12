@@ -47,6 +47,7 @@ pub struct ScriptInput {
     pub workspace: String,
     pub home: Option<String>,
     pub project: Option<String>,
+    pub places: Vec<std::path::PathBuf>,
     pub mode: Mode,
     pub confines: bool,
 }
@@ -121,6 +122,7 @@ impl Tool for ExecuteTool {
             workspace: setting.base.workspace.to_string_lossy().into_owned(),
             home: setting.base.home.as_ref().map(|home| home.to_string_lossy().into_owned()),
             project: setting.project.map(str::to_owned),
+            places: setting.places.to_vec(),
             mode: setting.mode,
             confines: setting.confines,
         };
@@ -278,6 +280,7 @@ impl Program for ScriptProgram {
             mode: input.mode,
             base: &base,
             project: input.project.as_deref(),
+            places: &input.places,
             confines: input.confines,
         };
         let calls = state.calls.as_mut().expect("calls being taken on");

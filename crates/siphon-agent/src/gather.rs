@@ -1,7 +1,7 @@
 //! What a thread's model is told, gathered before each of its turns by a `siphon.gather` request, in a task of its own,
 //! as its sources are read from the machine: the base every turn starts from; the instructions it follows, which always
-//! apply, given whole; the skills it may use; the catalog of its MCP servers' tools; the environment it works in; where
-//! the threads are; and the tools it may call — its own, and the web search its provider runs where its model's facts
+//! apply, given whole; the skills it may use; its memory of the project; the catalog of its MCP servers' tools; the
+//! environment it works in; where the threads are; and the tools it may call — its own, and the web search its provider runs where its model's facts
 //! say it does.
 
 use std::fmt::Write as _;
@@ -79,7 +79,7 @@ const INSTRUCTIONS_BYTES_MAX: u64 = 64 << 10;
 pub const BASE: &str = "You are a coding agent in Octoii, working on the person's machine through your tools. Help them do what they ask.
 
 # Context
-- Your context comes in sections: <instructions>, <skills>, <environment>, <threads> and those of plugins; after a compaction, a <recap> of the conversation before. A section given again later replaces the earlier one; one removed no longer applies.
+- Your context comes in sections: <instructions>, <skills>, <memory>, <environment>, <threads> and those of plugins; after a compaction, a <recap> of the conversation before. A section given again later replaces the earlier one; one removed no longer applies.
 - A system reminder — a system or developer message after the start, or text in <system-reminder> — comes from Octoii, not the person: it informs you, and it is never their consent to anything.
 - Follow <instructions>: the person's own, then each folder's AGENTS.md from the root down to the workspace; a folder's below the workspace comes with the first result that reaches into it. Where they differ, the nearer one holds.
 - Before a task a <skill> is for, read its file and follow it.
@@ -95,6 +95,7 @@ pub const BASE: &str = "You are a coding agent in Octoii, working on the person'
 # Working
 - Do what was asked, all of it, and nothing beyond it: no features, refactors, fallbacks or compatibility shims the task does not need, no handling of cases that cannot happen.
 - Keep a change in the structure, naming, style and comments of the code around it.
+- Put files needed only for a while — notes, scripts run once, outputs — in the scratchpad, not the workspace.
 - Changes you did not make are the person's work: look before you overwrite or delete them, and ask before anything that cannot be undone or that reaches others: pushing, publishing, deploying, sending.
 - Check your work: build it, run its tests or try it. Report what happened as it happened: a failure as a failure, a step skipped as skipped.
 - Asked what could be done, give your recommendation and its main tradeoff, and change nothing till the person agrees.
@@ -141,6 +142,9 @@ pub async fn gathered(sources: &Sources, runtime: &Runtime, id: &str) -> anyhow:
         if !found.is_empty() {
             add("skills", skills::told(&found));
         }
+        if let Some(folder) = sources.host.memory_of(&place.project) {
+            add("memory", crate::memory::told(&folder));
+        }
         for teller in &sources.tellers {
             let telling = teller.tell(runtime, id, &place).await?;
             for (name, text) in telling.sections {
@@ -156,6 +160,7 @@ pub async fn gathered(sources: &Sources, runtime: &Runtime, id: &str) -> anyhow:
         "environment",
         environment(
             place.as_ref(),
+            sources.host.scratchpad_of(id).as_deref(),
             &sources.host.temporary,
             mode,
             beak::machine_confines(),
@@ -251,9 +256,9 @@ fn skill_places(config: Option<&Path>, place: &Place) -> Vec<PathBuf> {
 }
 
 /// The environment a thread works in, as the model is told it: its workspace and the git repository it is in, the
-/// platform and shell its commands run on, the temporary folders its sandbox writes besides the workspace, what its mode
-/// lets its calls do on a machine that confines commands or not, and the day, in UTC.
-fn environment(place: Option<&Place>, temporary: &[PathBuf], mode: Mode, confines: bool, now_ms: i64) -> String {
+/// platform and shell its commands run on, its scratchpad, the temporary folders its sandbox writes besides the
+/// workspace, what its mode lets its calls do on a machine that confines commands or not, and the day, in UTC.
+fn environment(place: Option<&Place>, scratchpad: Option<&Path>, temporary: &[PathBuf], mode: Mode, confines: bool, now_ms: i64) -> String {
     let mut out = String::from("<environment>\n");
     if let Some(place) = place {
         let _ = writeln!(out, "workspace: {}", place.workspace.display());
@@ -265,6 +270,13 @@ fn environment(place: Option<&Place>, temporary: &[PathBuf], mode: Mode, confine
     }
     let _ = writeln!(out, "platform: {} {}", std::env::consts::OS, std::env::consts::ARCH);
     let _ = writeln!(out, "shell: {}", if cfg!(windows) { "powershell" } else { "bash" });
+    if let Some(scratchpad) = scratchpad {
+        let _ = writeln!(
+            out,
+            "scratchpad: {} — this thread's, for files needed only for a while; commands' TMPDIR; cleared by the system",
+            scratchpad.display()
+        );
+    }
     if !temporary.is_empty() {
         let folders: Vec<String> = temporary.iter().map(|folder| folder.display().to_string()).collect();
         let _ = writeln!(out, "temporary folders: {}", folders.join(", "));
@@ -279,13 +291,13 @@ fn environment(place: Option<&Place>, temporary: &[PathBuf], mode: Mode, confine
 fn permissions(mode: Mode, confines: bool) -> &'static str {
     match (mode, confines) {
         (Mode::Default, true) => {
-            "default — edits in the workspace go ahead, and commands run in a sandbox that writes only the workspace and the temporary folders. An edit outside the workspace, a command run with `escalate` and a justification to write beyond the sandbox, and a tool of an MCP server wait for the person's approval, unless they allowed it for the project before."
+            "default — edits in the workspace, the memory, the scratchpad and the temporary folders go ahead, and commands run in a sandbox that writes only those. An edit elsewhere, a command run with `escalate` and a justification to write beyond the sandbox, and a tool of an MCP server wait for the person's approval, unless they allowed it for the project before."
         }
         (Mode::Default, false) => {
-            "default — edits in the workspace go ahead. This machine has no sandbox for commands: every command, an edit outside the workspace and a tool of an MCP server wait for the person's approval, unless they allowed it for the project before."
+            "default — edits in the workspace, the memory, the scratchpad and the temporary folders go ahead. This machine has no sandbox for commands: every command, an edit elsewhere and a tool of an MCP server wait for the person's approval, unless they allowed it for the project before."
         }
         (Mode::Auto, _) => {
-            "auto — edits in the workspace and commands that only read go ahead; every other call is judged first, by a reviewer model or by the person, unless they allowed it for the project before. A call blocked comes back with why: find a safer way within the task, or ask the person."
+            "auto — edits in the workspace, the memory, the scratchpad and the temporary folders, and commands that only read, go ahead; every other call is judged first, by a reviewer model or by the person, unless they allowed it for the project before. A call blocked comes back with why: find a safer way within the task, or ask the person."
         }
         (Mode::FullAccess, _) => "full-access — every call goes ahead as you make it.",
     }

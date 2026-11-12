@@ -4,6 +4,7 @@
 
 use std::collections::BTreeMap;
 use std::future::Future;
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 
@@ -51,7 +52,7 @@ pub struct Context {
 }
 
 impl Context {
-    /// The machine, opened for this call: held to the thread's workspace and the machine's temporary folders, or
+    /// The machine, opened for this call: held to the thread's workspace and the places beside it written as freely, or
     /// writing anywhere, as its weighing said.
     ///
     /// # Errors
@@ -61,18 +62,32 @@ impl Context {
             .map_err(|error| Refusal(format!("the machine: {error}")))
     }
 
-    /// Where this call's work may write, as its weighing said: its thread's workspace and the machine's temporary
-    /// folders, or anywhere.
+    /// Where this call's work may write, as its weighing said: its thread's workspace and the places beside it written
+    /// as freely, made where they are not, or anywhere.
     #[must_use]
     pub fn writes_of(&self) -> siphon_machine::Writes {
         match self.writes {
             Writes::Anywhere => siphon_machine::Writes::Anywhere,
             Writes::Workspace => {
-                let mut places = vec![self.base.workspace.clone()];
-                places.extend(self.host.temporary.iter().cloned());
-                siphon_machine::Writes::Within(places)
+                let places = self.host.places_of(&self.thread).into_iter().filter(made);
+                siphon_machine::Writes::Within(std::iter::once(self.base.workspace.clone()).chain(places).collect())
             }
         }
+    }
+
+    /// The variables a thread's commands run with over the machine's own: `TMPDIR`, its scratchpad, so what their work
+    /// leaves for a while goes there rather than into the workspace.
+    #[must_use]
+    pub fn variables(&self) -> Vec<(String, String)> {
+        self.scratchpad()
+            .map(|scratchpad| ("TMPDIR".to_owned(), scratchpad.to_string_lossy().into_owned()))
+            .into_iter()
+            .collect()
+    }
+
+    /// The thread's scratchpad, made where it is not — the system clears its temporary folder.
+    fn scratchpad(&self) -> Option<PathBuf> {
+        self.host.scratchpad_of(&self.thread).filter(made)
     }
 
     /// The image `bytes`, named `name` where it has one, as the model is shown it: fitted to what every model reads,
@@ -396,4 +411,9 @@ impl Tools {
         let tool = Arc::clone(&self.entries.get(name).ok_or_else(|| Refusal(format!("no tool {name}")))?.tool);
         tool.exec(context, arguments).await
     }
+}
+
+/// Whether the folder `folder` is there, made where it was not, as a place work writes must be to be mounted.
+fn made(folder: &PathBuf) -> bool {
+    std::fs::create_dir_all(folder).is_ok()
 }

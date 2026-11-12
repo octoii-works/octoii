@@ -52,8 +52,8 @@ pub struct Call {
 }
 
 /// What the calls are weighed and exec'd by: the thread, its tools, the names of the MCP servers' tools its model is
-/// told of, its mode, where its paths start, its project's folder where it has one, and whether the machine confines a
-/// command to a sandbox.
+/// told of, its mode, where its paths start, its project's folder where it has one, the places beside its workspace it
+/// writes as freely, and whether the machine confines a command to a sandbox.
 #[derive(Debug, Clone, Copy)]
 pub struct Setting<'a> {
     pub thread: &'a str,
@@ -62,6 +62,7 @@ pub struct Setting<'a> {
     pub mode: Mode,
     pub base: &'a Base,
     pub project: Option<&'a str>,
+    pub places: &'a [std::path::PathBuf],
     pub confines: bool,
 }
 
@@ -345,6 +346,7 @@ impl Calls {
         };
         let bounds = Bounds {
             workspace: setting.base.workspace.clone(),
+            places: setting.places.to_vec(),
             confines: setting.confines,
         };
         match weigh(effect, setting.mode, &grants, &bounds) {
