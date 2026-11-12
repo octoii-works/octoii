@@ -12,6 +12,7 @@ import {
 	firstSaid,
 	laidOut,
 	leadOf,
+	runsOf,
 	thoughtCalls,
 	replyOf,
 	itemsOf,
@@ -357,6 +358,20 @@ describe("a thread's timeline", () => {
 			["x", 1],
 			["y", 0],
 		]);
+	});
+
+	it("holds calls one after another that change one file as one run, each after one that went well", () => {
+		const write = (id: string, path: string, state: CallLine["state"] = "done"): CallLine => ({
+			...callOf(id, "write", "q1"),
+			work: "edit",
+			subject: path,
+			state,
+		});
+		const shown = [write("a", "x.sh"), write("b", "x.sh"), write("c", "x.sh", "failed"), write("d", "x.sh"), write("e", "y.sh")].map((call) => ({
+			call,
+			thoughts: [],
+		}));
+		expect(runsOf(shown).map((run) => run.map(({ call }) => call.id))).toEqual([["a", "b", "c"], ["d"], ["e"]]);
 	});
 
 	it("leads a stretch's line with the call going on, else the latest of the kind it did most", () => {

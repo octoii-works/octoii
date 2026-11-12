@@ -11,11 +11,13 @@ import { PathLink } from "../files/path-link.tsx";
 import { showSurface } from "../state/panel.ts";
 import { MessageThreadContext } from "./message-thread.ts";
 
-/** The lines a change added and took out. */
+/** The lines a change added and took out, a side that is nought left out — the added, nought, where both are. */
 export function ChangeCount(props: { readonly added: number; readonly removed: number }): ReactNode {
+	const { added, removed } = props;
 	return (
-		<span className="shrink-0 font-mono text-xs tabular-nums">
-			<span className="text-diff-add">+{shortCount(props.added)}</span> <span className="text-diff-remove">−{shortCount(props.removed)}</span>
+		<span className="flex shrink-0 gap-1 font-mono text-xs tabular-nums">
+			{added > 0 || removed === 0 ? <span className="text-diff-add">+{shortCount(added)}</span> : null}
+			{removed > 0 ? <span className="text-diff-remove">−{shortCount(removed)}</span> : null}
 		</span>
 	);
 }

@@ -12,7 +12,7 @@
 import { memo, type ReactNode, useState } from "react";
 import { Ban, Brain } from "lucide-react";
 import { callDuration, duration } from "../../core/time.ts";
-import { type CallLine, declinedText, leadOf, thoughtCalls, type ThoughtCall, type Work } from "../../core/timeline.ts";
+import { type CallLine, declinedText, leadOf, runsOf, thoughtCalls, type ThoughtCall, type Work } from "../../core/timeline.ts";
 import { folderOf, nameOf, type Places, spokenPath, spokenText } from "../../core/files.ts";
 import { summaryOf } from "../../core/tools.ts";
 import { useArrived } from "../effects/arrived.ts";
@@ -92,9 +92,9 @@ const SHOWN = 8;
  */
 function Steps(props: { readonly thread: string; readonly steps: readonly Work[] }): ReactNode {
 	const [all, setAll] = useState(false);
-	const shown = thoughtCalls(props.steps);
+	const shown = runsOf(thoughtCalls(props.steps));
 	const hidden = all ? 0 : Math.max(0, shown.length - SHOWN);
-	const arrived = useArrived(shown.map(({ call }) => call.id));
+	const arrived = useArrived(shown.map(runKey));
 	return (
 		<div className="work-list work-tight">
 			{hidden === 0 ? null : (
@@ -103,12 +103,54 @@ function Steps(props: { readonly thread: string; readonly steps: readonly Work[]
 					{`Show ${String(hidden)} earlier`}
 				</button>
 			)}
-			{shown.slice(hidden).map((each) => (
-				<div key={each.call.id} className={cn(arrived(each.call.id) && "animate-fade-in motion-reduce:animate-none")}>
-					<ThoughtfulCall thread={props.thread} shown={each} />
+			{shown.slice(hidden).map((run) => (
+				<div key={runKey(run)} className={cn(arrived(runKey(run)) && "animate-fade-in motion-reduce:animate-none")}>
+					{run.length === 1 && run[0] !== undefined ? <ThoughtfulCall thread={props.thread} shown={run[0]} /> : <RunLine thread={props.thread} run={run} />}
 				</div>
 			))}
 		</div>
+	);
+}
+
+/** A run's key: its first call's id, so a run that grows is the same line. */
+function runKey(run: readonly ThoughtCall[]): string {
+	return run[0]?.call.id ?? "";
+}
+
+/**
+ * Calls one after another that changed one file, as one line: the latest's verb and the file, how many times, all
+ * they added and took out, and how long they took; opened, each of them on a line of its own.
+ */
+function RunLine(props: { readonly thread: string; readonly run: readonly ThoughtCall[] }): ReactNode {
+	const calls = props.run.map(({ call }) => call);
+	const latest = calls.at(-1);
+	if (latest === undefined) return null;
+	const changed = calls.reduce(
+		(sum, call) => (call.aside?.kind === "change" ? { added: sum.added + call.aside.added, removed: sum.removed + call.aside.removed } : sum),
+		{ added: 0, removed: 0 },
+	);
+	return (
+		<Collapsible>
+			<CollapsibleTrigger data-state={latest.state} className="group/call work-line work-opens">
+				<CallMark call={latest} />
+				<CallWords call={{ ...latest, aside: undefined }} />
+				<span className="shrink-0 text-xs text-muted-foreground">{`×${String(calls.length)}`}</span>
+				<ChangeCount added={changed.added} removed={changed.removed} />
+				<FoldChevron className="quiet-chevron" />
+				<span className="flex-1" />
+				<CallEnd call={latest} />
+				<span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+					<StretchTime calls={calls} />
+				</span>
+			</CollapsibleTrigger>
+			<CollapsiblePanel>
+				<div className="work-list work-tight">
+					{props.run.map((each) => (
+						<ThoughtfulCall key={each.call.id} thread={props.thread} shown={each} />
+					))}
+				</div>
+			</CollapsiblePanel>
+		</Collapsible>
 	);
 }
 

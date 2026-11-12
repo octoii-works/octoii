@@ -461,6 +461,36 @@ export function thoughtCalls(steps: readonly Work[]): readonly ThoughtCall[] {
 }
 
 /**
+ * The calls of a stretch in runs: each call on its own, but for those one after another that change one file — an edit
+ * or a write, of the same path, each after one that went well and made no calls of its own — held as one run, as a line
+ * says them once.
+ */
+export function runsOf(shown: readonly ThoughtCall[]): readonly (readonly ThoughtCall[])[] {
+	const runs: ThoughtCall[][] = [];
+	for (const each of shown) {
+		const run = runs.at(-1);
+		const before = run?.at(-1)?.call;
+		if (run !== undefined && before !== undefined && changesAfter(before, each.call)) run.push(each);
+		else runs.push([each]);
+	}
+	return runs;
+}
+
+/** Whether `call` changes the file `before` changed, after it went well, neither making calls of its own. */
+function changesAfter(before: CallLine, call: CallLine): boolean {
+	return (
+		before.work === "edit" &&
+		call.work === "edit" &&
+		before.subject !== undefined &&
+		before.subject === call.subject &&
+		before.state === "done" &&
+		before.trouble === undefined &&
+		before.calls.length === 0 &&
+		call.calls.length === 0
+	);
+}
+
+/**
  * The call whose mark leads a stretch's line: while one runs or waits, the latest of those; once all ended, the latest
  * of the kind of work the stretch did most.
  */
