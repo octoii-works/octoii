@@ -68,7 +68,8 @@ platform: <platform>
 shell: bash
 scratchpad: <temporary>/threads/<thread> — this thread's folder for temporary files; commands' TMPDIR; cleared by the system
 temporary folders: <system temporary>/
-permissions: default — edits in the workspace, the memory folder, the scratchpad and the temporary folders go ahead, and commands run in a sandbox that can write only there. Edits elsewhere, commands run with `escalate` to write outside the sandbox, and tools of <catalog> wait for the person's approval, unless already allowed for this project.
+memory folder: <folder>/home/etc/memory
+permissions: default — edits in the workspace and the folders listed above go ahead, and commands run in a sandbox that can write only there. Edits elsewhere, commands run with `escalate` to write outside the sandbox, and tools of <catalog> wait for the person's approval, unless already allowed for this project.
 date: <date> (UTC)
 </environment>
 
@@ -1004,7 +1005,7 @@ Read a file, or list a directory (directory names end in /). Text is returned as
 }
 
 === tool shell
-Run a bash command in the workspace (no need to cd there). Its input is closed. Returns stdout and stderr together, then how it ended: [exit N], a signal, or a timeout. The time limit is 120 seconds; set `timeout_seconds` for up to 600. For reading, searching and editing files, use read, grep, glob and edit instead. In default mode commands run in a sandbox that can write only the workspace, the memory folder, the scratchpad and the temporary folders; to write anywhere else (such as a global install), run the command again with `escalate` and a `justification`, and the person decides.
+Run a bash command in the workspace (no need to cd there). Its input is closed. Returns stdout and stderr together, then a note of how it ended: exit N, a signal, or a timeout. The time limit is 120 seconds; set `timeout_seconds` for up to 600. For reading, searching and editing files, use read, grep, glob and edit instead. In default mode commands run in a sandbox that can write only the workspace and the folders <environment> lists; to write anywhere else (such as a global install), run the command again with `escalate` and a `justification`, and the person decides.
 --- parameters
 {
   "properties": {

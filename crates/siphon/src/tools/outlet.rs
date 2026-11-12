@@ -34,6 +34,7 @@ pub async fn answer_exec(tools: &Tools, host: &Host, asked: Asked<Exec>) -> Resu
             home: host.home.clone(),
         },
         writes: exec.writes,
+        places: exec.places,
         kernel: asked.runtime.kernel().clone(),
         host: host.clone(),
         runtime: asked.runtime,

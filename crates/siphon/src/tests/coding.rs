@@ -39,6 +39,7 @@ async fn context(beak: &Beak, writes: Writes) -> (Context, tempfile::TempDir) {
         call: "c1".into(),
         base: Base { workspace, home: None },
         writes,
+        places: Vec::new(),
         kernel: runtime.kernel().clone(),
         host: Host::default(),
         runtime,
@@ -189,13 +190,16 @@ async fn a_command_line_runs_in_the_workspace_held_there_and_tells_how_it_ended(
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_call_writes_the_memory_of_its_project_and_a_command_its_scratchpad_as_its_tmpdir() {
+async fn a_call_writes_the_places_it_is_given_and_a_command_its_scratchpad_as_its_tmpdir() {
     let beak = Beak::new().expect("Beak");
     let (mut context, _folder) = context(&beak, Writes::Workspace).await;
     let kept = tempfile::tempdir().expect("a folder");
     let kept = kept.path().canonicalize().expect("its real path");
     context.host.memory = Some(kept.join("memory"));
     context.host.scratchpads = Some(kept.join("scratch"));
+    // The places its turn gives it: the thread's own, and the memory folder its extension gives.
+    context.places = context.host.places_of("t1");
+    context.places.push(kept.join("memory"));
     let memory = context.host.memory_of(&context.base.workspace).expect("its memory");
     let tools = tools();
     let index = memory.join("MEMORY.md");

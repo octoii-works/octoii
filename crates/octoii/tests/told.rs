@@ -120,13 +120,21 @@ async fn an_extension_switched_off_tells_the_model_nothing() {
     assert!(before.iter().any(|name| name == "browser") && before.iter().any(|name| name == "terminal"));
     let change = siphon::settings::SettingsChange {
         environment: Some(siphon::settings::EnvironmentChange {
-            disabled_extensions: Some(vec!["browser".into()]),
+            disabled_extensions: Some(vec!["browser".into(), "memory".into()]),
             ..siphon::settings::EnvironmentChange::default()
         }),
         device: None,
     };
     siphon::settings::set(&siphon.runtime, "a-session", &change).await.expect("set");
-    let after = names(&siphon.told(&id).await.expect("told"));
+    let told = siphon.told(&id).await.expect("told");
+    let environment = told
+        .sections
+        .iter()
+        .find(|(name, _)| name == "environment")
+        .map(|(_, text)| text.clone());
+    assert!(!told.sections.iter().any(|(name, _)| name == "memory"), "memory is told no more");
+    assert!(!environment.unwrap_or_default().contains("memory folder"), "nor is its folder");
+    let after = names(&told);
     assert!(
         !after.iter().any(|name| name == "browser"),
         "the browser is told no more: {after:?}"

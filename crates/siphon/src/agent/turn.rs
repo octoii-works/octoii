@@ -82,6 +82,7 @@ pub struct TurnProgram {
     pub tools: Tools,
     pub machine: crate::machine::Host,
     pub models: Arc<Models>,
+    pub writables: Vec<crate::agent::Writable>,
 }
 
 /// How a turn ended, as its process completes: the failure of its model that ended it, as the provider told it; none
@@ -268,7 +269,7 @@ impl TurnProgram {
         let config = config_of(run, &input.thread)?;
         let base = self.base(&config);
         let project = Place::of(&base.workspace).project.to_string_lossy().into_owned();
-        let places = self.machine.places_of(&input.thread);
+        let places = crate::agent::writable::places(&self.machine, &input.thread, &self.writables, run.snapshot());
         let setting = Setting {
             primitives: &ThreadPrimitives,
             thread: &input.thread,

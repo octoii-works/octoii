@@ -19,6 +19,9 @@ pub struct Exec {
     pub arguments: serde_json::Value,
     pub writes: Writes,
     pub workspace: String,
+    /// The places beside the workspace its work writes as freely, where it writes within them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub places: Vec<std::path::PathBuf>,
 }
 
 impl Request for Exec {

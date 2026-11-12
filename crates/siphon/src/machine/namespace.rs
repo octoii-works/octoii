@@ -52,12 +52,11 @@ impl Host {
         self.memory.as_ref().map(|memory| memory.join(name))
     }
 
-    /// The places beside its workspace that the thread `thread`'s work writes as freely as it: the person's memory, the
-    /// thread's scratchpad and the machine's temporary folders.
+    /// The places of the machine's own beside its workspace that the thread `thread`'s work writes as freely as it:
+    /// the thread's scratchpad and the machine's temporary folders.
     #[must_use]
     pub fn places_of(&self, thread: &str) -> Vec<PathBuf> {
-        let mut places: Vec<PathBuf> = self.memory.iter().cloned().collect();
-        places.extend(self.scratchpad_of(thread));
+        let mut places: Vec<PathBuf> = self.scratchpad_of(thread).into_iter().collect();
         places.extend(self.temporary.iter().cloned());
         places
     }

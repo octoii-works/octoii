@@ -21,7 +21,7 @@ use tokio::sync::mpsc::{self, error::TrySendError};
 use tokio_util::sync::CancellationToken;
 
 use crate::Siphon;
-use crate::agent::{CORE, OwnedTeller, Shared};
+use crate::agent::{OwnedTeller, Shared};
 use crate::connection::{Outgoing, text};
 
 /// An extension: its name, which settings switch it by; the words it is shown by and a line of what it brings; and
@@ -60,15 +60,6 @@ pub(crate) type Deleted = Arc<dyn Fn(&str) + Send + Sync>;
 pub(crate) struct Owned<T> {
     pub(crate) extension: String,
     pub(crate) item: T,
-}
-
-impl Registry {
-    /// Whether what `extension` brought is switched on, as the environment's settings in `snapshot` say: Siphon's own
-    /// always is.
-    pub(crate) fn on(snapshot: &beak::Snapshot, extension: &str) -> bool {
-        extension == CORE
-            || crate::settings::environment(snapshot).is_ok_and(|settings| !settings.disabled_extensions.iter().any(|off| off == extension))
-    }
 }
 
 /// The methods and topics Siphon and its extensions brought, as the connection finds them, what each extension does as
@@ -163,6 +154,7 @@ pub(crate) struct Builder {
     pub(crate) providers: Vec<Provider>,
     pub(crate) tellers: Vec<OwnedTeller>,
     pub(crate) natives: Vec<(String, octoii_ai::vocabulary::Tool)>,
+    pub(crate) writables: Vec<crate::agent::Writable>,
     pub(crate) registry: Registry,
 }
 
@@ -282,6 +274,15 @@ impl Registrar<'_> {
     /// The toolset `toolset`, whose tools a thread's scripts call by the names a teller tells.
     pub fn toolset(&mut self, toolset: Arc<dyn crate::tools::Toolset>) {
         self.builder.tools = std::mem::take(&mut self.builder.tools).with_toolset(toolset);
+    }
+
+    /// A folder a thread's work writes as freely as its workspace, `named` so in what its model is told.
+    pub fn writable(&mut self, named: &'static str, folder: std::path::PathBuf) {
+        self.builder.writables.push(crate::agent::Writable {
+            extension: self.extension.to_owned(),
+            named,
+            folder,
+        });
     }
 
     /// A tool its model's provider runs, given where the model runs it: the web search.

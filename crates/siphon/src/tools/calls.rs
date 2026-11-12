@@ -472,6 +472,7 @@ impl Calls {
             arguments: serde_json::from_str(&call.arguments)?,
             writes,
             workspace: setting.base.workspace.to_string_lossy().into_owned(),
+            places: setting.places.to_vec(),
         };
         run.request(&call.key, &exec)?;
         Ok(State::Running)

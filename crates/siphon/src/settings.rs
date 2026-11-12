@@ -121,6 +121,14 @@ pub fn environment(snapshot: &Snapshot) -> Result<Environment, Error> {
     })
 }
 
+/// Whether what the extension `extension` brought is switched on, as the environment's settings in `snapshot` say:
+/// Siphon's own, `core`, always is.
+#[must_use]
+pub(crate) fn switched_on(snapshot: &Snapshot, extension: &str) -> bool {
+    extension == crate::agent::CORE
+        || environment(snapshot).is_ok_and(|settings| !settings.disabled_extensions.iter().any(|off| off == extension))
+}
+
 /// The file of the settings of the device that holds `session`.
 ///
 /// # Errors

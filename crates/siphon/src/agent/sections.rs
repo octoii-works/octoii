@@ -8,6 +8,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use crate::agent::gather::{Shared, Teller, Telling};
+use crate::agent::writable::Writable;
 use crate::machine::Host;
 use crate::threads::{Config, Mode, thread};
 use crate::tools::projects::Place;
@@ -15,15 +16,21 @@ use crate::tools::{INSTRUCTIONS_FILE, Instructions as InstructionsFile};
 use siphon_runtime::Runtime;
 
 /// Siphon's own tellers, each with how widely what it tells is shared: the base, the instructions found in the folder
-/// of the person's configuration `config` and the project's, and the environment,
-/// as `host` keeps them.
+/// of the person's configuration `config` and the project's, and the environment as `host` keeps it, the folders
+/// `writables` gives among those written as freely as the workspace.
 #[must_use]
-pub fn tellers(host: &Host, config: Option<&Path>) -> Vec<(Shared, Arc<dyn Teller>)> {
+pub fn tellers(host: &Host, config: Option<&Path>, writables: Vec<Writable>) -> Vec<(Shared, Arc<dyn Teller>)> {
     let config = config.map(Path::to_path_buf);
     vec![
         (Shared::Machine, Arc::new(Base)),
         (Shared::Project, Arc::new(Instructions { config })),
-        (Shared::Thread, Arc::new(Environment { host: host.clone() })),
+        (
+            Shared::Thread,
+            Arc::new(Environment {
+                host: host.clone(),
+                writables,
+            }),
+        ),
     ]
 }
 
@@ -63,10 +70,11 @@ impl Teller for Instructions {
     }
 }
 
-/// The environment a thread works in on `host`.
+/// The environment a thread works in on `host`, with the folders `writables` gives.
 #[derive(Debug)]
 pub struct Environment {
     pub host: Host,
+    pub writables: Vec<Writable>,
 }
 
 impl Teller for Environment {
@@ -78,14 +86,14 @@ impl Teller for Environment {
                 .and_then(|entry| entry.directory)
                 .unwrap_or_default();
             let mode = Config::of(&directory)?.mode.unwrap_or_default();
-            let text = environment(
-                place,
-                self.host.scratchpad_of(thread).as_deref(),
-                &self.host.temporary,
-                mode,
-                beak::machine_confines(),
-                runtime.now_ms(),
-            );
+            let snapshot = runtime.snapshot()?;
+            let writable: Vec<&Writable> = crate::agent::writable::on(&self.writables, &snapshot).collect();
+            let places = Places {
+                scratchpad: self.host.scratchpad_of(thread),
+                temporary: &self.host.temporary,
+                writable: &writable,
+            };
+            let text = environment(place, &places, mode, beak::machine_confines(), runtime.now_ms());
             Ok(Telling {
                 sections: vec![("environment".to_owned(), text)],
                 tools: Vec::new(),
@@ -169,7 +177,15 @@ fn read_text(path: &Path, bytes_max: u64) -> Option<String> {
 /// The environment a thread works in, as the model is told it: its workspace and the git repository it is in, the
 /// platform and shell its commands run on, its scratchpad, the temporary folders its sandbox writes besides the
 /// workspace, what its mode lets its calls do on a machine that confines commands or not, and the day, in UTC.
-fn environment(place: Option<&Place>, scratchpad: Option<&Path>, temporary: &[PathBuf], mode: Mode, confines: bool, now_ms: i64) -> String {
+/// The places beside the workspace a thread's work writes as freely: its scratchpad, the machine's temporary folders,
+/// and the folders extensions give.
+struct Places<'a> {
+    scratchpad: Option<PathBuf>,
+    temporary: &'a [PathBuf],
+    writable: &'a [&'a Writable],
+}
+
+fn environment(place: Option<&Place>, places: &Places<'_>, mode: Mode, confines: bool, now_ms: i64) -> String {
     let mut out = String::from("<environment>\n");
     if let Some(place) = place {
         let _ = writeln!(out, "workspace: {}", place.workspace.display());
@@ -181,16 +197,19 @@ fn environment(place: Option<&Place>, scratchpad: Option<&Path>, temporary: &[Pa
     }
     let _ = writeln!(out, "platform: {} {}", std::env::consts::OS, std::env::consts::ARCH);
     let _ = writeln!(out, "shell: {}", if cfg!(windows) { "powershell" } else { "bash" });
-    if let Some(scratchpad) = scratchpad {
+    if let Some(scratchpad) = &places.scratchpad {
         let _ = writeln!(
             out,
             "scratchpad: {} — this thread's folder for temporary files; commands' TMPDIR; cleared by the system",
             scratchpad.display()
         );
     }
-    if !temporary.is_empty() {
-        let folders: Vec<String> = temporary.iter().map(|folder| folder.display().to_string()).collect();
+    if !places.temporary.is_empty() {
+        let folders: Vec<String> = places.temporary.iter().map(|folder| folder.display().to_string()).collect();
         let _ = writeln!(out, "temporary folders: {}", folders.join(", "));
+    }
+    for writable in places.writable {
+        let _ = writeln!(out, "{}: {}", writable.named, writable.folder.display());
     }
     let _ = writeln!(out, "permissions: {}", permissions(mode, confines));
     let (year, month, day) = civil(now_ms.div_euclid(86_400_000));
@@ -202,13 +221,13 @@ fn environment(place: Option<&Place>, scratchpad: Option<&Path>, temporary: &[Pa
 fn permissions(mode: Mode, confines: bool) -> &'static str {
     match (mode, confines) {
         (Mode::Default, true) => {
-            "default — edits in the workspace, the memory folder, the scratchpad and the temporary folders go ahead, and commands run in a sandbox that can write only there. Edits elsewhere, commands run with `escalate` to write outside the sandbox, and tools of <catalog> wait for the person's approval, unless already allowed for this project."
+            "default — edits in the workspace and the folders listed above go ahead, and commands run in a sandbox that can write only there. Edits elsewhere, commands run with `escalate` to write outside the sandbox, and tools of <catalog> wait for the person's approval, unless already allowed for this project."
         }
         (Mode::Default, false) => {
-            "default — edits in the workspace, the memory folder, the scratchpad and the temporary folders go ahead. This machine has no sandbox for commands: every command, every edit elsewhere and every tool of <catalog> waits for the person's approval, unless already allowed for this project."
+            "default — edits in the workspace and the folders listed above go ahead. This machine has no sandbox for commands: every command, every edit elsewhere and every tool of <catalog> waits for the person's approval, unless already allowed for this project."
         }
         (Mode::Auto, _) => {
-            "auto — edits in the workspace, the memory folder, the scratchpad and the temporary folders, and commands that only read, go ahead. Every other call is reviewed first, by a reviewer model or the person, unless already allowed for this project. A blocked call returns the reason: find a safer way within the task, or ask the person."
+            "auto — edits in the workspace and the folders listed above, and commands that only read, go ahead. Every other call is reviewed first, by a reviewer model or the person, unless already allowed for this project. A blocked call returns the reason: find a safer way within the task, or ask the person."
         }
         (Mode::FullAccess, _) => "full-access — every call goes ahead as made.",
     }

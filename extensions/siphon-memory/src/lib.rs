@@ -38,6 +38,9 @@ impl Extension for MemoryExtension {
 
     fn build(self: Box<Self>, registrar: &mut Registrar<'_>) {
         let host = registrar.machine().clone();
+        if let Some(folder) = host.memory.clone() {
+            registrar.writable("memory folder", folder);
+        }
         registrar.teller(Shared::Project, Arc::new(Told { host: host.clone() }));
         registrar.methods(protocol::set(), Method::read, move |_: Caller, method| {
             let host = host.clone();

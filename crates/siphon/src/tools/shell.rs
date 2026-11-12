@@ -39,7 +39,7 @@ pub struct ShellTool;
 
 impl Tool for ShellTool {
     const NAME: &'static str = "shell";
-    const DESCRIPTION: &'static str = "Run a bash command in the workspace (no need to cd there). Its input is closed. Returns stdout and stderr together, then how it ended: [exit N], a signal, or a timeout. The time limit is 120 seconds; set `timeout_seconds` for up to 600. For reading, searching and editing files, use read, grep, glob and edit instead. In default mode commands run in a sandbox that can write only the workspace, the memory folder, the scratchpad and the temporary folders; to write anywhere else (such as a global install), run the command again with `escalate` and a `justification`, and the person decides.";
+    const DESCRIPTION: &'static str = "Run a bash command in the workspace (no need to cd there). Its input is closed. Returns stdout and stderr together, then a note of how it ended: exit N, a signal, or a timeout. The time limit is 120 seconds; set `timeout_seconds` for up to 600. For reading, searching and editing files, use read, grep, glob and edit instead. In default mode commands run in a sandbox that can write only the workspace and the folders <environment> lists; to write anywhere else (such as a global install), run the command again with `escalate` and a `justification`, and the person decides.";
     type Args = ShellArgs;
 
     fn effect(&self, args: &ShellArgs, _: &Base) -> Effect {

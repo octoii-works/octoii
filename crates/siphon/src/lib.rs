@@ -135,6 +135,7 @@ impl Siphon {
 /// Siphon being built: what its extensions add to, and what it is started with.
 pub struct Building {
     builder: extension::Builder,
+    config: Option<std::path::PathBuf>,
     sign_in: providers::SignInSetup,
     credentials: Arc<dyn Credentials>,
     events: Events,
@@ -197,9 +198,10 @@ impl Siphon {
             providers,
             tellers: Vec::new(),
             natives: Vec::new(),
+            writables: Vec::new(),
             registry: extension::Registry::default(),
         };
-        own(&mut builder.registrar(CORE), config.as_deref());
+        own(&mut builder.registrar(CORE));
         builder.methods(
             CORE,
             crate::protocol::siphon::set(),
@@ -209,6 +211,7 @@ impl Siphon {
         builder.topics(CORE, Scope::ThreadsRead, connection::told);
         Ok(Building {
             builder,
+            config,
             sign_in,
             credentials,
             events,
@@ -257,7 +260,8 @@ impl Building {
     /// The volume's failure.
     pub fn start(self) -> beak::Result<Siphon> {
         let Building {
-            builder,
+            mut builder,
+            config,
             sign_in,
             credentials,
             events,
@@ -265,6 +269,12 @@ impl Building {
             catalogue,
             options,
         } = self;
+        // Siphon's own tellers are told the folders its extensions gave.
+        let (host, writables) = (builder.machine.clone(), builder.writables.clone());
+        let mut core = builder.registrar(CORE);
+        for (shared, teller) in sections::tellers(&host, config.as_deref(), writables) {
+            core.teller(shared, teller);
+        }
         let extension::Builder {
             kernel,
             machine,
@@ -274,6 +284,7 @@ impl Building {
             providers,
             tellers,
             natives,
+            writables,
             registry,
         } = builder;
         let hosts = Arc::new(providers);
@@ -285,7 +296,7 @@ impl Building {
             natives,
             models: Arc::clone(&models),
         };
-        let runtime = programs(runtime, &machine, &models, sources.clone(), tools).start_on((kernel, events), options)?;
+        let runtime = programs(runtime, &machine, &models, sources.clone(), tools, writables).start_on((kernel, events), options)?;
         let siphon = Siphon {
             machine,
             threads: Threads::new(runtime.clone()),
@@ -306,10 +317,9 @@ impl Building {
     }
 }
 
-/// What Siphon adds as its own, through `registrar`: the coding tools and `execute`; and what tells a thread's model the
-/// base, the instructions it follows and the skills it may use — found in the folder of the person's configuration
-/// `config` and the project's — its memory of the project, and the environment it works in.
-fn own(registrar: &mut Registrar<'_>, config: Option<&std::path::Path>) {
+/// What Siphon adds as its own, through `registrar`: the coding tools and `execute`. Its tellers come once its
+/// extensions are added, told the folders they give.
+fn own(registrar: &mut Registrar<'_>) {
     registrar.tool(ReadTool);
     registrar.tool(WriteTool);
     registrar.tool(EditTool);
@@ -317,10 +327,6 @@ fn own(registrar: &mut Registrar<'_>, config: Option<&std::path::Path>) {
     registrar.tool(GrepTool);
     registrar.tool(ShellTool);
     registrar.tool(ExecuteTool);
-    let host = registrar.machine().clone();
-    for (shared, teller) in sections::tellers(&host, config) {
-        registrar.teller(shared, teller);
-    }
 }
 
 /// The runtime's own programs and handlers beside the extensions' in `runtime`: the thread's processes, the requests
@@ -331,6 +337,7 @@ fn programs(
     models: &Arc<Models>,
     sources: Sources,
     tools: Tools,
+    writables: Vec<crate::agent::Writable>,
 ) -> siphon_runtime::Builder {
     let (gathering, asking, reviewing) = (sources, Arc::clone(models), Arc::clone(models));
     let (execs, host) = (tools.clone(), machine.clone());
@@ -340,6 +347,7 @@ fn programs(
             tools: tools.clone(),
             machine: machine.clone(),
             models: Arc::clone(models),
+            writables,
         })
         .program(ScriptProgram {
             tools,

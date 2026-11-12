@@ -83,7 +83,7 @@ fn runtime(beak: &Beak, models: &Arc<Models>) -> Runtime {
     let sources = Sources {
         tools: tools.clone(),
         tellers: Sources::ordered(
-            crate::agent::sections::tellers(&Machine::default(), None)
+            crate::agent::sections::tellers(&Machine::default(), None, Vec::new())
                 .into_iter()
                 .map(|(shared, teller)| crate::agent::OwnedTeller {
                     extension: crate::agent::CORE.to_owned(),
@@ -104,6 +104,7 @@ fn runtime(beak: &Beak, models: &Arc<Models>) -> Runtime {
             tools,
             machine: crate::machine::Host::default(),
             models: Arc::clone(models),
+            writables: Vec::new(),
         })
         .program(ScriptProgram {
             tools: inner,

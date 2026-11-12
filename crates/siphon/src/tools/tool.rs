@@ -46,6 +46,8 @@ pub struct Context {
     pub call: String,
     pub base: Base,
     pub writes: Writes,
+    /// The places beside the workspace its work writes as freely.
+    pub places: Vec<PathBuf>,
     pub kernel: Kernel,
     pub host: Host,
     pub runtime: Runtime,
@@ -70,7 +72,7 @@ impl Context {
         match self.writes {
             Writes::Anywhere => crate::machine::Writes::Anywhere,
             Writes::Workspace => {
-                let places = self.host.places_of(&self.thread).into_iter().filter(made);
+                let places = self.places.iter().filter(|place| made(place)).cloned();
                 crate::machine::Writes::Within(std::iter::once(self.base.workspace.clone()).chain(places).collect())
             }
         }

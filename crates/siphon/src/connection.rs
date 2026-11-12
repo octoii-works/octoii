@@ -210,7 +210,7 @@ fn switched_off(siphon: &Siphon, extension: &str) -> Option<Error> {
     let on = siphon
         .runtime
         .snapshot()
-        .is_ok_and(|snapshot| crate::extension::Registry::on(&snapshot, extension));
+        .is_ok_and(|snapshot| crate::settings::switched_on(&snapshot, extension));
     (!on).then(|| refusal("extension_off", &format!("the extension {extension} is switched off")))
 }
 

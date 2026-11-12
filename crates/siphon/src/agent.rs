@@ -17,6 +17,7 @@ pub(crate) mod title;
 pub(crate) mod told;
 pub(crate) mod turn;
 pub(crate) mod waiting;
+pub(crate) mod writable;
 
 pub(crate) use compaction::CompactProgram;
 pub(crate) use context::Composition;
@@ -30,6 +31,7 @@ pub(crate) use title::TitleProgram;
 
 pub(crate) use turn::TurnProgram;
 pub(crate) use waiting::DelegatedProgram;
+pub(crate) use writable::Writable;
 
 /// What extensions and hosts use of it.
 pub use gather::{Shared, Teller, Telling};

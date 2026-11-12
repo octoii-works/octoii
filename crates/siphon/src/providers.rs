@@ -182,7 +182,7 @@ pub(crate) fn refreshed(siphon: &Siphon) -> Result<(), Refused> {
                 .registry
                 .providers
                 .get(&provider.id)
-                .is_none_or(|extension| crate::extension::Registry::on(&snapshot, extension))
+                .is_none_or(|extension| crate::settings::switched_on(&snapshot, extension))
         })
         .cloned()
         .collect();
