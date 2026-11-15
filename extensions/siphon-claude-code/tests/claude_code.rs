@@ -278,7 +278,7 @@ async fn a_computer_without_claude_is_told_how_to_install_it_and_sign_in() {
     let commands = siphon::testing::commands(&beak);
     let claude = claude_code(&commands, folder.path(), None);
     let guidance = claude.status(&call()).await.expect("told").and_then(|standing| standing.guidance);
-    let commands = guidance.map(|guidance| guidance.commands).unwrap_or_default();
+    let commands = guidance.map_or_default(|guidance| guidance.commands);
     assert!(commands.len() == 2 && commands[1].ends_with("claude auth login"), "{commands:?}");
     let failure = claude.list(&call()).await.expect_err("no listing");
     assert_eq!(failure.kind, FailureKind::Auth);

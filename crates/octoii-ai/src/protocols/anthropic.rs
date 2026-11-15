@@ -816,15 +816,12 @@ impl Reader {
             return;
         };
         let results = &self.sent[at].raw["content"];
-        let sources = results
-            .as_array()
-            .map(|found| {
-                found
-                    .iter()
-                    .filter_map(|result| result["url"].as_str().map(str::to_owned))
-                    .collect()
-            })
-            .unwrap_or_default();
+        let sources = results.as_array().map_or_default(|found| {
+            found
+                .iter()
+                .filter_map(|result| result["url"].as_str().map(str::to_owned))
+                .collect()
+        });
         let item = self.sent[search].item.unwrap_or_default();
         out.push(Read::Event(Event::Ended {
             index: item,
@@ -946,8 +943,7 @@ fn failure_of_error(error: &Value) -> Failure {
 fn failure_detail(body: &str) -> FailureDetail {
     serde_json::from_str::<Value>(body)
         .ok()
-        .map(|value| detail_of(&value["error"]))
-        .unwrap_or_default()
+        .map_or_default(|value| detail_of(&value["error"]))
 }
 
 /// What makes each request of an answer: its address, its key where it has one, and the betas it needs.

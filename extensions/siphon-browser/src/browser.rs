@@ -560,7 +560,7 @@ impl Owner {
                 let _ = reply.send(busy.unwrap_or_default());
             }
             Ask::Downloads { page, reply } => {
-                let _ = reply.send(self.page(&page).map(|page| page.downloads.clone()).unwrap_or_default());
+                let _ = reply.send(self.page(&page).map_or_default(|page| page.downloads.clone()));
             }
         }
     }
@@ -774,7 +774,7 @@ impl Owner {
                     .find(|page| page.target.as_deref() == Some(event.target_id.as_ref()))
                     .map(|page| page.id.clone());
                 if let Some(id) = gone {
-                    let thread = self.page(&id).map(|page| page.thread.clone()).unwrap_or_default();
+                    let thread = self.page(&id).map_or_default(|page| page.thread.clone());
                     self.pages.retain(|page| page.id != id);
                     self.told(&thread);
                 }

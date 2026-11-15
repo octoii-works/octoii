@@ -152,7 +152,7 @@ impl Servers {
             match listed {
                 Ok(tools) => catalog.tools.extend(tools.into_iter().map(|tool| Declared {
                     name: format!("{}.{}", server.name, tool.name),
-                    description: tool.description.map(String::from).unwrap_or_default(),
+                    description: tool.description.map_or_default(String::from),
                     parameters: serde_json::Value::Object((*tool.input_schema).clone()),
                     reaches_threads: false,
                 })),
@@ -262,8 +262,7 @@ impl Servers {
                     .0
                     .list_all_tools()
                     .await
-                    .map(|tools| tools.into_iter().map(|tool| tool.name.to_string()).collect())
-                    .unwrap_or_default(),
+                    .map_or_default(|tools| tools.into_iter().map(|tool| tool.name.to_string()).collect()),
                 None => Vec::new(),
             };
             servers.push(ServerListed {

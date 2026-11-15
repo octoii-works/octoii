@@ -59,8 +59,7 @@ impl<'a> Tree<'a> {
     fn children(&self, node: &Value) -> Vec<&'a Value> {
         node["childIds"]
             .as_array()
-            .map(|ids| ids.iter().filter_map(|id| self.nodes.get(id.as_str()?).copied()).collect())
-            .unwrap_or_default()
+            .map_or_default(|ids| ids.iter().filter_map(|id| self.nodes.get(id.as_str()?).copied()).collect())
     }
 }
 

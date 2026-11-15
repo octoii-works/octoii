@@ -426,7 +426,7 @@ impl Browser {
     async fn downloaded(&self, page: &Page) -> Outcome {
         let mut text = String::new();
         for download in self.downloads(&page.id).await {
-            let kept = download.path.map(|path| format!(" at {path}")).unwrap_or_default();
+            let kept = download.path.map_or_default(|path| format!(" at {path}"));
             let _ = writeln!(
                 text,
                 "{} {}: {} of {} bytes{kept}",

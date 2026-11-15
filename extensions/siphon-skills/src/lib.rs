@@ -50,9 +50,7 @@ impl Teller for Told {
         _: &'a str,
         place: Option<&'a Place>,
     ) -> Pin<Box<dyn Future<Output = anyhow::Result<Telling>> + Send + 'a>> {
-        let found = place
-            .map(|place| skills::find(&places(self.config.as_ref(), place)))
-            .unwrap_or_default();
+        let found = place.map_or_default(|place| skills::find(&places(self.config.as_ref(), place)));
         let telling = Telling {
             sections: if found.is_empty() {
                 Vec::new()

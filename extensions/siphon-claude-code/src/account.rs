@@ -531,8 +531,7 @@ pub fn listed_tool(name: &str, description: &str, parameters: &Value) -> Value {
 #[must_use]
 pub fn found(home: Option<&Path>) -> Option<PathBuf> {
     let on_path = std::env::var_os("PATH")
-        .map(|path| std::env::split_paths(&path).map(|folder| folder.join("claude")).collect::<Vec<_>>())
-        .unwrap_or_default();
+        .map_or_default(|path| std::env::split_paths(&path).map(|folder| folder.join("claude")).collect::<Vec<_>>());
     let installed = home.map(|home| home.join(".local/bin/claude"));
     on_path.into_iter().chain(installed).find(|candidate| candidate.is_file())
 }

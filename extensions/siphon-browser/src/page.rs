@@ -304,6 +304,6 @@ impl Page {
 impl Browser {
     /// The address and title the page `id` has, as its owner keeps them.
     pub(crate) async fn pages_of_page(&self, id: &str) -> (String, String) {
-        self.view(id).await.map(|view| (view.url, view.title)).unwrap_or_default()
+        self.view(id).await.map_or_default(|view| (view.url, view.title))
     }
 }

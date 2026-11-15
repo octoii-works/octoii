@@ -404,8 +404,7 @@ fn text_of(value: &Value) -> String {
 fn texts_of(parts: &Value) -> Vec<String> {
     parts
         .as_array()
-        .map(|parts| parts.iter().map(|part| text_of(&part["text"])).collect())
-        .unwrap_or_default()
+        .map_or_default(|parts| parts.iter().map(|part| text_of(&part["text"])).collect())
 }
 
 /// An item of the provider's output in the vocabulary; none for a kind the vocabulary keeps none of.
@@ -416,8 +415,7 @@ fn item_of(given: &Value) -> Option<Item> {
             id,
             content: given["content"]
                 .as_array()
-                .map(|parts| parts.iter().filter_map(output_of).collect())
-                .unwrap_or_default(),
+                .map_or_default(|parts| parts.iter().filter_map(output_of).collect()),
             status: status_of(given),
             origin: None,
         }),
@@ -460,24 +458,21 @@ fn output_of(part: &Value) -> Option<OutputContent> {
     match part["type"].as_str()? {
         "output_text" => Some(OutputContent::OutputText {
             text: text_of(&part["text"]),
-            annotations: part["annotations"]
-                .as_array()
-                .map(|annotations| {
-                    annotations
-                        .iter()
-                        .filter(|annotation| annotation["type"] == "url_citation")
-                        .map(|annotation| UrlCitation {
-                            url: text_of(&annotation["url"]),
-                            title: text_of(&annotation["title"]),
-                            start_index: annotation["start_index"]
-                                .as_u64()
-                                .and_then(|at| u32::try_from(at).ok())
-                                .unwrap_or(0),
-                            end_index: annotation["end_index"].as_u64().and_then(|at| u32::try_from(at).ok()).unwrap_or(0),
-                        })
-                        .collect()
-                })
-                .unwrap_or_default(),
+            annotations: part["annotations"].as_array().map_or_default(|annotations| {
+                annotations
+                    .iter()
+                    .filter(|annotation| annotation["type"] == "url_citation")
+                    .map(|annotation| UrlCitation {
+                        url: text_of(&annotation["url"]),
+                        title: text_of(&annotation["title"]),
+                        start_index: annotation["start_index"]
+                            .as_u64()
+                            .and_then(|at| u32::try_from(at).ok())
+                            .unwrap_or(0),
+                        end_index: annotation["end_index"].as_u64().and_then(|at| u32::try_from(at).ok()).unwrap_or(0),
+                    })
+                    .collect()
+            }),
         }),
         "refusal" => Some(OutputContent::Refusal {
             refusal: text_of(&part["refusal"]),
@@ -494,8 +489,7 @@ fn action_of(given: &Value) -> Option<WebSearchAction> {
                 .map_or_else(|| given["queries"][0].as_str().unwrap_or_default().to_owned(), str::to_owned),
             sources: given["sources"]
                 .as_array()
-                .map(|sources| sources.iter().map(|source| text_of(&source["url"])).collect())
-                .unwrap_or_default(),
+                .map_or_default(|sources| sources.iter().map(|source| text_of(&source["url"])).collect()),
         },
         "open_page" => WebSearchAction::OpenPage {
             url: given["url"].as_str().map(str::to_owned),

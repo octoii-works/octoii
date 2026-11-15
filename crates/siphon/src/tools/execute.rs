@@ -285,7 +285,7 @@ impl Program for ScriptProgram {
         if let Some(wait) = calls.advance(run, &setting)? {
             return Ok(Ending::Wait(state, wait));
         }
-        let ended = state.calls.take().map(|calls| calls.0).unwrap_or_default();
+        let ended = state.calls.take().map_or_default(|calls| calls.0);
         for call in ended {
             let State::Ended {
                 status,

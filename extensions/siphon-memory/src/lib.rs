@@ -83,7 +83,7 @@ fn answered(host: &Host, method: Method) -> Result<serde_json::Value, Error> {
         Method::ListMemory(asked) => {
             let folder = memory_of(host, &asked.path);
             Ok(json!(MemoryListed {
-                memories: folder.as_deref().map(memory::list).unwrap_or_default(),
+                memories: folder.as_deref().map_or_default(memory::list),
                 folder: folder.map(|folder| folder.to_string_lossy().into_owned()),
             }))
         }

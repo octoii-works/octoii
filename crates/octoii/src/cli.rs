@@ -117,7 +117,6 @@ enum AccessCommand {
 }
 
 /// Runs the command the program was given.
-#[must_use]
 pub fn main() -> ExitCode {
     let cli = Cli::parse();
     tracing_subscriber::fmt().with_writer(std::io::stderr).init();

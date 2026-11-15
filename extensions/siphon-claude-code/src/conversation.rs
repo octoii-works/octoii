@@ -118,16 +118,13 @@ pub struct Told {
 #[must_use]
 pub fn told_after(messages: &[Value], at: Option<usize>) -> Told {
     let standing = at.and_then(|at| messages.get(at));
-    let calls: Vec<Value> = standing
-        .filter(|message| message["role"] == "assistant")
-        .map(|message| {
-            blocks(message)
-                .into_iter()
-                .filter(|block| block["type"] == "tool_use")
-                .map(|block| block["id"].clone())
-                .collect()
-        })
-        .unwrap_or_default();
+    let calls: Vec<Value> = standing.filter(|message| message["role"] == "assistant").map_or_default(|message| {
+        blocks(message)
+            .into_iter()
+            .filter(|block| block["type"] == "tool_use")
+            .map(|block| block["id"].clone())
+            .collect()
+    });
     let from = at.map_or(0, |at| at + 1);
     let past: Vec<(Value, Value)> = messages[from.min(messages.len())..]
         .iter()

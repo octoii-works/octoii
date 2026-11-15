@@ -182,9 +182,7 @@ impl Reader<'_> {
     fn redirection(&self, node: Node<'_>) -> Redirection {
         let mut made = Redirection {
             descriptor: None,
-            operator: first_anonymous(node)
-                .map(|operator| self.source(operator).to_owned())
-                .unwrap_or_default(),
+            operator: first_anonymous(node).map_or_default(|operator| self.source(operator).to_owned()),
             target: Word::Literal(String::new()),
         };
         for (child, field) in named(node) {

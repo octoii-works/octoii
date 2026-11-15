@@ -59,7 +59,7 @@ pub fn patterns_of(effect: &Effect) -> Grants {
             ..Grants::default()
         },
         Effect::Runs { line, .. } => Grants {
-            commands: Line::read(line).map(|read| read.patterns).unwrap_or_default(),
+            commands: Line::read(line).map_or_default(|read| read.patterns),
             ..Grants::default()
         },
         Effect::Acts { tool } => Grants {

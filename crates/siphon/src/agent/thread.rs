@@ -357,7 +357,7 @@ fn settle(run: &mut Run<'_>, id: &str, ended: TurnOutcome, why: Option<Why>, tur
     let told = match ended {
         TurnOutcome::Replied => Ended::Replied { said },
         TurnOutcome::Failed => Ended::Failed {
-            reason: why.as_ref().map(Why::words).unwrap_or_default().to_owned(),
+            reason: why.as_ref().map_or_default(Why::words).to_owned(),
         },
         TurnOutcome::Stopped => Ended::Stopped,
     };

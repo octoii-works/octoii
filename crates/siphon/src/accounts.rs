@@ -84,7 +84,7 @@ pub fn accounts(snapshot: &Snapshot) -> beak::Result<Vec<Account>> {
         limit: usize::MAX,
         ..Range::default()
     };
-    let text = |value: Option<&Bytes>| value.map(|value| String::from_utf8_lossy(value).into_owned()).unwrap_or_default();
+    let text = |value: Option<&Bytes>| value.map_or_default(|value| String::from_utf8_lossy(value).into_owned());
     let mut out = Vec::new();
     for entry in snapshot.list(b"", &range)?.unwrap_or_default() {
         let Some(directory) = &entry.directory else { continue };
