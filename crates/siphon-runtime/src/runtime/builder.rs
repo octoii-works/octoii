@@ -23,7 +23,7 @@ pub(super) type Answering = Pin<Box<dyn Future<Output = (&'static str, Bytes)> +
 
 /// A handler of any request, as the runtime calls it: the payload as bytes in, the answer's mail out.
 pub(super) trait Handles: Send + Sync {
-    fn handle(&self, payload: &[u8], process: Bytes, key: String, cancelled: CancellationToken, runtime: Runtime) -> Answering;
+    fn handle(self: Arc<Self>, payload: Bytes, process: Bytes, key: String, cancelled: CancellationToken, runtime: Runtime) -> Answering;
 }
 
 struct Handler<R, F> {
@@ -34,26 +34,24 @@ struct Handler<R, F> {
 impl<R, F, A> Handles for Handler<R, F>
 where
     R: Request,
-    F: Fn(Asked<R>) -> A + Send + Sync,
+    F: Fn(Asked<R>) -> A + Send + Sync + 'static,
     A: Future<Output = Result<R::Answer, Unanswered>> + Send + 'static,
 {
-    fn handle(&self, payload: &[u8], process: Bytes, key: String, cancelled: CancellationToken, runtime: Runtime) -> Answering {
-        let payload = match serde_json::from_slice::<R>(payload) {
-            Ok(payload) => payload,
-            Err(error) => {
-                let why = Unanswered::Failed(format!("the request could not be read: {error}"));
-                return Box::pin(std::future::ready(mail_of::<R::Answer>(&Err(why))));
-            }
-        };
-        let acting = (self.act)(Asked {
-            payload,
-            process,
-            key,
-            cancelled,
-            runtime,
-        });
+    fn handle(self: Arc<Self>, payload: Bytes, process: Bytes, key: String, cancelled: CancellationToken, runtime: Runtime) -> Answering {
         Box::pin(async move {
-            // In a task of its own, so a handler that panics is answered for.
+            // Both constructing and polling the handler's future belong to this task.
+            let acting = async move {
+                let payload = serde_json::from_slice::<R>(&payload)
+                    .map_err(|error| Unanswered::Failed(format!("the request could not be read: {error}")))?;
+                (self.act)(Asked {
+                    payload,
+                    process,
+                    key,
+                    cancelled,
+                    runtime,
+                })
+                .await
+            };
             let answered = match AbortOnDropHandle::new(tokio::spawn(acting)).await {
                 Ok(answered) => answered,
                 Err(error) => Err(Unanswered::Failed(format!("the handler panicked: {error}"))),

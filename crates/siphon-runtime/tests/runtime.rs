@@ -512,3 +512,21 @@ fn a_volume_is_due_for_collection_once_grown_past_its_base_by_the_share_given_an
     assert!(!collection.is_due(0, 99));
     assert!(collection.is_due(0, 100));
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_handler_that_panics_before_returning_its_future_does_not_stop_other_requests() {
+    let beak = beak();
+    let runtime = Runtime::builder()
+        .program(Asker)
+        .handle(|asked: Asked<Shout>| {
+            assert!(asked.payload.text != "panic", "handler setup panicked");
+            std::future::ready(Ok(asked.payload.text))
+        })
+        .start(&beak, memory())
+        .unwrap();
+    let first = start::<Asker>(&runtime, "panic", &"panic".to_owned()).await;
+    assert!(matches!(said(&ended(&runtime, &first).await), Said::Failed(_)));
+    let second = start::<Asker>(&runtime, "healthy", &"hello".to_owned()).await;
+    assert_eq!(said(&ended(&runtime, &second).await), Said::Given("hello".to_owned()));
+    runtime.close().await;
+}
