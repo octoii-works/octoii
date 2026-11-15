@@ -627,8 +627,7 @@ impl Kernel {
         let directory = options
             .directory
             .as_ref()
-            .map(|path| path.to_string_lossy().into_owned())
-            .unwrap_or_default();
+            .map_or_default(|path| path.to_string_lossy().into_owned());
         let lowered = sys::beak_kernel_options {
             directory: lent(directory.as_bytes()),
             time: options.time,
