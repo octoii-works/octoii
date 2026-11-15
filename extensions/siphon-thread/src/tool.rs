@@ -9,7 +9,6 @@
 //! one whose mode reaches less far, which would reach further through it; a sub-thread works with no other thread.
 
 use std::fmt::Write as _;
-use std::future::Future;
 
 use octoii_ai::vocabulary::InputContent;
 use schemars::JsonSchema;
@@ -104,8 +103,16 @@ impl Tool for ThreadTool {
         }
     }
 
-    fn exec(&self, context: &Context, action: ThreadAction) -> impl Future<Output = Result<Told, Refusal>> + Send {
-        std::future::ready(planned(context, action))
+    async fn exec(&self, context: &Context, action: ThreadAction) -> Result<Told, Refusal> {
+        let mut context = context.clone();
+        context.cancelled = context.cancelled.child_token();
+        let _cancel_on_drop = context.cancelled.clone().drop_guard();
+        tokio::task::spawn_blocking(move || {
+            reading::check_cancelled(&context)?;
+            planned(&context, action)
+        })
+        .await
+        .map_err(|error| Refusal(format!("reading threads failed: {error}")))?
     }
 }
 

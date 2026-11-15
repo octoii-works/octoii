@@ -5,6 +5,7 @@
 
 pub(crate) mod config;
 pub mod files;
+mod history;
 pub(crate) mod idempotency;
 pub(crate) mod inbox;
 pub(crate) mod log;
@@ -23,8 +24,9 @@ pub(crate) use window::Window;
 
 /// What extensions and hosts use of it.
 pub use config::{Config, Mode};
+pub use history::{Entries, History};
 pub use inbox::{Ended, Joins};
-pub use log::{CallStatus, Entry, Outcome, entries, time_of};
+pub use log::{CallStatus, Entry, Outcome, time_of};
 pub use marks::Marks;
 pub use operations::{NewThread, list};
 pub use status::{Ask, Listed, Parent, Status, ThreadUsage, Turn};

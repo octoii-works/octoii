@@ -5,7 +5,7 @@
 //! newest, the one before or after an entry, or the one about an entry a search found.
 
 use octoii_ai::vocabulary::InputContent;
-use siphon::threads::{Entry, Listed};
+use siphon::threads::{Entry, History, Listed};
 use siphon::tools::{Context, Refusal, Told};
 
 use crate::conversation::{self, Keywords};
@@ -45,47 +45,73 @@ impl Page {
         }
     }
 
-    /// Where the page lies among `entries`, oldest first, from its first to past its last.
-    fn span(&self, entries: &[Entry]) -> Result<std::ops::Range<usize>, Refusal> {
-        let at = |id: &str| entries.partition_point(|entry| entry.id() < id);
-        let (start, end) = match self {
-            Self::Newest => (entries.len().saturating_sub(ENTRIES), entries.len()),
-            Self::Before(id) => {
-                let end = at(id);
-                (end.saturating_sub(ENTRIES), end)
-            }
-            Self::After(id) => {
-                let start = entries.partition_point(|entry| entry.id() <= id.as_str());
-                (start, entries.len().min(start + ENTRIES))
-            }
+    /// Read just the page requested, using entry IDs as anchors in one snapshot.
+    fn entries(&self, history: &History) -> anyhow::Result<Vec<Entry>> {
+        match self {
+            Self::Newest => history.before(None, ENTRIES),
+            Self::Before(id) => history.before(Some(id), ENTRIES),
+            Self::After(id) => history.after(Some(id), ENTRIES),
             Self::Around(id) => {
-                let at = at(id);
-                if entries.get(at).is_none_or(|entry| entry.id() != id) {
-                    return Err(Refusal(format!("no entry {id} in this thread")));
-                }
-                let start = at.saturating_sub(ENTRIES / 2);
-                (start, entries.len().min(start + ENTRIES))
+                let older = history.before(Some(id), ENTRIES / 2 + 1)?;
+                let anchor = (older.len() > ENTRIES / 2).then(|| older[0].id());
+                let entries = history.after(anchor, ENTRIES)?;
+                anyhow::ensure!(entries.iter().any(|entry| entry.id() == id), "no entry {id} in this thread");
+                Ok(entries)
             }
-        };
-        Ok(start..end)
+        }
     }
 }
 
-/// The page `page` of the conversation of the thread `thread`, oldest first, each entry as `conversation::told` tells
-/// it; and notes of where the pages before and after it begin, or that it reaches the conversation's start.
+/// A page of a conversation, with entry IDs for navigating to adjacent pages.
 pub fn read(context: &Context, thread: &str, page: &Page) -> Result<Told, Refusal> {
-    let entries = entries_of(context, thread)?;
-    let span = page.span(&entries)?;
-    let shown: Vec<String> = entries[span.clone()].iter().filter_map(conversation::told).collect();
+    let history = history_of(context, thread)?;
+    let entries = page.entries(&history).map_err(|error| Refusal(error.to_string()))?;
+    check_cancelled(context)?;
+    let shown: Vec<String> = entries.iter().filter_map(conversation::told).collect();
     let mut notes = Vec::new();
-    match span.start {
-        0 => notes.push("this reaches the conversation's start".to_owned()),
-        start => notes.push(format!("older entries from before={}", entries[start].id())),
-    }
-    if span.end < entries.len() && span.end > 0 {
-        notes.push(format!("newer entries from after={}", entries[span.end - 1].id()));
+    if let Some(first) = entries.first() {
+        if history
+            .before(Some(first.id()), 1)
+            .map_err(|error| Refusal(error.to_string()))?
+            .is_empty()
+        {
+            notes.push("this reaches the conversation's start".to_owned());
+        } else {
+            notes.push(format!("older entries from before={}", first.id()));
+        }
+        let last = entries.last().expect("a nonempty page");
+        if !history
+            .after(Some(last.id()), 1)
+            .map_err(|error| Refusal(error.to_string()))?
+            .is_empty()
+        {
+            notes.push(format!("newer entries from after={}", last.id()));
+        }
+    } else {
+        notes.push("no entries on this page".to_owned());
     }
     Ok(told(&shown, &notes))
+}
+
+/// Cancellation is checked between pages and entries, including while a blocking scan is running.
+pub(crate) fn check_cancelled(context: &Context) -> Result<(), Refusal> {
+    if context.cancelled.is_cancelled() {
+        return Err(Refusal("thread history read cancelled".to_owned()));
+    }
+    Ok(())
+}
+
+/// A reverse scan holds one decoded entry and a bounded byte buffer for each conversation.
+struct Scan {
+    entries: siphon::threads::Entries,
+    next: Option<Entry>,
+}
+
+impl Scan {
+    fn advance(&mut self) -> Result<(), Refusal> {
+        self.next = self.entries.next().transpose().map_err(|error| Refusal(error.to_string()))?;
+        Ok(())
+    }
 }
 
 /// A search's find: an entry of a thread's that holds the keywords, and the words of it around the first.
@@ -110,26 +136,50 @@ pub fn search(context: &Context, keywords: &Keywords, thread: Option<&str>, arch
     if let (Some(thread), true) = (thread, rows.is_empty()) {
         return Err(Refusal(format!("no thread {thread}")));
     }
-    let mut hits = Vec::new();
-    for row in &rows {
-        for entry in &entries_of(context, &row.id)? {
-            if !matches!(entry, Entry::Result { .. })
-                && let Some(told) = conversation::told(entry)
-                && let Some(words) = keywords.around(&told)
-            {
-                let entry = entry.id().to_owned();
-                hits.push(Hit { row, entry, words });
+    // Merge the conversations by their next entry ID. Only one buffered scan per thread and
+    // the requested result page are held, regardless of the number of matches or offset.
+    let mut scans = Vec::new();
+    let mut newest = std::collections::BinaryHeap::new();
+    for (index, row) in rows.iter().enumerate() {
+        let mut scan = Scan {
+            entries: history_of(context, &row.id)?
+                .reverse()
+                .map_err(|error| Refusal(error.to_string()))?,
+            next: None,
+        };
+        scan.advance()?;
+        if let Some(entry) = &scan.next {
+            newest.push((entry.id().to_owned(), index));
+        }
+        scans.push(scan);
+    }
+    let mut all = 0;
+    let mut page = Vec::new();
+    while let Some((_, index)) = newest.pop() {
+        check_cancelled(context)?;
+        let scan = &mut scans[index];
+        let entry = scan.next.take().expect("the heap names a pending entry");
+        if !matches!(entry, Entry::Result { .. })
+            && let Some(text) = conversation::told(&entry)
+            && let Some(words) = keywords.around(&text)
+        {
+            if all >= offset && page.len() < HITS {
+                page.push(hit_told(
+                    &Hit {
+                        row: &rows[index],
+                        entry: entry.id().to_owned(),
+                        words,
+                    },
+                    &context.thread,
+                ));
             }
+            all += 1;
+        }
+        scan.advance()?;
+        if let Some(entry) = &scan.next {
+            newest.push((entry.id().to_owned(), index));
         }
     }
-    hits.sort_by(|one, other| other.entry.cmp(&one.entry));
-    let all = hits.len();
-    let page: Vec<String> = hits
-        .iter()
-        .skip(offset)
-        .take(HITS)
-        .map(|hit| hit_told(hit, &context.thread))
-        .collect();
     let shown = offset + page.len();
     let note = if all == 0 {
         "no entries hold those keywords".to_owned()
@@ -157,9 +207,10 @@ fn hit_told(hit: &Hit<'_>, own: &str) -> String {
     )
 }
 
-/// The entries of the conversation of the thread `thread`, oldest first.
-fn entries_of(context: &Context, thread: &str) -> Result<Vec<Entry>, Refusal> {
-    siphon::threads::entries(&context.volume(), thread)
+/// Open a stable view of a conversation through Siphon's public interface.
+fn history_of(context: &Context, thread: &str) -> Result<History, Refusal> {
+    check_cancelled(context)?;
+    History::open(&context.volume(), thread)
         .map_err(|error| Refusal(error.to_string()))?
         .ok_or_else(|| Refusal(format!("no thread {thread}")))
 }
@@ -169,32 +220,4 @@ pub fn told(lines: &[String], notes: &[String]) -> Told {
     let mut text: Vec<String> = lines.to_vec();
     text.extend(notes.iter().map(|note| format!("<system-reminder>{note}</system-reminder>")));
     Told::from(vec![InputContent::text(text.join("\n"))])
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn pages_meet_without_repeating_or_skipping_entries() {
-        let entries: Vec<Entry> = (0..150)
-            .map(|at| Entry::Input {
-                id: format!("{at:03}"),
-                actor: "person".to_owned(),
-                delivery: format!("delivery-{at}"),
-                content: vec![InputContent::text(format!("message {at}"))],
-                reply_to: None,
-            })
-            .collect();
-        assert_eq!(Page::Newest.span(&entries).unwrap(), 90..150);
-        assert_eq!(Page::Before("090".to_owned()).span(&entries).unwrap(), 30..90);
-        assert_eq!(Page::Before("030".to_owned()).span(&entries).unwrap(), 0..30);
-        assert_eq!(Page::After("029".to_owned()).span(&entries).unwrap(), 30..90);
-        assert_eq!(Page::After("089".to_owned()).span(&entries).unwrap(), 90..150);
-        assert_eq!(Page::Around("075".to_owned()).span(&entries).unwrap(), 45..105);
-        assert_eq!(Page::Before("000".to_owned()).span(&entries).unwrap(), 0..0);
-        assert_eq!(Page::After("149".to_owned()).span(&entries).unwrap(), 150..150);
-        assert_eq!(Page::Newest.span(&[]).unwrap(), 0..0);
-        assert!(Page::Around("missing".to_owned()).span(&entries).is_err());
-    }
 }

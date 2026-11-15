@@ -387,3 +387,65 @@ async fn a_thread_s_files_are_read_by_their_reference_as_its_conversation_names_
     assert!(elsewhere.read(&reference).is_err(), "another thread's files are not its own");
     runtime.close().await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn history_pages_cross_segments_and_hold_the_snapshot_they_opened() {
+    let beak = Beak::new().unwrap();
+    let threads = threads(&beak, Idle);
+    let id = threads.create(&person(Config::default()), "history").await.unwrap();
+    let runtime = threads.runtime();
+    let mut changes = siphon_runtime::Changes::new();
+    changes.delete(log::path(&id));
+    changes.mkdir(log::path(&id));
+    let entries: Vec<Entry> = (0..150)
+        .map(|at| Entry::Input {
+            id: format!("{at:03}"),
+            actor: "person".to_owned(),
+            delivery: format!("delivery-{at}"),
+            content: vec![InputContent::text(format!(
+                "message {at} {}",
+                "x".repeat(if at == 75 { 100_000 } else { 4096 })
+            ))],
+            reply_to: None,
+        })
+        .collect();
+    for chunk in entries.chunks(40) {
+        let mut bytes = Vec::new();
+        for entry in chunk {
+            bytes.extend(serde_json::to_vec(entry).unwrap());
+            bytes.push(b'\n');
+        }
+        changes.write(log::segment(&id, &format!("{}.jsonl", chunk[0].id())), bytes);
+    }
+    runtime.commit(changes).await.unwrap();
+    let volume = crate::volume::Volume { runtime: runtime.clone() };
+    let history = crate::threads::History::open(&volume, &id).unwrap().unwrap();
+    assert_eq!(
+        history.reverse().unwrap().collect::<anyhow::Result<Vec<_>>>().unwrap(),
+        entries.iter().rev().cloned().collect::<Vec<_>>()
+    );
+    assert_eq!(history.before(None, 60).unwrap(), entries[90..]);
+    assert_eq!(history.before(Some("090"), 60).unwrap(), entries[30..90]);
+    assert_eq!(history.before(Some("030"), 60).unwrap(), entries[..30]);
+    assert_eq!(history.after(Some("029"), 60).unwrap(), entries[30..90]);
+    assert_eq!(history.after(Some("089"), 60).unwrap(), entries[90..]);
+    assert_eq!(history.after(None, 60).unwrap(), entries[..60]);
+    assert_eq!(history.before(Some("000"), 60).unwrap(), Vec::<Entry>::new());
+    assert_eq!(history.after(Some("149"), 60).unwrap(), Vec::<Entry>::new());
+    assert_eq!(history.before(None, 0).unwrap(), Vec::<Entry>::new());
+    assert_eq!(history.after(None, 0).unwrap(), Vec::<Entry>::new());
+    assert!(crate::threads::History::open(&volume, "missing").unwrap().is_none());
+    let mut changes = siphon_runtime::Changes::new();
+    changes.delete(log::path(&id));
+    runtime.commit(changes).await.unwrap();
+    assert_eq!(history.before(None, 60).unwrap(), entries[90..]);
+    assert_eq!(
+        crate::threads::History::open(&volume, &id)
+            .unwrap()
+            .unwrap()
+            .before(None, 60)
+            .unwrap(),
+        Vec::<Entry>::new()
+    );
+    runtime.close().await;
+}
