@@ -1,0 +1,16 @@
+{
+  "name": "@octoii-works/octoii-desktop",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "bun build src/main.ts --target=node --external=electron --outdir=dist",
+    "start": "bun run build && electron .",
+    "typecheck": "bun check"
+  },
+  "devDependencies": {
+    "electron": "catalog:",
+    "@types/node": "catalog:"
+  }
+}

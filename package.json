@@ -7,7 +7,7 @@
     "bun": "1.4.4"
   },
   "scripts": {
-    "lint": "oxlint --type-aware --deny-warnings --report-unused-disable-directives packages/terminal packages/client apps/web lint-rules",
+    "lint": "oxlint --type-aware --deny-warnings --report-unused-disable-directives packages/terminal packages/client apps/web apps/desktop lint-rules",
     "format": "bun fmt \"**/*.{ts,tsx,js,mjs}\"",
     "format:check": "bun fmt --check \"**/*.{ts,tsx,js,mjs}\"",
     "knip": "knip --no-progress",
@@ -15,14 +15,16 @@
     "test": "bun run --filter './packages/terminal' --filter './packages/client' --filter './apps/web' --filter './lint-rules' --parallel test",
     "test:node": "node node_modules/vitest/vitest.mjs run",
     "check": "bun run format:check && bun run lint && bun run knip && bun run typecheck && bun run test && bun run test:node",
-    "build": "bun run --workspaces --if-present build"
+    "build": "bun run --workspaces --if-present build",
+    "desktop": "bun run --cwd apps/desktop start"
   },
   "workspaces": {
     "packages": [
       "lint-rules",
       "packages/client",
       "packages/terminal",
-      "apps/web"
+      "apps/web",
+      "apps/desktop"
     ],
     "catalog": {
       "@types/bun": "1.4.4",

@@ -10,6 +10,10 @@
 			"entry": ["test/**/*.{ts,tsx}"],
 			"project": ["src/**/*.{ts,tsx}", "test/**/*.{ts,tsx}"]
 		},
+		"apps/desktop": {
+			"entry": ["src/main.ts"],
+			"project": ["src/**/*.ts"]
+		},
 		"apps/web": {
 			// The pages' entries, as their HTML loads them.
 			"entry": ["src/index.html", "src/main.tsx", "src/hosted/index.html", "src/hosted/main.tsx", "test/**/*.{ts,tsx}"],
