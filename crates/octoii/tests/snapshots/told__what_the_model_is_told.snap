@@ -75,9 +75,9 @@ date: <date> (UTC)
 
 === section threads
 <threads>
-Every thread on this machine is a folder in <folder>/home/threads, named by its id; this thread is <thread>. The folders are read-only: read them with the file tools when the person asks about another thread or earlier work.
-- log/: the conversation as JSON Lines, one entry per line, in files sorted by when they began. Each entry has an increasing id, a type — input (from the person), reply (the model's response), result (a tool's output), turn-end, config (a settings change), system (what the model was told), discarded (a reply that came to nothing) — and its fields.
-- outputs/: the full output of calls too long to return whole.
+This thread is <thread>. When the person asks about other threads or earlier work, find what was said with `thread`'s search and read the conversation around it with `thread`'s read. Every thread also has a read-only folder in <folder>/home/threads, named by its id, for what read leaves out — reach it with read, glob and grep, or with tools.* in execute; the shell does not see it:
+- log/: every entry of the conversation as JSON Lines, the model's reasoning and each call's whole result among them.
+- outputs/: the whole output of calls too long to return whole.
 - files/: the images and files of the conversation, named by their SHA-256.
 </threads>
 
@@ -1152,13 +1152,132 @@ For a command that exits by itself, use shell. Link a terminal in your reply as 
 
 === tool thread
 Work with the person's other threads, which they see in their thread list.
+- list: list the threads, the most recently active first: each one's id, how it stands, when it was last active, its project and its title.
+- search: find what was said in the threads: the words the person, the threads and the models said and the calls the models made that hold `keywords` — all of them, or any with `matching: any` — the newest first, each with its thread, its id and the words around the match; `thread` searches one thread alone, and this thread is searched only when named so.
+- read: read a thread's conversation — what the person and the model said, each call and how it ended — the newest page first; `around` an entry's id from search reads the conversation about it; page with `before` or `after` as a page's note says.
 - start: create a thread in this folder with your model and mode; `message` is its first input.
 - send: send a thread a message; it takes it at its next step, or starts a turn with it.
 - stop: stop the turn a thread is working on.
-Use it only when the person asks for a new thread, or names a thread to message or stop; never for sub-agents, delegation or parallel work. A new thread does not see this conversation: put everything it needs in `message`. With `report`, you get a message when the turn that takes your message ends; do not wait for it or poll. Link a thread in your reply as :thread{id=<id>}, or as ::thread{id=<id>} on its own line to show its card.
+Use it only when the person asks about other threads, asks for a new thread, or names a thread to message or stop; never for sub-agents, delegation or parallel work. To find what was said about something earlier, search for it rather than page through a thread. A new thread does not see this conversation: put everything it needs in `message`. With `report`, you get a message when the turn that takes your message ends; do not wait for it or poll. Link a thread in your reply as :thread{id=<id>}, or as ::thread{id=<id>} on its own line to show its card.
 --- parameters
 {
+  "$defs": {
+    "Matching": {
+      "description": "How a text holds keywords: every one of them — AND — or any one — OR.",
+      "enum": [
+        "all",
+        "any"
+      ],
+      "type": "string"
+    }
+  },
   "oneOf": [
+    {
+      "description": "List the person's threads, the most recently active first.",
+      "properties": {
+        "action": {
+          "const": "list",
+          "type": "string"
+        },
+        "archived": {
+          "default": false,
+          "description": "List archived threads too.",
+          "type": "boolean"
+        },
+        "offset": {
+          "default": 0,
+          "description": "Threads to skip, for the next page.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "Find what was said and each call made in the threads that holds keywords, the newest first.",
+      "properties": {
+        "action": {
+          "const": "search",
+          "type": "string"
+        },
+        "archived": {
+          "default": false,
+          "description": "Search archived threads too.",
+          "type": "boolean"
+        },
+        "keywords": {
+          "description": "The words to find, separated by spaces, whatever their case.",
+          "type": "string"
+        },
+        "matching": {
+          "$ref": "#/$defs/Matching",
+          "default": "all",
+          "description": "Whether an entry holds every keyword (`all`, AND) or any one (`any`, OR)."
+        },
+        "offset": {
+          "default": 0,
+          "description": "Entries to skip, for the next page.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "thread": {
+          "description": "Search this thread's id alone.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "action",
+        "keywords"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "Read a thread's conversation: what was said and each call made, a page at a time, the newest page first.",
+      "properties": {
+        "action": {
+          "const": "read",
+          "type": "string"
+        },
+        "after": {
+          "description": "Read the page after this entry's id, as a page's note gives it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "around": {
+          "description": "Read the conversation about this entry's id, as search gives it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "before": {
+          "description": "Read the page before this entry's id, as a page's note gives it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "thread": {
+          "description": "The thread's id.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "thread"
+      ],
+      "type": "object"
+    },
     {
       "description": "Create a thread in this folder with your model and mode; `message` is its first input.",
       "properties": {

@@ -376,6 +376,20 @@ pub fn read_before(snapshot: &Snapshot, id: &str, before: Option<&str>, limit: u
     Ok((pages.into_iter().rev().flatten().collect(), true))
 }
 
+/// Read all persisted log entries of a thread, or none when it does not exist.
+///
+/// # Errors
+/// Returns storage or log decoding failures.
+pub fn entries(volume: &crate::volume::Volume, id: &str) -> anyhow::Result<Option<Vec<Entry>>> {
+    let snapshot = volume.snapshot()?;
+    if snapshot.stat(&thread::path(id))?.is_none() {
+        return Ok(None);
+    }
+    let read = read_after(&snapshot, id, None, u64::MAX)?;
+    let entries = read.lines.iter().map(|line| entry_of(line)).collect::<serde_json::Result<_>>()?;
+    Ok(Some(entries))
+}
+
 /// The whole lines of the segment at `path`, `length` long, from `offset`: about `budget` bytes of them, up to the
 /// last newline within, or the whole line it begins where none ends within.
 fn whole_lines(snapshot: &Snapshot, path: &[u8], offset: u64, length: u64, budget: u64) -> beak::Result<Bytes> {

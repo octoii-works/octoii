@@ -15,14 +15,16 @@ pub(crate) mod thread;
 pub(crate) mod window;
 
 pub(crate) use config::ConfigChange;
-pub(crate) use log::{CallKey, Entry, Outcome, PERSON, SIPHON, Section};
+pub(crate) use log::{CallKey, PERSON, SIPHON, Section};
 pub(crate) use marks::MarksChange;
 pub(crate) use operations::{Error, MainInput, Threads};
-pub(crate) use status::{Listed, Parent, Status, TURN_ANNOTATION, ThreadUsage, Turn, began, ended};
+pub(crate) use status::{TURN_ANNOTATION, began, ended};
 pub(crate) use window::Window;
 
 /// What extensions and hosts use of it.
 pub use config::{Config, Mode};
 pub use inbox::{Ended, Joins};
-pub use log::CallStatus;
-pub use operations::NewThread;
+pub use log::{CallStatus, Entry, Outcome, entries, time_of};
+pub use marks::Marks;
+pub use operations::{NewThread, list};
+pub use status::{Ask, Listed, Parent, Status, ThreadUsage, Turn};

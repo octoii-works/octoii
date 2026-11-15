@@ -1,7 +1,10 @@
-//! Threads as an extension of Siphon's: the `thread` tool, by which a thread's model starts, messages and stops the
-//! person's other threads where the person asks it to; and the threads as a folder of the machine's, which the model
-//! reads with the file tools — each thread's log, outputs and files — told it where the host lays them out.
+//! Threads as an extension of Siphon's: the `thread` tool, by which a thread's model lists, searches, reads, starts,
+//! messages and stops the person's other threads where the person asks it to; and the threads as a folder of the
+//! machine's, which the model reads with the file tools for what the tool leaves out — each thread's log, outputs and
+//! files — told it where the host lays them out.
 
+mod conversation;
+mod reading;
 mod tool;
 
 use std::future::Future;
@@ -28,7 +31,7 @@ impl Extension for ThreadExtension {
     }
 
     fn description(&self) -> &'static str {
-        "The model starts, messages and stops the person's other threads when asked, and reads what threads did before."
+        "The model lists, searches, reads, starts, messages and stops the person's other threads when asked."
     }
 
     fn build(self: Box<Self>, registrar: &mut Registrar<'_>) {
@@ -57,14 +60,15 @@ impl Teller for Folder {
     }
 }
 
-/// Where the threads are, as the model is told it, where the host lays them out: each a folder by its id, read alone
-/// through the file tools; and this thread's id.
+/// Where the threads are, as the model is told it, where the host lays them out: searched and read by the `thread` tool,
+/// each a folder by its id for what that leaves out, read through the file tools alone, as they are no folder on the
+/// disk; and this thread's id.
 fn threads_told(folder: &Path, id: &str) -> String {
     format!(
         "<threads>
-Every thread on this machine is a folder in {}, named by its id; this thread is {id}. The folders are read-only: read them with the file tools when the person asks about another thread or earlier work.
-- log/: the conversation as JSON Lines, one entry per line, in files sorted by when they began. Each entry has an increasing id, a type — input (from the person), reply (the model's response), result (a tool's output), turn-end, config (a settings change), system (what the model was told), discarded (a reply that came to nothing) — and its fields.
-- outputs/: the full output of calls too long to return whole.
+This thread is {id}. When the person asks about other threads or earlier work, find what was said with `thread`'s search and read the conversation around it with `thread`'s read. Every thread also has a read-only folder in {}, named by its id, for what read leaves out — reach it with read, glob and grep, or with tools.* in execute; the shell does not see it:
+- log/: every entry of the conversation as JSON Lines, the model's reasoning and each call's whole result among them.
+- outputs/: the whole output of calls too long to return whole.
 - files/: the images and files of the conversation, named by their SHA-256.
 </threads>",
         folder.display()

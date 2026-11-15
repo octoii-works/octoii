@@ -1,8 +1,14 @@
-/** The `thread` tool as the page shows a call of it: a thread started, messaged or stopped, by its title or its message. */
+/**
+ * The `thread` tool as the page shows a call of it: the threads listed, searched by the keywords asked for, or a thread
+ * read; or a thread started, messaged or stopped, by its title or its message.
+ */
 import { toolView, type ToolView, type Verbs } from "../../core/tools.ts";
 
 /** The `thread` tool's verbs, by its action. */
 const THREAD_VERBS: Readonly<Record<string, Verbs>> = {
+	list: ["List threads", "Listing threads", "Listed threads"],
+	search: ["Search threads", "Searching threads", "Searched threads"],
+	read: ["Read a thread", "Reading a thread", "Read a thread"],
 	start: ["Start a thread", "Starting a thread", "Started a thread"],
 	send: ["Message a thread", "Messaging a thread", "Messaged a thread"],
 	stop: ["Stop a thread", "Stopping a thread", "Stopped a thread"],
@@ -13,6 +19,6 @@ export const THREAD_TOOLS: Readonly<Record<string, ToolView>> = {
 	thread: toolView({
 		work: "thread",
 		verbs: (given) => THREAD_VERBS[given.action ?? ""] ?? ["Work with a thread", "Working with a thread", "Worked with a thread"],
-		subject: (given) => given.title ?? given.message?.split("\n")[0],
+		subject: (given) => given.title ?? given.message?.split("\n")[0] ?? given.keywords,
 	}),
 };

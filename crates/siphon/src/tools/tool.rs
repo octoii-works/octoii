@@ -64,13 +64,19 @@ impl Context {
     }
 
     /// The machine, opened for this call: held to the thread's workspace and the places beside it written as freely, or
-    /// writing anywhere, as its weighing said.
+    /// writing anywhere, as its weighing said; the threads shown where the host lays them out.
     ///
     /// # Errors
     /// Beak's failure to open its namespace.
     pub fn machine(&self) -> Result<Machine, Refusal> {
-        Machine::open(&self.kernel, &self.host, self.base.clone(), &self.writes_of(), None)
-            .map_err(|error| Refusal(format!("the machine: {error}")))
+        Machine::open(
+            &self.kernel,
+            &self.host,
+            self.base.clone(),
+            &self.writes_of(),
+            Some(crate::threads::thread::VIEW),
+        )
+        .map_err(|error| Refusal(format!("the machine: {error}")))
     }
 
     /// Where this call's work may write, as its weighing said: its thread's workspace and the places beside it written
@@ -183,6 +189,38 @@ pub trait Tool: Send + Sync + 'static {
 }
 
 type Execing = Pin<Box<dyn Future<Output = Result<Told, Refusal>> + Send>>;
+
+/// A tool's `schema` as a call with `arguments` means it: where it is one of several variants, each naming itself by
+/// fixed values — the action of a tool of many actions — the one variant whose fixed values the arguments give, so
+/// arguments that do not fit are told how they miss that variant's fields, not that they fit none; else the whole.
+fn meant<'a>(schema: &'a serde_json::Value, arguments: &serde_json::Value) -> std::borrow::Cow<'a, serde_json::Value> {
+    let Some(variants) = schema.get("oneOf").and_then(serde_json::Value::as_array) else {
+        return std::borrow::Cow::Borrowed(schema);
+    };
+    let named = |variant: &&serde_json::Value| {
+        let fixed: Vec<(&String, &serde_json::Value)> = variant
+            .get("properties")
+            .and_then(serde_json::Value::as_object)
+            .into_iter()
+            .flatten()
+            .filter_map(|(name, property)| Some((name, property.get("const")?)))
+            .collect();
+        !fixed.is_empty() && fixed.iter().all(|(name, value)| arguments.get(name.as_str()) == Some(value))
+    };
+    match variants.iter().filter(named).collect::<Vec<_>>()[..] {
+        // The variant alone, with the definitions the whole holds, which it may refer to.
+        [one] => {
+            let mut narrowed = one.clone();
+            for shared in ["$defs", "definitions"] {
+                if let Some(definitions) = schema.get(shared) {
+                    narrowed[shared] = definitions.clone();
+                }
+            }
+            std::borrow::Cow::Owned(narrowed)
+        }
+        _ => std::borrow::Cow::Borrowed(schema),
+    }
+}
 
 /// The most characters of a call's arguments told back where they do not fit its tool.
 const GIVEN_CHARS_MAX: usize = 1000;
@@ -382,8 +420,8 @@ impl Tools {
             return Ok(Effect::Acts { tool: name.to_owned() });
         }
         let entry = self.entries.get(name).ok_or_else(|| Refusal(format!("no tool {name}")))?;
-        let validator =
-            jsonschema::validator_for(&entry.declared.parameters).map_err(|error| Refusal(format!("the tool's schema: {error}")))?;
+        let schema = meant(&entry.declared.parameters, arguments);
+        let validator = jsonschema::validator_for(&schema).map_err(|error| Refusal(format!("the tool's schema: {error}")))?;
         let problems: Vec<String> = validator
             .iter_errors(arguments)
             .map(|error| format!("{}: {error}", error.instance_path()))

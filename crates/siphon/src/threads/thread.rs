@@ -11,6 +11,13 @@ pub const KIND: &str = "siphon.thread";
 /// The label of the project a thread belongs to, by its folder; empty for none. Every thread carries each of its
 /// labels, empty where it has no value, so the index answers "of none" as it answers "of this one".
 pub const PROJECT_LABEL: &str = "siphon.project";
+
+/// How the threads are shown to a call: every thread's directory, which each carries its project's label on — empty
+/// for one of no project.
+pub const VIEW: crate::machine::ThreadsView<'static> = crate::machine::ThreadsView {
+    kind: KIND,
+    label: PROJECT_LABEL,
+};
 /// The label of the thread that delegated this one, by its id; empty for a thread of its own.
 pub const PARENT_LABEL: &str = "siphon.parent";
 /// The labels of how the person keeps it: `true`, or empty for not.

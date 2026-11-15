@@ -10,7 +10,7 @@ pub(crate) mod paths;
 pub(crate) mod search;
 
 pub(crate) use files::{EditOutcome, Is};
-pub(crate) use namespace::Errors;
+pub(crate) use namespace::{Errors, ThreadsView};
 pub(crate) use search::{GrepOptions, Grepped};
 
 /// The commands' own words, as Beak gives them: a command and its events, what starts one, how it ended, a

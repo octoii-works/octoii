@@ -5769,10 +5769,14 @@ name = "siphon-thread"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "jiff",
  "octoii-ai",
  "schemars 1.2.3",
  "serde",
+ "serde_json",
  "siphon",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]

@@ -367,25 +367,39 @@ impl<M: Program<Input = MainInput>> Threads<M> {
     /// # Errors
     /// The volume's failure.
     pub fn list(&self) -> Result<Vec<Listed>, Error> {
-        let snapshot = self.runtime.snapshot()?;
-        let prefix = format!("{KIND}:");
-        let range = Range {
-            prefix: prefix.as_bytes(),
-            limit: usize::MAX,
-            ..Range::default()
-        };
-        let mut out = Vec::new();
-        for entry in snapshot.list(b"", &range)?.unwrap_or_default() {
-            let (Some(id), Some(directory)) = (thread::id_of(&entry.name), entry.directory.as_ref()) else {
-                continue;
-            };
-            if removing(directory) {
-                continue;
-            }
-            out.push(status::listed(&self.runtime, &snapshot, id, directory)?);
-        }
-        Ok(out)
+        listed_all(&self.runtime)
     }
+}
+
+/// Every thread, as a list shows it, in the order they were made — as the person's thread list shows them, for an
+/// extension's own list of them.
+///
+/// # Errors
+/// The volume's failure; a directory not as Siphon writes it.
+pub fn list(volume: &crate::volume::Volume) -> anyhow::Result<Vec<Listed>> {
+    Ok(listed_all(&volume.runtime)?)
+}
+
+/// Every thread `runtime`'s volume holds, as a list shows it, in the order they were made.
+fn listed_all(runtime: &Runtime) -> Result<Vec<Listed>, Error> {
+    let snapshot = runtime.snapshot()?;
+    let prefix = format!("{KIND}:");
+    let range = Range {
+        prefix: prefix.as_bytes(),
+        limit: usize::MAX,
+        ..Range::default()
+    };
+    let mut out = Vec::new();
+    for entry in snapshot.list(b"", &range)?.unwrap_or_default() {
+        let (Some(id), Some(directory)) = (thread::id_of(&entry.name), entry.directory.as_ref()) else {
+            continue;
+        };
+        if removing(directory) {
+            continue;
+        }
+        out.push(status::listed(runtime, &snapshot, id, directory)?);
+    }
+    Ok(out)
 }
 
 /// Whether `directory` is being removed, to go once the processes under it end.
