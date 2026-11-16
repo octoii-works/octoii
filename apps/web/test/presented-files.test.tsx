@@ -87,7 +87,7 @@ describe("files delivered by tools", () => {
 		expect(html).toContain("Verification report");
 		expect(html).toContain("result.pdf");
 		expect(html).toContain("1 KB");
-		expect(html).toContain('aria-label="Download result.pdf"');
+		expect(html).toContain('aria-label="More actions for result.pdf"');
 		expect(html).not.toContain("/machine");
 	});
 
@@ -102,9 +102,9 @@ describe("files delivered by tools", () => {
 			);
 		const image = draw({ ref: "sha256:image", media_type: "image/png", filename: "original.png" });
 		expect(image).toContain('src="/threads/t1/files/image?width_max=768&amp;height_max=256"');
-		expect(image).toContain('aria-label="Download original.png"');
+		expect(image).toContain('aria-label="More actions for original.png"');
 		const html = draw({ ref: "sha256:html", media_type: "text/html", filename: "page.html" });
-		expect(html).toContain('aria-label="Download page.html"');
+		expect(html).toContain('aria-label="More actions for page.html"');
 		expect(html).toContain("Loading preview…");
 		expect(html).not.toContain("<iframe");
 		expect(html).not.toContain("/threads/t1/files/html");
@@ -124,6 +124,7 @@ describe("files delivered by tools", () => {
 		expect(html).not.toContain("blob:");
 		expect(html).not.toContain("parent.secret");
 		expect(html).not.toContain("Saved document");
+		expect(html).not.toContain('aria-label="Download page.html"');
 	});
 });
 

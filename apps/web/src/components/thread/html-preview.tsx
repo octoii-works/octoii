@@ -2,39 +2,49 @@
 import { type ReactNode, useState } from "react";
 import type { FileRef } from "@octoii-works/octoii-client";
 import { Expand, X } from "lucide-react";
+import { FileActions, FileMore } from "./file-actions.tsx";
 import { useHtmlFile, useHtmlFrame } from "../effects/html-preview.ts";
-import { Button, IconButton } from "../ui/button.tsx";
+import { IconButton } from "../ui/button.tsx";
 import { Dialog, DialogClose, DialogPopup, DialogTitle } from "../ui/dialog.tsx";
 
 /** Fetches the original with the app's authenticated client; the preview never receives credentials or a file URL. */
-export function HtmlFile(props: { readonly thread: string; readonly file: FileRef }): ReactNode {
+export function HtmlFile(props: { readonly thread: string; readonly file: FileRef; readonly actions: ReactNode }): ReactNode {
 	const outcome = useHtmlFile(props.thread, props.file);
-	if (outcome === undefined)
+	if (outcome === undefined || "failure" in outcome) {
 		return (
-			<p role="status" className="text-xs text-muted-foreground">
-				Loading preview…
-			</p>
-		);
-	if ("failure" in outcome) {
-		return (
-			<p role="alert" className="text-xs text-error-foreground">
-				Could not preview the file: {outcome.failure}
-			</p>
+			<div className="group/file relative">
+				<div className="min-h-20 rounded-md border border-border p-3">
+					{outcome === undefined ? (
+						<p role="status" className="text-xs text-muted-foreground">
+							Loading preview…
+						</p>
+					) : (
+						<p role="alert" className="text-xs text-error-foreground">
+							Could not preview the file: {outcome.failure}
+						</p>
+					)}
+				</div>
+				<FileActions>
+					<FileMore name={props.file.filename ?? "file"}>{props.actions}</FileMore>
+				</FileActions>
+			</div>
 		);
 	}
-	return <HtmlPreview key={`${props.thread}:${props.file.ref}`} html={outcome.result} name={props.file.filename ?? "file"} />;
+	return <HtmlPreview key={`${props.thread}:${props.file.ref}`} html={outcome.result} name={props.file.filename ?? "file"} actions={props.actions} />;
 }
 
 /** A read document, shown as a frame and an optional larger dialog. */
-export function HtmlPreview(props: { readonly html: string; readonly name: string }): ReactNode {
+export function HtmlPreview(props: { readonly html: string; readonly name: string; readonly actions?: ReactNode }): ReactNode {
 	const [opened, setOpened] = useState(false);
 	return (
-		<div className="flex min-w-0 flex-col gap-2">
+		<div className="group/file relative min-w-0">
 			<HtmlFrame html={props.html} name={props.name} size="card" />
-			<Button size="xs" variant="outline" className="self-end" aria-label={`Expand ${props.name}`} onClick={() => setOpened(true)}>
-				<Expand />
-				Expand
-			</Button>
+			<FileActions>
+				<IconButton label={`Expand ${props.name}`} onClick={() => setOpened(true)}>
+					<Expand />
+				</IconButton>
+				{props.actions === undefined ? null : <FileMore name={props.name}>{props.actions}</FileMore>}
+			</FileActions>
 			<Dialog open={opened} onOpenChange={setOpened}>
 				<DialogPopup className="w-[92vw] max-w-6xl gap-3 p-4">
 					<div className="flex min-w-0 items-center justify-between gap-3">
@@ -64,7 +74,7 @@ function HtmlFrame(props: { readonly html: string; readonly name: string; readon
 			</p>
 		);
 	return (
-		<div className="relative min-h-0 overflow-hidden rounded-md border border-border bg-background">
+		<div className="relative min-h-20 overflow-hidden rounded-md border border-border bg-background">
 			<iframe
 				ref={frame}
 				src="/html-preview.html"

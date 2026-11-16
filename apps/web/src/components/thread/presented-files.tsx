@@ -5,8 +5,8 @@ import { isImage, sizeLabel } from "../../core/attachments.ts";
 import type { PresentedFile } from "../../core/presented-files.ts";
 import { readDownload, saveDownload } from "../files/file-download.ts";
 import { useReach } from "../state/reach.ts";
-import { Button } from "../ui/button.tsx";
-import { cn } from "../ui/cn.ts";
+import { MenuItem } from "../ui/menu.tsx";
+import { FileActions, FileMore } from "./file-actions.tsx";
 import { HtmlFile } from "./html-preview.tsx";
 import { PictureStrip } from "./pictures.tsx";
 
@@ -41,32 +41,42 @@ function FileCard(props: { readonly thread: string; readonly presented: Presente
 			setDownloading(false);
 		}
 	};
+	const action = (
+		<MenuItem
+			aria-label={downloading ? `Downloading ${name}` : `Download ${name}`}
+			disabled={downloading}
+			onClick={() => {
+				void download();
+			}}
+		>
+			{downloading ? <LoaderCircle className="animate-spin" /> : <Download />}
+			{downloading ? "Downloading…" : "Download original"}
+		</MenuItem>
+	);
 	return (
-		<div className={cn("flex w-full flex-col gap-2 rounded-md border border-border bg-muted p-3", file.media_type === "text/html" ? undefined : "max-w-md")}>
-			{title === undefined ? null : <p className="text-ui font-medium text-foreground">{title}</p>}
-			<div className="flex min-w-0 items-center gap-2">
-				<FileText className="size-5 shrink-0 text-muted-foreground" />
-				<span className="flex min-w-0 flex-1 flex-col">
-					<span title={name} className="truncate text-ui text-foreground">
-						{name}
-					</span>
-					<span className="text-xs text-muted-foreground">{sizeLabel(size)}</span>
-				</span>
-				<Button
-					size="xs"
-					variant="outline"
-					disabled={downloading}
-					aria-label={`Download ${name}`}
-					onClick={() => {
-						void download();
-					}}
-				>
-					{downloading ? <LoaderCircle className="animate-spin" /> : <Download />}
-					{downloading ? "Downloading" : "Download"}
-				</Button>
-			</div>
-			{isImage(file.media_type) ? <PictureStrip pictures={[{ kind: "kept", ref: file.ref, name }]} /> : null}
-			{file.media_type === "text/html" ? <HtmlFile thread={thread} file={file} /> : null}
+		<div className="flex w-full flex-col gap-2">
+			{title === undefined || file.media_type === "text/html" ? null : <p className="text-ui font-medium text-foreground">{title}</p>}
+			{file.media_type === "text/html" ? (
+				<HtmlFile thread={thread} file={file} actions={action} />
+			) : (
+				<div className="group/file relative w-full max-w-md">
+					<div className="flex w-full max-w-md flex-col gap-2 rounded-md border border-border bg-muted p-3">
+						<div className="flex min-w-0 items-center gap-2">
+							<FileText className="size-5 shrink-0 text-muted-foreground" />
+							<span className="flex min-w-0 flex-1 flex-col">
+								<span title={name} className="truncate text-ui text-foreground">
+									{name}
+								</span>
+								<span className="text-xs text-muted-foreground">{sizeLabel(size)}</span>
+							</span>
+						</div>
+						{isImage(file.media_type) ? <PictureStrip pictures={[{ kind: "kept", ref: file.ref, name }]} /> : null}
+					</div>
+					<FileActions>
+						<FileMore name={name}>{action}</FileMore>
+					</FileActions>
+				</div>
+			)}
 			{failure === undefined ? null : (
 				<p role="alert" className="text-xs text-error-foreground">
 					{failure}
