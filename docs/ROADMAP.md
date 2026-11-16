@@ -131,4 +131,4 @@ Octoii 是 run anywhere 的持久化 Agent。用户选择在哪里运行它，�
 
 ## 下一步
 
-macOS Electron 壳已具备本机节点发现与配对、随包 Web 资源、独立启动与错误重试页面（见 `apps/desktop/README.md`）。已完成一轮真实模型任务、停止后继续、退出后恢复与 Git 差异验收，并修复最后会话位置恢复，详见 `docs/DESKTOP_ACCEPTANCE.md`。下一步补齐待验收场景，并推进安装分发与原生交互；iPhone 原型随后推进。桌面采用 Electron，移动端框架仍待确定。
+macOS Electron 壳已具备本机节点发现与配对、随包 Web 资源、独立启动与错误重试页面（见 `apps/desktop/README.md`）。已完成一轮真实模型任务、停止后继续、退出后恢复与 Git 差异验收，并修复最后会话位置恢复，详见 `docs/DESKTOP_ACCEPTANCE.md`。已提供随包节点的本地 macOS `.app`（ad-hoc 签名、开发构建），并验证固定目录 runtime 安装和连接已有节点。下一步在干净 macOS 账号验证首次服务安装，再推进正式签名公证、安装分发与原生交互，同时补齐待验收场景；iPhone 原型随后推进。桌面采用 Electron，移动端框架仍待确定。

@@ -7,8 +7,8 @@ import { join } from "node:path";
 
 class TestNode extends LocalNode {
 	readonly calls: string[][] = [];
-	constructor(readonlyOutput: string) {
-		super("unused", "/isolated-test-home");
+	constructor(readonlyOutput: string, version?: string) {
+		super("unused", "/isolated-test-home", version);
 		this.output = readonlyOutput;
 	}
 	output: string;
@@ -49,6 +49,11 @@ describe("local node discovery", () => {
 		const node = new StartingNode("unused", join(homedir(), ".octoii"));
 		expect((await node.connect()).port).toBe("8700");
 		expect(node.calls.map((args) => args[0])).toEqual(["status", "service", "status"]);
+	});
+	test("version mismatches do not restart a running node", async () => {
+		const node = new TestNode('{"loopback":"http://127.0.0.1:7600","version":"0.0.1"}', "0.0.2");
+		await expect(node.connect()).rejects.toThrow("version differs");
+		expect(node.calls).toEqual([["status", "--json"]]);
 	});
 	test("rejects malformed status without starting a service", async () => {
 		const node = new TestNode('{"loopback":7}');

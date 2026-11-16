@@ -8,11 +8,16 @@
     "build": "bun scripts/build.ts",
     "start": "bun run build && electron .",
     "typecheck": "bun check",
-    "test": "bun test --no-env-file --no-install ./test"
+    "test": "bun test --no-env-file --no-install ./test",
+    "package:mac": "bun scripts/package.ts"
   },
   "devDependencies": {
     "electron": "catalog:",
     "@types/node": "catalog:",
-    "@types/bun": "catalog:"
-  }
+    "@types/bun": "catalog:",
+    "electron-builder": "26.18.0"
+  },
+  "productName": "Octoii",
+  "description": "Octoii desktop: a durable agent on your own computer",
+  "license": "MIT"
 }

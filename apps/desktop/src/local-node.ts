@@ -21,10 +21,12 @@ export function localAddress(address: string): URL {
 export class LocalNode {
 	readonly program: string;
 	readonly home: string;
+	readonly #version: string | undefined;
 
-	constructor(program: string, home: string) {
+	constructor(program: string, home: string, version?: string) {
 		this.program = program;
 		this.home = home;
+		this.#version = version;
 	}
 
 	async command(args: string[]): Promise<string> {
@@ -49,6 +51,11 @@ export class LocalNode {
 		const status: unknown = JSON.parse(output);
 		if (typeof status !== "object" || status === null || !("loopback" in status) || typeof status.loopback !== "string") {
 			throw new Error("Octoii returned an invalid node status.");
+		}
+		if (this.#version !== undefined && (!("version" in status) || status.version !== this.#version)) {
+			throw new Error(
+				"The running node version differs from this desktop app. Finish its tasks and update the node before retrying. It has not been restarted.",
+			);
 		}
 		return localAddress(status.loopback);
 	}

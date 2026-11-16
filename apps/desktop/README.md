@@ -9,9 +9,9 @@ bun install
 bun run desktop
 ```
 
-The desktop uses the installed CLI at `~/.local/bin/octoii` (`OCTOII_BIN` overrides it), with `~/.octoii` as its Home (`OCTOII_HOME` overrides it). It asks `status --json` through the CLI's private control socket and uses the returned address, including a non-default port.
+In development, the desktop uses the installed CLI at `~/.local/bin/octoii` (`OCTOII_BIN` overrides it), with `~/.octoii` as its Home (`OCTOII_HOME` overrides it). It asks `status --json` through the CLI's private control socket and uses the returned address, including a non-default port.
 
-If the default macOS node is offline, it starts the existing launchd service, or installs it through `octoii service install` when no service plist exists. The installed service starts at login and restarts after failure. Existing service definitions are never overwritten. The desktop waits for readiness and reports failure with Retry / Close. A missing CLI, custom Home, or other OS requires manual setup; this milestone does not bundle the executable.
+If the default macOS node is offline, it starts the existing launchd service, or installs it through `octoii service install` when no service plist exists. The installed service starts at login and restarts after failure. Existing service definitions are never overwritten. The desktop waits for readiness and reports failure with Retry / Close. A missing development CLI, custom Home, or other OS requires manual setup.
 
 `bun run desktop` builds the current Web interface into `apps/desktop/dist/web` along with the Electron main process. The node no longer needs to serve HTML, JavaScript, CSS or fonts for the desktop to render. In Electron's session, bundled assets are served at the selected node's HTTP origin; API requests are forwarded through the same session, and WebSockets connect directly to the node. This preserves the existing same-origin cookie and client protocol without a second transport or business IPC layer. Ordinary browser access remains unchanged.
 
@@ -23,7 +23,7 @@ For a manually managed endpoint, set `OCTOII_DESKTOP_URL` to a loopback HTTP URL
 
 Closing the window or quitting Electron leaves the node and its tasks running. On macOS, the Dock reopens a closed window. Failed initial connections offer Retry / Close. External HTTP(S) links open in the system browser. The renderer is sandboxed, has no Node.js access or preload bridge, and cannot navigate to another origin.
 
-This shell can start the installed node through launchd and bundles Web assets, but does not yet bundle the node executable, provide an application installer, or implement native notifications. The desktop bundle determines the interface version; the connected node must speak the matching protocol. Phone work follows the desktop prototype.
+This shell bundles the node and Web assets for macOS and can start the node through launchd. It does not yet provide a distributable installer or native notifications. The desktop bundle determines the interface version; the connected node must speak the matching protocol. Phone work follows the desktop prototype.
 
 ## Verification
 
@@ -34,3 +34,19 @@ A macOS Electron integration check also exercised the installed node: discovery,
 Bundled-resource tests cover local loading, MIME types, API forwarding, path traversal rejection and missing assets; startup messages are HTML-escaped. A separate isolated Electron check used a temporary CLI and HTTP node to verify the failure page, Retry recovery, rendering without backend assets, cookie-bearing API requests and direct WebSocket connections. No user node or service was changed during that check.
 
 The desktop remembers the last application route per selected node identity and restores it when reopening the window or restarting Electron. Explicit deep links take precedence; pairing URLs are never saved. See [the real-task acceptance record](../../docs/DESKTOP_ACCEPTANCE.md) for the validated task, cancellation, Git diff and restart scenarios.
+
+## Local macOS application
+
+```sh
+bun run --cwd apps/desktop package:mac
+```
+
+This builds the Web interface, the Rust node with Cargo's **dev profile**, and a host-native application in `apps/desktop/out/mac-arm64/Octoii.app` (Intel Macs use `out/mac/Octoii.app`). It requires the repository's Bun, Node and Rust toolchains to build; running the resulting app requires none of them. Existing `CARGO_HOME` and `CARGO_TARGET_DIR` settings are respected so an active cache can be reused. Packaging uses Electron 45.3.2 and electron-builder 26.18.0 and never publishes.
+
+The app is **locally ad-hoc signed, not notarized**, with hardened runtime disabled. This is a local prototype, not a production distribution: Developer ID signing, notarization, optimized release builds, DMG and updates remain separate work.
+
+On first launch, the bundled node and browser assets are copied atomically to `~/Library/Application Support/Octoii/runtime/<content-id>/`. A new service uses that fixed executable path, so moving the app does not invalidate its launchd command. Reopening reuses the same installation. Older runtime directories remain intact because an existing service may still reference them; there is no automatic cleanup or service migration yet.
+
+An already running node is reused. An existing launchd definition is never overwritten. A node reporting a different version is rejected with an actionable message, without restarting it; finish its tasks before explicitly upgrading the service. The version check is a coarse release check, not a guarantee that different development builds of the same version are protocol-compatible. `OCTOII_BIN` still overrides the bundled CLI; explicit `OCTOII_DESKTOP_URL` mode skips runtime installation.
+
+Runtime tests cover relocation, immutable reuse, retaining the prior version, incomplete installation cleanup and manifest path validation. See the acceptance record for actual bundle checks and the remaining fresh-service-install scenario.

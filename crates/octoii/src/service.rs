@@ -30,6 +30,9 @@ pub enum Asked {
 /// # Errors
 /// Where the system's service manager refused, or this system has none the node knows.
 pub fn service(home: &Home, asked: Asked) -> anyhow::Result<()> {
+    if asked == Asked::Install {
+        home.prepare().context("the service's Home and log directory")?;
+    }
     if cfg!(target_os = "macos") {
         launchd(home, asked)
     } else if cfg!(target_os = "linux") {

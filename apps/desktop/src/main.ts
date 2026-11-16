@@ -6,6 +6,7 @@ import { LocalNode, localAddress } from "./local-node.ts";
 import { pairLocalNode } from "./pairing.ts";
 import { desktopResponse } from "./assets.ts";
 import { LastLocation } from "./location.ts";
+import { installBundledRuntime } from "./runtime.ts";
 import { STARTUP_URL, connectingPage, failedPage } from "./startup.ts";
 
 app.setName("Octoii");
@@ -21,8 +22,17 @@ function openExternal(address: string): void {
 async function start(): Promise<void> {
 	const explicit = process.env["OCTOII_DESKTOP_URL"];
 	const initial = explicit === undefined ? undefined : localAddress(explicit);
-	const node = new LocalNode(process.env["OCTOII_BIN"] ?? join(homedir(), ".local/bin/octoii"), process.env["OCTOII_HOME"] ?? join(homedir(), ".octoii"));
 	await app.whenReady();
+	const explicitProgram = process.env["OCTOII_BIN"];
+	const bundled =
+		app.isPackaged && explicitProgram === undefined && initial === undefined
+			? await installBundledRuntime(join(process.resourcesPath, "runtime"), join(app.getPath("appData"), "Octoii/runtime"))
+			: undefined;
+	const node = new LocalNode(
+		explicitProgram ?? bundled?.program ?? join(homedir(), ".local/bin/octoii"),
+		process.env["OCTOII_HOME"] ?? join(homedir(), ".octoii"),
+		bundled?.version,
+	);
 	const location = new LastLocation(join(app.getPath("userData"), "last-location.json"));
 	const nodeIdentity = initial?.origin ?? node.home;
 	let origin: string | undefined;
