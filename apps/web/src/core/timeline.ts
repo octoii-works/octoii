@@ -18,6 +18,7 @@ import {
 	type Conversation,
 	type InputContent,
 	type Item,
+	type JsonValue,
 	type Listed,
 	type Response,
 	type Step,
@@ -29,6 +30,7 @@ import {
 import { type Attachment, attachmentsOf } from "./attachments.ts";
 import { type PresentedFile, presentedFilesOf } from "./presented-files.ts";
 import { type CallState, structuredOf, titleOf } from "./calls.ts";
+import { executedCallsOf } from "./execution.ts";
 import { duration, mintedAt } from "./time.ts";
 import type { Limited } from "./limits.ts";
 import { type Aside, givenOf, summaryOf, toolOf, verbOf, type WorkKind } from "./tools.ts";
@@ -391,34 +393,66 @@ function callLine(call: Call, turn: Turn, step: Step, asks: readonly Ask[]): Cal
 
 /** The line of `call`, as `callLine` gives it, read anew: by what the page knows of its tool. */
 function lineOf(call: Call, turn: Turn, step: Step, ask: Ask | undefined): CallLine {
-	const tool = toolOf(call.name);
-	const given = givenOf(call.arguments);
 	const state = call.result === undefined ? liveState(turn, ask) : CALL_STATES[call.result.status];
 	const output = call.result === undefined ? undefined : partsText(call.result.output.output);
-	const structuredContent = structuredOf(call.name, call.result?.structuredContent);
-	const told = { tool: call.name, arguments: call.arguments, output, structuredContent, metadata: call.result?.metadata, state };
-	const calls: readonly CallLine[] = [];
-	return {
-		kind: "call",
+	return describedCall({
 		id: call.id,
 		key: call.key,
 		step: step.request,
-		thread: call.name === "delegate" ? given.thread : undefined,
 		tool: call.name,
-		work: tool.work,
-		verb: verbOf(told),
-		subject: titleOf(call.result?.metadata) ?? tool.subject(given),
-		code: tool.code,
-		aside: calls.length > 0 ? { kind: "words", text: summaryOf(calls) } : tool.aside(told),
-		trouble: tool.trouble(told),
 		arguments: call.arguments,
 		output,
 		files: presentedFilesOf(call.result?.output.output ?? [], call.result?.metadata),
-		structuredContent,
+		structuredContent: call.result?.structuredContent,
+		metadata: call.result?.metadata,
 		began: step.reply === undefined ? undefined : mintedAt(step.reply.id),
 		ended: call.result === undefined ? undefined : mintedAt(call.result.id),
 		state,
 		ask,
+	});
+}
+
+/** A call's recorded facts, before its tool describes the line the person sees. */
+type CallSource = Pick<CallLine, "id" | "key" | "step" | "tool" | "arguments" | "output" | "files" | "began" | "ended" | "state" | "ask"> & {
+	readonly structuredContent: JsonValue | null | undefined;
+	readonly metadata: JsonValue | undefined;
+};
+
+/** Both model calls and a script's recorded calls use the same tool descriptions and detail renderers. */
+function describedCall(source: CallSource): CallLine {
+	const { structuredContent: result, metadata, ...call } = source;
+	const tool = toolOf(call.tool);
+	const given = givenOf(call.arguments);
+	const structuredContent = structuredOf(call.tool, result);
+	const told = { ...call, structuredContent, metadata };
+	const calls = executedCallsOf(call.tool, result).map((nested) =>
+		describedCall({
+			id: String(nested.id),
+			key: nested.key,
+			step: call.step,
+			tool: nested.tool,
+			arguments: nested.arguments,
+			output: nested.output,
+			structuredContent: nested.structuredContent,
+			metadata: nested.metadata,
+			files: [],
+			began: undefined,
+			ended: undefined,
+			state: CALL_STATES[nested.status],
+			ask: undefined,
+		}),
+	);
+	return {
+		...call,
+		kind: "call",
+		thread: call.tool === "delegate" ? given.thread : undefined,
+		work: tool.work,
+		verb: verbOf(told),
+		subject: titleOf(metadata) ?? tool.subject(given),
+		code: tool.code,
+		aside: calls.length > 0 ? { kind: "words", text: summaryOf(calls) } : tool.aside(told),
+		trouble: tool.trouble(told),
+		structuredContent,
 		calls,
 	};
 }
@@ -428,7 +462,7 @@ function lineOf(call: Call, turn: Turn, step: Step, ask: Ask | undefined): CallL
  * each among them, its words or a failure ending it, a call that waits on the person standing on its own — as one item
  * keyed by its first call, gathered where it made more than one, so a stretch that grows is the same item; what was
  * thought after its last call, before the words, on its own; each call that delegates gathered with those made straight
- * after it; every other step on its own.
+ * after it; a script on its own so its final output stays visible; every other step on its own.
  */
 export type Laid =
 	| { readonly kind: "step"; readonly step: Work }
@@ -448,6 +482,12 @@ export function laidOut(work: readonly Work[]): readonly Laid[] {
 		stretch = [];
 	};
 	for (const step of work) {
+		if (step.kind === "call" && step.work === "script") {
+			const thoughts = stretch.splice(stretch.findLastIndex((each) => each.kind === "call") + 1);
+			close();
+			laid.push({ kind: "calls", key: step.id, steps: [...thoughts, step], calls: [step] });
+			continue;
+		}
 		if ((step.kind === "call" && step.work !== "delegate" && step.ask === undefined) || step.kind === "thought") {
 			stretch.push(step);
 			continue;

@@ -32,6 +32,14 @@ struct Asking {
     code: String,
 }
 
+/// The caller retains what it was told after the script process itself has been reaped.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CallResult {
+    status: CallStatus,
+    text: String,
+    structured_content: Option<serde_json::Value>,
+}
+
 /// Takes on one `execute` call, then ends with how it did and what it said.
 struct Caller {
     threads: Option<PathBuf>,
@@ -41,9 +49,9 @@ impl Program for Caller {
     const KIND: &'static str = "test.caller";
     type Input = Asking;
     type Checkpoint = Calls;
-    type Output = (CallStatus, String);
+    type Output = CallResult;
 
-    fn run(&self, run: &mut Run<'_>, input: Asking, checkpoint: Option<Calls>) -> anyhow::Result<Ending<Calls, (CallStatus, String)>> {
+    fn run(&self, run: &mut Run<'_>, input: Asking, checkpoint: Option<Calls>) -> anyhow::Result<Ending<Calls, CallResult>> {
         let mut calls = match checkpoint {
             Some(calls) => calls,
             None => Calls::new(run, vec![("x".into(), "execute".into(), json!({ "code": input.code }).to_string())])?,
@@ -69,7 +77,13 @@ impl Program for Caller {
             return Ok(Ending::Wait(calls, wait));
         }
         let call = calls.0.remove(0);
-        let crate::tools::State::Ended { status, output, .. } = call.state else {
+        let crate::tools::State::Ended {
+            status,
+            output,
+            structured_content,
+            ..
+        } = call.state
+        else {
             anyhow::bail!("not ended")
         };
         let text = output
@@ -80,7 +94,11 @@ impl Program for Caller {
             })
             .collect::<Vec<_>>()
             .join("\n");
-        Ok(Ending::Done((status, text)))
+        Ok(Ending::Done(CallResult {
+            status,
+            text,
+            structured_content,
+        }))
     }
 }
 
@@ -130,6 +148,11 @@ async fn executed_as(runtime: &Runtime, key: &str, workspace: PathBuf, code: &st
 }
 
 async fn ended(runtime: &Runtime, path: &[u8]) -> (CallStatus, String) {
+    let result = ended_call(runtime, path).await;
+    (result.status, result.text)
+}
+
+async fn ended_call(runtime: &Runtime, path: &[u8]) -> CallResult {
     let mut committed = runtime.committed();
     let waiting = async {
         loop {
@@ -396,6 +419,36 @@ async fn tool_refusals_share_the_output_budget_and_keep_the_full_diagnostic() {
     );
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn caught_failures_are_recorded_with_the_actual_bounded_tool_output_without_emitting_it() {
+    let beak = Beak::new().expect("Beak");
+    let calling = crate::testing::Calling::start(&beak, |tools| tools.with(LongRefusal));
+    let (_folder, workspace) = folder();
+    let results = calling
+        .called(
+            "caught",
+            workspace,
+            vec![],
+            vec![(
+                "script".into(),
+                "execute".into(),
+                json!({ "code": "try { await tools.long_refusal({}); } catch {} return 'handled';" }).to_string(),
+            )],
+        )
+        .await;
+    assert_eq!(results[0].status, CallStatus::Ok);
+    assert_eq!(results[0].text, "\"handled\"");
+    let execution: crate::tools::execute::ExecuteResult =
+        serde_json::from_value(results[0].structured_content.clone().expect("the completed call")).expect("the execution's record");
+    assert_eq!(execution.calls.len(), 1);
+    assert_eq!(execution.calls[0].status, CallStatus::ToolError);
+    let diagnostic = &execution.calls[0].output;
+    assert!(diagnostic.starts_with("failure: ") && diagnostic.contains(": end"));
+    assert!(diagnostic.contains("characters left out"));
+    assert!(diagnostic.chars().count() < 31_000);
+    calling.close().await;
+}
+
 #[derive(Debug)]
 struct ResultTool;
 
@@ -441,6 +494,76 @@ async fn script_results_keep_data_and_metadata_without_automatically_emitting_th
     assert_eq!(results[0].structured_content, Some(json!({ "count": 3 })));
     assert_eq!(results[0].metadata, Some(json!({ "title": "UI only" })));
     assert_eq!(results[1].text, "4\n\"selected\"");
+    let recorded = results[1].structured_content.as_ref().expect("the execution's calls");
+    let validator = jsonschema::validator_for(&ExecuteTool::output_schema().expect("an output schema")).expect("a valid schema");
+    assert!(validator.is_valid(recorded), "{recorded}");
+    let calls = recorded["calls"].as_array().expect("recorded calls");
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0]["tool"], "result_test");
+    assert_eq!(calls[0]["arguments"], "{}");
+    assert_eq!(calls[0]["status"], "ok");
+    assert_eq!(calls[0]["output"], "model text");
+    assert_eq!(calls[0]["structuredContent"], json!({ "count": 3 }));
+    assert_eq!(calls[0]["metadata"], json!({ "title": "UI only" }));
+    assert!(!validator.is_valid(&json!({ "calls": [{
+        "id": 0, "key": "k", "tool": "read", "arguments": "{}", "status": "made-up", "output": ""
+    }] })));
+    calling.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn script_replay_records_each_call_once_and_keeps_completed_calls_when_a_later_call_fails() {
+    let beak = Beak::new().expect("Beak");
+    let calling = crate::testing::Calling::start(&beak, |tools| tools.with(ResultTool));
+    let (_folder, workspace) = folder();
+    let codes = [
+        "for (let phase = 0; phase < 3; phase++) await tools.result_test({ phase }); text('selected output'); return 'selected';",
+        "await tools.result_test({ phase: 'before failure' }); await tools.read({ path: 'missing.txt' });",
+    ];
+    let results = calling
+        .called(
+            "recorded",
+            workspace,
+            vec![],
+            codes
+                .into_iter()
+                .enumerate()
+                .map(|(at, code)| (at.to_string(), "execute".into(), json!({ "code": code }).to_string()))
+                .collect(),
+        )
+        .await;
+    assert_eq!(results[0].status, CallStatus::Ok);
+    assert_eq!(results[0].text, "selected output\n\"selected\"");
+    let first: crate::tools::execute::ExecuteResult =
+        serde_json::from_value(results[0].structured_content.clone().expect("a typed execution")).expect("the execution");
+    assert_eq!(first.calls.len(), 3);
+    let ids: std::collections::HashSet<_> = first.calls.iter().map(|call| call.id).collect();
+    let keys: std::collections::HashSet<_> = first.calls.iter().map(|call| &call.key).collect();
+    assert_eq!(ids.len(), 3, "replay never duplicates an earlier call");
+    assert_eq!(keys.len(), 3);
+    for (phase, call) in first.calls.iter().enumerate() {
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&call.arguments).expect("arguments"),
+            json!({ "phase": phase })
+        );
+        assert_eq!(call.status, CallStatus::Ok);
+    }
+    assert_eq!(results[1].status, CallStatus::ToolError);
+    let failed: crate::tools::execute::ExecuteResult =
+        serde_json::from_value(results[1].structured_content.clone().expect("a failed execution's calls")).expect("the execution");
+    assert_eq!(failed.calls.len(), 2);
+    assert_eq!(failed.calls[0].tool, "result_test");
+    assert_eq!(failed.calls[0].status, CallStatus::Ok);
+    assert_eq!(failed.calls[0].structured_content, Some(json!({ "count": 3 })));
+    assert_eq!(failed.calls[1].tool, "read");
+    assert_eq!(failed.calls[1].status, CallStatus::ToolError);
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&failed.calls[1].arguments).expect("arguments"),
+        json!({ "path": "missing.txt" })
+    );
+    assert!(!failed.calls[1].output.is_empty(), "the actual failure diagnostic is kept");
+    assert!(results[1].text.contains("the script threw"));
+    calling.close().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -520,9 +643,20 @@ async fn structured_results_survive_restart_without_repeating_completed_calls() 
         .answer(&process, key.as_bytes(), &json!({ "decision": "allow" }))
         .await
         .expect("approved");
-    let (_, said) = ended(&resumed, &path).await;
-    assert_eq!(said, "\"before restart\"");
+    let result = ended_call(&resumed, &path).await;
+    assert_eq!(result.text, "\"before restart\"");
     assert_eq!(std::fs::read_to_string(outside.join("approved.txt")).expect("written"), "approved");
+    let output: crate::tools::execute::ExecuteResult = serde_json::from_value(result.structured_content.expect("the persisted execution"))
+        .expect("the execution's calls after the script process was reaped");
+    assert_eq!(
+        output.calls.iter().map(|call| call.tool.as_str()).collect::<Vec<_>>(),
+        ["read", "write"]
+    );
+    assert!(output.calls[0].output.contains("before restart"));
+    assert_eq!(
+        output.calls[0].structured_content.as_ref().expect("the read's data")["text"],
+        "before restart"
+    );
     resumed.close().await;
 }
 
@@ -612,5 +746,21 @@ async fn delivered_resource_links_survive_script_failure_without_explicit_printi
             matches!(result.content.last(), Some(InputContent::ResourceLink { file, size: 42 }) if file.filename.as_deref() == Some("report.zip"))
         );
         assert_eq!(result.images, 0);
+        assert_eq!(
+            result
+                .content
+                .iter()
+                .filter(|part| matches!(part, InputContent::ResourceLink { .. }))
+                .count(),
+            1
+        );
+        let recorded = result.structured_content.expect("the execution's calls");
+        assert_eq!(recorded["calls"].as_array().expect("calls").len(), 1);
+        assert_eq!(recorded["calls"][0]["output"], "");
+        assert!(
+            recorded["calls"][0].get("content").is_none(),
+            "resources are delivered only in the outer content"
+        );
     }
+    calling.close().await;
 }

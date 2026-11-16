@@ -145,7 +145,7 @@ pub struct Section {
 }
 
 /// How a call ended.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS, schemars::JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum CallStatus {
     Ok,

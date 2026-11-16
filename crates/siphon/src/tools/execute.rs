@@ -51,10 +51,32 @@ pub struct ScriptInput {
     pub confines: bool,
 }
 
-/// A call of a script's settled: its id, whether it went well, what it gave, and when.
+/// One of a script's calls that ended, as the tool boundary recorded it. Images and delivered files stay in the
+/// script's explicit outer output; a call's text and typed result are enough for its own tool's presentation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ExecutedCall {
+    pub id: u32,
+    pub key: String,
+    pub tool: String,
+    pub arguments: String,
+    pub status: CallStatus,
+    pub output: String,
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "structuredContent")]
+    pub structured_content: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<serde_json::Value>,
+}
+
+/// The actual tool calls a completed script made, in the order it made them, including those of a script that threw.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ExecuteResult {
+    pub calls: Vec<ExecutedCall>,
+}
+
+/// A call of a script's settled: what it did, what its replay receives, and when it settled.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settled {
-    pub id: u32,
+    pub call: ExecutedCall,
     pub result: Result<serde_json::Value, String>,
     pub time_ms: i64,
 }
@@ -81,6 +103,7 @@ pub struct ScriptOutput {
     pub console: Vec<String>,
     pub images: Vec<InputContent>,
     pub resources: Vec<InputContent>,
+    pub calls: Vec<ExecutedCall>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub instructions: Vec<Instructions>,
 }
@@ -89,6 +112,10 @@ impl Tool for ExecuteTool {
     const NAME: &'static str = "execute";
     const DESCRIPTION: &'static str = "Run JavaScript as the body of an async function, with your tools on `tools`: `await tools.read({ path: \"a.txt\" })` returns { content, structuredContent?, metadata? } and rejects on failure. Use loops, Promise.all and code to work on the results. Text and images reach the model through explicit text(value), console.log, image(contentBlock), and the return value. Images use input_image blocks from tool results; metadata is not sent automatically. File delivery links are retained automatically, including when the script throws. Use it for work of many steps: reading or changing many files, many browser actions, batch extraction. `tools` has each of your tools by name, except execute and tools that ask the person or start threads, plus the tools listed in <catalog>.";
     type Args = ExecuteArgs;
+
+    fn output_schema() -> Option<serde_json::Value> {
+        Some(schemars::schema_for!(ExecuteResult).to_value())
+    }
 
     fn effect(&self, _: &ExecuteArgs, _: &Base) -> Effect {
         Effect::Calls
@@ -158,7 +185,7 @@ impl Tool for ExecuteTool {
                     .chain(output.images)
                     .chain(output.resources)
                     .collect(),
-                structured_content: None,
+                structured_content: Some(serde_json::json!(ExecuteResult { calls: output.calls })),
                 metadata: None,
                 instructions: output.instructions,
                 plan: crate::tools::Plan::default(),
@@ -230,6 +257,7 @@ fn script_output(script: &mut Script, state: &ScriptState, value: Option<String>
             .collect(),
         console: script.output(),
         images,
+        calls: state.settled.iter().map(|settled| settled.call.clone()).collect(),
         instructions: state.instructions.clone(),
     }
 }
@@ -259,7 +287,7 @@ impl ScriptProgram {
                     let mut unsettled = Vec::new();
                     let mut time = state.began_ms;
                     for call in calls {
-                        match state.settled.iter().find(|settled| settled.id == call.id) {
+                        match state.settled.iter().find(|settled| settled.call.id == call.id) {
                             Some(settled) => {
                                 let json = settled.result.as_ref().map(serde_json::Value::to_string);
                                 let _ = script.settle(call.id, json.as_deref().map_err(|error| error.as_str()));
@@ -362,17 +390,28 @@ impl Program for ScriptProgram {
                     state.instructions.push(each);
                 }
             }
+            let text = text_of(&output);
+            let result = if status == CallStatus::Ok {
+                Ok(serde_json::json!({
+                    "content": output,
+                    "structuredContent": structured_content,
+                    "metadata": metadata,
+                }))
+            } else {
+                Err(text.clone())
+            };
             state.settled.push(Settled {
-                id: call.id.parse().unwrap_or_default(),
-                result: if status == CallStatus::Ok {
-                    Ok(serde_json::json!({
-                        "content": output,
-                        "structuredContent": structured_content,
-                        "metadata": metadata,
-                    }))
-                } else {
-                    Err(text_of(&output))
+                call: ExecutedCall {
+                    id: call.id.parse().unwrap_or_default(),
+                    key: call.key,
+                    tool: call.tool,
+                    arguments: call.arguments,
+                    status,
+                    output: text,
+                    structured_content,
+                    metadata,
                 },
+                result,
                 time_ms: run.time_ms(),
             });
         }

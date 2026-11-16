@@ -45,6 +45,14 @@ text() 和 console.log 写入文本输出；return 保持现有 JSON 返回语�
 
 所有调用在 Calls 的完成边界统一执行现有 30,000 字符文本预算，包括普通工具、程序工具和失败结果。超限正文保留首尾；完整正文与完成结果在同一次提交中写入 thread 的 outputs。图片及 structuredContent 不因文本裁切丢失。若宿主挂载了 threads 视图，结果给出 read 可读的完整输出路径；未挂载时明确说明，不把内部 volume 路径伪装成可读文件路径。该预算是模型文本预算，不是所有业务数据或图片的统一 token 配额。完整正文按原文保存；read 仍遵守既有分页与单行长度上限，大单行 JSON 通过 read 看到的内容仍可能裁切，此次不新增字符范围读取接口。
 
+## execute 的子调用记录
+
+execute 的 structuredContent 为 `{ calls: [...] }`。每条记录来自实际已结束的调用，包含脚本调用 id、持久 key、工具名、原参数、CallStatus、文本输出、工具自身的 structuredContent 与 metadata。它是脚本执行结果的一部分，不把状态塞进通用 metadata，也不从 JavaScript 源码猜测调用。
+
+记录复用已结算调用的 checkpoint；重放不再执行已结算调用，也不重复追加记录。脚本抛错仍保留此前已结束的记录。子调用不重复保存图片和交付资源，外层 content 继续承载显式图片和已交付文件。没有真实起止时间就不显示子调用耗时。
+
+客户端完成后展示真实调用摘要和最终输出，展开复用每个工具的详情。被拒绝、失败或停止的调用不能汇总为已完成的文件修改。执行中实时子调用，以及未形成最终结果的强制停止，不在本轮展示保证内。
+
 ## 已落地的业务数据
 
 - shell：structuredContent 包含 type=ran、原始合并输出 output 和 ended。模型 content 中的提醒和转义不会污染原始 output。

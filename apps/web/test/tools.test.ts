@@ -90,7 +90,11 @@ describe("what the page knows of each tool", () => {
 			path: "b.md",
 			told: { text: "hello" },
 		});
-		expect(detailOf(called("execute", { code: "return 1" }, "running"))).toEqual({ shape: "script", code: "return 1", told: undefined });
+		expect(detailOf(called("execute", { code: "return 1" }, "running"))).toEqual({ shape: "script", code: "return 1" });
+		expect(detailOf(called("execute", { code: "throw Error('failed')" }, "failed", "the script threw"))).toEqual({
+			shape: "script",
+			code: "throw Error('failed')",
+		});
 		// A command that runs shows what it runs, its output once it ended.
 		expect(detailOf(called("shell", { command: "zig build" }, "running"))).toEqual({ shape: "command", command: "zig build", told: undefined });
 		expect(detailOf(called("edit", { path: "a.md" }, "failed", "not-found"))).toMatchObject({
@@ -109,5 +113,7 @@ describe("what the page knows of each tool", () => {
 		expect(summaryOf([call("read"), call("search"), call("edit"), call("script"), call("script")])).toBe(
 			"read 1 file, searched 1 time, edited 1 file and 2 more",
 		);
+		expect(summaryOf([call("edit", "rejected"), call("edit", "failed"), call("edit", "stopped")])).toBe("3 tool calls");
+		expect(summaryOf([call("read"), call("edit", "rejected"), call("edit", "failed")])).toBe("read 1 file");
 	});
 });

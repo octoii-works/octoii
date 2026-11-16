@@ -32,7 +32,7 @@ export type Aside = { readonly kind: "words"; readonly text: string } | { readon
 
 /**
  * What opens under a call's line, by its shape: a command and what it printed; an edit's diff; a file's text, as read or
- * as written; the places a search found; a script's code and what it told; or its arguments' fields and what its tool
+ * as written; the places a search found; a script's code; or its arguments' fields and what its tool
  * told.
  */
 export type Detail =
@@ -40,7 +40,7 @@ export type Detail =
 	| { readonly shape: "diff"; readonly hunks: string; readonly notes: readonly string[] }
 	| { readonly shape: "file"; readonly path: string | undefined; readonly told: Told | undefined }
 	| { readonly shape: "found"; readonly found: readonly Found[]; readonly notes: readonly string[] }
-	| { readonly shape: "script"; readonly code: string; readonly told: Told | undefined }
+	| { readonly shape: "script"; readonly code: string }
 	| { readonly shape: "fields"; readonly fields: readonly Field[] | undefined; readonly arguments: string; readonly told: Told | undefined };
 
 const GivenSchema = Type.Object({
@@ -153,7 +153,7 @@ const TOOLS: Readonly<Partial<Record<string, ToolView>>> = {
 	execute: toolView({
 		work: "script",
 		verbs: ["Run a script", "Running a script", "Ran a script"],
-		detail: (call, given) => ({ shape: "script", code: given.code ?? "", told: toldOfCall(call) }),
+		detail: (_, given) => ({ shape: "script", code: given.code ?? "" }),
 	}),
 	present_file: toolView({
 		work: "other",
@@ -198,8 +198,10 @@ export function callWords(call: { readonly tool: string; readonly arguments: str
 /** What opens under the line of `call`: its tool's shape of it — or, where it did not go through, what it was given and what it was told. */
 export function detailOf(call: ToolCall): Detail {
 	const given = givenOf(call.arguments);
+	const tool = toolOf(call.tool);
+	if (tool.work === "script") return tool.detail(call, given);
 	if (call.state === "failed" || call.state === "rejected" || call.state === "stopped") return fieldsDetail(call);
-	return toolOf(call.tool).detail(call, given);
+	return tool.detail(call, given);
 }
 
 /** What each kind of work did, as a stretch of calls sums it up: as it went once done, and as it goes while one runs. */
@@ -219,16 +221,19 @@ const ACTIONS: Readonly<Record<WorkKind, readonly [went: (count: number) => stri
 /**
  * What a stretch of calls did, as a person says it within a sentence: the first three kinds of work it did, in the
  * order it began them — as they go where one of the kind runs — and how many calls more it made; "read 3 files, ran 1
- * command and edited 2 files".
+ * command and edited 2 files". Calls that failed, were rejected or stopped never claim a completed effect; their
+ * counts stand beside the summary.
  */
 export function summaryOf(calls: readonly { readonly work: WorkKind; readonly state: CallState }[]): string {
-	const kinds = [...new Set(calls.map((call) => call.work))].slice(0, 3);
+	const carried = calls.filter((call) => call.state === "done" || call.state === "running" || call.state === "waiting");
+	if (carried.length === 0) return calls.length === 0 ? "" : counted(calls.length, "tool call", "tool calls");
+	const kinds = [...new Set(carried.map((call) => call.work))].slice(0, 3);
 	const said = kinds.map((kind) => {
-		const ofKind = calls.filter((call) => call.work === kind);
+		const ofKind = carried.filter((call) => call.work === kind);
 		const [went, going] = ACTIONS[kind];
 		return ofKind.some((call) => call.state === "running" || call.state === "waiting") ? going(ofKind.length) : went(ofKind.length);
 	});
-	const rest = calls.filter((call) => !kinds.includes(call.work)).length;
+	const rest = carried.filter((call) => !kinds.includes(call.work)).length;
 	const parts = rest === 0 ? said : [...said, `${String(rest)} more`];
 	return parts.length === 1 ? parts.join("") : `${parts.slice(0, -1).join(", ")} and ${parts.at(-1) ?? ""}`;
 }

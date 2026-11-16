@@ -7,7 +7,8 @@
  * it, the calls made under it, then what it was given and what it told. Several say what they did as a person says it,
  * how many failed, and how long they took, led by the mark of the call going on, else of the kind of work they did
  * most; opened, the latest of them each on a line of its own, at the same edges, closer together, those before behind a
- * line that shows them. What a command prints shows only opened, so the work grows by whole lines alone.
+ * line that shows them. A script's final output stays visible; its code, nested tools and ordinary command output
+ * open beneath the line.
  */
 import { memo, type ReactNode, useState } from "react";
 import { Ban, Brain } from "lucide-react";
@@ -20,7 +21,7 @@ import { Counting } from "../effects/now.ts";
 import { cn } from "../ui/cn.ts";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger, FoldChevron } from "../ui/collapsible.tsx";
 import { Waiting } from "./ask-line.tsx";
-import { CallDetail } from "./call-detail.tsx";
+import { CallDetail, ScriptOutput } from "./call-detail.tsx";
 import { ChangeCount } from "./changes.tsx";
 import { Prose } from "./markdown.tsx";
 import { usePlaces } from "./message-thread.ts";
@@ -47,42 +48,56 @@ export const Calls = memo(function Calls(props: StretchProps): ReactNode {
 	return <StretchLine thread={props.thread} steps={props.steps} calls={props.calls} one={one} />;
 }, sameStretch);
 
-/** The line of a stretch: its mark, its words, how it ends and its time; opened, what it holds. A call whose permission waits stands open, answered under it. */
+/** The line of a stretch: its mark, its words, how it ends and its time; opened, what it holds. A script's final output stays visible. */
 function StretchLine(props: StretchProps & { readonly one: CallLine | undefined }): ReactNode {
 	const { one } = props;
 	const approval = useApproval(props.thread, one?.state === "waiting" ? one.ask : undefined);
 	if (one !== undefined && approval !== undefined) return <WaitingCall call={one} approval={approval} />;
 	const lead = one ?? leadOf(props.calls);
 	return (
-		<Collapsible>
-			<CollapsibleTrigger data-state={one?.state ?? stateOf(props.calls)} className="group/call work-line work-opens">
-				{lead === undefined ? null : <CallMark call={lead} />}
-				{one === undefined ? <GatheredWords calls={props.calls} /> : <CallWords call={one} />}
-				<FoldChevron className="quiet-chevron" />
-				<span className="flex-1" />
-				{one === undefined ? <Failed calls={props.calls} /> : <CallEnd call={one} />}
-				<span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-					<StretchTime calls={props.calls} />
-				</span>
-			</CollapsibleTrigger>
-			<CollapsiblePanel>
-				{one === undefined ? (
-					<Steps thread={props.thread} steps={props.steps} />
-				) : (
-					<div className="work-indent">
-						{props.steps.map((step) => (step.kind === "thought" ? <ThoughtNote key={step.key} text={step.text} took={step.took} /> : null))}
-						{one.calls.length === 0 ? null : (
-							<div className="work-list work-tight">
-								{one.calls.map((call) => (
-									<Calls key={call.id} thread={props.thread} steps={[call]} calls={[call]} />
-								))}
-							</div>
-						)}
-						<CallDetail call={one} />
-					</div>
-				)}
-			</CollapsiblePanel>
-		</Collapsible>
+		<>
+			<Collapsible>
+				<CollapsibleTrigger data-state={one?.state ?? stateOf(props.calls)} className="group/call work-line work-opens">
+					{lead === undefined ? null : <CallMark call={lead} />}
+					{one === undefined ? <GatheredWords calls={props.calls} /> : <CallWords call={one} />}
+					<FoldChevron className="quiet-chevron" />
+					<span className="flex-1" />
+					{one === undefined ? (
+						<Failed calls={props.calls} />
+					) : (
+						<>
+							<Failed calls={one.calls} />
+							<CallEnd call={one} />
+						</>
+					)}
+					<span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+						<StretchTime calls={props.calls} />
+					</span>
+				</CollapsibleTrigger>
+				<CollapsiblePanel>
+					{one === undefined ? (
+						<Steps thread={props.thread} steps={props.steps} />
+					) : (
+						<div className="work-indent">
+							{props.steps.map((step) => (step.kind === "thought" ? <ThoughtNote key={step.key} text={step.text} took={step.took} /> : null))}
+							<CallDetail call={one} />
+							{one.calls.length === 0 ? null : (
+								<div className="work-list work-tight">
+									{one.calls.map((call) => (
+										<Calls key={call.id} thread={props.thread} steps={[call]} calls={[call]} />
+									))}
+								</div>
+							)}
+						</div>
+					)}
+				</CollapsiblePanel>
+			</Collapsible>
+			{one?.work !== "script" ? null : (
+				<div className="work-indent">
+					<ScriptOutput call={one} />
+				</div>
+			)}
+		</>
 	);
 }
 
@@ -207,6 +222,7 @@ function stateOf(calls: readonly CallLine[]): string {
 function CallWords(props: { readonly call: CallLine }): ReactNode {
 	const { call } = props;
 	const places = usePlaces();
+	if (call.work === "script" && call.calls.length > 0) return <GatheredWords calls={call.calls} />;
 	return (
 		<>
 			{call.verb === undefined ? (
@@ -253,10 +269,18 @@ function GatheredWords(props: { readonly calls: readonly CallLine[] }): ReactNod
 	return <span className="min-w-0 truncate first-letter:uppercase group-data-[state=running]/call:shimmer">{summaryOf(props.calls)}</span>;
 }
 
-/** How many of several calls failed; nothing where none did. */
+/** Calls that failed, were rejected or stopped, distinctly; a caught failure is still visible in its script's line. */
 function Failed(props: { readonly calls: readonly CallLine[] }): ReactNode {
 	const failed = props.calls.filter((call) => call.state === "failed" || call.trouble !== undefined).length;
-	return failed === 0 ? null : <span className="shrink-0 text-xs text-error-foreground">{failed} failed</span>;
+	const rejected = props.calls.filter((call) => call.state === "rejected").length;
+	const stopped = props.calls.filter((call) => call.state === "stopped").length;
+	return (
+		<>
+			{failed === 0 ? null : <span className="shrink-0 text-xs text-error-foreground">{failed} failed</span>}
+			{rejected === 0 ? null : <span className="shrink-0 text-xs text-muted-foreground">{rejected} rejected</span>}
+			{stopped === 0 ? null : <span className="shrink-0 text-xs text-muted-foreground">{stopped} stopped</span>}
+		</>
+	);
 }
 
 /**

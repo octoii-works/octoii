@@ -1,13 +1,13 @@
 /**
  * What opens under a call's line, by its shape, read from the call as it opens: a command as a terminal shows it, `$`
  * and the line, then what it printed; an edit's diff, green and red, with a way into the Diff view; a file's text, as
- * read or as written, with a way to open it; the places a search found, each opening its file; a script's code, then
- * what it told; or a call's arguments as fields, then what its tool told. Each well copies what it holds; what its
+ * read or as written, with a way to open it; the places a search found, each opening its file; a script's code; or a
+ * call's arguments as fields, then what its tool told. Each well copies what it holds; what its
  * tool noted stands quiet under it.
  */
 import { type ReactNode, useMemo } from "react";
 import { type CallLine } from "../../core/timeline.ts";
-import { prettyArguments, type Told } from "../../core/calls.ts";
+import { prettyArguments, type Told, toldOf } from "../../core/calls.ts";
 import { type Detail, detailOf } from "../../core/tools.ts";
 import { DiffLines } from "../diff/diff-lines.tsx";
 import { PathLink } from "../files/path-link.tsx";
@@ -20,6 +20,16 @@ export function CallDetail(props: { readonly call: CallLine }): ReactNode {
 	return (
 		<div className="flex flex-col gap-1.5 pt-0.5 pb-2">
 			<Shaped detail={detail} />
+		</div>
+	);
+}
+
+/** A script's final output, visible beside its fold; the script and its nested calls stay inside it. */
+export function ScriptOutput(props: { readonly call: CallLine }): ReactNode {
+	if (props.call.output === undefined || props.call.output === "") return null;
+	return (
+		<div className="flex flex-col gap-1.5 pt-0.5 pb-2">
+			<ToldWell told={toldOf(props.call.output)} />
 		</div>
 	);
 }
@@ -66,12 +76,7 @@ function Shaped(props: { readonly detail: Detail }): ReactNode {
 		case "found":
 			return <Found detail={detail} />;
 		case "script":
-			return (
-				<>
-					<Well copied={detail.code}>{detail.code}</Well>
-					<ToldWell told={detail.told} />
-				</>
-			);
+			return <Well copied={detail.code}>{detail.code}</Well>;
 		case "fields":
 			return (
 				<>
