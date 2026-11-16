@@ -39,6 +39,11 @@ pub enum InputContent {
     InputFile {
         file: FileRef,
     },
+    /// A downloadable resource reference. Providers receive its description, never its bytes.
+    ResourceLink {
+        file: FileRef,
+        size: u64,
+    },
 }
 
 impl InputContent {

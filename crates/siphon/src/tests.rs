@@ -10,6 +10,7 @@ mod compaction;
 mod connection;
 mod execute;
 mod extensions;
+mod files;
 mod live;
 mod namespace;
 mod permissions;

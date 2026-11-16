@@ -10,6 +10,14 @@ use base64::Engine;
 use crate::driver::Call;
 use crate::vocabulary::{Failure, FailureKind, FileRef};
 
+/// A resource link describes a file available to the user without sending its contents.
+pub(crate) fn resource_link_text(file: &FileRef, size: u64) -> String {
+    let link = serde_json::json!({ "file": file, "size": size })
+        .to_string()
+        .replace('<', "\\u003c");
+    format!("File available to the user (contents not included): {link}")
+}
+
 /// The bytes of the file of `reference`, as the conversation the call is of holds them.
 ///
 /// # Errors

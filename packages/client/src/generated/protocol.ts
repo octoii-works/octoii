@@ -401,7 +401,7 @@ export type Incomplete = "max_output_tokens" | "content_filter" | "cancelled";
 /**
  * What user, developer and system messages and calls' outputs hold.
  */
-export type InputContent = { "type": "input_text", text: string, } | { "type": "input_image", file: FileRef, detail: ImageDetail, } | { "type": "input_file", file: FileRef, };
+export type InputContent = { "type": "input_text", text: string, } | { "type": "input_image", file: FileRef, detail: ImageDetail, } | { "type": "input_file", file: FileRef, } | { "type": "resource_link", file: FileRef, size: number, };
 
 /**
  * The largest a model's input may be, where its provider says.

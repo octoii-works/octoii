@@ -3927,6 +3927,7 @@ dependencies = [
  "siphon-browser",
  "siphon-claude-code",
  "siphon-delegate",
+ "siphon-files",
  "siphon-git",
  "siphon-image",
  "siphon-mcp",
@@ -5623,6 +5624,19 @@ dependencies = [
  "schemars 1.2.3",
  "serde",
  "siphon",
+]
+
+[[package]]
+name = "siphon-files"
+version = "0.0.1"
+dependencies = [
+ "octoii-ai",
+ "schemars 1.2.3",
+ "serde",
+ "serde_json",
+ "siphon",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]

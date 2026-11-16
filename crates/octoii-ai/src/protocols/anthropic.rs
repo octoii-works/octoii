@@ -363,6 +363,7 @@ fn update_texts(content: &[InputContent]) -> Result<Vec<String>, Failure> {
         .filter_map(|part| match part {
             InputContent::InputText { text } if text.is_empty() => None,
             InputContent::InputText { text } => Some(Ok(text.clone())),
+            InputContent::ResourceLink { file, size } => Some(Ok(super::resource_link_text(file, *size))),
             _ => Some(Err(Failure::new(
                 FailureKind::InvalidRequest,
                 "Anthropic takes no file in a developer or system message",
@@ -377,6 +378,7 @@ fn input_blocks(call: &Call, content: &[InputContent]) -> Result<Vec<Value>, Fai
         match part {
             InputContent::InputText { text } if text.is_empty() => {}
             InputContent::InputText { text } => blocks.push(text_block(text)),
+            InputContent::ResourceLink { file, size } => blocks.push(text_block(&super::resource_link_text(file, *size))),
             InputContent::InputImage { file, .. } => {
                 let data = base64_of(call, &file.reference)?;
                 blocks.push(json!({ "type": "image", "source": { "type": "base64", "media_type": file.media_type, "data": data } }));

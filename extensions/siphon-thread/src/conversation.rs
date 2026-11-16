@@ -66,6 +66,7 @@ fn words_of(content: &[InputContent]) -> String {
             InputContent::InputText { text } => text.clone(),
             InputContent::InputImage { .. } => "[an image]".to_owned(),
             InputContent::InputFile { .. } => "[a file]".to_owned(),
+            InputContent::ResourceLink { file, .. } => format!("[file available: {}]", file.filename.as_deref().unwrap_or(&file.reference)),
         })
         .collect::<Vec<_>>()
         .join("\n")

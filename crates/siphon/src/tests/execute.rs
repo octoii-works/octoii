@@ -557,3 +557,60 @@ async fn raw_structured_text_cannot_become_a_model_reminder_when_emitted() {
         assert!(!result.text.contains("<system-reminder>file text"));
     }
 }
+
+#[derive(Debug)]
+struct ResourceTool;
+
+impl Tool for ResourceTool {
+    const NAME: &'static str = "resource_test";
+    const DESCRIPTION: &'static str = "A delivered file link.";
+    type Args = serde_json::Value;
+    fn effect(&self, _: &Self::Args, _: &Base) -> crate::tools::Effect {
+        crate::tools::Effect::Reads
+    }
+    fn exec(
+        &self,
+        _: &crate::tools::Context,
+        _: Self::Args,
+    ) -> impl std::future::Future<Output = Result<crate::tools::Told, crate::tools::Refusal>> + Send {
+        std::future::ready(Ok(crate::tools::Told::from(vec![InputContent::ResourceLink {
+            file: octoii_ai::vocabulary::FileRef {
+                reference: "sha256:file".into(),
+                media_type: "application/zip".into(),
+                filename: Some("report.zip".into()),
+            },
+            size: 42,
+        }])))
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn delivered_resource_links_survive_script_failure_without_explicit_printing() {
+    let beak = Beak::new().expect("Beak");
+    let calling = crate::testing::Calling::start(&beak, |tools| tools.with(ResourceTool));
+    let (_folder, workspace) = folder();
+    let codes = [
+        "await tools.resource_test({}); return 'done';",
+        "await tools.resource_test({}); throw Error('later failure');",
+    ];
+    let results = calling
+        .called(
+            "resources",
+            workspace,
+            vec![],
+            codes
+                .into_iter()
+                .enumerate()
+                .map(|(i, code)| (i.to_string(), "execute".into(), json!({ "code": code }).to_string()))
+                .collect(),
+        )
+        .await;
+    assert_eq!(results[0].status, CallStatus::Ok);
+    assert_eq!(results[1].status, CallStatus::ToolError);
+    for result in results {
+        assert!(
+            matches!(result.content.last(), Some(InputContent::ResourceLink { file, size: 42 }) if file.filename.as_deref() == Some("report.zip"))
+        );
+        assert_eq!(result.images, 0);
+    }
+}

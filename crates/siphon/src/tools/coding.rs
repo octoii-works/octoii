@@ -25,7 +25,7 @@ fn failed(error: crate::machine::Error) -> Refusal {
         crate::machine::Error::NotFound => "nothing is there".into(),
         crate::machine::Error::Directory => "it is a directory".into(),
         crate::machine::Error::NotText => "it holds no text".into(),
-        crate::machine::Error::Beak(error) => error.to_string(),
+        other => other.to_string(),
     })
 }
 

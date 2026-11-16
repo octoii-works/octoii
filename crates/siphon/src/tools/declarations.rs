@@ -69,7 +69,7 @@ impl<'a> Group<'a> {
                         .map_or_else(|| "unknown".into(), |schema| type_of(schema, schema, indent, 0));
                     let _ = writeln!(
                         out,
-                        "{pad}{}(args: {parameters}): Promise<{{ content: Array<{{ type: string; text?: string; file?: unknown; detail?: string }}>; structuredContent?: {result} | null; metadata?: unknown }}>;",
+                        "{pad}{}(args: {parameters}): Promise<{{ content: Array<{{ type: string; text?: string; file?: unknown; detail?: string; size?: number }}>; structuredContent?: {result} | null; metadata?: unknown }}>;",
                         quoted_key(name)
                     );
                 }

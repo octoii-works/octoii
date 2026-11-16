@@ -180,6 +180,9 @@ fn rendered_content(call: &Call, content: &[InputContent], dialect: &Dialect) ->
         .map(|part| {
             Ok(match part {
                 InputContent::InputText { text } => json!({ "type": "input_text", "text": text }),
+                InputContent::ResourceLink { file, size } => {
+                    json!({ "type": "input_text", "text": super::resource_link_text(file, *size) })
+                }
                 InputContent::InputImage { file, detail } => {
                     let detail = match detail {
                         crate::vocabulary::ImageDetail::Auto => "auto",

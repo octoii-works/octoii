@@ -796,7 +796,7 @@ Replace text in a file. `old` must match exactly one place, or every place with 
 }
 
 === tool execute
-Run JavaScript as the body of an async function, with your tools on `tools`: `await tools.read({ path: "a.txt" })` returns { content, structuredContent?, metadata? } and rejects on failure. Use loops, Promise.all and code to work on the results. Only explicit text(value), console.log, image(contentBlock), and the return value reach the model. Images use input_image blocks from tool results; metadata is not sent automatically. Use it for work of many steps: reading or changing many files, many browser actions, batch extraction. `tools` has each of your tools by name, except execute and tools that ask the person or start threads, plus the tools listed in <catalog>.
+Run JavaScript as the body of an async function, with your tools on `tools`: `await tools.read({ path: "a.txt" })` returns { content, structuredContent?, metadata? } and rejects on failure. Use loops, Promise.all and code to work on the results. Text and images reach the model through explicit text(value), console.log, image(contentBlock), and the return value. Images use input_image blocks from tool results; metadata is not sent automatically. File delivery links are retained automatically, including when the script throws. Use it for work of many steps: reading or changing many files, many browser actions, batch extraction. `tools` has each of your tools by name, except execute and tools that ask the person or start threads, plus the tools listed in <catalog>.
 --- parameters
 {
   "properties": {
@@ -891,6 +891,30 @@ Search file contents with a regular expression (ripgrep syntax), in the files un
   },
   "required": [
     "pattern"
+  ],
+  "type": "object"
+}
+
+=== tool present_file
+Present one file to the person for download, keeping its original bytes in this conversation. Use after generating a report, image, archive, or other result. Accepts a regular file up to 32 MiB that this call may read; directories are refused. The saved file survives changes to the source. This does not read the file into model context or publish it on the internet.
+--- parameters
+{
+  "properties": {
+    "path": {
+      "description": "Regular file to present: relative to the workspace, absolute, or starting with ~ for the home folder.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "title": {
+      "description": "Optional display title. The downloadable file keeps its original basename.",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "path"
   ],
   "type": "object"
 }

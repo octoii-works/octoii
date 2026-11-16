@@ -12,7 +12,7 @@ type ToolResult<T = unknown, M = unknown> = {
 };
 ```
 
-- content：模型消费的文本、图片、文件资源。复用现有 InputContent（input_text、input_image、input_file）和 thread 内 FileRef，不另设 attachments 或资源注册中心。
+- content：模型消费的文本、图片、文件资源。复用现有 InputContent（input_text、input_image、input_file、resource_link）和 thread 内 FileRef，不另设 attachments 或资源注册中心。
 - structuredContent：程序读取的业务结果。原生工具用类型定义其数据并声明输出 schema；有 schema 的 MCP 工具保留服务器提供的 schema。无结构化结果时该字段可以缺省或为 null，不从展示文字猜测业务数据。
 - metadata：可选日志和界面信息。目前界面读取 title 作为工具结果的展示标题；默认名称、图标及 renderer 仍由工具注册定义决定。状态、耗时、调用 ID 与父子关系属于执行记录。
 
@@ -39,7 +39,7 @@ return { ended: ran.structuredContent.ended };
 
 text() 和 console.log 写入文本输出；return 保持现有 JSON 返回语义。image() 接受当前脚本工具调用返回的 input_image 内容块，保留其资源引用，不让脚本搬运 base64，不接受任意未返回的资源引用。当前展示顺序为文本和返回值在前、选中的图片在后。
 
-嵌套调用的全部 content 不自动追加到模型上下文。资源按原有 thread 文件机制保存；metadata 不自动输出。脚本失败仍保留此前显式输出的文本和图片；已完成工具调用的副作用不回滚。
+嵌套调用的 resource_link 自动保留；它代表已发生的文件交付，各模型协议只发送引用描述，不读取原件。普通文本、图片不自动追加到模型上下文。资源按原有 thread 文件机制保存；metadata 不自动输出。脚本失败仍保留此前显式输出的文本和图片；已完成工具调用的副作用不回滚。
 
 调用失败继续通过已有 Refusal/CallStatus 处理，脚本收到 rejection；命令非零退出属于命令结果，脚本检查 ended。execute 抛错、耗尽步骤或无法恢复结果时，调用状态为 tool-error，已显式输出的内容仍保留。程序完成返回 Finished（状态与 Told），不能仅因底层进程 Completed 就视为工具成功。这里不额外建立错误代码体系，也不改变 turn 的停止语义。
 
@@ -56,7 +56,7 @@ text() 和 console.log 写入文本输出；return 保持现有 JSON 返回语�
 - MCP：保留服务器 structuredContent；_meta 映射到 metadata，与转换后的模型 content 分开。
 - 其他工具通过相同结果封装返回 content，按实际能力逐步增加业务数据；不制造空的结构化“成功”结果。
 
-文件交付工具 present_file 仍属于后续产品任务，此次协议迁移不实现它。完整 MCP 资源内容支持、统一嵌套调用 UI 也单独推进，不借字段改造重写执行内核。
+present_file 通过 content.resource_link 交付原始文件，metadata.title 提供调用标题；execute 抛错仍保留已成功调用的交付链接。详见 [PRODUCT_TOOLS.md](PRODUCT_TOOLS.md)。完整 MCP 资源内容支持、统一嵌套调用 UI 也单独推进，不借字段改造重写执行内核。
 
 ## 验收
 

@@ -125,7 +125,8 @@ fn texts_of(content: &[InputContent]) -> Result<String, Failure> {
     content
         .iter()
         .map(|part| match part {
-            InputContent::InputText { text } => Ok(text.as_str()),
+            InputContent::InputText { text } => Ok(text.clone()),
+            InputContent::ResourceLink { file, size } => Ok(super::resource_link_text(file, *size)),
             _ => Err(Failure::new(
                 FailureKind::InvalidRequest,
                 "An update takes text alone, and one holds a file",
@@ -200,7 +201,8 @@ impl Conversation<'_> {
                 let mut text = Vec::new();
                 for part in &output.output {
                     match part {
-                        InputContent::InputText { text: words } => text.push(words.as_str()),
+                        InputContent::InputText { text: words } => text.push(words.clone()),
+                        InputContent::ResourceLink { file, size } => text.push(super::resource_link_text(file, *size)),
                         file => {
                             let parts = self.parts(std::slice::from_ref(file))?;
                             self.turn().files.extend(parts);
@@ -276,6 +278,7 @@ impl Conversation<'_> {
             .map(|part| {
                 Ok(match part {
                     InputContent::InputText { text } => json!({ "type": "text", "text": text }),
+                    InputContent::ResourceLink { file, size } => json!({ "type": "text", "text": super::resource_link_text(file, *size) }),
                     InputContent::InputImage { file, .. } => {
                         json!({ "type": "image_url", "image_url": { "url": super::data_url(self.call, file)? } })
                     }

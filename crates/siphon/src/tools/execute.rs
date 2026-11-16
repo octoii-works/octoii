@@ -80,13 +80,14 @@ pub struct ScriptOutput {
     pub error: Option<String>,
     pub console: Vec<String>,
     pub images: Vec<InputContent>,
+    pub resources: Vec<InputContent>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub instructions: Vec<Instructions>,
 }
 
 impl Tool for ExecuteTool {
     const NAME: &'static str = "execute";
-    const DESCRIPTION: &'static str = "Run JavaScript as the body of an async function, with your tools on `tools`: `await tools.read({ path: \"a.txt\" })` returns { content, structuredContent?, metadata? } and rejects on failure. Use loops, Promise.all and code to work on the results. Only explicit text(value), console.log, image(contentBlock), and the return value reach the model. Images use input_image blocks from tool results; metadata is not sent automatically. Use it for work of many steps: reading or changing many files, many browser actions, batch extraction. `tools` has each of your tools by name, except execute and tools that ask the person or start threads, plus the tools listed in <catalog>.";
+    const DESCRIPTION: &'static str = "Run JavaScript as the body of an async function, with your tools on `tools`: `await tools.read({ path: \"a.txt\" })` returns { content, structuredContent?, metadata? } and rejects on failure. Use loops, Promise.all and code to work on the results. Text and images reach the model through explicit text(value), console.log, image(contentBlock), and the return value. Images use input_image blocks from tool results; metadata is not sent automatically. File delivery links are retained automatically, including when the script throws. Use it for work of many steps: reading or changing many files, many browser actions, batch extraction. `tools` has each of your tools by name, except execute and tools that ask the person or start threads, plus the tools listed in <catalog>.";
     type Args = ExecuteArgs;
 
     fn effect(&self, _: &ExecuteArgs, _: &Base) -> Effect {
@@ -155,6 +156,7 @@ impl Tool for ExecuteTool {
             told: Told {
                 content: std::iter::once(InputContent::text(text.trim_start().to_owned()))
                     .chain(output.images)
+                    .chain(output.resources)
                     .collect(),
                 structured_content: None,
                 metadata: None,
@@ -217,6 +219,15 @@ fn script_output(script: &mut Script, state: &ScriptState, value: Option<String>
     ScriptOutput {
         value,
         error,
+        resources: state
+            .settled
+            .iter()
+            .filter_map(|settled| settled.result.as_ref().ok())
+            .filter_map(|result| result["content"].as_array())
+            .flatten()
+            .filter_map(|value| serde_json::from_value::<InputContent>(value.clone()).ok())
+            .filter(|part| matches!(part, InputContent::ResourceLink { .. }))
+            .collect(),
         console: script.output(),
         images,
         instructions: state.instructions.clone(),

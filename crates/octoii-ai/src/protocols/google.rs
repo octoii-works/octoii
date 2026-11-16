@@ -65,6 +65,7 @@ pub fn render(call: &Call, model: &Model, request: &Request) -> Result<Value, Fa
                 for part in content {
                     match part {
                         InputContent::InputText { text } => system.push(text.clone()),
+                        InputContent::ResourceLink { file, size } => system.push(super::resource_link_text(file, *size)),
                         _ => {
                             return Err(Failure::new(
                                 FailureKind::InvalidRequest,
@@ -322,6 +323,7 @@ impl Builder<'_> {
             |reference: &str| super::file_bytes(self.call, reference).map(|bytes| base64::engine::general_purpose::STANDARD.encode(bytes));
         Ok(match part {
             InputContent::InputText { text } => json!({ "type": "text", "text": text }),
+            InputContent::ResourceLink { file, size } => json!({ "type": "text", "text": super::resource_link_text(file, *size) }),
             InputContent::InputImage { file, .. } => {
                 json!({ "type": "image", "data": inline(&file.reference)?, "mime_type": file.media_type })
             }

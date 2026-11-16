@@ -161,6 +161,7 @@ impl Client {
 /// What a call came to, as a test reads it: how it ended, its text, how many images it showed, and what it told typed.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Called {
+    pub content: Vec<octoii_ai::vocabulary::InputContent>,
     pub status: crate::threads::CallStatus,
     pub text: String,
     pub images: usize,
@@ -238,6 +239,7 @@ fn called(call: crate::tools::Call) -> Called {
     } = call.state
     else {
         return Called {
+            content: Vec::new(),
             status: crate::threads::CallStatus::Interrupted,
             text: String::new(),
             images: 0,
@@ -251,12 +253,14 @@ fn called(call: crate::tools::Call) -> Called {
         match part {
             octoii_ai::vocabulary::InputContent::InputText { text } => texts.push(text.as_str()),
             octoii_ai::vocabulary::InputContent::InputImage { .. } => images += 1,
-            octoii_ai::vocabulary::InputContent::InputFile { .. } => {}
+            octoii_ai::vocabulary::InputContent::InputFile { .. } | octoii_ai::vocabulary::InputContent::ResourceLink { .. } => {}
         }
     }
+    let text = texts.join("\n");
     Called {
+        content: output,
         status,
-        text: texts.join("\n"),
+        text,
         images,
         structured_content,
         metadata,

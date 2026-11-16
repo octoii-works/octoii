@@ -7,7 +7,7 @@
 use std::io::{self, BufReader};
 
 use beak::{Dirent, FileKind, Namespace, Range, Status};
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use siphon_text::{Bounds, Content, Diff, Edit, Edited, Page, Refusal, Text};
 
 use crate::machine::namespace::Machine;
@@ -89,12 +89,20 @@ pub enum EditOutcome {
 /// Why a file could not be read, written or edited as asked.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("invalid file path")]
+    InvalidPath,
     #[error("nothing is there")]
     NotFound,
     #[error("it is a folder")]
     Directory,
+    #[error("it is not a regular file")]
+    NotFile,
+    #[error("a file holds at most {limit} bytes")]
+    TooLarge { limit: u64 },
     #[error("it holds no text")]
     NotText,
+    #[error(transparent)]
+    Io(#[from] io::Error),
     #[error(transparent)]
     Beak(#[from] beak::Error),
 }
@@ -208,6 +216,52 @@ impl io::Read for Reading<'_> {
 }
 
 impl Machine {
+    /// The original bytes of the regular file at the namespace's `path`, and the path found for it. Reads a range at
+    /// a time through EOF, checking `bytes_max` as it goes, even where the file grows after its size was read.
+    ///
+    /// # Errors
+    /// `InvalidPath`, `NotFound`, `Directory`, `NotFile`, `TooLarge`; the namespace's failure.
+    pub fn read_file(&self, path: &str, bytes_max: u64) -> Result<(String, Bytes), Error> {
+        if path.is_empty() || path.contains('\0') {
+            return Err(Error::InvalidPath);
+        }
+        let (path, stat) = self.found(path)?.ok_or(Error::NotFound)?;
+        match stat.kind {
+            FileKind::Directory => return Err(Error::Directory),
+            FileKind::Link => return Err(Error::NotFile),
+            FileKind::File => {}
+        }
+        // Beak reports host object ids, but volume files have none. Its File kind also includes host special files,
+        // so reject those after the namespace has allowed the stat. Bytes still come only through the namespace.
+        // This preflight does not prevent a concurrent replacement; a race-free check needs a Beak read_regular API.
+        if stat.file_id.is_some() && !std::fs::metadata(format!("/{path}"))?.is_file() {
+            return Err(Error::NotFile);
+        }
+        if stat.size > bytes_max {
+            return Err(Error::TooLarge { limit: bytes_max });
+        }
+        let bytes = self.file_bytes(&path, bytes_max)?;
+        Ok((path, bytes))
+    }
+
+    /// Reads through EOF rather than trusting an earlier stat. The final extra byte detects growth at the limit
+    /// without ever collecting more than the allowed bytes.
+    fn file_bytes(&self, path: &str, bytes_max: u64) -> Result<Bytes, Error> {
+        let mut bytes = BytesMut::new();
+        loop {
+            let remaining = bytes_max - bytes.len() as u64;
+            let want = (READ_BYTES as u64).min(remaining.saturating_add(1));
+            let next = self.namespace.read(path, bytes.len() as u64, want)?;
+            if next.is_empty() {
+                return Ok(bytes.freeze());
+            }
+            if next.len() as u64 > remaining {
+                return Err(Error::TooLarge { limit: bytes_max });
+            }
+            bytes.extend_from_slice(&next);
+        }
+    }
+
     /// The namespace's `path` where something is there, else the path of a name in its folder whose canonical form is
     /// its own, as a person types a name the system holds with other spaces; none where neither is.
     fn found(&self, path: &str) -> Result<Option<(String, beak::Stat)>, Error> {
@@ -424,5 +478,72 @@ fn io_failure(error: &io::Error) -> beak::Error {
     beak::Error {
         status: Status::Failed,
         reason: error.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn original_reads_check_the_bytes_that_arrive_after_an_earlier_size_check() {
+        let folder = tempfile::tempdir().expect("a folder");
+        let workspace = folder.path().canonicalize().expect("its real path");
+        let source = workspace.join("changing.bin");
+        std::fs::write(&source, b"before").expect("written");
+        let beak = beak::Beak::new().expect("Beak");
+        let kernel = beak::Kernel::open(&beak, &beak::Options::default()).expect("a kernel").0;
+        let machine = Machine::open(
+            &kernel,
+            &crate::machine::Host::default(),
+            crate::machine::Base { workspace, home: None },
+            &crate::machine::Writes::Anywhere,
+            None,
+        )
+        .expect("a machine");
+        let path = machine.path("changing.bin");
+        let limit = READ_BYTES as u64 + 11;
+        assert!(machine.namespace.stat(&path).expect("stat").expect("a file").size < limit);
+        std::fs::write(&source, vec![1; READ_BYTES * 2]).expect("grown after the size check");
+        assert!(matches!(machine.file_bytes(&path, limit), Err(Error::TooLarge { limit: refused }) if refused == limit));
+        let bytes = vec![2; usize::try_from(limit).expect("a small test limit")];
+        std::fs::write(&source, &bytes).expect("exactly the limit");
+        assert_eq!(machine.read_file(&path, limit).expect("accepted at the limit").1, bytes);
+        std::fs::write(&source, b"").expect("empty");
+        assert!(machine.read_file(&path, 0).expect("an empty file at zero").1.is_empty());
+        std::fs::write(&source, b"x").expect("one byte");
+        assert!(matches!(machine.file_bytes(&path, 0), Err(Error::TooLarge { limit: 0 })));
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn special_host_files_are_refused_before_the_namespace_reads_them() {
+        let folder = tempfile::tempdir().expect("a folder");
+        let workspace = folder.path().canonicalize().expect("its real path");
+        let fifo = workspace.join("pipe");
+        assert!(std::process::Command::new("mkfifo").arg(&fifo).status().expect("mkfifo").success());
+        let beak = beak::Beak::new().expect("Beak");
+        let kernel = beak::Kernel::open(&beak, &beak::Options::default()).expect("a kernel").0;
+        let machine = Machine::open(
+            &kernel,
+            &crate::machine::Host::default(),
+            crate::machine::Base { workspace, home: None },
+            &crate::machine::Writes::Anywhere,
+            None,
+        )
+        .expect("a machine");
+        for path in [fifo.to_str().expect("a path"), "/dev/null"] {
+            let path = machine.path(path);
+            assert!(
+                machine
+                    .namespace
+                    .stat(&path)
+                    .expect("stat")
+                    .expect("a host object")
+                    .file_id
+                    .is_some()
+            );
+            assert!(matches!(machine.read_file(&path, 32 << 20), Err(Error::NotFile)));
+        }
     }
 }

@@ -12,7 +12,7 @@ use crate::machine::paths::Base;
 use crate::machine::{Host, Machine};
 use beak::Kernel;
 use bytes::Bytes;
-use octoii_ai::vocabulary::{ImageDetail, InputContent};
+use octoii_ai::vocabulary::{FileRef, ImageDetail, InputContent};
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 use siphon_runtime::{Changes, Runtime};
@@ -128,6 +128,48 @@ impl Context {
         self.host.scratchpad_of(&self.thread).filter(made)
     }
 
+    /// Keeps the original bytes of the regular file at `path`, reached through this call's machine, in the thread's
+    /// files by their content. The file keeps its basename and is never fitted for a model. Its reference and size
+    /// are returned only after storage commits; a call interrupted before its result commits may leave a blob until
+    /// the thread is removed, as `show_image` can.
+    ///
+    /// # Errors
+    /// An invalid path, an inaccessible or non-regular file, more than 32 MiB, or a failure to keep the bytes.
+    pub async fn keep_file(&self, path: &str) -> Result<(FileRef, u64), Refusal> {
+        if path.is_empty() || path.contains('\0') {
+            return Err(Refusal::new("invalid file path"));
+        }
+        let context = self.clone();
+        let path = path.to_owned();
+        let (name, bytes) = tokio::task::spawn_blocking(move || {
+            let machine = context.machine()?;
+            let (path, bytes) = machine
+                .read_file(&machine.path(&path), crate::threads::files::BYTES_MAX as u64)
+                .map_err(|error| Refusal(format!("{}: {error}", machine.shown(&machine.path(&path)))))?;
+            let name = path.rsplit('/').next().unwrap_or(&path).to_owned();
+            Ok::<_, Refusal>((name, bytes))
+        })
+        .await
+        .map_err(|error| Refusal(format!("the file read failed: {error}")))??;
+        let size = bytes.len() as u64;
+        let media_type = file_media_type(&bytes);
+        let snapshot = self.runtime.snapshot().map_err(|error| Refusal(error.to_string()))?;
+        let mut changes = Changes::new();
+        let reference = crate::threads::files::keep(&snapshot, &mut changes, &self.thread, bytes)
+            .map_err(|error| Refusal(format!("{name}: {error}")))?;
+        if !changes.is_empty() {
+            self.runtime.commit(changes).await.map_err(|error| Refusal(error.to_string()))?;
+        }
+        Ok((
+            FileRef {
+                reference,
+                media_type: media_type.to_owned(),
+                filename: Some(name),
+            },
+            size,
+        ))
+    }
+
     /// The image `bytes`, named `name` where it has one, as the model is shown it: fitted to what every model reads,
     /// kept in the thread's files by its content, after a line saying what it is.
     ///
@@ -153,6 +195,22 @@ impl Context {
                 detail: ImageDetail::Auto,
             },
         ])
+    }
+}
+
+/// A kept original's media type, without making archives or text into media the model's `read` tool would decode.
+fn file_media_type(bytes: &[u8]) -> &'static str {
+    if let Some(media_type) = crate::machine::media_type(bytes) {
+        media_type
+    } else if [b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"]
+        .iter()
+        .any(|head| bytes.starts_with(*head))
+    {
+        "application/zip"
+    } else if siphon_text::Text::of(bytes).is_some() {
+        "text/plain"
+    } else {
+        "application/octet-stream"
     }
 }
 
