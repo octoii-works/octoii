@@ -6,9 +6,9 @@
  * cannot ask, shown as it came. Another thread's permission is reviewed in a card: what it would do, and the composer's
  * answers. While an answer goes to the node nothing more is answered; what the node refused is said.
  */
-import { type ReactNode, useState, useTransition } from "react";
+import { type ReactNode, useState } from "react";
 import type { Ask } from "@octoii-works/octoii-client";
-import { useClient, useThreads } from "@octoii-works/octoii-client/react";
+import { useThreads } from "@octoii-works/octoii-client/react";
 import { MessageCircleQuestion, ShieldQuestion, X } from "lucide-react";
 import {
 	type Access,
@@ -41,6 +41,7 @@ import { CheckboxBox, CheckboxChoice, CheckboxGroup, RadioChoice, RadioDot, Radi
 import { Field } from "../ui/input.tsx";
 import { Kbd } from "../ui/kbd.tsx";
 import { Switch } from "../ui/switch.tsx";
+import { useAnswer } from "../state/answer.ts";
 import { useFolder } from "../state/folder.ts";
 import { type Approval, ApprovalActions, PermissionDetail } from "./approval.tsx";
 
@@ -79,17 +80,12 @@ function AskForm(props: {
 	readonly project: string | undefined;
 	readonly ask: Ask;
 }): ReactNode {
-	const client = useClient();
 	const [refused, setRefused] = useState<string | undefined>(undefined);
-	const [answering, startAnswering] = useTransition();
-	const answer = (value: Json): void =>
-		startAnswering(async () => {
-			try {
-				await client.answer(props.thread, props.ask.key, value);
-			} catch (error) {
-				setRefused(error instanceof Error ? error.message : String(error));
-			}
-		});
+	const { answering, submit } = useAnswer(props.thread, props.ask.key);
+	const answer = (value: Json): void => {
+		setRefused(undefined);
+		void submit(value).catch((error: unknown) => setRefused(error instanceof Error ? error.message : String(error)));
+	};
 	const form = formOf(props.ask);
 	return (
 		// While an answer goes to the node, every button and field of the card waits.

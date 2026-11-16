@@ -17,6 +17,8 @@ export type DraftHandle = {
 	readonly detach: (ref: string) => void;
 	/** Empties the draft, as its message was sent. */
 	readonly clear: () => void;
+	/** Clears only the submitted text, preserving newer edits and attachments that were not sent. */
+	readonly clearText: () => void;
 };
 
 /** A draft: its words and its files. */
@@ -50,5 +52,8 @@ export function useDraft(place: DraftPlace): DraftHandle {
 		attach: (attachment) => changed(key, { attachments: [...(drafts.get(key) ?? EMPTY).attachments, attachment] }),
 		detach: (ref) => changed(key, { attachments: (drafts.get(key) ?? EMPTY).attachments.filter((each) => each.ref !== ref) }),
 		clear: () => changed(key, EMPTY),
+		clearText: () => {
+			if ((drafts.get(key) ?? EMPTY).text === draft.text) changed(key, { text: "" });
+		},
 	};
 }

@@ -128,8 +128,7 @@ export function Composer(props: ComposerProps): ReactNode {
 	const empty = draft.text.trim() === "" && draft.attachments.length === 0;
 	const unready = empty || props.model === undefined || attaching.sending.length > 0;
 	const deny = (approval: Approval): void => {
-		approval.deny(draft.text.trim());
-		draft.clear();
+		approval.deny(draft.text.trim(), draft.clearText);
 	};
 	const sendBy = (sent: (message: Outgoing) => Promise<void>): void => {
 		if (unready || sending) return;
@@ -216,7 +215,7 @@ export function Composer(props: ComposerProps): ReactNode {
 				{props.approval === undefined ? (
 					<SendButton working={props.working} empty={empty} unready={unready || sending} onSend={() => sendBy(props.onSend)} onStop={props.onStop} />
 				) : (
-					<ComposerApproval approval={props.approval} reason={() => draft.text.trim()} onDenied={draft.clear} />
+					<ComposerApproval approval={props.approval} reason={() => draft.text.trim()} onDenied={draft.clearText} />
 				)}
 			</div>
 		</div>
@@ -229,8 +228,7 @@ function ComposerApproval(props: { readonly approval: Approval; readonly reason:
 	const approval = {
 		...props.approval,
 		deny: (reason: string) => {
-			props.approval.deny(reason);
-			props.onDenied();
+			props.approval.deny(reason, props.onDenied);
 		},
 	};
 	return <ApprovalActions approval={approval} look="buttons" reason={props.reason} />;

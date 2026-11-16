@@ -4,12 +4,13 @@
  * it denies the call, telling the model what to do instead; Deny and Allow where it sends; allowing always, where the
  * project keeps the call's patterns, behind More. No card stands between the person and the call.
  */
-import { type ReactElement, type ReactNode, useTransition } from "react";
+import { type ReactElement, type ReactNode } from "react";
 import type { Ask } from "@octoii-works/octoii-client";
-import { useClient, useThreads } from "@octoii-works/octoii-client/react";
+import { useThreads } from "@octoii-works/octoii-client/react";
 import { Ellipsis, ShieldQuestion } from "lucide-react";
 import { allowed, alwaysText, denied, type DetailLine, formOf, type Json, permissionBody } from "../../core/asks.ts";
 import { useShortcut } from "../effects/shortcut.ts";
+import { useAnswer } from "../state/answer.ts";
 import { failed } from "../state/notices.ts";
 import { Button } from "../ui/button.tsx";
 import { Kbd } from "../ui/kbd.tsx";
@@ -25,25 +26,23 @@ export type Approval = {
 	readonly justification: string | undefined;
 	readonly answering: boolean;
 	readonly allow: (always: boolean) => void;
-	readonly deny: (reason: string) => void;
+	readonly deny: (reason: string, accepted?: () => void) => void;
 };
 
 /** The permission `ask` of the thread `thread` asks, as the person answers it; none where it asks no permission. */
 export function useApproval(thread: string, ask: Ask | undefined): Approval | undefined {
-	const client = useClient();
 	const project = useThreads()?.find((each) => each.id === thread)?.project ?? undefined;
-	const [answering, startAnswering] = useTransition();
+	const { answering, submit } = useAnswer(thread, ask?.key);
 	if (ask === undefined) return undefined;
 	const form = formOf(ask);
 	if (form.kind !== "permission") return undefined;
-	const answer = (value: Json): void =>
-		startAnswering(async () => {
-			try {
-				await client.answer(thread, ask.key, value);
-			} catch (error) {
-				failed("The answer could not be given", error);
-			}
-		});
+	const answer = (value: Json, accepted?: () => void): void => {
+		void submit(value)
+			.then((submitted) => {
+				if (submitted) accepted?.();
+			})
+			.catch((error: unknown) => failed("The answer could not be given", error));
+	};
 	return {
 		key: ask.key,
 		lines: permissionBody(form.arguments, form.access),
@@ -52,7 +51,7 @@ export function useApproval(thread: string, ask: Ask | undefined): Approval | un
 		justification: form.access.justification,
 		answering,
 		allow: (always) => answer(allowed(always)),
-		deny: (reason) => answer(denied(reason)),
+		deny: (reason, accepted) => answer(denied(reason), accepted),
 	};
 }
 
