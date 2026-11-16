@@ -7,10 +7,10 @@ use std::time::Duration;
 
 use crate::machine::Host;
 use crate::machine::paths::Base;
-use crate::threads::Mode;
+use crate::threads::{Mode, SubThreadKind};
 use crate::tools::{
-    CallStatus, Calls, Context, Effect, Exec, Judgment, Permission, ReadTool, Refusal, Review, Setting, ShellTool, Told, Tool, Tools,
-    WriteTool, answer_exec, projects,
+    CallStatus, Calls, Context, Effect, Exec, ExecuteTool, GlobTool, GrepTool, Judgment, Permission, ReadTool, Refusal, Review,
+    ScriptProgram, Setting, ShellTool, Told, Tool, Tools, WriteTool, answer_exec, projects,
 };
 use beak::{Beak, Outcome, layout};
 use bytes::Bytes;
@@ -20,7 +20,60 @@ use serde_json::json;
 use siphon_runtime::{Asked, Changes, Ending, NotGiven, Options, Program, Run, Runtime};
 
 fn tools() -> Tools {
-    Tools::new().with(ReadTool).with(WriteTool).with(ShellTool).with(Pick)
+    Tools::new()
+        .with(ReadTool)
+        .with(WriteTool)
+        .with(ShellTool)
+        .with(Pick)
+        .with(GlobTool)
+        .with(GrepTool)
+        .with(ExecuteTool)
+        .with(Browser)
+        .with(Delegate)
+        .with_toolset(std::sync::Arc::new(Server))
+}
+
+/// A browser action claiming to read, proving that explorer admission is based on names rather than effects.
+struct Browser;
+impl Tool for Browser {
+    const NAME: &'static str = "browser";
+    const DESCRIPTION: &'static str = "A browser action";
+    type Args = serde_json::Value;
+    fn effect(&self, _: &Self::Args, _: &Base) -> Effect {
+        Effect::Reads
+    }
+    fn exec(&self, _: &Context, _: Self::Args) -> impl std::future::Future<Output = Result<Told, Refusal>> + Send {
+        std::future::poll_fn(|_| panic!("an unavailable browser action must never execute"))
+    }
+}
+
+struct Delegate;
+impl Tool for Delegate {
+    const NAME: &'static str = "delegate";
+    const DESCRIPTION: &'static str = "A delegation";
+    const REACHES_THREADS: bool = true;
+    type Args = serde_json::Value;
+    fn effect(&self, _: &Self::Args, _: &Base) -> Effect {
+        Effect::Delegates
+    }
+    fn exec(&self, _: &Context, _: Self::Args) -> impl std::future::Future<Output = Result<Told, Refusal>> + Send {
+        std::future::poll_fn(|_| panic!("a sub-thread must never delegate"))
+    }
+}
+
+struct Server;
+impl crate::tools::Toolset for Server {
+    fn has(&self, name: &str) -> bool {
+        name == "server.write"
+    }
+    fn call<'a>(
+        &'a self,
+        _: &'a Context,
+        _: &'a str,
+        _: serde_json::Value,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Told, Refusal>> + Send + 'a>> {
+        Box::pin(async { panic!("an explorer must never reach an MCP server") })
+    }
 }
 
 /// The arguments of `pick`: the colours the person picks one of.
@@ -84,12 +137,13 @@ impl Program for Caller {
             home: None,
         };
         let folder = input.workspace.to_string_lossy().into_owned();
+        let catalog = vec!["server.write".to_owned()];
         let setting = Setting {
             thread: &input.thread,
             threads: None,
             tools: &self.tools,
             primitives: &crate::agent::ThreadPrimitives,
-            catalog: &[],
+            catalog: &catalog,
             mode: input.mode,
             base: &base,
             project: Some(&folder),
@@ -123,6 +177,11 @@ fn said(call: crate::tools::Call) -> (CallStatus, String) {
 fn runtime(beak: &Beak) -> Runtime {
     Runtime::builder()
         .program(Caller { tools: tools() })
+        .program(RecoveredCaller)
+        .program(ScriptProgram {
+            tools: tools(),
+            primitives: std::sync::Arc::new(crate::agent::ThreadPrimitives),
+        })
         .handle(|asked: Asked<Exec>| async move { answer_exec(&tools(), &Host::default(), asked).await })
         .ask_person::<Permission>()
         .ask_person::<crate::tools::Asks>()
@@ -188,6 +247,259 @@ fn folder() -> (tempfile::TempDir, PathBuf) {
     let folder = tempfile::tempdir().expect("a folder");
     let path = folder.path().canonicalize().expect("its real path");
     (folder, path)
+}
+
+async fn sub_thread(runtime: &Runtime, id: &str, kind: SubThreadKind) {
+    let mut changes = Changes::new();
+    changes.mkdir(crate::threads::thread::path(id)).meta(
+        crate::threads::thread::path(id),
+        vec![(
+            Bytes::from_static(crate::threads::thread::PARENT_LABEL.as_bytes()),
+            Some(Bytes::from_static(b"parent")),
+        )],
+        vec![(
+            Bytes::from_static(crate::threads::thread::SUB_THREAD_KIND_ANNOTATION.as_bytes()),
+            Some(serde_json::to_vec(&kind).unwrap().into()),
+        )],
+    );
+    runtime.commit(changes).await.unwrap();
+}
+
+fn no_requests(runtime: &Runtime, under: &[u8]) {
+    let query = beak::Query {
+        kind: layout::REQUEST_KIND,
+        name: layout::REQUEST_LABEL,
+        value: None,
+        under,
+        after: None,
+    };
+    assert_eq!(runtime.snapshot().unwrap().find(&query, 100).unwrap(), Vec::<beak::Found>::new());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn explorers_keep_their_read_scope_in_full_access_and_with_existing_project_grants() {
+    let beak = Beak::new().unwrap();
+    let runtime = runtime(&beak);
+    let (_folder, workspace) = folder();
+    std::fs::write(workspace.join("source.txt"), "readable").unwrap();
+    sub_thread(&runtime, "explorer", SubThreadKind::Explorer).await;
+    let grants = crate::tools::permissions::Grants {
+        commands: vec!["*".into()],
+        paths: vec!["*".into()],
+        tools: vec!["*".into()],
+    };
+    runtime
+        .commit(projects::grant(&runtime.snapshot().unwrap(), &workspace.to_string_lossy(), grants.clone()).unwrap())
+        .await
+        .unwrap();
+    for (key, mode) in [("full", Mode::FullAccess), ("granted", Mode::Default)] {
+        let asking = Asking {
+            thread: "explorer".into(),
+            mode,
+            workspace: workspace.clone(),
+            calls: vec![
+                call("write", "write", &json!({ "path": "forbidden.txt", "content": "changed" })),
+                call("shell", "shell", &json!({ "command": "touch forbidden.txt", "escalate": true })),
+                call(
+                    "browser",
+                    "browser",
+                    &json!({ "action": "evaluate", "expression": "fetch('/write')" }),
+                ),
+                call("server", "server.write", &json!({})),
+                call("delegate", "delegate", &json!({})),
+                call("read", "read", &json!({ "path": "source.txt" })),
+                call("glob", "glob", &json!({ "pattern": "*.txt" })),
+                call("grep", "grep", &json!({ "pattern": "readable" })),
+            ],
+        };
+        let path = caller(&runtime, key, &asking).await;
+        let results = ended(&runtime, &path).await;
+        assert_eq!(
+            results.iter().map(|(status, _)| *status).collect::<Vec<_>>(),
+            [
+                CallStatus::Unavailable,
+                CallStatus::Unavailable,
+                CallStatus::Unavailable,
+                CallStatus::Unavailable,
+                CallStatus::Unavailable,
+                CallStatus::Ok,
+                CallStatus::Ok,
+                CallStatus::Ok,
+            ],
+            "{results:?}"
+        );
+        assert!(!workspace.join("forbidden.txt").exists());
+        no_requests(&runtime, &path);
+    }
+    assert_eq!(
+        projects::grants(&runtime.snapshot().unwrap(), &workspace.to_string_lossy()).unwrap(),
+        grants
+    );
+    runtime.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn explorer_scripts_expose_readers_and_cannot_request_write_permissions() {
+    let beak = Beak::new().unwrap();
+    let runtime = runtime(&beak);
+    let (_folder, workspace) = folder();
+    std::fs::write(workspace.join("source.txt"), "readable").unwrap();
+    sub_thread(&runtime, "explorer", SubThreadKind::Explorer).await;
+    for (key, code, status) in [
+        ("bindings", "return Object.keys(tools).sort().join(',')", CallStatus::Ok),
+        (
+            "read",
+            "return (await tools.read({path: 'source.txt'})).structuredContent.text",
+            CallStatus::Ok,
+        ),
+        (
+            "write",
+            "await tools.write({path: 'forbidden.txt', content: 'changed'})",
+            CallStatus::ToolError,
+        ),
+        (
+            "shell",
+            "await tools.shell({command: 'touch forbidden.txt'})",
+            CallStatus::ToolError,
+        ),
+        (
+            "browser",
+            "await tools.browser({action: 'evaluate', expression: 'write()'})",
+            CallStatus::ToolError,
+        ),
+        ("server", "await tools.server.write({})", CallStatus::ToolError),
+        ("delegate", "await tools.delegate({task: 'write'})", CallStatus::ToolError),
+    ] {
+        let asking = Asking {
+            thread: "explorer".into(),
+            mode: Mode::FullAccess,
+            workspace: workspace.clone(),
+            calls: vec![call("script", "execute", &json!({ "code": code }))],
+        };
+        let path = caller(&runtime, key, &asking).await;
+        let results = ended(&runtime, &path).await;
+        assert_eq!(results[0].0, status, "{key}: {results:?}");
+        if key == "read" {
+            assert!(results[0].1.contains("readable"));
+        }
+        if key == "bindings" {
+            assert_eq!(results[0].1, "\"execute,glob,grep,read\"");
+        }
+        assert!(!workspace.join("forbidden.txt").exists());
+        no_requests(&runtime, &path);
+    }
+    assert_eq!(
+        projects::grants(&runtime.snapshot().unwrap(), &workspace.to_string_lossy()).unwrap(),
+        crate::tools::permissions::Grants::default()
+    );
+    runtime.close().await;
+}
+
+/// A persisted permission state and its queued Allow(always) answer, before the real Calls resumes it.
+struct RecoveredCaller;
+impl Program for RecoveredCaller {
+    const KIND: &'static str = "test.recovered_caller";
+    type Input = Asking;
+    type Checkpoint = Calls;
+    type Output = Vec<(CallStatus, String)>;
+    fn run(&self, run: &mut Run<'_>, input: Asking, checkpoint: Option<Calls>) -> anyhow::Result<Ending<Calls, Self::Output>> {
+        if let Some(calls) = checkpoint {
+            return Caller { tools: tools() }.run(run, input, Some(calls));
+        }
+        let mut calls = Calls::new(run, input.calls)?;
+        let call = &mut calls.0[0];
+        call.state = crate::tools::State::Asking;
+        run.request(
+            &format!("{}.permission", call.key),
+            &Permission {
+                thread: input.thread,
+                call: call.key.clone(),
+                shown: crate::tools::requests::Shown {
+                    tool: call.tool.clone(),
+                    arguments: call.arguments.clone(),
+                    does: Vec::new(),
+                    justification: None,
+                },
+                always: crate::tools::permissions::Grants::default(),
+            },
+        )?;
+        run.changes.send(
+            bytes::Bytes::copy_from_slice(run.path()),
+            siphon_runtime::Mail {
+                key: format!("{}.permission", call.key).into(),
+                name: Bytes::from_static(b"answered"),
+                payload: serde_json::to_vec(&crate::tools::requests::Decision::Allow { always: true })?.into(),
+            },
+            None,
+        );
+        Ok(Ending::Next(calls))
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn recovered_explorer_approval_cannot_grant_or_execute_an_unavailable_tool() {
+    let beak = Beak::new().unwrap();
+    let runtime = runtime(&beak);
+    let (_folder, workspace) = folder();
+    let (_outside, outside) = folder();
+    let target = outside.join("forbidden.txt");
+    sub_thread(&runtime, "explorer", SubThreadKind::Explorer).await;
+    let asking = Asking {
+        thread: "explorer".into(),
+        mode: Mode::FullAccess,
+        workspace: workspace.clone(),
+        calls: vec![call("write", "write", &json!({ "path": target, "content": "changed" }))],
+    };
+    let mut changes = Changes::new();
+    changes.start::<RecoveredCaller>(Bytes::new(), "restore", &asking).unwrap();
+    runtime.commit(changes).await.unwrap();
+    let path = layout::process(b"", b"restore");
+    assert_eq!(ended(&runtime, &path).await[0].0, CallStatus::Unavailable);
+    assert!(!target.exists());
+    assert_eq!(
+        projects::grants(&runtime.snapshot().unwrap(), &workspace.to_string_lossy()).unwrap(),
+        crate::tools::permissions::Grants::default()
+    );
+    no_requests(&runtime, &path);
+    runtime.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn general_purpose_sub_threads_keep_normal_permissions_and_cannot_delegate() {
+    let beak = Beak::new().unwrap();
+    let runtime = runtime(&beak);
+    let (_folder, workspace) = folder();
+    sub_thread(&runtime, "general", SubThreadKind::GeneralPurpose).await;
+    let asking = Asking {
+        thread: "general".into(),
+        mode: Mode::FullAccess,
+        workspace: workspace.clone(),
+        calls: vec![
+            call("write", "write", &json!({ "path": "made.txt", "content": "changed" })),
+            call("delegate", "delegate", &json!({})),
+        ],
+    };
+    let path = caller(&runtime, "general", &asking).await;
+    let results = ended(&runtime, &path).await;
+    assert_eq!(
+        results.iter().map(|(status, _)| *status).collect::<Vec<_>>(),
+        [CallStatus::Ok, CallStatus::Unavailable]
+    );
+    assert_eq!(std::fs::read_to_string(workspace.join("made.txt")).unwrap(), "changed");
+    let (_outside, outside) = folder();
+    let target = outside.join("approved.txt");
+    let asking = Asking {
+        thread: "general".into(),
+        mode: Mode::Default,
+        workspace: workspace.clone(),
+        calls: vec![call("approval", "write", &json!({ "path": target, "content": "changed" }))],
+    };
+    let path = caller(&runtime, "general-default", &asking).await;
+    let key = asked(&runtime, &path, b"siphon.permission").await;
+    runtime.answer(&path, key.as_bytes(), &json!({ "decision": "deny" })).await.unwrap();
+    assert_eq!(ended(&runtime, &path).await[0].0, CallStatus::Rejected);
+    assert!(!target.exists());
+    runtime.close().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]

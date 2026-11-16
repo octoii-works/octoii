@@ -5,7 +5,7 @@
 //! is kept in the caller's checkpoint, and each ends once, with what the model reads.
 
 use crate::machine::paths::Base;
-use crate::threads::{CallKey, CallStatus, Mode};
+use crate::threads::{CallKey, CallStatus, Mode, Parent, thread};
 use octoii_ai::vocabulary::InputContent;
 use serde::{Deserialize, Serialize};
 use siphon_runtime::{Answer, Run, Wait};
@@ -217,6 +217,7 @@ impl Calls {
     /// # Errors
     /// The volume's failure; what cannot be read or written as JSON.
     pub fn advance(&mut self, run: &mut Run<'_>, setting: &Setting<'_>) -> anyhow::Result<Option<Wait>> {
+        self.restrict(run, setting)?;
         for at in 0..self.0.len() {
             self.take_answer(at, run, setting)?;
         }
@@ -231,6 +232,7 @@ impl Calls {
     /// # Errors
     /// The volume's failure; what cannot be read or written as JSON.
     pub fn stop(&mut self, run: &mut Run<'_>, setting: &Setting<'_>) -> anyhow::Result<Option<Wait>> {
+        self.restrict(run, setting)?;
         for at in 0..self.0.len() {
             match &self.0[at].state {
                 State::Waiting => {
@@ -394,6 +396,46 @@ impl Calls {
             );
         }
         self.0[at].state = next;
+    }
+
+    /// Applies the thread's immutable scope before starting calls or accepting any recovered answers and grants.
+    fn restrict(&mut self, run: &mut Run<'_>, setting: &Setting<'_>) -> anyhow::Result<()> {
+        let directory = run
+            .snapshot()
+            .stat(&thread::path(setting.thread))?
+            .and_then(|entry| entry.directory);
+        let parent = directory.as_ref().map(Parent::of).transpose()?.flatten();
+        let Some(parent) = parent else { return Ok(()) };
+        for at in 0..self.0.len() {
+            let call = &self.0[at];
+            if matches!(call.state, State::Ended { .. }) || setting.tools.allows(&call.tool, Some(parent.kind)) {
+                continue;
+            }
+            let request = match call.state {
+                State::Asking => Some(format!("{}.permission", call.key)),
+                State::Judging => Some(format!("{}.review", call.key)),
+                State::Running => Some(call.key.clone()),
+                State::Program => {
+                    run.changes.remove(beak::layout::process(run.path(), call.key.as_bytes()), None);
+                    None
+                }
+                State::Awaiting(ref awaited) => {
+                    setting.primitives.withdraw(run, awaited)?;
+                    None
+                }
+                _ => None,
+            };
+            if let Some(key) = request {
+                run.changes.delete(beak::layout::request(run.path(), key.as_bytes()));
+                run.take_mail(&key);
+            }
+            let refusal = ended(
+                CallStatus::Unavailable,
+                format!("the tool {} is not available to this sub-thread", call.tool),
+            );
+            self.transition(at, run, setting, refusal);
+        }
+        Ok(())
     }
 
     /// Starts each waiting call no call before it holds back.

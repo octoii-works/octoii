@@ -18,8 +18,8 @@ use serde::de::DeserializeOwned;
 use siphon_runtime::{Changes, Runtime};
 use tokio_util::sync::CancellationToken;
 
-use crate::threads::CallStatus;
 use crate::threads::inbox::Ended;
+use crate::threads::{CallStatus, SubThreadKind};
 use crate::tools::calls::Setting;
 use crate::tools::effect::Effect;
 use crate::tools::permissions::Writes;
@@ -474,6 +474,21 @@ impl Tools {
         self.entries.contains_key(name) || self.served(name).is_some()
     }
 
+    /// Whether this fixed sub-thread kind may call `name`; ordinary threads retain their tools.
+    pub(crate) fn allows(&self, name: &str, kind: Option<SubThreadKind>) -> bool {
+        let Some(kind) = kind else {
+            return self.has(name);
+        };
+        if let Some(entry) = self.entries.get(name) {
+            return !entry.declared.reaches_threads
+                && match kind {
+                    SubThreadKind::Explorer => matches!(name, "read" | "glob" | "grep" | "execute"),
+                    SubThreadKind::GeneralPurpose => true,
+                };
+        }
+        kind == SubThreadKind::GeneralPurpose && self.served(name).is_some()
+    }
+
     /// The tools, as the model is told of them, in order by name.
     #[must_use]
     pub fn declared(&self) -> Vec<Declared> {
@@ -555,6 +570,11 @@ impl Tools {
     /// # Errors
     /// A `Refusal` naming no tool there is, or the tool's own.
     pub async fn exec(&self, name: &str, context: Context, arguments: serde_json::Value) -> Result<Told, Refusal> {
+        if let Some(parent) = crate::agent::parent_of(&context.volume(), &context.thread).map_err(|error| Refusal(error.to_string()))?
+            && !self.allows(name, Some(parent.kind))
+        {
+            return Err(Refusal(format!("the tool {name} is not available to this sub-thread")));
+        }
         if let Some(toolset) = self.served(name) {
             return toolset.call(&context, name, arguments).await;
         }

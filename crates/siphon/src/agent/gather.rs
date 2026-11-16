@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::threads::{Config, thread};
+use crate::threads::{Config, Parent, SubThreadKind, thread};
 use crate::tools::Tools;
 use crate::tools::projects::Place;
 use octoii_ai::models::Models;
@@ -138,6 +138,7 @@ pub async fn gathered(sources: &Sources, runtime: &Runtime, id: &str) -> anyhow:
         .and_then(|entry| entry.directory)
         .unwrap_or_default();
     let config = Config::of(&directory)?;
+    let kind = Parent::of(&directory)?.map(|parent| parent.kind);
     let disabled = crate::settings::environment(&snapshot)?.disabled_extensions;
     let on = |extension: &str| extension == CORE || !disabled.iter().any(|off| off == extension);
     let place = config
@@ -151,16 +152,16 @@ pub async fn gathered(sources: &Sources, runtime: &Runtime, id: &str) -> anyhow:
         told.sections.extend(telling.sections);
         told.catalog.extend(telling.tools);
     }
-    // A sub-thread works on its task alone: it starts no thread and reaches none.
-    let sub_thread = directory
-        .label(thread::PARENT_LABEL.as_bytes())
-        .is_some_and(|parent| !parent.is_empty());
+    told.catalog.retain(|name| sources.tools.allows(name, kind));
+    if kind == Some(SubThreadKind::Explorer) {
+        told.sections.retain(|(name, _)| name != "catalog");
+    }
     told.tools = sources
         .tools
         .declared()
         .into_iter()
         .filter(|declared| sources.owners.get(&declared.name).is_none_or(|extension| on(extension)))
-        .filter(|declared| !(sub_thread && declared.reaches_threads))
+        .filter(|declared| sources.tools.allows(&declared.name, kind))
         .map(|declared| Tool::Function {
             name: declared.name,
             description: declared.description,
@@ -169,7 +170,7 @@ pub async fn gathered(sources: &Sources, runtime: &Runtime, id: &str) -> anyhow:
         .collect();
     let model = config.model.as_deref().and_then(|model| sources.models.model(model));
     for (extension, native) in &sources.natives {
-        if on(extension) && model.as_ref().is_some_and(|model| runs(model, native)) {
+        if kind != Some(SubThreadKind::Explorer) && on(extension) && model.as_ref().is_some_and(|model| runs(model, native)) {
             told.tools.push(native.clone());
         }
     }

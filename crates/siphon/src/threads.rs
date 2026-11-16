@@ -29,4 +29,4 @@ pub use inbox::{Ended, Joins};
 pub use log::{CallStatus, Entry, Outcome, time_of};
 pub use marks::Marks;
 pub use operations::{NewThread, list};
-pub use status::{Ask, Listed, Parent, Status, ThreadUsage, Turn};
+pub use status::{Ask, Listed, Parent, Status, SubThreadKind, ThreadUsage, Turn};

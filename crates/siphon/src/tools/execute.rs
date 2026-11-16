@@ -9,7 +9,7 @@
 use std::fmt::Write as _;
 
 use crate::machine::paths::Base;
-use crate::threads::Mode;
+use crate::threads::{Mode, Parent, SubThreadKind, thread};
 use bytes::Bytes;
 use octoii_ai::vocabulary::InputContent;
 use schemars::JsonSchema;
@@ -271,9 +271,14 @@ enum Replayed {
 impl ScriptProgram {
     /// Runs the script `input` gives from its start, settling each call as `state` holds it, to its end or to calls
     /// not yet settled.
-    fn replay(&self, input: &ScriptInput, state: &ScriptState) -> Replayed {
+    fn replay(&self, input: &ScriptInput, state: &ScriptState, kind: Option<SubThreadKind>) -> Replayed {
         let names: Vec<String> = self.tools.declared().into_iter().map(|declared| declared.name).collect();
-        let functions: Vec<&str> = names.iter().chain(&input.catalog).map(String::as_str).collect();
+        let functions: Vec<&str> = names
+            .iter()
+            .chain(&input.catalog)
+            .map(String::as_str)
+            .filter(|name| self.tools.allows(name, kind))
+            .collect();
         let host = Host {
             namespace: "tools",
             functions: &functions,
@@ -342,7 +347,9 @@ impl Program for ScriptProgram {
             ..ScriptState::default()
         });
         if state.calls.is_none() {
-            match self.replay(&input, &state) {
+            let directory = run.snapshot().stat(&thread::path(&input.thread))?.and_then(|entry| entry.directory);
+            let parent = directory.as_ref().map(Parent::of).transpose()?.flatten();
+            match self.replay(&input, &state, parent.map(|parent| parent.kind)) {
                 Replayed::Ended(output) => return Ok(Ending::Done(output)),
                 Replayed::Calls(made) => {
                     let made = made

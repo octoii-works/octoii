@@ -26,6 +26,8 @@ pub const ARCHIVED_LABEL: &str = "siphon.archived";
 
 /// The annotation of the call of its parent that delegated it.
 pub const PARENT_CALL_ANNOTATION: &str = "siphon.parent_call";
+/// The fixed kind of a sub-thread, written only when its parent metadata is made.
+pub const SUB_THREAD_KIND_ANNOTATION: &str = "siphon.sub_thread_kind";
 
 /// The key of a thread's main process.
 pub const MAIN_KEY: &str = "main";

@@ -75,6 +75,9 @@ impl Teller for Servers {
         place: Option<&'a Place>,
     ) -> Pin<Box<dyn Future<Output = anyhow::Result<Telling>> + Send + 'a>> {
         Box::pin(async move {
+            if siphon::agent::parent_of(volume, thread)?.is_some_and(|parent| parent.kind == siphon::threads::SubThreadKind::Explorer) {
+                return Ok(Telling::default());
+            }
             // The servers are configured for the person and a project: a thread of no folder has none of a project's.
             let Some(place) = place else { return Ok(Telling::default()) };
             let catalog = self.catalog(volume, place).await?;

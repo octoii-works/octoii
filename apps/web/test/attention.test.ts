@@ -6,7 +6,7 @@ import { attentionOf, waitingCount } from "../src/core/attention.ts";
 const ask = { process: "x", key: "k1", name: "permission", payload: null, answer_schema: null };
 const row = (id: string, turn: Status["turn"], asks = 0, parent?: string): Listed => ({
 	id,
-	...(parent === undefined ? {} : { parent: { thread: parent, call: "c" } }),
+	...(parent === undefined ? {} : { parent: { kind: "general_purpose" as const, thread: parent, call: "c" } }),
 	config: { mode: "default" },
 	marks: { pinned: false, archived: false },
 	status: { turn, inbox: [], asks: Array.from({ length: asks }, () => ask), compacting: false },

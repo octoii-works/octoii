@@ -42,9 +42,9 @@ pub async fn deliver(
 ///
 /// # Errors
 /// The volume's failure.
-pub fn parent_of(volume: &crate::volume::Volume, thread: &str) -> anyhow::Result<Option<String>> {
+pub fn parent_of(volume: &crate::volume::Volume, thread: &str) -> anyhow::Result<Option<Parent>> {
     let directory = volume.snapshot()?.stat(&thread::path(thread))?.and_then(|entry| entry.directory);
-    Ok(directory.and_then(|directory| label(&directory, thread::PARENT_LABEL)))
+    Ok(directory.as_ref().map(Parent::of).transpose()?.flatten())
 }
 
 /// The primitives on threads, as Siphon does them.
@@ -155,10 +155,14 @@ fn spawn(
         actor: own.to_owned(),
         config: Config { title, ..config },
         project: label(directory, thread::PROJECT_LABEL),
-        parent: (spawned == Spawned::SubThread).then(|| Parent {
-            thread: own.to_owned(),
-            call: call.to_owned(),
-        }),
+        parent: match spawned {
+            Spawned::SubThread(kind) => Some(Parent {
+                thread: own.to_owned(),
+                call: call.to_owned(),
+                kind,
+            }),
+            Spawned::Thread => None,
+        },
     };
     Threads::<ThreadProgram>::made(changes, id, entry, &new)?;
     Ok(())

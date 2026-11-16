@@ -128,6 +128,18 @@ T02 的首版从 execute 的持久完成结果读取真实子调用记录，脚�
 
 read/write/edit/glob/grep 保留；shell 用于会结束的命令，terminal 用于持续或交互进程。execute 只组合现有工具，不增加批量任务体系。worktree（P04）排在上述项目后。
 
+## T03：两类子任务
+
+只增加 `explorer` 和 `general_purpose`，继续使用 delegate 和现有子 thread，不创建新的 Agent 生命周期。
+
+- 新建时 `kind` 缺省为 `general_purpose`；`explorer` 用于工作区阅读、搜索和分析。续接时省略 kind 保留原类型，显式要求不同类型则拒绝，不投递任务。
+- 类型随 Parent 持久保存，不属于可编辑 Config。既有未标类型的子线程沿用原本的 general_purpose 语义；非法类型不能静默放行。
+- explorer 只可调用 read、glob、grep、execute。execute 内仍执行相同准入；shell、写文件、browser.evaluate、MCP 和跨会话工具不可用。FullAccess 或已有授权不能绕过这一工具可用集。内部保存调用结果与模型图片不等于修改工作区。
+- general_purpose 继续继承父线程的模型、模式、工作区和权限规则；两类子任务均不可再次委派，也不可借 thread 访问其他会话。
+- 模型工具声明、execute bindings 与实际调用准入使用同一规则；explorer 不触发 MCP catalog 连接或信任询问，不提供 provider 原生工具作为旁路。
+
+验证创建与重启后类型保持、续接不升级、直接调用及 execute 内越界均无工作区副作用或审批请求、通用子任务权限继承，以及 Plan 层对子线程再次派生的拒绝。
+
 ## P02：浏览器反馈
 
 浏览器继续运行在节点。Agent 工具与客户端操作同一 page，不新建 Electron 专属浏览器，也不复制 Browser 的状态。
@@ -185,7 +197,8 @@ HTML 后续：多文件资源打包、主题联动、PDF 内联展示分别验�
 - P01c/P01d：独立 HTML 模块、交互预览与展开、browser.preview 自检已实现。截图、坐标操作、控制台与隔离策略通过真实 Chromium 验证；iPhone Safari / Electron 原生壳实测仍待验收。展开会创建新预览，不保证保留临时交互状态。
 - T01 已完成：四个扩展提供原生结构化结果与输出 schema，前端文件结果转换限定到内核工具。30 项受影响 Rust 测试通过（含真实 Chromium 与终端进程）、186 项 Web 测试通过；严格 Clippy、类型、lint 与格式检查通过。通用 Calling 测试夹具补建 inbox，生产通知机制不变。
 - T02 已完成：execute 持久化真实已结束子调用；默认摘要与最终输出，展开代码及工具详情。14 项 execute 测试、193 项 Web 测试、严格 Clippy、类型、lint、格式与构建通过。真实 Chromium 组件示例验证折叠、子命令详情、失败/拒绝徽标与 390px 触屏布局；不等同于 Electron/iPhone 真机验收。
-- 下一项：T03 两类子任务准入；之后按 T04—T05 推进。
+- T03 已实现：子任务类型持久保存，创建缺省 general_purpose，续接不改变类型；explorer 在声明、脚本绑定与执行入口均限制为 read/glob/grep/execute，MCP 收集在连接和信任询问之前退出。界面显示实际存储的类型。验证覆盖恢复审批、已有授权和 FullAccess 不绕过、重开与续接保留类型、原生工具及 MCP 不暴露；102 项受影响 Rust 测试通过、1 项忽略；193 项 Web、5 项客户端测试、协议生成、严格 Clippy、类型与格式检查通过。一次已有停止测试的日志尾部断言未通过，隔离及随后完整运行通过；保留原断言并增加日志诊断，未改停止逻辑。
+- 下一项：T04 浏览器元素反馈；之后按 T05 推进。
 
 ## 执行顺序与完成标准
 

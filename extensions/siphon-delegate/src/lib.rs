@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use siphon::agent::how;
 use siphon::agent::parent_of;
 use siphon::machine::Base;
-use siphon::threads::{Ended, Joins};
+use siphon::threads::{Ended, Joins, SubThreadKind};
 use siphon::tools::{Context, Effect, Plan, Refusal, Report, Spawned, Told, Tool};
 use siphon::{Extension, Registrar};
 
@@ -52,6 +52,9 @@ pub struct DelegateArgs {
     /// Id of one of your sub-threads, running or finished, to continue; it keeps its earlier work. Omit to start a new
     /// one.
     pub thread: Option<String>,
+    /// For a new sub-thread: `explorer` reads with read/glob/grep/execute; `general_purpose` inherits your tools and
+    /// mode, the default. A continued sub-thread keeps its kind; an explicitly different kind is refused.
+    pub kind: Option<SubThreadKind>,
     /// Return at once; you get a message when the sub-thread finishes. Do not wait for it or poll.
     #[serde(default)]
     pub background: bool,
@@ -62,9 +65,17 @@ pub struct DelegateArgs {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum DelegateResult {
     /// A task delivered to a newly created sub-thread.
-    Started { thread: String, background: bool },
+    Started {
+        thread: String,
+        kind: SubThreadKind,
+        background: bool,
+    },
     /// A task delivered to an existing sub-thread.
-    Continued { thread: String, background: bool },
+    Continued {
+        thread: String,
+        kind: SubThreadKind,
+        background: bool,
+    },
     /// The turn that took an awaited task ended.
     Completed { thread: String, ended: DelegateEnd },
 }
@@ -87,7 +98,7 @@ pub struct DelegateTool;
 impl Tool for DelegateTool {
     const NAME: &'static str = "delegate";
     const REACHES_THREADS: bool = true;
-    const DESCRIPTION: &'static str = "Run a task in a sub-thread that has your tools and works in this folder. Use it only when the person asks you to delegate, to use sub-agents, or to work on several things at once; never on your own initiative, and not for a new thread the person asks for.\n- The sub-thread does not see this conversation: put everything it needs in `task`.\n- The call waits and returns the sub-thread's final answer; several calls in one reply run at once. With `background`, it returns at once and you get a message when the sub-thread finishes.\n- Every result names the sub-thread; to give it more work, pass its id in `thread`.\n- Its answer is not proof: check what it changed before you report the work done.\n- The person sees every sub-thread and can steer it.";
+    const DESCRIPTION: &'static str = "Run a task in a sub-thread working in this folder. Use it only when the person asks you to delegate, to use sub-agents, or to work on several things at once; never on your own initiative, and not for a new thread the person asks for.\n- A new `general_purpose` sub-thread inherits your tools and mode. An `explorer` can only read with read, glob, grep and execute; its scripts have the same restriction. Neither kind delegates or reaches other threads.\n- The sub-thread does not see this conversation: put everything it needs in `task`.\n- The call waits and returns the sub-thread's final answer; several calls in one reply run at once. With `background`, it returns at once and you get a message when the sub-thread finishes.\n- Every result names the sub-thread; to give it more work, pass its id in `thread`. It keeps its original kind; you cannot change it by continuing.\n- Its answer is not proof: check what it changed before you report the work done.\n- The person sees every sub-thread and can steer it.";
     type Args = DelegateArgs;
 
     fn output_schema() -> Option<serde_json::Value> {
@@ -132,15 +143,20 @@ impl Tool for DelegateTool {
 /// `args` names, or to a new one; waited on, or in the background answered at once.
 fn planned(context: &Context, args: DelegateArgs) -> Result<Told, Refusal> {
     let mut plan = Plan::default();
-    let child = match &args.thread {
-        Some(named) => {
-            let parent = parent_of(&context.volume(), named).map_err(|error| Refusal(error.to_string()))?;
-            if parent.as_deref() != Some(context.thread.as_str()) {
-                return Err(Refusal(format!("the thread {named} is no sub-thread of yours")));
-            }
-            named.clone()
+    let (child, kind) = if let Some(named) = &args.thread {
+        let parent = parent_of(&context.volume(), named).map_err(|error| Refusal(error.to_string()))?;
+        let Some(parent) = parent.filter(|parent| parent.thread == context.thread) else {
+            return Err(Refusal(format!("the thread {named} is no sub-thread of yours")));
+        };
+        if args.kind.is_some_and(|kind| kind != parent.kind) {
+            return Err(Refusal(format!(
+                "the sub-thread {named} keeps its original kind; start a new sub-thread for a different kind"
+            )));
         }
-        None => plan.spawn(&context.volume(), args.title.clone(), Spawned::SubThread)?,
+        (named.clone(), parent.kind)
+    } else {
+        let kind = args.kind.unwrap_or_default();
+        (plan.spawn(&context.volume(), args.title.clone(), Spawned::SubThread(kind))?, kind)
     };
     let report = if args.background { Report::Inbox } else { Report::Call };
     plan.deliver(&context.volume(), &child, vec![InputContent::text(args.task)], Joins::Step, report)?;
@@ -154,10 +170,12 @@ fn planned(context: &Context, args: DelegateArgs) -> Result<Told, Refusal> {
     let result = match args.thread {
         Some(_) => DelegateResult::Continued {
             thread: child,
+            kind,
             background: args.background,
         },
         None => DelegateResult::Started {
             thread: child,
+            kind,
             background: args.background,
         },
     };
@@ -179,6 +197,7 @@ mod tests {
             task: "a task".to_owned(),
             title: None,
             thread: None,
+            kind: None,
             background: false,
         };
         let schema = DelegateTool::output_schema().expect("a result schema");
@@ -238,16 +257,18 @@ mod tests {
                 (
                     DelegateResult::Started {
                         thread: "new".to_owned(),
+                        kind: SubThreadKind::Explorer,
                         background,
                     },
-                    json!({ "type": "started", "thread": "new", "background": background }),
+                    json!({ "type": "started", "thread": "new", "kind": "explorer", "background": background }),
                 ),
                 (
                     DelegateResult::Continued {
                         thread: "existing".to_owned(),
+                        kind: SubThreadKind::GeneralPurpose,
                         background,
                     },
-                    json!({ "type": "continued", "thread": "existing", "background": background }),
+                    json!({ "type": "continued", "thread": "existing", "kind": "general_purpose", "background": background }),
                 ),
             ];
             for (result, expected) in results {

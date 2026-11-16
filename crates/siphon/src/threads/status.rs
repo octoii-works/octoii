@@ -10,7 +10,7 @@ use crate::threads::config::Config;
 use crate::threads::inbox::{self, Waiting};
 use crate::threads::log::Error;
 use crate::threads::marks::{Marks, SNOOZE_NAME};
-use crate::threads::thread::{self, PARENT_CALL_ANNOTATION, PARENT_LABEL, PROJECT_LABEL};
+use crate::threads::thread::{self, PARENT_CALL_ANNOTATION, PARENT_LABEL, PROJECT_LABEL, SUB_THREAD_KIND_ANNOTATION};
 
 /// How a thread's turns stand: none run yet, one running, or how the last ended.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
@@ -150,6 +150,35 @@ pub struct Status {
 pub struct Parent {
     pub thread: String,
     pub call: String,
+    pub kind: SubThreadKind,
+}
+
+/// A sub-thread's fixed scope, chosen when it is created and retained for every later task.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, ts_rs::TS)]
+#[serde(rename_all = "snake_case")]
+pub enum SubThreadKind {
+    Explorer,
+    #[default]
+    GeneralPurpose,
+}
+
+impl Parent {
+    /// Reads the immutable parent metadata; sub-threads created before kinds were introduced are general purpose.
+    pub(crate) fn of(directory: &Directory) -> serde_json::Result<Option<Self>> {
+        let Some(thread) = text(directory.label(PARENT_LABEL.as_bytes())) else {
+            return Ok(None);
+        };
+        let kind = directory
+            .annotation(SUB_THREAD_KIND_ANNOTATION.as_bytes())
+            .map(|value| serde_json::from_slice(value))
+            .transpose()?
+            .unwrap_or_default();
+        Ok(Some(Self {
+            thread,
+            call: text(directory.annotation(PARENT_CALL_ANNOTATION.as_bytes())).unwrap_or_default(),
+            kind,
+        }))
+    }
 }
 
 /// A thread as a list of them shows it: its id, its project and parent, how it runs, how the person keeps it, and how
@@ -183,10 +212,7 @@ fn time(directory: &Directory, name: &str) -> Option<i64> {
 /// # Errors
 /// The volume's failure; a directory whose annotations or inbox are not what Siphon writes.
 pub fn listed(runtime: &Runtime, snapshot: &Snapshot, id: &str, directory: &Directory) -> Result<Listed, Error> {
-    let parent = text(directory.label(PARENT_LABEL.as_bytes())).map(|thread| Parent {
-        thread,
-        call: text(directory.annotation(PARENT_CALL_ANNOTATION.as_bytes())).unwrap_or_default(),
-    });
+    let parent = Parent::of(directory)?;
     let snooze = snapshot.stat(&thread::within(id, SNOOZE_NAME))?;
     Ok(Listed {
         id: id.to_owned(),

@@ -19,3 +19,5 @@ siphon = { path = "../../crates/siphon" }
 
 [dev-dependencies]
 jsonschema = { version = "0.61.1", default-features = false }
+tempfile = "3.27.0"
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros"] }

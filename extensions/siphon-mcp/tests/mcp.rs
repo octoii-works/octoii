@@ -173,7 +173,20 @@ async fn the_person_s_servers_tools_are_listed_and_called_as_the_model_s_own() {
         said[4],
         (CallStatus::ToolError, "no MCP server other where this thread works".into(), 0, None)
     );
-    assert_eq!(said[5], (CallStatus::Ok, r#""from a script""#.into(), 0, None));
+    assert_eq!(
+        (said[5].0, said[5].1.as_str(), said[5].2),
+        (CallStatus::Ok, r#""from a script""#, 0)
+    );
+    let calls = said[5].3.as_ref().expect("the script's actual calls")["calls"]
+        .as_array()
+        .expect("recorded calls");
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0]["tool"], "test.say");
+    assert_eq!(calls[0]["arguments"], r#"{"words":"from a script"}"#);
+    assert_eq!(calls[0]["status"], "ok");
+    assert_eq!(calls[0]["output"], "from a script");
+    assert_eq!(calls[0]["structuredContent"], json!({ "words": "from a script" }));
+    assert_eq!(calls[0]["metadata"], json!({ "title": "Echo" }));
     calling.close().await;
 }
 

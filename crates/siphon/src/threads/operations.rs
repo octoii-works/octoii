@@ -15,7 +15,9 @@ use crate::threads::inbox::{self, Inbound, Joins};
 use crate::threads::log::{self, Entry, Writer};
 use crate::threads::marks::{MarksChange, SNOOZE_NAME};
 use crate::threads::status::{self, Listed, Parent, TURN_ANNOTATION, Turn};
-use crate::threads::thread::{self, ARCHIVED_LABEL, KIND, MAIN_KEY, PARENT_CALL_ANNOTATION, PARENT_LABEL, PINNED_LABEL, PROJECT_LABEL};
+use crate::threads::thread::{
+    self, ARCHIVED_LABEL, KIND, MAIN_KEY, PARENT_CALL_ANNOTATION, PARENT_LABEL, PINNED_LABEL, PROJECT_LABEL, SUB_THREAD_KIND_ANNOTATION,
+};
 
 /// What a thread's main process is started with: the thread it runs.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
@@ -125,6 +127,10 @@ impl<M: Program<Input = MainInput>> Threads<M> {
         ));
         if let Some(parent) = &new.parent {
             annotations.push(named(PARENT_CALL_ANNOTATION, Some(&parent.call)));
+            annotations.push((
+                Bytes::from_static(SUB_THREAD_KIND_ANNOTATION.as_bytes()),
+                Some(serde_json::to_vec(&parent.kind)?.into()),
+            ));
         }
         changes
             .mkdir(path.clone())

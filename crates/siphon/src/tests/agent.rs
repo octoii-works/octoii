@@ -181,7 +181,7 @@ fn models(script: &Arc<Script>) -> Arc<Models> {
         parameters: None,
         pricing: None,
         release_date: None,
-        searches_web: false,
+        searches_web: true,
         limits: InputLimits::default(),
         features: Features::default(),
     };
@@ -324,6 +324,108 @@ fn folder() -> (tempfile::TempDir, PathBuf) {
     let folder = tempfile::tempdir().expect("a folder");
     let path = folder.path().canonicalize().expect("its real path");
     (folder, path)
+}
+
+struct Catalogue;
+impl crate::agent::Teller for Catalogue {
+    fn tell<'a>(
+        &'a self,
+        _: &'a crate::volume::Volume,
+        _: &'a str,
+        _: Option<&'a crate::tools::Place>,
+    ) -> BoxFuture<'a, anyhow::Result<crate::agent::Telling>> {
+        Box::pin(async {
+            Ok(crate::agent::Telling {
+                sections: vec![("catalog".into(), "server.write".into())],
+                tools: vec!["server.write".into()],
+            })
+        })
+    }
+}
+impl crate::tools::Toolset for Catalogue {
+    fn has(&self, name: &str) -> bool {
+        name == "server.write"
+    }
+    fn call<'a>(
+        &'a self,
+        _: &'a crate::tools::Context,
+        _: &'a str,
+        _: serde_json::Value,
+    ) -> BoxFuture<'a, Result<crate::tools::Told, crate::tools::Refusal>> {
+        Box::pin(async { panic!("gather never executes a catalogue tool") })
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn gathered_tools_catalogue_and_native_search_follow_the_fixed_sub_thread_kind() {
+    use crate::threads::{Parent, SubThreadKind};
+    let beak = Beak::new().unwrap();
+    let script = script(Vec::new());
+    let runtime = runtime(&beak, &script);
+    let threads = Threads::<ThreadProgram>::new(runtime.clone());
+    let (_folder, workspace) = folder();
+    let sources = Sources {
+        tools: Tools::new()
+            .with(ReadTool)
+            .with(crate::tools::GlobTool)
+            .with(crate::tools::GrepTool)
+            .with(ExecuteTool)
+            .with(WriteTool)
+            .with(ShellTool)
+            .with(DelegateTool)
+            .with(ThreadTool)
+            .with_toolset(Arc::new(Catalogue)),
+        owners: std::collections::HashMap::new(),
+        tellers: vec![crate::agent::OwnedTeller {
+            extension: crate::agent::CORE.into(),
+            shared: crate::agent::Shared::Project,
+            teller: Arc::new(Catalogue),
+        }],
+        natives: vec![(crate::agent::CORE.into(), Tool::WebSearch)],
+        models: models(&script),
+    };
+    for (index, kind) in [None, Some(SubThreadKind::GeneralPurpose), Some(SubThreadKind::Explorer)]
+        .into_iter()
+        .enumerate()
+    {
+        let new = NewThread {
+            config: Config {
+                model: Some("test/m".into()),
+                workspace: Some(workspace.to_string_lossy().into_owned()),
+                mode: Some(Mode::FullAccess),
+                ..Config::default()
+            },
+            parent: kind.map(|kind| Parent {
+                thread: "parent".into(),
+                call: "call".into(),
+                kind,
+            }),
+            ..NewThread::default()
+        };
+        let id = threads.create(&new, &format!("kind-{index}")).await.unwrap();
+        let told = crate::agent::gather::gathered(&sources, &runtime, &id).await.unwrap();
+        let names: Vec<&str> = told
+            .tools
+            .iter()
+            .filter_map(|tool| match tool {
+                Tool::Function { name, .. } => Some(name.as_str()),
+                Tool::WebSearch => None,
+            })
+            .collect();
+        if kind == Some(SubThreadKind::Explorer) {
+            assert_eq!(names, ["execute", "glob", "grep", "read"]);
+            assert_eq!(told.catalog, Vec::<String>::new());
+            assert_eq!(told.sections, Vec::<(String, String)>::new());
+            assert!(!told.tools.contains(&Tool::WebSearch));
+        } else {
+            assert_eq!(names.contains(&"delegate"), kind.is_none());
+            assert_eq!(names.contains(&"thread"), kind.is_none());
+            assert!(names.contains(&"shell") && names.contains(&"write"));
+            assert_eq!(told.catalog, ["server.write"]);
+            assert!(told.tools.contains(&Tool::WebSearch));
+        }
+    }
+    runtime.close().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -601,13 +703,16 @@ async fn a_stop_ends_the_turn_with_every_call_it_made_answered() {
     assert_eq!(results.len(), 2, "{all:?}");
     assert_eq!(results[1], ("c2".into(), CallStatus::Interrupted));
     assert!(!workspace.join("never.txt").exists());
-    assert!(matches!(
-        all.last(),
-        Some(Entry::TurnEnd {
-            outcome: Outcome::Stopped,
-            ..
-        })
-    ));
+    assert!(
+        matches!(
+            all.last(),
+            Some(Entry::TurnEnd {
+                outcome: Outcome::Stopped,
+                ..
+            })
+        ),
+        "{all:?}"
+    );
     runtime.close().await;
 }
 
@@ -750,6 +855,16 @@ async fn a_task_delegated_is_worked_on_by_a_sub_thread_and_what_it_said_last_giv
     assert_eq!(children.len(), 1);
     let child = &children[0];
     assert_eq!(child.parent.as_ref().map(|parent| parent.thread.as_str()), Some(id.as_str()));
+    assert_eq!(
+        child.parent.as_ref().map(|parent| parent.kind),
+        Some(crate::threads::SubThreadKind::GeneralPurpose)
+    );
+    let parent = threads.listed(&id).unwrap();
+    assert_eq!(child.config.mode, parent.config.mode);
+    assert_eq!(child.config.model, parent.config.model);
+    assert_eq!(child.config.effort, parent.config.effort);
+    assert_eq!(child.config.workspace, parent.config.workspace);
+    assert_eq!(child.project, parent.project);
     assert_eq!(child.config.title.as_deref(), Some("Helper"));
     // The reply that made the call keys it as it is written: the sub-thread names its call by that key, as its result does.
     let keyed = entries(&threads, &id).into_iter().find_map(|entry| match entry {
@@ -1051,6 +1166,7 @@ struct DelegateArgs {
     task: String,
     title: Option<String>,
     thread: Option<String>,
+    kind: Option<crate::threads::SubThreadKind>,
     #[serde(default)]
     background: bool,
 }
@@ -1074,7 +1190,11 @@ impl crate::tools::Tool for DelegateTool {
             let mut plan = crate::tools::Plan::default();
             let child = match args.thread {
                 Some(named) => named,
-                None => plan.spawn(&context.volume(), args.title, crate::tools::Spawned::SubThread)?,
+                None => plan.spawn(
+                    &context.volume(),
+                    args.title,
+                    crate::tools::Spawned::SubThread(args.kind.unwrap_or_default()),
+                )?,
             };
             let report = if args.background {
                 crate::tools::Report::Inbox

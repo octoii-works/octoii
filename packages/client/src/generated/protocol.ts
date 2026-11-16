@@ -671,7 +671,7 @@ export type PairWith = { label?: string, scopes?: Array<Scope>, };
 /**
  * Where a sub-thread came from: the thread that delegated it, and its call that did, by Siphon's key of it.
  */
-export type Parent = { thread: string, call: string, };
+export type Parent = { thread: string, call: string, kind: SubThreadKind, };
 
 /**
  * What text is added to: an answer's words, a refusal's, the reasoning, its summary, or a call's arguments.
@@ -901,6 +901,11 @@ export type Streamed = { "type": "began", index: number, item: Item, } | { "type
  * and how many it has where the read reached its end.
  */
 export type Structured = { "type": "glob", files: Array<string>, next: number | null, denied: Array<string>, } | { "type": "grep", files: Array<SearchFile>, next: number | null, skippedBinary: number, denied: Array<string>, } | { "type": "ran", ended: CommandEnd, output: string, } | { "type": "changed", path: string, created: boolean, additions: number, deletions: number, } | { "type": "read", path: string, text: string, next: number | null, clipped: Array<number>, from: number, to: number, total?: number, };
+
+/**
+ * A sub-thread's fixed scope, chosen when it is created and retained for every later task.
+ */
+export type SubThreadKind = "explorer" | "general_purpose";
 
 /**
  * A subscription made: its id, which its events carry.

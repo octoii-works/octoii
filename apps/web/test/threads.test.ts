@@ -38,7 +38,7 @@ const row = (id: string, project: string | undefined, status: Standing = idle, t
 });
 
 /** `sub`, delegated to by the thread `parent`. */
-const delegated = (sub: Listed, parent: string): Listed => ({ ...sub, parent: { thread: parent, call: `call-${sub.id}` } });
+const delegated = (sub: Listed, parent: string): Listed => ({ ...sub, parent: { kind: "general_purpose" as const, thread: parent, call: `call-${sub.id}` } });
 
 /** An id minted at `ms`, as a UUIDv7 holds its time in its first 48 bits. */
 function idAt(ms: number): string {
@@ -232,8 +232,8 @@ describe("the threads", () => {
 
 	it("find the sub-thread a delegating call gave its task to among the thread's own: the one it names, or the one it made", () => {
 		const parent = row("2", undefined);
-		const sub = { ...row("3", undefined), parent: { thread: "2", call: "c1" } };
-		const others = { ...row("4", undefined), parent: { thread: "9", call: "c2" } };
+		const sub = { ...row("3", undefined), parent: { kind: "general_purpose" as const, thread: "2", call: "c1" } };
+		const others = { ...row("4", undefined), parent: { kind: "general_purpose" as const, thread: "9", call: "c2" } };
 		const rows = [others, sub, parent];
 		expect(subThreadOf(rows, "2", { key: "c1", thread: undefined })?.id).toBe("3");
 		expect(subThreadOf(rows, "2", { key: "c7", thread: "3" })?.id).toBe("3");

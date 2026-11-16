@@ -275,6 +275,7 @@ async fn a_thread_is_deleted_with_every_thread_under_it() {
         parent: Some(Parent {
             thread: parent.clone(),
             call: "call-1".into(),
+            kind: crate::threads::SubThreadKind::GeneralPurpose,
         }),
         ..person(Config::default())
     };
@@ -285,6 +286,7 @@ async fn a_thread_is_deleted_with_every_thread_under_it() {
                 parent: Some(Parent {
                     thread: child.clone(),
                     call: "call-2".into(),
+                    kind: crate::threads::SubThreadKind::GeneralPurpose,
                 }),
                 ..person(Config::default())
             },
@@ -302,6 +304,100 @@ async fn a_thread_is_deleted_with_every_thread_under_it() {
     let left: Vec<String> = threads.list().expect("listed").into_iter().map(|listed| listed.id).collect();
     assert_eq!(left, [other]);
     assert!(matches!(threads.listed(&parent), Err(crate::threads::Error::NoSuchThread)));
+    threads.runtime().close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sub_thread_kinds_survive_configuration_changes_and_reopening() {
+    let beak = Beak::new().unwrap();
+    let storage = tempfile::tempdir().unwrap();
+    let options = Options {
+        directory: Some(storage.path().to_owned()),
+        ..Options::default()
+    };
+    let first = Threads::<Taker>::new(Runtime::builder().program(Taker).start(&beak, options.clone()).unwrap());
+    let mut children = Vec::new();
+    for kind in [
+        crate::threads::SubThreadKind::Explorer,
+        crate::threads::SubThreadKind::GeneralPurpose,
+    ] {
+        let new = NewThread {
+            parent: Some(Parent {
+                thread: "parent".into(),
+                call: "call".into(),
+                kind,
+            }),
+            ..person(Config::default())
+        };
+        let id = first.create(&new, &format!("{kind:?}")).await.unwrap();
+        first
+            .configure(
+                &id,
+                "person",
+                ConfigChange {
+                    mode: Some(Some(Mode::FullAccess)),
+                    title: Some(Some("changed".into())),
+                    ..ConfigChange::default()
+                },
+            )
+            .await
+            .unwrap();
+        entries(&first, &id, |entries| {
+            entries.iter().filter(|entry| matches!(entry, Entry::Config { .. })).count() == 2
+        })
+        .await;
+        assert_eq!(first.listed(&id).unwrap().config.mode, Some(Mode::FullAccess));
+        assert_eq!(first.listed(&id).unwrap().parent.unwrap().kind, kind);
+        children.push((id, kind));
+    }
+    first.runtime().close().await;
+    drop(first);
+    let reopened = Threads::<Taker>::new(Runtime::builder().program(Taker).start(&beak, options).unwrap());
+    let volume = crate::volume::Volume {
+        runtime: reopened.runtime().clone(),
+    };
+    for (id, kind) in children {
+        let parent = crate::agent::parent_of(&volume, &id).unwrap().unwrap();
+        assert_eq!(parent.kind, kind);
+        assert_eq!(parent.thread, "parent");
+        assert_eq!(reopened.listed(&id).unwrap().parent, Some(parent));
+    }
+    reopened.runtime().close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn legacy_sub_threads_are_general_purpose_and_invalid_kinds_are_refused() {
+    let beak = Beak::new().unwrap();
+    let threads = threads(&beak, Idle);
+    let new = NewThread {
+        parent: Some(Parent {
+            thread: "parent".into(),
+            call: "call".into(),
+            kind: crate::threads::SubThreadKind::Explorer,
+        }),
+        ..person(Config::default())
+    };
+    let id = threads.create(&new, "child").await.unwrap();
+    let annotation = Bytes::from_static(crate::threads::thread::SUB_THREAD_KIND_ANNOTATION.as_bytes());
+    let mut changes = siphon_runtime::Changes::new();
+    changes.meta(crate::threads::thread::path(&id), Vec::new(), vec![(annotation.clone(), None)]);
+    threads.runtime().commit(changes).await.unwrap();
+    assert_eq!(
+        threads.listed(&id).unwrap().parent.unwrap().kind,
+        crate::threads::SubThreadKind::GeneralPurpose
+    );
+    let mut changes = siphon_runtime::Changes::new();
+    changes.meta(
+        crate::threads::thread::path(&id),
+        Vec::new(),
+        vec![(annotation, Some(Bytes::from_static(b"\"invalid\"")))],
+    );
+    threads.runtime().commit(changes).await.unwrap();
+    assert!(threads.listed(&id).is_err());
+    let volume = crate::volume::Volume {
+        runtime: threads.runtime().clone(),
+    };
+    assert!(crate::agent::parent_of(&volume, &id).is_err());
     threads.runtime().close().await;
 }
 

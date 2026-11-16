@@ -6,7 +6,7 @@
  * background, as the sub-thread told it, marked how its work ended and when.
  */
 import type { ReactNode } from "react";
-import type { Listed } from "@octoii-works/octoii-client";
+import type { Listed, SubThreadKind } from "@octoii-works/octoii-client";
 import { useThreads } from "@octoii-works/octoii-client/react";
 import { Bot } from "lucide-react";
 import { plainLine, type Standing, standingOf, standingsSummary, type Worked, workedOf } from "../../core/sub-threads.ts";
@@ -69,6 +69,7 @@ function DelegationRow(props: { readonly call: CallLine; readonly row: Listed | 
 	return (
 		<SubThreadRow
 			title={title}
+			kind={row?.parent?.kind}
 			standing={standing}
 			detail={call.subject === undefined || call.subject === title ? undefined : call.subject}
 			time={worked === undefined ? undefined : <WorkedFor worked={worked} />}
@@ -85,6 +86,7 @@ export function SubThreadTold(props: { readonly said: Said }): ReactNode {
 	return (
 		<SubThreadRow
 			title={row?.config.title ?? "Sub-thread"}
+			kind={row?.parent?.kind}
 			standing={standingOf(row)}
 			detail={detail === "" ? undefined : detail}
 			time={new Date(said.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
@@ -96,6 +98,7 @@ export function SubThreadTold(props: { readonly said: Said }): ReactNode {
 /** A sub-thread's line: its mark with a dot of how it stands, its title, what it does or said under it, its time, and, where it is listed, a way into it. */
 function SubThreadRow(props: {
 	readonly title: string;
+	readonly kind: SubThreadKind | undefined;
 	readonly standing: Standing;
 	readonly detail: string | undefined;
 	readonly time: ReactNode;
@@ -106,7 +109,14 @@ function SubThreadRow(props: {
 		<EntityContent
 			mark={<SubThreadMark standing={props.standing} />}
 			standing={props.standing}
-			name={props.title}
+			name={
+				<>
+					{props.title}
+					{props.kind === undefined ? null : (
+						<span className="ml-2 text-xs text-muted-foreground">{props.kind === "explorer" ? "Explorer · read only" : "General purpose"}</span>
+					)}
+				</>
+			}
 			detail={props.detail}
 			time={props.time}
 			opens={thread === undefined ? undefined : "elsewhere"}

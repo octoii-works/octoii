@@ -8,6 +8,7 @@ use octoii_ai::vocabulary::InputContent;
 use serde::{Deserialize, Serialize};
 use siphon_runtime::Run;
 
+use crate::threads::SubThreadKind;
 use crate::threads::inbox::Joins;
 use crate::tools::tool::Refusal;
 
@@ -57,7 +58,7 @@ pub enum Step {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Spawned {
-    SubThread,
+    SubThread(SubThreadKind),
     Thread,
 }
 

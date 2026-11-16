@@ -6,7 +6,7 @@ import type { CallLine } from "../src/core/timeline.ts";
 
 const sub = (turn: Status["turn"], span: Partial<Pick<Status, "began_at" | "ended_at">> = {}): Listed => ({
 	id: "s",
-	parent: { thread: "p", call: "c" },
+	parent: { kind: "general_purpose" as const, thread: "p", call: "c" },
 	config: { mode: "auto" },
 	marks: { pinned: false, archived: false },
 	status: { turn, ...span, inbox: [], asks: [], compacting: false },
@@ -41,15 +41,15 @@ describe("sub-threads", () => {
 		const ask = { process: "x", key: "k1", name: "permission", payload: null, answer_schema: null };
 		const asking = { ...sub("running"), id: "s1", status: { ...sub("running").status, asks: [ask] } };
 		const other = { ...sub("running"), id: "s2" };
-		const elsewhere = { ...asking, id: "s3", parent: { thread: "q", call: "c" } };
+		const elsewhere = { ...asking, id: "s3", parent: { kind: "general_purpose" as const, thread: "q", call: "c" } };
 		expect(waitingOn([asking, other, elsewhere], "p").map((row) => row.id)).toEqual(["s1"]);
 	});
 
 	it("work in the background where a call gave them their task so, while they work", () => {
 		const given = (id: string, background: boolean): CallLine => ({ ...delegation(id), arguments: JSON.stringify({ task: "x", background }) });
-		const working = { ...sub("running"), id: "s1", parent: { thread: "p", call: "ka" } };
-		const done = { ...sub("replied"), id: "s2", parent: { thread: "p", call: "kb" } };
-		const waited = { ...sub("running"), id: "s3", parent: { thread: "p", call: "kc" } };
+		const working = { ...sub("running"), id: "s1", parent: { kind: "general_purpose" as const, thread: "p", call: "ka" } };
+		const done = { ...sub("replied"), id: "s2", parent: { kind: "general_purpose" as const, thread: "p", call: "kb" } };
+		const waited = { ...sub("running"), id: "s3", parent: { kind: "general_purpose" as const, thread: "p", call: "kc" } };
 		expect(inBackground([given("a", true), given("b", true), given("c", false)], [working, done, waited], "p").map((row) => row.id)).toEqual(["s1"]);
 	});
 
