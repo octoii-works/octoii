@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { LocalNode, localAddress } from "./local-node.ts";
 import { pairLocalNode } from "./pairing.ts";
 import { desktopResponse } from "./assets.ts";
+import { LastLocation } from "./location.ts";
 import { STARTUP_URL, connectingPage, failedPage } from "./startup.ts";
 
 app.setName("Octoii");
@@ -22,6 +23,8 @@ async function start(): Promise<void> {
 	const initial = explicit === undefined ? undefined : localAddress(explicit);
 	const node = new LocalNode(process.env["OCTOII_BIN"] ?? join(homedir(), ".local/bin/octoii"), process.env["OCTOII_HOME"] ?? join(homedir(), ".octoii"));
 	await app.whenReady();
+	const location = new LastLocation(join(app.getPath("userData"), "last-location.json"));
+	const nodeIdentity = initial?.origin ?? node.home;
 	let origin: string | undefined;
 	let startup = connectingPage();
 	const desktopSession = session.defaultSession;
@@ -72,6 +75,12 @@ async function start(): Promise<void> {
 			event.preventDefault();
 			openExternal(url);
 		});
+		window.webContents.on("did-navigate", (_event, url) => {
+			if (origin !== undefined) location.remember(new URL(url), origin, nodeIdentity);
+		});
+		window.webContents.on("did-navigate-in-page", (_event, url, isMainFrame) => {
+			if (isMainFrame && origin !== undefined) location.remember(new URL(url), origin, nodeIdentity);
+		});
 		window.webContents.on("will-redirect", (event, url) => {
 			if (new URL(url).origin !== origin) event.preventDefault();
 		});
@@ -87,7 +96,7 @@ async function start(): Promise<void> {
 				origin = address.origin;
 				if (initial === undefined) await pairLocalNode(node, address, desktopSession);
 				if (window.isDestroyed()) return;
-				await window.loadURL(address.href);
+				await window.loadURL(location.restore(address, nodeIdentity).href);
 			} catch (error) {
 				if (window.isDestroyed()) return;
 				startup = failedPage(
