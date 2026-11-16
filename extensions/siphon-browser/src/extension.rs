@@ -45,9 +45,9 @@ impl Extension for BrowserExtension {
         let tool = BrowserTool { browser: browser.clone() };
         registrar.tool(tool);
         let doing = browser.clone();
-        registrar.methods(protocol::set(), Method::read, move |_: Caller, method| {
+        registrar.methods(protocol::set(), Method::read, move |caller: Caller, method| {
             let browser = doing.clone();
-            async move { answered(&browser, method).await }
+            async move { answered(&browser, &caller, method).await }
         });
         registrar.topics(Scope::BrowserOperate, move |subscription: Subscription, topic: BrowserTopic| {
             let browser = browser.clone();
@@ -66,7 +66,7 @@ fn size(view: View) -> Size {
 }
 
 /// Does `method` on `browser`.
-async fn answered(browser: &Browser, method: Method) -> Result<Value, Error> {
+async fn answered(browser: &Browser, caller: &Caller, method: Method) -> Result<Value, Error> {
     let done = match method {
         Method::Open(open) => {
             let page = browser
@@ -102,6 +102,7 @@ async fn answered(browser: &Browser, method: Method) -> Result<Value, Error> {
             let params = json!({ "text": typed.text });
             browser.page(&typed.page).cdp("Input.insertText", params).await.map(drop)
         }
+        Method::Pick(request) => return Ok(json!(crate::pick::pick(browser, caller, request).await?)),
     };
     done.map_err(|error| failed(&error))?;
     Ok(json!(Nothing {}))
@@ -151,7 +152,7 @@ fn key(event: &PageKey) -> Value {
 }
 
 /// Why the browser did not do what was asked, as a client is told.
-fn failed(error: &BrowserError) -> Error {
+pub(crate) fn failed(error: &BrowserError) -> Error {
     let code = match &error {
         BrowserError::NoSuchPage => "no_such_page",
         BrowserError::NoBrowser => "no_browser",

@@ -26,7 +26,7 @@ export function useBrowserPanel(
 		key: pageKey(page.id),
 		icon: <Globe />,
 		label: pageName(page),
-		body: <BrowserPane page={page} />,
+		body: <BrowserPane thread={thread} page={page} />,
 		close: () => {
 			client.closePage(page.id).catch((error: unknown) => failed("The page could not be closed", error));
 		},

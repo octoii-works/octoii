@@ -77,7 +77,7 @@ export function NewThreadScreen(props: NewThreadScreenProps): ReactNode {
 							draft={{ project: folder }}
 							folder={folder}
 							things={thingsOf(reachesThreads ? rows : [], [], [], undefined)}
-							onSend={async ({ text, attachments }) => {
+							onSend={async ({ text, attachments, feedback }) => {
 								const thread = await client.create({
 									...(folder === undefined ? {} : { workspace: folder }),
 									...(running === undefined ? {} : { model: running }),
@@ -91,7 +91,7 @@ export function NewThreadScreen(props: NewThreadScreenProps): ReactNode {
 										return { ref: made.ref, media_type: made.media_type, name: made.filename ?? attachment.name, size: attachment.size };
 									}),
 								);
-								await client.deliver(thread, contentOf(text, kept));
+								await client.deliver(thread, contentOf(text, kept, feedback));
 								go({ place: "thread", thread });
 							}}
 							onStop={() => undefined}

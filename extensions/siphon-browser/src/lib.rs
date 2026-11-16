@@ -11,6 +11,7 @@ mod extension;
 mod input;
 mod keys;
 mod page;
+mod pick;
 mod primitives;
 pub mod protocol;
 mod snapshot;

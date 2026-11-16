@@ -38,9 +38,22 @@ pub trait Extension {
 pub struct Caller {
     pub(crate) siphon: Siphon,
     pub session: String,
+    pub(crate) scopes: Vec<Scope>,
 }
 
 impl Caller {
+    /// Requires another scope where a method does more than its declared scope opens.
+    ///
+    /// # Errors
+    /// `forbidden` where this connection's session lacks `scope`.
+    pub fn require_scope(&self, scope: Scope) -> Result<(), Error> {
+        if self.scopes.contains(&scope) {
+            Ok(())
+        } else {
+            Err(crate::connection::forbidden(scope))
+        }
+    }
+
     /// The volume, as an extension reaches it.
     #[must_use]
     pub fn volume(&self) -> crate::volume::Volume {

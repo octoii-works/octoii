@@ -16,7 +16,7 @@ use crate::extension::Caller;
 
 /// Does `method` for the client of `caller`, by the group it is of.
 pub(crate) async fn answered(caller: Caller, method: Method) -> Result<serde_json::Value, Error> {
-    let Caller { siphon, session } = &caller;
+    let Caller { siphon, session, .. } = &caller;
     match method {
         Method::ListFolder(asked) => json(&super::machine::list(siphon, &asked)?),
         Method::ReadFile(asked) => json(&super::machine::read(siphon, &asked)?),

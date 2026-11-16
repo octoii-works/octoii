@@ -8,7 +8,7 @@
  * call, telling the model what to do instead — Enter, or Esc — and Deny, Allow (⌘↵) and More stand where it sends.
  */
 import { type ReactNode, useId, useRef, useState, useTransition } from "react";
-import type { ReasoningEffort as Effort, Mode } from "@octoii-works/octoii-client";
+import type { ElementFeedback, ReasoningEffort as Effort, Mode } from "@octoii-works/octoii-client";
 import { ArrowUp, Square } from "lucide-react";
 import type { Device } from "../../core/device.ts";
 import type { DraftPlace } from "../../core/drafts.ts";
@@ -64,7 +64,7 @@ export type ComposerProps = {
 };
 
 /** A message as the composer sends it: its words, and the files it gives its model. */
-export type Outgoing = { readonly text: string; readonly attachments: readonly Attachment[] };
+export type Outgoing = { readonly text: string; readonly attachments: readonly Attachment[]; readonly feedback: readonly ElementFeedback[] };
 
 /** The words a box says it takes, and what it says where it mentions things. */
 const PLACEHOLDER = "Ask anything";
@@ -125,18 +125,18 @@ export function Composer(props: ComposerProps): ReactNode {
 	};
 	const attaching = useAttaching(draft, "thread" in props.draft ? props.draft.thread : undefined);
 	const model = modelOf(useDirectory(), props.model);
-	const empty = draft.text.trim() === "" && draft.attachments.length === 0;
+	const empty = draft.text.trim() === "" && draft.attachments.length === 0 && draft.feedback.length === 0;
 	const unready = empty || props.model === undefined || attaching.sending.length > 0;
 	const deny = (approval: Approval): void => {
 		approval.deny(draft.text.trim(), draft.clearText);
 	};
 	const sendBy = (sent: (message: Outgoing) => Promise<void>): void => {
 		if (unready || sending) return;
-		const message = { text: draft.text.trim(), attachments: draft.attachments };
+		const message = { text: draft.text.trim(), attachments: draft.attachments, feedback: draft.feedback };
 		startSending(async () => {
 			try {
 				await sent(message);
-				draft.clear();
+				draft.clearSubmitted();
 			} catch (error) {
 				// The draft stays, to be sent again.
 				failed("The message could not be sent", error);
@@ -176,6 +176,8 @@ export function Composer(props: ComposerProps): ReactNode {
 			{mentions.mention === undefined ? null : <MentionMenu id={menu} anchor={frame} mentions={mentions} onChoose={mention} />}
 			<Attachments
 				attachments={draft.attachments}
+				feedback={draft.feedback}
+				onRemoveFeedback={draft.removeFeedback}
 				attaching={attaching}
 				seesImages={model?.reads_images}
 				thread={"thread" in props.draft ? props.draft.thread : undefined}
@@ -197,6 +199,7 @@ export function Composer(props: ComposerProps): ReactNode {
 				onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
 				onKeyDown={keyDown}
 				aria-label="Message"
+				data-thread={"thread" in props.draft ? props.draft.thread : undefined}
 				aria-autocomplete={props.folder === undefined && props.things.length === 0 ? undefined : "list"}
 				aria-controls={mentions.mention === undefined ? undefined : menu}
 				aria-activedescendant={mentions.mention === undefined || mentions.choices.length === 0 ? undefined : optionId(menu, mentions.highlighted)}

@@ -57,6 +57,11 @@ export type CallKey = { call_id: string, key: string, };
 export type CallStatus = "ok" | "unavailable" | "invalid-arguments" | "tool-error" | "rejected" | "interrupted";
 
 /**
+ * The viewport at capture time: CSS pixels, device pixels per CSS pixel, and its scroll position.
+ */
+export type CapturedViewport = { width: number, height: number, scale: number, scroll_x: number, scroll_y: number, };
+
+/**
  * A terminal's size, in cells.
  */
 export type Cells = { rows: number, cols: number, };
@@ -203,6 +208,24 @@ export type Deliver = { thread: string, content: Array<InputContent>, key: strin
 joins?: Joins, };
 
 export type Delivered = { delivery: string, };
+
+/**
+ * A finite description of one element, excluding form values and the surrounding DOM. Its optional selector is a
+ * bounded CSS selector that uniquely described this element in the main document.
+ */
+export type ElementDescription = { tag: string, role?: string, label?: string, text?: string, selector?: string, rect: ElementRect, };
+
+/**
+ * Evidence captured now for the person to review before sending. Its screenshot is a kept thread file; its locator
+ * describes this document at capture time and is not a durable element handle or a guarantee about an older frame.
+ * The document is the main document's opaque identity; `captured_at` is the node's Unix capture time in milliseconds.
+ */
+export type ElementFeedback = { thread: string, page: string, url: string, document: string, captured_at: number, viewport: CapturedViewport, point: PagePoint, element: ElementDescription, screenshot: FileRef, };
+
+/**
+ * The selected element's bounds in CSS viewport pixels.
+ */
+export type ElementRect = { x: number, y: number, width: number, height: number, };
 
 /**
  * An entry of a thread's log.
@@ -663,6 +686,8 @@ export type PageMouse = { motion: MouseMotion, x: number, y: number, button: Pag
 
 export type PageOpened = { page: string, };
 
+export type PagePoint = { x: number, y: number, };
+
 /**
  * What a link is made with: its label, and what it grants — everything, where none is given.
  */
@@ -679,6 +704,11 @@ export type Parent = { thread: string, call: string, kind: SubThreadKind, };
 export type Part = "text" | "refusal" | "reasoning" | "summary" | "arguments";
 
 export type Patch = { patch: string, };
+
+/**
+ * A point to inspect in the page's CSS viewport, together with the page and view the person saw.
+ */
+export type PickElement = { thread: string, page: string, x: number, y: number, expected_url: string, view: View, };
 
 /**
  * The prices a model lists for a text request, each a unit's: a token read, read from the prompt cache, written to
@@ -1095,6 +1125,7 @@ export type Methods = {
   'browser.mouse': { params: OnPage<PageMouse>; result: Nothing };
   'browser.key': { params: OnPage<PageKey>; result: Nothing };
   'browser.text': { params: TypeText; result: Nothing };
+  'browser.pick': { params: PickElement; result: ElementFeedback };
   'terminals.open': { params: OpenTerminal; result: TerminalOpened };
   'terminals.write': { params: WriteTerminal; result: Nothing };
   'terminals.resize': { params: ResizeTerminal; result: Nothing };

@@ -74,6 +74,8 @@ pub fn keep(snapshot: &Snapshot, changes: &mut Changes, id: &str, bytes: Bytes) 
 /// Why a file given was not kept.
 #[derive(Debug, thiserror::Error)]
 pub enum Refused {
+    #[error("no such thread")]
+    NoSuchThread,
     #[error("a file holds at most {BYTES_MAX} bytes")]
     TooLarge,
     #[error("the image: {0}")]

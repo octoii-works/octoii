@@ -1,6 +1,56 @@
 /** The browser as the interface shows it. */
 import { describe, expect, it } from "bun:test";
-import { addressOf, editingOf, modifiersOf, pageName, shownAddress, typedBy } from "../src/core/browser.ts";
+import { addressOf, editingOf, modifiersOf, PageInputGate, pageName, pickViewOf, shownAddress, typedBy } from "../src/core/browser.ts";
+
+describe("the local element picker", () => {
+	it("uses the drawn frame's CSS size and the node's scale, waiting until frame and view agree", () => {
+		expect(pickViewOf({ width: 800, height: 600 }, { width: 800, height: 600, scale: 2 })).toEqual({ width: 800, height: 600, scale: 2 });
+		expect(pickViewOf({ width: 800, height: 600 }, { width: 900, height: 600, scale: 2 })).toBeUndefined();
+		expect(pickViewOf(undefined, { width: 800, height: 600 })).toBeUndefined();
+		expect(pickViewOf({ width: 0, height: 0 }, { width: 0, height: 0 })).toBeUndefined();
+	});
+
+	it("swallows the entire selection gesture and selects only on its release", () => {
+		const input = new PageInputGate();
+		input.setMode("pick");
+		expect(input.mouseDown(0)).toBe("block");
+		expect(input.forwardsPointer()).toBe(false);
+		expect(input.mouseUp(0)).toBe("select");
+		input.setMode("capturing");
+		expect(input.mouseDown(0)).toBe("block");
+		expect(input.mouseUp(0)).toBe("block");
+		expect(input.forwardsPointer()).toBe(false);
+	});
+
+	it("does not forward the rest of a swallowed gesture after Escape, cancellation or a new pick", () => {
+		const input = new PageInputGate();
+		input.setMode("pick");
+		input.mouseDown(0);
+		input.keyDown("Escape");
+		input.setMode("browse");
+		expect(input.forwardsPointer()).toBe(false);
+		expect(input.keyUp("Escape")).toBe("block");
+		input.setMode("pick");
+		expect(input.mouseUp(0)).toBe("block");
+		input.setMode("browse");
+		expect(input.forwardsPointer()).toBe(true);
+		expect(input.mouseDown(0)).toBe("forward");
+		expect(input.mouseUp(0)).toBe("forward");
+	});
+
+	it("keeps keys local through capture completion, then resumes normal input", () => {
+		const input = new PageInputGate();
+		input.setMode("pick");
+		expect(input.keyDown("KeyA")).toBe("block");
+		input.setMode("capturing");
+		expect(input.keyDown("KeyV")).toBe("block");
+		input.setMode("browse");
+		expect(input.keyUp("KeyA")).toBe("block");
+		expect(input.keyUp("KeyV")).toBe("block");
+		expect(input.keyDown("KeyB")).toBe("forward");
+		expect(input.keyUp("KeyB")).toBe("forward");
+	});
+});
 
 describe("the address bar", () => {
 	it("takes an address as it is, gives a host its scheme, and searches for the rest", () => {

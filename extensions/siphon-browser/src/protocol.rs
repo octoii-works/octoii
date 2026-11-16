@@ -2,6 +2,7 @@
 //! moved, answered and closed, and the person's own mouse, keys and text on it; the pages of a thread as they change,
 //! and a page painted, each frame the newest the browser painted of it.
 
+use octoii_ai::vocabulary::FileRef;
 use serde::{Deserialize, Serialize};
 use siphon::protocol::{Nothing, Scope};
 use ts_rs::TS;
@@ -30,6 +31,81 @@ siphon::methods! {
     "browser.key" Key(OnPage<PageKey>) -> Nothing, Some(Scope::BrowserOperate);
     /// Text the person typed into a page at once, as an input method commits it.
     "browser.text" Text(TypeText) -> Nothing, Some(Scope::BrowserOperate);
+    /// Captures evidence of the main-document element at a viewport point, without dispatching input. Also requires
+    /// threads.operate to keep the screenshot in its owning thread.
+    "browser.pick" Pick(PickElement) -> ElementFeedback, Some(Scope::BrowserOperate);
+}
+
+/// A point to inspect in the page's CSS viewport, together with the page and view the person saw.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct PickElement {
+    pub thread: String,
+    pub page: String,
+    pub x: f64,
+    pub y: f64,
+    pub expected_url: String,
+    pub view: View,
+}
+
+/// Evidence captured now for the person to review before sending. Its screenshot is a kept thread file; its locator
+/// describes this document at capture time and is not a durable element handle or a guarantee about an older frame.
+/// The document is the main document's opaque identity; `captured_at` is the node's Unix capture time in milliseconds.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct ElementFeedback {
+    pub thread: String,
+    pub page: String,
+    pub url: String,
+    pub document: String,
+    pub captured_at: i64,
+    pub viewport: CapturedViewport,
+    pub point: PagePoint,
+    pub element: ElementDescription,
+    pub screenshot: FileRef,
+}
+
+/// The viewport at capture time: CSS pixels, device pixels per CSS pixel, and its scroll position.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
+pub struct CapturedViewport {
+    pub width: u32,
+    pub height: u32,
+    pub scale: f64,
+    pub scroll_x: f64,
+    pub scroll_y: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
+pub struct PagePoint {
+    pub x: f64,
+    pub y: f64,
+}
+
+/// A finite description of one element, excluding form values and the surrounding DOM. Its optional selector is a
+/// bounded CSS selector that uniquely described this element in the main document.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct ElementDescription {
+    pub tag: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub role: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub selector: Option<String>,
+    pub rect: ElementRect,
+}
+
+/// The selected element's bounds in CSS viewport pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
+pub struct ElementRect {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
 }
 
 /// A page, by its id.

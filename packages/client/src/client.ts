@@ -19,6 +19,8 @@ import type {
 	Config,
 	ConfigChange,
 	FileRef,
+	ElementFeedback,
+	PickElement,
 	Granted,
 	InputContent,
 	JsonValue,
@@ -100,6 +102,8 @@ export type Client = {
 	openPage(thread: string, url: string | undefined, view: View): Promise<string>;
 	/** Follows the page `id` for a view `view` big, told through `handlers`, which clicks it, types into it, resizes it and lets it go. */
 	page(id: string, view: View, handlers: PageHandlers): PageView;
+	/** Captures the element the person selected, keeping its screenshot in the named thread. */
+	pickElement(pick: PickElement): Promise<ElementFeedback>;
 	/** Closes the page `id`: gone from its thread. */
 	closePage(id: string): Promise<void>;
 	/** What the person granted each project. */
@@ -196,6 +200,7 @@ export function createClient(options: ClientOptions): Client {
 			watched<readonly PageListed[]>(watches, `pages ${thread}`, { type: "pages", thread }, (event) => (event.event === "pages" ? event.pages : undefined)),
 		openPage: async (thread, url, view) => (await connection.call("browser.open", { thread, view, ...(url === undefined ? {} : { url }) })).page,
 		page: (id, view, handlers) => followPage(connection, subscriptions, told, id, view, handlers),
+		pickElement: (pick) => connection.call("browser.pick", pick),
 		closePage: (id) => done(connection.call("browser.close", { page: id })),
 		grants: async () => (await connection.call("grants.list", {})).projects,
 		revokeGrant: (granted) => done(connection.call("grants.revoke", granted)),

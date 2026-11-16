@@ -5,7 +5,10 @@
 use std::future::Future;
 
 use bytes::Bytes;
+use octoii_ai::vocabulary::FileRef;
 use siphon_runtime::{Changes, Runtime};
+
+use crate::threads::{files, operations, thread};
 
 /// What the volume's reads give, and how the volume and the machine's commands fail, as Beak tells it.
 pub use beak::{Error, Result, Snapshot};
@@ -45,6 +48,36 @@ impl Volume {
     #[must_use]
     pub fn now_ms(&self) -> i64 {
         self.runtime.now_ms()
+    }
+
+    /// Keeps an image in the existing thread's files, fitted to what every model reads and named by its content.
+    /// Returns its reference and fitted size only once storage commits.
+    ///
+    /// # Errors
+    /// No such thread, an image past the byte limit or one that cannot be read, or the volume's failure.
+    pub async fn keep_image(
+        &self,
+        thread: &str,
+        bytes: &[u8],
+        name: Option<&str>,
+    ) -> std::result::Result<(FileRef, siphon_image::Size), files::Refused> {
+        let snapshot = self.snapshot()?;
+        let exists = snapshot
+            .stat(&thread::path(thread))?
+            .and_then(|entry| entry.directory)
+            .is_some_and(|directory| !operations::removing(&directory));
+        if !exists {
+            return Err(files::Refused::NoSuchThread);
+        }
+        if bytes.len() > files::BYTES_MAX {
+            return Err(files::Refused::TooLarge);
+        }
+        let mut changes = Changes::new();
+        let kept = files::keep_image(&snapshot, &mut changes, thread, bytes, name)?;
+        if !changes.is_empty() {
+            self.runtime.commit(changes).await?;
+        }
+        Ok(kept)
     }
 
     /// What `work` comes to, given a record of the kind `kind` for the runs it makes — the commands a run of git makes,

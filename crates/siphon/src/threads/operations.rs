@@ -409,6 +409,6 @@ fn listed_all(runtime: &Runtime) -> Result<Vec<Listed>, Error> {
 }
 
 /// Whether `directory` is being removed, to go once the processes under it end.
-fn removing(directory: &beak::Directory) -> bool {
+pub(crate) fn removing(directory: &beak::Directory) -> bool {
     directory.label(layout::REMOVING_LABEL).is_some_and(|value| value == "true")
 }

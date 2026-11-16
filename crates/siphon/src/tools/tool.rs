@@ -176,13 +176,11 @@ impl Context {
     /// # Errors
     /// A `Refusal` where it is no image that can be read, or it could not be kept.
     pub async fn show_image(&self, bytes: &[u8], name: Option<&str>) -> Result<Vec<InputContent>, Refusal> {
-        let snapshot = self.runtime.snapshot().map_err(|error| Refusal(error.to_string()))?;
-        let mut changes = Changes::new();
-        let (file, size) = crate::threads::files::keep_image(&snapshot, &mut changes, &self.thread, bytes, name)
+        let (file, size) = self
+            .volume()
+            .keep_image(&self.thread, bytes, name)
+            .await
             .map_err(|error| Refusal(format!("{}: {error}", name.unwrap_or("the image"))))?;
-        if !changes.is_empty() {
-            self.runtime.commit(changes).await.map_err(|error| Refusal(error.to_string()))?;
-        }
         let size = format!("{}×{}", size.width, size.height);
         let said = match name {
             Some(name) => format!("{name}, an image of {size}"),

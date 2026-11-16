@@ -1,5 +1,21 @@
 /** What the tests build the node's answers of: a model as its catalogue gives it, and how a provider stands. */
-import type { Limit, Model, ProviderStatus } from "@octoii-works/octoii-client";
+import type { ElementFeedback, Limit, Model, ProviderStatus } from "@octoii-works/octoii-client";
+
+/** A saved browser selection whose screenshot belongs to its source thread. */
+export function capturedElement(fields: Partial<ElementFeedback> = {}): ElementFeedback {
+	return {
+		thread: "thread-A",
+		page: "page-A",
+		url: "https://example.com/form",
+		document: "document-A",
+		captured_at: 1_700_000_000_000,
+		viewport: { width: 800, height: 600, scale: 2, scroll_x: 0, scroll_y: 120 },
+		point: { x: 200, y: 180 },
+		element: { tag: "button", role: "button", label: "Submit", text: "Submit form", selector: "#submit", rect: { x: 160, y: 160, width: 120, height: 40 } },
+		screenshot: { ref: "sha256:captured", media_type: "image/png", filename: "selection.png" },
+		...fields,
+	};
+}
 
 /** The model `id` of `provider`, as the catalogue gives it, with `fields` laid over what a plain text model has. */
 export function catalogued(provider: string, id: string, fields: Partial<Model> = {}): Model {

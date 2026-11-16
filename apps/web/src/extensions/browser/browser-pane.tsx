@@ -7,44 +7,58 @@
 import { type FormEvent, type ReactNode, useState } from "react";
 import type { PageDialog, PageListed } from "@octoii-works/octoii-client";
 import { useClient } from "@octoii-works/octoii-client/react";
-import { ArrowLeft, ArrowRight, Globe, LoaderCircle, MessageSquareWarning, RotateCw } from "lucide-react";
+import { ArrowLeft, ArrowRight, Globe, LoaderCircle, MessageSquareWarning, MousePointer2, RotateCw } from "lucide-react";
 import { addressOf, shownAddress } from "../../core/browser.ts";
 import { usePageView } from "../../components/effects/page.ts";
+import { useElementPicker } from "../../components/effects/element-pick.ts";
 import { Button, IconButton } from "../../components/ui/button.tsx";
 import { failed } from "../../components/state/notices.ts";
 
 /** The page `page`. */
-export function BrowserPane(props: { readonly page: PageListed }): ReactNode {
+export function BrowserPane(props: { readonly thread: string; readonly page: PageListed }): ReactNode {
 	const { page } = props;
 	const client = useClient();
-	const view = usePageView(page.id);
+	const picker = useElementPicker(props.thread, page);
+	const { mode } = picker;
+	const { mount, ready } = usePageView(page, picker);
+	const selecting = mode !== "browse";
 	return (
 		<div className="flex min-h-0 flex-1 flex-col">
 			<div className="flex h-control-lg shrink-0 items-center gap-0.5 border-b border-border px-2 text-xs">
 				<IconButton
 					label="Go back"
-					disabled={!page.back}
+					disabled={selecting || !page.back}
 					onClick={() => void client.call("browser.back", { page: page.id }).catch((error: unknown) => failed("The page could not go back", error))}
 				>
 					<ArrowLeft className="size-3.5" />
 				</IconButton>
 				<IconButton
 					label="Go forward"
-					disabled={!page.forward}
+					disabled={selecting || !page.forward}
 					onClick={() => void client.call("browser.forward", { page: page.id }).catch((error: unknown) => failed("The page could not go forward", error))}
 				>
 					<ArrowRight className="size-3.5" />
 				</IconButton>
 				<IconButton
 					label="Load the page again"
+					disabled={selecting}
 					onClick={() => void client.call("browser.reload", { page: page.id }).catch((error: unknown) => failed("The page could not be loaded again", error))}
 				>
 					{page.loading ? <LoaderCircle className="size-3.5 animate-spin" /> : <RotateCw className="size-3.5" />}
 				</IconButton>
 				<AddressBar
 					page={page}
+					disabled={selecting}
 					onGo={(url) => void client.call("browser.navigate", { page: page.id, url }).catch((error: unknown) => failed("The page could not go there", error))}
 				/>
+				<IconButton
+					label={selecting ? "Cancel element selection" : "Select an element for your message"}
+					aria-pressed={selecting}
+					disabled={!selecting && (page.loading || page.dialog !== undefined || !ready)}
+					onClick={() => (selecting ? picker.cancel() : picker.start())}
+				>
+					{mode === "capturing" ? <LoaderCircle className="size-3.5 animate-spin" /> : <MousePointer2 className="size-3.5" />}
+				</IconButton>
 			</div>
 			{page.dialog === undefined ? null : (
 				<DialogBar
@@ -57,7 +71,20 @@ export function BrowserPane(props: { readonly page: PageListed }): ReactNode {
 					}
 				/>
 			)}
-			<div ref={view} className="relative min-h-0 flex-1 overflow-hidden bg-background" />
+			<div ref={mount} className="relative min-h-0 flex-1 overflow-hidden bg-background">
+				{selecting ? (
+					<div
+						role="status"
+						className="pointer-events-none absolute inset-x-3 top-3 z-10 rounded-md border border-border bg-background px-3 py-2 text-xs shadow-raised"
+					>
+						{mode === "capturing"
+							? "Capturing the selected element…"
+							: !ready
+								? "Waiting for the page's latest frame…"
+								: "Click an element to add it to your message. Escape cancels."}
+					</div>
+				) : null}
+			</div>
 		</div>
 	);
 }
@@ -126,7 +153,7 @@ function DialogBar(props: { readonly dialog: PageDialog; readonly onAnswer: (acc
  * The page's address: what the person types while they edit it, where the page is otherwise; Enter goes where it says,
  * Escape puts back where the page is. Focused as a blank page opens.
  */
-function AddressBar(props: { readonly page: PageListed; readonly onGo: (url: string) => void }): ReactNode {
+function AddressBar(props: { readonly page: PageListed; readonly disabled: boolean; readonly onGo: (url: string) => void }): ReactNode {
 	const shown = shownAddress(props.page.url);
 	const [typed, setTyped] = useState<string | undefined>(undefined);
 	const go = (event: FormEvent<HTMLFormElement>): void => {
@@ -143,6 +170,7 @@ function AddressBar(props: { readonly page: PageListed; readonly onGo: (url: str
 			<Globe className="size-3.5 shrink-0 text-muted-foreground" />
 			<input
 				name="address"
+				disabled={props.disabled}
 				aria-label="Address"
 				autoFocus={shown === ""}
 				value={typed ?? shown}

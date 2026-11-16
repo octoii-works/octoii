@@ -3,7 +3,67 @@
  * host given the scheme it is reached by, or else a search — how a page is named on its tab, the modifiers a key or a
  * click is told with, and the editing a shortcut stands for.
  */
-import type { PageListed } from "@octoii-works/octoii-client";
+import type { PageFrame, PageListed, View } from "@octoii-works/octoii-client";
+
+/** Selecting is local; capture keeps input blocked until its result or a cancellation. */
+export type PageMode = "browse" | "pick" | "capturing";
+
+/** A capture uses the frame actually drawn, only once it matches the node's latest CSS viewport. */
+export function pickViewOf(shown: Pick<PageFrame, "width" | "height"> | undefined, view: View): View | undefined {
+	const scale = view.scale ?? 1;
+	if (
+		shown === undefined ||
+		shown.width <= 0 ||
+		shown.height <= 0 ||
+		shown.width !== view.width ||
+		shown.height !== view.height ||
+		!Number.isFinite(scale) ||
+		scale <= 0
+	)
+		return undefined;
+	return { width: shown.width, height: shown.height, scale };
+}
+
+/** Keeps each local mouse/key gesture local, including its release after Escape or an asynchronous capture. */
+export class PageInputGate {
+	mode: PageMode = "browse";
+	private readonly buttons = new Set<number>();
+	private readonly keys = new Set<string>();
+	private selecting = false;
+
+	setMode(mode: PageMode): void {
+		if (mode !== this.mode) this.selecting = false;
+		this.mode = mode;
+	}
+
+	forwardsPointer(): boolean {
+		return this.mode === "browse" && this.buttons.size === 0;
+	}
+
+	mouseDown(button: number): "forward" | "block" {
+		if (this.forwardsPointer()) return "forward";
+		this.buttons.add(button);
+		this.selecting = this.mode === "pick" && button === 0;
+		return "block";
+	}
+
+	mouseUp(button: number): "forward" | "select" | "block" {
+		if (!this.buttons.delete(button)) return this.forwardsPointer() ? "forward" : "block";
+		const selected = this.selecting && this.mode === "pick" && button === 0 && this.buttons.size === 0;
+		this.selecting = false;
+		return selected ? "select" : "block";
+	}
+
+	keyDown(code: string): "forward" | "block" {
+		if (this.mode === "browse" && !this.keys.has(code)) return "forward";
+		this.keys.add(code);
+		return "block";
+	}
+
+	keyUp(code: string): "forward" | "block" {
+		return this.keys.delete(code) || this.mode !== "browse" ? "block" : "forward";
+	}
+}
 
 /** What the address bar searches with, where what is typed is no address. */
 const SEARCH = "https://duckduckgo.com/?q=";

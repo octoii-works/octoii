@@ -154,6 +154,14 @@ read/write/edit/glob/grep 保留；shell 用于会结束的命令，terminal 用
 
 归属为现有 siphon-browser 协议与 Web browser/composer 扩展。暂缓录屏、自由绘制、源码框架追踪、账号导入。
 
+T04 实施边界：
+
+- `browser.pick` 是用户侧 RPC，不增加 Agent 工具。请求明确所属 thread、page、已绘制画面的 CSS 坐标、预期 URL 和视口；服务端核验页面归属及 browser.operate、threads.operate 权限。
+- 复用 `Volume::keep_image` 保存模型可读取的截图，现有 `Context::show_image` 使用同一原语。返回截图 FileRef、捕获时间、文档标识、视口、选取点及有长度上限的元素描述；不保存完整 DOM、outerHTML 或输入框值。
+- 首版选取主文档元素，子 frame 明确拒绝。捕获前后核对文档、URL、视口及目标元素；无关 DOM 更新不使选取失败。截图与用户此前看到的流式帧并非原子快照，反馈卡片供发送前检查，不声称还原任意旧帧。
+- 选取模式复用当前画布，截住网页鼠标、滚轮、键盘和输入法事件；切换不重建页面。Escape 取消，点击只捕获，不触发目标页面操作。
+- 草稿保留可删除的截图与元素上下文。发送时复用 input_text/input_image，成功仅清除本次提交的内容，发送期间新增的草稿保留；失败不清空。截图随会话文件读取，历史定位不自动重放。
+
 验收：选取元素加文字后模型能读到证据；选取不触发页面行为；发送前可删除反馈；导航后旧证据仍显示但旧引用不能误指新元素；重开历史截图可读。
 
 ## P03：会话整理
@@ -198,7 +206,8 @@ HTML 后续：多文件资源打包、主题联动、PDF 内联展示分别验�
 - T01 已完成：四个扩展提供原生结构化结果与输出 schema，前端文件结果转换限定到内核工具。30 项受影响 Rust 测试通过（含真实 Chromium 与终端进程）、186 项 Web 测试通过；严格 Clippy、类型、lint 与格式检查通过。通用 Calling 测试夹具补建 inbox，生产通知机制不变。
 - T02 已完成：execute 持久化真实已结束子调用；默认摘要与最终输出，展开代码及工具详情。14 项 execute 测试、193 项 Web 测试、严格 Clippy、类型、lint、格式与构建通过。真实 Chromium 组件示例验证折叠、子命令详情、失败/拒绝徽标与 390px 触屏布局；不等同于 Electron/iPhone 真机验收。
 - T03 已实现：子任务类型持久保存，创建缺省 general_purpose，续接不改变类型；explorer 在声明、脚本绑定与执行入口均限制为 read/glob/grep/execute，MCP 收集在连接和信任询问之前退出。界面显示实际存储的类型。验证覆盖恢复审批、已有授权和 FullAccess 不绕过、重开与续接保留类型、原生工具及 MCP 不暴露；102 项受影响 Rust 测试通过、1 项忽略；193 项 Web、5 项客户端测试、协议生成、严格 Clippy、类型与格式检查通过。一次已有停止测试的日志尾部断言未通过，隔离及随后完整运行通过；保留原断言并增加日志诊断，未改停止逻辑。
-- 下一项：T04 浏览器元素反馈；之后按 T05 推进。
+- T04 已完成：browser.pick、会话持久截图、画布选取和可移除的反馈草稿接通，复用现有消息与图片预览。浏览器 18 项测试通过（含新增 6 项真实 Chromium 捕获测试），核心 91 项通过、1 项既有 live 测试忽略、4 项核心集成测试通过；Web 203 项、客户端 6 项、协议生成、严格 Clippy、类型、lint、格式与 Web 构建通过。真实 Chromium 组件示例验证无输入转发、无重挂/视口改变、取消迟到捕获、图片展开、删除反馈、发送失败保留及成功仅清提交快照；该示例使用隔离客户端，不等于全应用端到端或 Electron/iPhone 真机验收。主文档之外的 frame 选取与手机触摸仍暂缓。
+- 下一项：T05 会话整理。
 
 ## 执行顺序与完成标准
 
@@ -224,3 +233,4 @@ HTML 后续：多文件资源打包、主题联动、PDF 内联展示分别验�
 - [浏览器调用](https://github.com/pingdotgg/t3code/blob/e8bfabaa/apps/server/src/mcp/toolkits/preview/handlers.ts) 与 [标注](https://github.com/pingdotgg/t3code/blob/e8bfabaa/apps/web/src/lib/previewAnnotation.ts)：操作与用户反馈两条路径。
 - [会话工具](https://github.com/pingdotgg/t3code/blob/e8bfabaa/apps/server/src/mcp/toolkits/thread/tools.ts)：工具与产品对象一致，但 queued run 等语义不直接照搬。
 - [Worktree 服务](https://github.com/pingdotgg/t3code/blob/e8bfabaa/apps/server/src/mcp/WorktreeMcpService.ts)：运行中迁移复杂，首版取新任务隔离这个子集。
+- [Chromium DOM 协议](https://github.com/ChromeDevTools/devtools-protocol/blob/master/json/browser_protocol.json) 与 [Runtime 协议](https://github.com/ChromeDevTools/devtools-protocol/blob/master/json/js_protocol.json)：T04 核对命中节点的 frameId、整数坐标、无 userGesture 的对象读取与对象释放；协议资料不代替实际 Chromium 验收。

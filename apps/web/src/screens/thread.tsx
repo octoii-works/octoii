@@ -203,11 +203,11 @@ function Dock(props: {
 							draft={{ thread }}
 							folder={workspace}
 							things={props.things}
-							onSend={async ({ text, attachments }) => {
-								props.onSent(await client.deliver(thread, contentOf(text, attachments)));
+							onSend={async ({ text, attachments, feedback }) => {
+								props.onSent(await client.deliver(thread, contentOf(text, attachments, feedback)));
 							}}
-							onQueue={async ({ text, attachments }) => {
-								props.onSent(await client.queue(thread, contentOf(text, attachments)));
+							onQueue={async ({ text, attachments, feedback }) => {
+								props.onSent(await client.queue(thread, contentOf(text, attachments, feedback)));
 							}}
 							onStop={() => void client.stop(thread).catch((error: unknown) => failed("The thread could not be stopped", error))}
 							approval={approval}

@@ -4,15 +4,19 @@
  * where the model looks at no images.
  */
 import { type ReactNode, useRef } from "react";
+import type { ElementFeedback } from "@octoii-works/octoii-client";
 import { FileText, LoaderCircle, Paperclip, X } from "lucide-react";
 import { type Attachment, fileAddress, isImage, sizeLabel } from "../../core/attachments.ts";
 import { IconButton } from "../ui/button.tsx";
 import { KeptImage } from "../ui/kept-image.tsx";
 import type { Attaching } from "./attaching.ts";
+import { ElementFeedbackCards } from "./element-feedback.tsx";
 
 /** What the row is given: the draft's files, those on their way, and whether the model looks at images. */
 export type AttachmentsProps = {
 	readonly attachments: readonly Attachment[];
+	readonly feedback: readonly ElementFeedback[];
+	readonly onRemoveFeedback: (feedback: ElementFeedback) => void;
 	readonly attaching: Attaching;
 	readonly seesImages: boolean | undefined;
 	/** The thread the files are kept by; none for a thread not made yet, whose files the page holds. */
@@ -22,8 +26,8 @@ export type AttachmentsProps = {
 /** The row; nothing where there is nothing to show. */
 export function Attachments(props: AttachmentsProps): ReactNode {
 	const { attachments, attaching } = props;
-	const images = attachments.some((each) => isImage(each.media_type));
-	if (attachments.length === 0 && attaching.sending.length === 0 && attaching.failure === undefined) return null;
+	const images = props.feedback.length > 0 || attachments.some((each) => isImage(each.media_type));
+	if (attachments.length === 0 && props.feedback.length === 0 && attaching.sending.length === 0 && attaching.failure === undefined) return null;
 	return (
 		<div className="flex flex-col gap-1.5 px-3 pt-3">
 			<div className="flex flex-wrap gap-2">
@@ -38,6 +42,7 @@ export function Attachments(props: AttachmentsProps): ReactNode {
 					</div>
 				))}
 			</div>
+			<ElementFeedbackCards feedback={props.feedback} onRemove={props.onRemoveFeedback} />
 			{attaching.failure === undefined ? null : <p className="text-xs text-error-foreground">{attaching.failure}</p>}
 			{images && props.seesImages === false ? (
 				<p className="text-xs text-warning-foreground">This model looks at no images: choose one that does to send them.</p>

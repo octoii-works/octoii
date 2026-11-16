@@ -63,7 +63,8 @@ pub async fn serve(
     }
     let caller = Caller {
         siphon,
-        session: access.session.clone(),
+        session: access.session,
+        scopes: access.scopes,
     };
     let mut subscriptions = Subscriptions::default();
     while let Some(message) = incoming.recv().await {
@@ -79,7 +80,7 @@ pub async fn serve(
             }
         };
         let answered = match call.method.as_str() {
-            "subscribe" => subscriptions.subscribe(&caller, &access, call.params, &outgoing),
+            "subscribe" => subscriptions.subscribe(&caller, call.params, &outgoing),
             "unsubscribe" => subscriptions.unsubscribe(call.params),
             name => {
                 let Some(owned) = caller.siphon.registry.methods.get(name) else {
@@ -92,8 +93,8 @@ pub async fn serve(
                     continue;
                 }
                 let (scope, handle) = &owned.item;
-                if let Some(scope) = scope.filter(|scope| !access.scopes.contains(scope)) {
-                    let _ = outgoing.send(text(&answer(call.id, Err(forbidden(scope))))).await;
+                if let Err(error) = scope.map_or(Ok(()), |scope| caller.require_scope(scope)) {
+                    let _ = outgoing.send(text(&answer(call.id, Err(error)))).await;
                     continue;
                 }
                 let (doing, outgoing) = (handle(caller.clone(), name, call.params), outgoing.clone());
@@ -135,9 +136,9 @@ struct Subscriptions {
 }
 
 impl Subscriptions {
-    /// A subscription to the topic `params` names, for the client of `access`: its id, and the task that tells it,
+    /// A subscription to the topic `params` names, for `caller`: its id, and the task that tells it,
     /// held till it is let go.
-    fn subscribe(&mut self, caller: &Caller, access: &Access, params: serde_json::Value, outgoing: &mpsc::Sender<Outgoing>) -> Subscribing {
+    fn subscribe(&mut self, caller: &Caller, params: serde_json::Value, outgoing: &mpsc::Sender<Outgoing>) -> Subscribing {
         let subscribe: Subscribe = serde_json::from_value(params).map_err(|error| refusal("bad_params", &error.to_string()))?;
         let Some((scope, telling, extension)) = caller
             .siphon
@@ -151,9 +152,7 @@ impl Subscriptions {
         if let Some(off) = switched_off(&caller.siphon, &extension) {
             return Err(off);
         }
-        if !access.scopes.contains(&scope) {
-            return Err(forbidden(scope));
-        }
+        caller.require_scope(scope)?;
         self.made += 1;
         let id = format!("s{}", self.made);
         let stop = self.ended.child_token();
@@ -223,7 +222,7 @@ pub fn refusal(code: &str, message: &str) -> Error {
 }
 
 /// The refusal of what a session needs `scope` for and lacks.
-fn forbidden(scope: Scope) -> Error {
+pub(crate) fn forbidden(scope: Scope) -> Error {
     refusal("forbidden", &format!("the session may not {}", scope_name(scope)))
 }
 

@@ -21,9 +21,16 @@ import { MessageThreadContext } from "./message-thread.ts";
 const TILE = "block h-32 w-auto max-w-96 min-w-16 object-cover object-top";
 
 /** The strip of `pictures`, and the one opened. */
-export function PictureStrip(props: { readonly pictures: readonly Picture[]; readonly className?: string }): ReactNode {
+export function PictureStrip(props: {
+	readonly pictures: readonly Picture[];
+	readonly className?: string;
+	readonly tileClassName?: string;
+	readonly thread?: string;
+}): ReactNode {
 	const [opened, setOpened] = useState<number | undefined>(undefined);
-	const thread = useContext(MessageThreadContext)?.thread ?? "";
+	const context = useContext(MessageThreadContext);
+	const thread = props.thread ?? context?.thread ?? "";
+	const tile = cn(TILE, props.tileClassName);
 	return (
 		<>
 			<div className={cn("flex snap-x snap-mandatory gap-2 overflow-x-auto px-1 py-1 [scrollbar-width:thin]", props.className)}>
@@ -36,14 +43,14 @@ export function PictureStrip(props: { readonly pictures: readonly Picture[]; rea
 						className="shrink-0 snap-start overflow-hidden rounded-md border border-border bg-muted outline-none focus-visible:ring-2 focus-visible:ring-ring"
 					>
 						{picture.kind === "kept" ? (
-							<KeptImage address={pictureAddress(thread, picture.ref)} alt={picture.name} loading="lazy" decoding="async" className={TILE} />
+							<KeptImage address={pictureAddress(thread, picture.ref)} alt={picture.name} loading="lazy" decoding="async" className={tile} />
 						) : (
-							<FilePicture path={picture.path} name={picture.name} box={PICTURE_BOX} className={TILE} />
+							<FilePicture path={picture.path} name={picture.name} box={PICTURE_BOX} className={tile} />
 						)}
 					</button>
 				))}
 			</div>
-			<Viewer pictures={props.pictures} opened={opened} onOpened={setOpened} />
+			<Viewer thread={thread} pictures={props.pictures} opened={opened} onOpened={setOpened} />
 		</>
 	);
 }
@@ -94,6 +101,7 @@ function sizeOf(image: HTMLImageElement): string {
 
 /** The opened picture, filling the view: its words, its size and its place in the strip, the arrows going through the others. */
 function Viewer(props: {
+	readonly thread: string;
 	readonly pictures: readonly Picture[];
 	readonly opened: number | undefined;
 	readonly onOpened: (index: number | undefined) => void;
@@ -111,7 +119,7 @@ function Viewer(props: {
 		<Dialog open={picture !== undefined} onOpenChange={(open) => (open ? undefined : props.onOpened(undefined))}>
 			<DialogPopup className="w-auto max-w-[92vw] items-center gap-3 border-0 bg-transparent p-0 shadow-none" onKeyDown={keys}>
 				{picture === undefined ? null : (
-					<Whole key={`${keyOf(picture)}:${String(opened)}`} picture={picture}>
+					<Whole key={`${keyOf(picture)}:${String(opened)}`} thread={props.thread} picture={picture}>
 						{pictures.length > 1 ? (
 							<>
 								<IconButton label="The one before" size="icon-xs" onClick={() => go(-1)}>
@@ -133,15 +141,19 @@ function Viewer(props: {
 }
 
 /** A picture whole, and under it its words, its size once it loaded, and `children`, the way through the others. */
-function Whole(props: { readonly picture: Picture; readonly children: ReactNode }): ReactNode {
+function Whole(props: { readonly thread: string; readonly picture: Picture; readonly children: ReactNode }): ReactNode {
 	const { picture } = props;
-	const thread = useContext(MessageThreadContext)?.thread ?? "";
 	const [size, setSize] = useState<string | undefined>(undefined);
 	const look = "max-h-[78vh] max-w-[90vw] rounded-md object-contain shadow-floating";
 	return (
 		<>
 			{picture.kind === "kept" ? (
-				<KeptImage address={fileAddress(thread, picture.ref)} alt={picture.name} onLoad={(event) => setSize(sizeOf(event.currentTarget))} className={look} />
+				<KeptImage
+					address={fileAddress(props.thread, picture.ref)}
+					alt={picture.name}
+					onLoad={(event) => setSize(sizeOf(event.currentTarget))}
+					className={look}
+				/>
 			) : (
 				<FilePicture path={picture.path} name={picture.name} onSize={setSize} className={look} />
 			)}

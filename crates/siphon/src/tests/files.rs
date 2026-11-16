@@ -47,6 +47,54 @@ async fn context(beak: &Beak, folder: &std::path::Path) -> Context {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn the_public_image_primitive_fits_deduplicates_and_keeps_images_only_in_existing_threads() {
+    let folder = tempfile::tempdir().expect("a folder");
+    let root = folder.path().canonicalize().expect("its real path");
+    let beak = Beak::new().expect("Beak");
+    let context = context(&beak, &root).await;
+    let volume = context.volume();
+    let mut image = Vec::new();
+    image::RgbImage::from_pixel(2048, 2048, image::Rgb([40, 100, 200]))
+        .write_to(&mut std::io::Cursor::new(&mut image), image::ImageFormat::Png)
+        .expect("a PNG");
+    assert!(matches!(
+        volume.keep_image("missing", &image, None).await,
+        Err(files::Refused::NoSuchThread)
+    ));
+    assert!(matches!(
+        volume.keep_image("t1", b"not an image", None).await,
+        Err(files::Refused::Image(_))
+    ));
+    let (file, size) = volume.keep_image("t1", &image, Some("feedback.png")).await.expect("a kept image");
+    assert!(size.width <= 1568 && size.height <= 1568 && u64::from(size.width) * u64::from(size.height) <= 1_150_000);
+    let (same, _) = volume.keep_image("t1", &image, None).await.expect("the same image");
+    assert_eq!(file.reference, same.reference);
+    let shown = context.show_image(&image, None).await.expect("the model's same image");
+    assert!(matches!(&shown[1], octoii_ai::vocabulary::InputContent::InputImage { file: shown, .. } if shown.reference == file.reference));
+    let bytes = files::read(&volume.snapshot().expect("a snapshot"), "t1", &file.reference)
+        .expect("the saved image")
+        .expect("its bytes");
+    assert_eq!(file.reference, files::reference_of(&bytes));
+    context.runtime.close().await;
+    drop(volume);
+    drop(context);
+    let reopened = Runtime::builder()
+        .start(
+            &beak,
+            Options {
+                directory: Some(root.join("volume")),
+                ..Options::default()
+            },
+        )
+        .expect("reopened");
+    assert_eq!(
+        files::read(&reopened.snapshot().expect("a snapshot"), "t1", &file.reference).expect("the historical image"),
+        Some(bytes)
+    );
+    reopened.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn namespace_file_ids_distinguish_host_files_from_virtual_volume_files() {
     let folder = tempfile::tempdir().expect("a folder");
     let root = folder.path().canonicalize().expect("its real path");
