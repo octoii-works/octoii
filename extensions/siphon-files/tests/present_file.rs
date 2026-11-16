@@ -52,6 +52,13 @@ async fn presented_files_keep_original_bytes_and_committed_results_remain_readab
         ("report.pdf", b"%PDF-1.7\noriginal\n%%EOF\n".as_slice(), "application/pdf"),
         ("shot.png", b"\x89PNG\r\n\x1a\n\0original image bytes".as_slice(), "image/png"),
         ("notes.txt", b"\xef\xbb\xbfone\r\ntwo\r\n".as_slice(), "text/plain"),
+        (
+            "report.html",
+            b"\xef\xbb\xbf<!doctype html>\r\n<title>Report</title>\r\n".as_slice(),
+            "text/html",
+        ),
+        ("page.HTM", "<p>页面</p>\r\n".as_bytes(), "text/html"),
+        ("binary.html", b"<html>\0\xff</html>".as_slice(), "application/octet-stream"),
         ("archive.zip", b"PK\x03\x04\0\0original archive bytes".as_slice(), "application/zip"),
     ];
     for (name, bytes, _) in &originals {

@@ -93,6 +93,13 @@ async fn original_files_are_content_addressed_and_survive_source_changes_and_a_r
     let originals = [
         ("shot.png", png, "image/png"),
         ("notes.txt", b"\xef\xbb\xbfone\r\ntwo\r\n".to_vec(), "text/plain"),
+        ("report.HTML", b"<!DOCTYPE html>\r\n<title>Report</title>\r\n".to_vec(), "text/html"),
+        ("page.htm", "\u{feff}<p>页面</p>\r\n".as_bytes().to_vec(), "text/html"),
+        ("empty.HtM", Vec::new(), "text/html"),
+        ("markup.html.txt", b"<html><title>Notes</title></html>".to_vec(), "text/plain"),
+        ("invalid.html", b"<html>\xff</html>".to_vec(), "application/octet-stream"),
+        ("nul.htm", b"<html>\0</html>".to_vec(), "application/octet-stream"),
+        ("document.html", b"%PDF-1.7\nmisnamed\n%%EOF\n".to_vec(), "application/pdf"),
         ("report.pdf", b"%PDF-1.7\noriginal bytes\n%%EOF\n".to_vec(), "application/pdf"),
         (
             "archive.zip",
@@ -109,7 +116,7 @@ async fn original_files_are_content_addressed_and_survive_source_changes_and_a_r
         let (file, size) = context.keep_file(name).await.expect("kept");
         assert_eq!(file.reference, files::reference_of(bytes));
         assert_eq!(file.filename.as_deref(), Some(*name));
-        assert_eq!(file.media_type, *media_type);
+        assert_eq!(file.media_type, *media_type, "{name}");
         assert_eq!(size, bytes.len() as u64);
         assert_eq!(
             files::read(&context.runtime.snapshot().expect("a snapshot"), "t1", &file.reference).expect("read"),
@@ -137,7 +144,11 @@ async fn original_files_are_content_addressed_and_survive_source_changes_and_a_r
         .expect("files")
         .expect("the files folder")
         .len();
-    assert_eq!(count, originals.len(), "one blob for each distinct content");
+    assert_eq!(
+        count,
+        originals.len() - 1,
+        "one blob for each distinct content; the two empty files share it"
+    );
     drop(snapshot);
     context.runtime.close().await;
     drop(context);
