@@ -1,0 +1,19 @@
+[package]
+name = "siphon-html"
+description = "Self-contained HTML prepared and displayed by one isolated preview document"
+version = "0.0.1"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+siphon = { path = "../../crates/siphon" }
+thiserror = "2.0.21"
+
+[dev-dependencies]
+tempfile = "3.27.0"
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros"] }

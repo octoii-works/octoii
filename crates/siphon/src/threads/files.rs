@@ -15,6 +15,29 @@ use crate::threads::thread;
 /// The most bytes a file holds.
 pub const BYTES_MAX: usize = 32 << 20;
 
+/// A kept original's media type, without making archives or text into media the model's `read` tool would decode.
+/// HTML uses its case-insensitive `.html` or `.htm` extension only for UTF-8 text without NUL, preserving every byte.
+#[must_use]
+pub fn media_type(name: &str, bytes: &[u8]) -> &'static str {
+    if let Some(media_type) = crate::machine::media_type(bytes) {
+        media_type
+    } else if [b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"]
+        .iter()
+        .any(|head| bytes.starts_with(*head))
+    {
+        "application/zip"
+    } else if siphon_text::Text::of(bytes).is_none() {
+        "application/octet-stream"
+    } else if name
+        .rsplit_once('.')
+        .is_some_and(|(_, extension)| extension.eq_ignore_ascii_case("html") || extension.eq_ignore_ascii_case("htm"))
+    {
+        "text/html"
+    } else {
+        "text/plain"
+    }
+}
+
 /// What a reference begins with, before the hash in lowercase hex.
 const SCHEME: &str = "sha256:";
 

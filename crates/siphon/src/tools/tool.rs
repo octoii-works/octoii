@@ -152,7 +152,7 @@ impl Context {
         .await
         .map_err(|error| Refusal(format!("the file read failed: {error}")))??;
         let size = bytes.len() as u64;
-        let media_type = file_media_type(&name, &bytes);
+        let media_type = crate::threads::files::media_type(&name, &bytes);
         let snapshot = self.runtime.snapshot().map_err(|error| Refusal(error.to_string()))?;
         let mut changes = Changes::new();
         let reference = crate::threads::files::keep(&snapshot, &mut changes, &self.thread, bytes)
@@ -195,28 +195,6 @@ impl Context {
                 detail: ImageDetail::Auto,
             },
         ])
-    }
-}
-
-/// A kept original's media type, without making archives or text into media the model's `read` tool would decode.
-/// HTML uses its case-insensitive `.html` or `.htm` extension only for UTF-8 text without NUL, preserving every byte.
-fn file_media_type(name: &str, bytes: &[u8]) -> &'static str {
-    if let Some(media_type) = crate::machine::media_type(bytes) {
-        media_type
-    } else if [b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"]
-        .iter()
-        .any(|head| bytes.starts_with(*head))
-    {
-        "application/zip"
-    } else if siphon_text::Text::of(bytes).is_none() {
-        "application/octet-stream"
-    } else if name
-        .rsplit_once('.')
-        .is_some_and(|(_, extension)| extension.eq_ignore_ascii_case("html") || extension.eq_ignore_ascii_case("htm"))
-    {
-        "text/html"
-    } else {
-        "text/plain"
     }
 }
 

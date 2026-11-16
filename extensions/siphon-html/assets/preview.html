@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="referrer" content="no-referrer" />
+		<meta
+			http-equiv="Content-Security-Policy"
+			content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; frame-src blob:; img-src data: blob:; font-src data: blob:; media-src data: blob:; base-uri 'none'; form-action 'none'"
+		/>
+		<title>HTML preview</title>
+		<style>
+			html,
+			body {
+				width: 100%;
+				height: 100%;
+				margin: 0;
+				overflow: hidden;
+			}
+			iframe {
+				display: block;
+				width: 100%;
+				height: 100%;
+				border: 0;
+				background: white;
+			}
+		</style>
+	</head>
+	<body>
+		<script>
+			(() => {
+				const policy =
+					"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data: blob:; media-src data: blob:; frame-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'";
+				let frame;
+				let address;
+
+				function measure() {
+					let pending = false;
+					let previous = 0;
+					const tell = () => {
+						pending = false;
+						const root = document.documentElement;
+						const height = Math.ceil(Math.max(root.scrollHeight, root.offsetHeight, document.body?.scrollHeight ?? 0));
+						if (height === previous || height <= 0) return;
+						previous = height;
+						parent.postMessage({ type: "octoii.html.size", height }, "*");
+					};
+					const queue = () => {
+						if (pending) return;
+						pending = true;
+						requestAnimationFrame(tell);
+					};
+					const observe = () => {
+						const observer = new ResizeObserver(queue);
+						observer.observe(document.documentElement);
+						if (document.body) observer.observe(document.body);
+						queue();
+					};
+					addEventListener("DOMContentLoaded", observe, { once: true });
+					addEventListener("load", queue, { once: true });
+					addEventListener("resize", queue);
+				}
+
+				function load(html) {
+					const prefix =
+						'<!doctype html><meta charset="utf-8"><meta name="referrer" content="no-referrer"><meta http-equiv="Content-Security-Policy" content="' +
+						policy +
+						'"><script>(' +
+						measure.toString() +
+						")()</" +
+						"script>";
+					const next = document.createElement("iframe");
+					next.title = "HTML content";
+					next.sandbox = "allow-scripts";
+					next.referrerPolicy = "no-referrer";
+					const nextAddress = URL.createObjectURL(new Blob([prefix, html], { type: "text/html;charset=utf-8" }));
+					next.src = nextAddress;
+					next.addEventListener(
+						"load",
+						() => {
+							if (frame === next) parent.postMessage({ type: "octoii.html.loaded" }, "*");
+						},
+						{ once: true },
+					);
+					frame?.remove();
+					if (address !== undefined) URL.revokeObjectURL(address);
+					frame = next;
+					address = nextAddress;
+					document.body.append(next);
+				}
+
+				addEventListener("message", (event) => {
+					const message = event.data;
+					if (message === null || typeof message !== "object") return;
+					if (event.source === parent && message.type === "octoii.html.load" && typeof message.html === "string") {
+						load(message.html);
+						return;
+					}
+					if (
+						event.source === frame?.contentWindow &&
+						message.type === "octoii.html.size" &&
+						typeof message.height === "number" &&
+						Number.isFinite(message.height) &&
+						message.height > 0
+					) {
+						parent.postMessage({ type: "octoii.html.size", height: Math.ceil(message.height) }, "*");
+					}
+				});
+				parent.postMessage({ type: "octoii.html.ready" }, "*");
+			})();
+		</script>
+	</body>
+</html>

@@ -5594,6 +5594,7 @@ dependencies = [
  "serde",
  "serde_json",
  "siphon",
+ "siphon-html",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -5652,6 +5653,16 @@ dependencies = [
  "tokio",
  "tokio-util",
  "ts-rs",
+]
+
+[[package]]
+name = "siphon-html"
+version = "0.0.1"
+dependencies = [
+ "siphon",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
 ]
 
 [[package]]

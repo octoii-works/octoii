@@ -5,7 +5,7 @@
 use std::time::Duration;
 
 use serde_json::json;
-use siphon::machine::Host;
+use siphon::machine::{Base, Host, Machine, Writes};
 use siphon::testing::Beak;
 use siphon_browser::{Action, Browser, BrowserHost, Change, Outcome, Place, Refusal};
 
@@ -106,9 +106,22 @@ fn browser(beak: &Beak, profile: &std::path::Path, downloads: &std::path::Path) 
     }))
 }
 
-async fn act(browser: &Browser, action: serde_json::Value) -> Result<Outcome, Refusal> {
+fn machine(beak: &Beak, workspace: &std::path::Path) -> Machine {
+    siphon::testing::commands(beak)
+        .open(
+            &Host::default(),
+            Base {
+                workspace: workspace.canonicalize().expect("its real path"),
+                home: None,
+            },
+            &Writes::Within(Vec::new()),
+        )
+        .expect("the call's machine")
+}
+
+async fn act(browser: &Browser, machine: &Machine, action: serde_json::Value) -> Result<Outcome, Refusal> {
     let action: Action = serde_json::from_value(action).expect("an action");
-    browser.act("t1", action).await
+    browser.act("t1", machine, action).await
 }
 
 /// The ref of the line of `reading` that holds `role` and `name`.
@@ -125,47 +138,53 @@ fn ref_in(reading: &str, role: &str, name: &str) -> String {
 async fn the_agent_opens_reads_fills_and_submits_a_form_and_the_person_sees_it_painted() {
     let beak = Beak::new().expect("Beak");
     let (profile, downloads) = (tempfile::tempdir().expect("a folder"), tempfile::tempdir().expect("a folder"));
+    let machine = machine(&beak, profile.path());
     let Some(browser) = browser(&beak, profile.path(), downloads.path()) else {
         return;
     };
     let mut events = browser.events();
     let address = serve().await;
-    let opened = act(&browser, json!({ "action": "open", "url": address })).await.expect("opened");
+    let opened = act(&browser, &machine, json!({ "action": "open", "url": address }))
+        .await
+        .expect("opened");
     let page = opened.page.expect("its page");
     assert_eq!(page.title, "Form");
-    let read = act(&browser, json!({ "action": "read" })).await.expect("read").text;
+    let read = act(&browser, &machine, json!({ "action": "read" })).await.expect("read").text;
     let field = ref_in(&read, "textbox", "Name");
     let typed = act(
         &browser,
+        &machine,
         json!({ "action": "type", "target": { "ref": field }, "text": "Ada", "clear": true }),
     )
     .await
     .expect("typed");
     assert_eq!(typed.text, "the page changed");
-    let clicked = act(&browser, json!({ "action": "click", "target": { "selector": "button" } }))
+    let clicked = act(&browser, &machine, json!({ "action": "click", "target": { "selector": "button" } }))
         .await
         .expect("clicked");
     assert_eq!(clicked.text, "the page changed");
     let greeted = act(
         &browser,
+        &machine,
         json!({ "action": "evaluate", "expression": "document.getElementById('out').textContent" }),
     )
     .await
     .expect("ran");
     assert_eq!(greeted.value, Some(json!("Hello Ada")));
-    let again = act(&browser, json!({ "action": "read" })).await.expect("read").text;
+    let again = act(&browser, &machine, json!({ "action": "read" })).await.expect("read").text;
     assert!(again.contains("\"Hello Ada\""), "{again}");
     let colour = ref_in(&read, "combobox", "Colour");
     let chose = act(
         &browser,
+        &machine,
         json!({ "action": "select", "target": { "ref": colour }, "values": ["Green"] }),
     )
     .await
     .expect("chose");
     assert!(chose.text.starts_with("chose [\"Green\"]"), "{}", chose.text);
-    let looked = act(&browser, json!({ "action": "look" })).await.expect("looked");
+    let looked = act(&browser, &machine, json!({ "action": "look" })).await.expect("looked");
     assert!(looked.image.expect("a picture").starts_with(b"\xff\xd8"), "a JPEG");
-    let info = act(&browser, json!({ "action": "info" })).await.expect("measured");
+    let info = act(&browser, &machine, json!({ "action": "info" })).await.expect("measured");
     assert!(info.text.contains("its view 1280×800"), "{}", info.text);
     let waiting = async {
         loop {
@@ -186,14 +205,18 @@ async fn the_agent_opens_reads_fills_and_submits_a_form_and_the_person_sees_it_p
 async fn a_covered_element_is_refused_a_dialog_is_answered_and_the_page_goes_back_through_its_history() {
     let beak = Beak::new().expect("Beak");
     let (profile, downloads) = (tempfile::tempdir().expect("a folder"), tempfile::tempdir().expect("a folder"));
+    let machine = machine(&beak, profile.path());
     let Some(browser) = browser(&beak, profile.path(), downloads.path()) else {
         return;
     };
     let address = serve().await;
-    act(&browser, json!({ "action": "open", "url": address })).await.expect("opened");
-    let read = act(&browser, json!({ "action": "read" })).await.expect("read").text;
+    act(&browser, &machine, json!({ "action": "open", "url": address }))
+        .await
+        .expect("opened");
+    let read = act(&browser, &machine, json!({ "action": "read" })).await.expect("read").text;
     let covered = act(
         &browser,
+        &machine,
         json!({ "action": "click", "target": { "ref": ref_in(&read, "button", "Hidden") } }),
     )
     .await;
@@ -204,6 +227,7 @@ async fn a_covered_element_is_refused_a_dialog_is_answered_and_the_page_goes_bac
     );
     let warned = act(
         &browser,
+        &machine,
         json!({ "action": "click", "target": { "ref": ref_in(&read, "button", "Warn") } }),
     )
     .await
@@ -215,36 +239,47 @@ async fn a_covered_element_is_refused_a_dialog_is_answered_and_the_page_goes_bac
     );
     let held = act(
         &browser,
+        &machine,
         json!({ "action": "cdp", "method": "Runtime.evaluate", "params": { "expression": "1" } }),
     )
     .await;
     assert!(held.expect_err("held").0.contains("dialog"));
-    act(&browser, json!({ "action": "dialog", "accept": true }))
+    act(&browser, &machine, json!({ "action": "dialog", "accept": true }))
         .await
         .expect("answered");
     let went = act(
         &browser,
+        &machine,
         json!({ "action": "click", "target": { "ref": ref_in(&read, "link", "Next") } }),
     )
     .await
     .expect("clicked");
     assert_eq!(went.text, format!("navigated to {address}/second"));
-    let back = act(&browser, json!({ "action": "back" })).await.expect("went back");
+    let back = act(&browser, &machine, json!({ "action": "back" })).await.expect("went back");
     assert_eq!(back.page.expect("its page").title, "Form");
     // The page began blank, as it was set up before it loaded anything; before that, no entry.
     assert!(
-        act(&browser, json!({ "action": "back" }))
+        act(&browser, &machine, json!({ "action": "back" }))
             .await
             .expect("went back")
             .text
             .ends_with("about:blank")
     );
-    assert!(act(&browser, json!({ "action": "back" })).await.is_err(), "no entry so far back");
-    let missing = act(&browser, json!({ "action": "click", "target": { "selector": "#nowhere" } })).await;
+    assert!(
+        act(&browser, &machine, json!({ "action": "back" })).await.is_err(),
+        "no entry so far back"
+    );
+    let missing = act(
+        &browser,
+        &machine,
+        json!({ "action": "click", "target": { "selector": "#nowhere" } }),
+    )
+    .await;
     let words = missing.expect_err("missing").0;
     assert!(words.contains("no element matches"), "{words}");
     let thrown = act(
         &browser,
+        &machine,
         json!({ "action": "evaluate", "expression": "(() => { throw new Error('nope') })()" }),
     )
     .await;
@@ -255,17 +290,18 @@ async fn a_covered_element_is_refused_a_dialog_is_answered_and_the_page_goes_bac
 async fn tabs_are_the_thread_s_its_console_and_downloads_are_told_and_cdp_reaches_the_page() {
     let beak = Beak::new().expect("Beak");
     let (profile, downloads) = (tempfile::tempdir().expect("a folder"), tempfile::tempdir().expect("a folder"));
+    let machine = machine(&beak, profile.path());
     let Some(browser) = browser(&beak, profile.path(), downloads.path()) else {
         return;
     };
     let address = serve().await;
-    let first = act(&browser, json!({ "action": "open", "url": format!("{address}/opener") }))
+    let first = act(&browser, &machine, json!({ "action": "open", "url": format!("{address}/opener") }))
         .await
         .expect("opened");
     let opener = first.page.expect("a page");
-    let console = act(&browser, json!({ "action": "console" })).await.expect("read").text;
+    let console = act(&browser, &machine, json!({ "action": "console" })).await.expect("read").text;
     assert_eq!(console, "#1 log: ready 42\n#2 error: trouble\n");
-    act(&browser, json!({ "action": "click", "target": { "selector": "button" } }))
+    act(&browser, &machine, json!({ "action": "click", "target": { "selector": "button" } }))
         .await
         .expect("clicked");
     let waiting = async {
@@ -276,14 +312,17 @@ async fn tabs_are_the_thread_s_its_console_and_downloads_are_told_and_cdp_reache
     tokio::time::timeout(Duration::from_secs(10), waiting)
         .await
         .expect("the page it opened is the thread's");
-    let tabs = act(&browser, json!({ "action": "tabs" })).await.expect("listed").text;
+    let tabs = act(&browser, &machine, json!({ "action": "tabs" })).await.expect("listed").text;
     assert!(tabs.contains(&format!("{} (current)", opener.id)), "{tabs}");
-    act(&browser, json!({ "action": "click", "target": { "selector": "a" } }))
+    act(&browser, &machine, json!({ "action": "click", "target": { "selector": "a" } }))
         .await
         .expect("clicked");
     let waiting = async {
         loop {
-            let told = act(&browser, json!({ "action": "downloads" })).await.expect("listed").text;
+            let told = act(&browser, &machine, json!({ "action": "downloads" }))
+                .await
+                .expect("listed")
+                .text;
             if told.contains("completed") {
                 return told;
             }
@@ -295,26 +334,35 @@ async fn tabs_are_the_thread_s_its_console_and_downloads_are_told_and_cdp_reache
         .expect("downloaded in time");
     assert!(told.starts_with("\"notes.txt\" completed: 9 of 9 bytes"), "{told}");
     let params = json!({ "expression": "2 + 2", "returnByValue": true });
-    let called = act(&browser, json!({ "action": "cdp", "method": "Runtime.evaluate", "params": params }))
-        .await
-        .expect("called");
+    let called = act(
+        &browser,
+        &machine,
+        json!({ "action": "cdp", "method": "Runtime.evaluate", "params": params }),
+    )
+    .await
+    .expect("called");
     assert_eq!(called.value.expect("a value")["result"]["value"], 4);
-    act(&browser, json!({ "action": "close" })).await.expect("closed");
-    assert!(act(&browser, json!({ "action": "switch", "page": "nonesuch" })).await.is_err());
+    act(&browser, &machine, json!({ "action": "close" })).await.expect("closed");
+    assert!(
+        act(&browser, &machine, json!({ "action": "switch", "page": "nonesuch" }))
+            .await
+            .is_err()
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_script_runs_inside_a_frame_of_another_site_s_process() {
     let beak = Beak::new().expect("Beak");
     let (profile, downloads) = (tempfile::tempdir().expect("a folder"), tempfile::tempdir().expect("a folder"));
+    let machine = machine(&beak, profile.path());
     let Some(browser) = browser(&beak, profile.path(), downloads.path()) else {
         return;
     };
     let address = serve().await;
-    act(&browser, json!({ "action": "open", "url": format!("{address}/framing") }))
+    act(&browser, &machine, json!({ "action": "open", "url": format!("{address}/framing") }))
         .await
         .expect("opened");
-    act(&browser, json!({ "action": "wait", "selector": "iframe" }))
+    act(&browser, &machine, json!({ "action": "wait", "selector": "iframe" }))
         .await
         .expect("framed");
     let expression = "document.getElementById('secret').textContent";
@@ -322,6 +370,7 @@ async fn a_script_runs_inside_a_frame_of_another_site_s_process() {
         loop {
             match act(
                 &browser,
+                &machine,
                 json!({ "action": "evaluate", "expression": expression, "frame": "localhost" }),
             )
             .await
@@ -335,6 +384,75 @@ async fn a_script_runs_inside_a_frame_of_another_site_s_process() {
         .await
         .expect("the frame reached");
     assert_eq!(outcome.value, Some(json!("inside")));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_local_html_preview_is_isolated_painted_clicked_and_its_console_is_read() {
+    let beak = Beak::new().expect("Beak");
+    let (profile, downloads) = (tempfile::tempdir().expect("a folder"), tempfile::tempdir().expect("a folder"));
+    let machine = machine(&beak, profile.path());
+    let Some(browser) = browser(&beak, profile.path(), downloads.path()) else {
+        return;
+    };
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("an isolated endpoint");
+    let address = format!("http://{}", listener.local_addr().expect("its address"));
+    let html = format!(
+        "<!doctype html><title>Preview</title>\
+         <style>body{{background:white}}button{{position:absolute;left:20px;top:20px;width:180px;height:80px}}</style>\
+         <button onclick=\"document.body.style.background='red';console.log('preview clicked')\">Click me</button>\
+         <script>\
+         console.log('preview ready');\
+         fetch('{address}/blocked').catch(() => console.log('network blocked'));\
+         window.open('{address}/popup');\
+         throw new Error('preview error');\
+         </script>"
+    );
+    std::fs::write(profile.path().join("preview.html"), html).expect("a local HTML file");
+    let preview = act(&browser, &machine, json!({ "action": "preview", "path": "preview.html" }))
+        .await
+        .expect("previewed");
+    let page = preview.page.expect("its page");
+    assert_eq!(browser.current("t1").await.as_deref(), Some(page.id.as_str()));
+    assert_eq!(browser.pages("t1").await.len(), 1, "the preview opens no popup");
+    let isolated = act(
+        &browser,
+        &machine,
+        json!({ "action": "evaluate", "expression": "document.querySelector('iframe').contentDocument === null" }),
+    )
+    .await
+    .expect("checked the frame");
+    assert_eq!(isolated.value, Some(json!(true)), "the content has its own origin");
+    let before = act(&browser, &machine, json!({ "action": "look" }))
+        .await
+        .expect("looked")
+        .image
+        .expect("a picture");
+    assert!(before.starts_with(b"\xff\xd8"), "a JPEG");
+    let console = act(&browser, &machine, json!({ "action": "console" }))
+        .await
+        .expect("its logs")
+        .text;
+    assert!(console.contains("preview ready"), "{console}");
+    assert!(console.contains("preview error"), "{console}");
+    assert!(console.contains("network blocked"), "{console}");
+    act(&browser, &machine, json!({ "action": "click", "target": { "x": 100, "y": 60 } }))
+        .await
+        .expect("clicked inside the isolated frame");
+    let after = act(&browser, &machine, json!({ "action": "look" }))
+        .await
+        .expect("looked again")
+        .image
+        .expect("a picture");
+    assert_ne!(before, after, "the click changes the painted page");
+    let console = act(&browser, &machine, json!({ "action": "console" }))
+        .await
+        .expect("its logs")
+        .text;
+    assert!(console.contains("preview clicked"), "{console}");
+    assert!(
+        tokio::time::timeout(Duration::from_millis(200), listener.accept()).await.is_err(),
+        "the preview sends no external request"
+    );
 }
 
 #[test]
@@ -351,4 +469,5 @@ fn an_action_is_json_its_schema_given() {
     );
     let schema = schemars::schema_for!(Action).to_value();
     assert!(schema.to_string().contains("\"navigate\""), "{schema}");
+    assert!(schema.to_string().contains("\"preview\""), "{schema}");
 }

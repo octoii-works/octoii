@@ -30,6 +30,10 @@ async fn the_browser_tool_reads_a_page_at_once_and_works_one_after_what_came_bef
         tools.effect("browser", &json!({ "action": "click", "target": { "ref": "e3" } }), &base),
         Ok(Effect::Browses)
     );
+    assert_eq!(
+        tools.effect("browser", &json!({ "action": "preview", "path": "report.html" }), &base),
+        Ok(Effect::Browses)
+    );
     let schema = &tools.declared()[0].parameters;
     assert!(schema.to_string().contains("\"navigate\""), "its actions told");
 }

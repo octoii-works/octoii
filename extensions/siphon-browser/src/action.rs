@@ -6,16 +6,17 @@
 //! each is an `Outcome` — the page it left, a line of what came of it, and what it read — or a `Refusal` the model reads.
 
 use std::fmt::Write as _;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use siphon::machine::Machine;
 
 use crate::browser::{Browser, BrowserError, Size};
 use crate::input::{Button, Input, InputError, Target};
-use crate::page::{Evaluated, Landed, Page, Wanted};
+use crate::page::{Evaluated, Landed, Page, SETTLE_CAP, Wanted};
 use crate::primitives::PageInfo;
 use crate::snapshot::node_of;
 
@@ -65,6 +66,12 @@ pub enum Action {
     Open {
         /// URL to open; a blank page if omitted.
         url: Option<String>,
+    },
+    /// Open a local HTML file in an isolated preview and make it current. Inline scripts run; external resource loads,
+    /// fetch requests, popups and access to other files are blocked. Inspect it with look, console and clicks.
+    Preview {
+        /// HTML file, relative to the workspace, absolute, or starting with ~ for the home folder.
+        path: String,
     },
     /// List the thread's pages.
     Tabs,
@@ -270,13 +277,14 @@ fn said(text: impl Into<String>) -> Outcome {
 }
 
 impl Browser {
-    /// Does `action` for the agent of `thread`: what came of it.
+    /// Does `action` for the agent of `thread`, reading local files through `machine`: what came of it.
     ///
     /// # Errors
     /// A `Refusal`, saying why, where it could not be done as asked.
-    pub async fn act(&self, thread: &str, action: Action) -> Result<Outcome, Refusal> {
+    pub async fn act(&self, thread: &str, machine: &Machine, action: Action) -> Result<Outcome, Refusal> {
         let mut outcome = match action {
             Action::Open { url } => self.opened(thread, url.as_deref()).await?,
+            Action::Preview { path } => self.previewed(thread, machine, &path).await?,
             Action::Tabs => self.tabs(thread).await,
             Action::Switch { page } => {
                 self.switch(thread, &page)
@@ -325,6 +333,43 @@ impl Browser {
         page.attached().await?;
         page.wait_for_load(Duration::from_secs(15)).await;
         Ok(said(format!("opened page {id}")))
+    }
+
+    async fn previewed(&self, thread: &str, machine: &Machine, path: &str) -> Result<Outcome, Refusal> {
+        let html = siphon_html::prepare(machine, path).map_err(|error| Refusal(error.to_string()))?;
+        let id = self.open(thread, None, OPENED).await?;
+        let page = self.page(&id);
+        let tree = page.cdp("Page.getFrameTree", serde_json::json!({})).await?;
+        page.cdp(
+            "Page.setDocumentContent",
+            serde_json::json!({ "frameId": tree["frameTree"]["frame"]["id"], "html": siphon_html::DOCUMENT }),
+        )
+        .await?;
+        if !page.wait_for_load(Duration::from_secs(15)).await {
+            return Err(Refusal("the HTML preview did not load in time".into()));
+        }
+        let payload = serde_json::json!({ "type": "octoii.html.load", "html": html });
+        let expression = format!(
+            "new Promise((resolve, reject) => {{
+              const done = (event) => {{
+                if (event.source !== window || event.data?.type !== 'octoii.html.loaded') return;
+                clearTimeout(timer);
+                removeEventListener('message', done);
+                resolve(true);
+              }};
+              const timer = setTimeout(() => {{
+                removeEventListener('message', done);
+                reject(Error('the HTML preview did not load in time'));
+              }}, 10000);
+              addEventListener('message', done);
+              window.postMessage({payload}, '*');
+            }})"
+        );
+        if let Evaluated::Threw(words) = page.evaluate(&expression).await? {
+            return Err(Refusal(words));
+        }
+        page.settle(Instant::now(), SETTLE_CAP).await;
+        Ok(said(format!("previewed {} in page {id}", serde_json::json!(path))))
     }
 
     async fn tabs(&self, thread: &str) -> Outcome {

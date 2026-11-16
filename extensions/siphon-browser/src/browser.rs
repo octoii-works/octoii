@@ -421,6 +421,12 @@ struct FrameTarget {
     url: String,
 }
 
+impl Page {
+    fn owns_session(&self, session: &str) -> bool {
+        self.session.as_deref() == Some(session) || self.frames.iter().any(|frame| frame.session == session)
+    }
+}
+
 /// The browser as it runs: its pipe, and what it tells.
 struct Running {
     cdp: Cdp,
@@ -724,7 +730,7 @@ impl Owner {
     async fn heard(&mut self, raw: Value) {
         let session = raw["sessionId"].as_str().map(str::to_owned);
         if let Some(session) = &session
-            && let Some(page) = self.pages.iter_mut().find(|page| page.session.as_deref() == Some(session.as_str()))
+            && let Some(page) = self.pages.iter_mut().find(|page| page.owns_session(session))
         {
             page.events.push_back(raw.clone());
             while page.events.len() > EVENTS_KEPT {
@@ -841,7 +847,7 @@ impl Owner {
 
     /// Hears an event of a page's target: a frame painted, a dialog opened or closed, a message of its console.
     async fn heard_of_page(&mut self, session: &str, event: CdpEvent) {
-        let Some(page) = self.pages.iter_mut().find(|page| page.session.as_deref() == Some(session)) else {
+        let Some(page) = self.pages.iter_mut().find(|page| page.owns_session(session)) else {
             return;
         };
         match event {
@@ -944,10 +950,7 @@ impl Owner {
         let Some(running) = &self.running else { return };
         let cdp = running.cdp.clone();
         let session = event.session_id.as_ref().to_owned();
-        let owner = self
-            .pages
-            .iter_mut()
-            .find(|page| page.session.as_deref() == Some(parent) || page.frames.iter().any(|frame| frame.session == parent));
+        let owner = self.pages.iter_mut().find(|page| page.owns_session(parent));
         if let Some(page) = owner {
             page.frames.push(FrameTarget {
                 target: event.target_info.target_id.as_ref().to_owned(),
