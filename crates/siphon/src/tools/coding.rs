@@ -12,7 +12,7 @@ use serde::Deserialize;
 use siphon_text::{Bounds, Edit};
 
 use crate::tools::effect::Effect;
-use crate::tools::told::{INSTRUCTIONS_FILE, Instructions, Structured, Told};
+use crate::tools::told::{INSTRUCTIONS_FILE, Instructions, SearchFile, SearchLine, Structured, Told};
 use crate::tools::tool::{Context, Refusal, Tool};
 
 /// How many files a page of glob gives, matching lines a page of grep, and the characters of a line grep shows.
@@ -412,6 +412,10 @@ impl Tool for GlobTool {
     const DESCRIPTION: &'static str = "Find files under a directory whose paths match a glob, respecting ignore files. Returns one path per line, newest first, 200 per page; a note gives the offset of the next page.";
     type Args = GlobArgs;
 
+    fn output_schema() -> Option<serde_json::Value> {
+        Some(Structured::schema("glob"))
+    }
+
     fn effect(&self, _: &GlobArgs, _: &Base) -> Effect {
         Effect::Reads
     }
@@ -442,10 +446,16 @@ impl Tool for GlobTool {
                 );
             }
             denied(machine, &found.denied, &mut out);
-            Ok(text(out))
+            Ok(Told::structured_content(
+                text(out),
+                &Structured::Glob {
+                    files: found.files.iter().map(|path| machine.shown(path)).collect(),
+                    next: (last < found.total).then_some(last + 1),
+                    denied: found.denied.iter().map(|path| machine.shown(path)).collect(),
+                },
+            ))
         })
         .await
-        .map(Told::from)
     }
 }
 
@@ -495,6 +505,10 @@ impl Tool for GrepTool {
     const DESCRIPTION: &'static str = "Search file contents with a regular expression (ripgrep syntax), in the files under a directory or in one file, respecting ignore files. Returns matches as `path:line: text` and context lines as `path:line- text`, 250 matches per page; a note gives the offset of the next page. Lines over 500 characters are truncated. Binary files are skipped and counted.";
     type Args = GrepArgs;
 
+    fn output_schema() -> Option<serde_json::Value> {
+        Some(Structured::schema("grep"))
+    }
+
     fn effect(&self, _: &GrepArgs, _: &Base) -> Effect {
         Effect::Reads
     }
@@ -514,10 +528,40 @@ impl Tool for GrepTool {
             let grepped = machine
                 .grep(&machine.path(&args.path), &args.pattern, &options)
                 .map_err(|error| Refusal(error.to_string()))?;
-            Ok(text(grep_text(machine, &grepped, offset)))
+            let matches = grepped
+                .files
+                .iter()
+                .flat_map(|file| &file.lines)
+                .filter(|line| line.matched)
+                .count();
+            let files = grepped
+                .files
+                .iter()
+                .map(|file| SearchFile {
+                    path: machine.shown(&file.path),
+                    lines: file
+                        .lines
+                        .iter()
+                        .map(|line| SearchLine {
+                            number: line.number,
+                            text: line.text.clone(),
+                            matched: line.matched,
+                            clipped: line.cut,
+                        })
+                        .collect(),
+                })
+                .collect();
+            Ok(Told::structured_content(
+                text(grep_text(machine, &grepped, offset)),
+                &Structured::Grep {
+                    files,
+                    next: grepped.more.then_some(offset + matches + 1),
+                    skipped_binary: grepped.binary,
+                    denied: grepped.denied.iter().map(|path| machine.shown(path)).collect(),
+                },
+            ))
         })
         .await
-        .map(Told::from)
     }
 }
 

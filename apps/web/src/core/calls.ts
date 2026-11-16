@@ -97,15 +97,11 @@ export type Found = { readonly path: string; readonly line: number | undefined; 
 
 /** What the search `call` found: a glob's paths, a grep's matching lines — its lines around them left out. */
 export function foundOf(call: ToolCall): readonly Found[] {
-	if (call.output === undefined || call.state !== "done") return [];
-	const lines = toldOf(call.output)
-		.text.split("\n")
-		.filter((line) => line !== "");
-	if (call.tool === "glob") return lines.map((path) => ({ path, line: undefined, text: undefined }));
-	return lines.flatMap((line) => {
-		const match = /^(.+?):(\d+): (.*)$/.exec(line);
-		return match === null ? [] : [{ path: match[1] ?? "", line: Number(match[2]), text: match[3] ?? "" }];
-	});
+	if (call.state !== "done") return [];
+	const result = call.structuredContent;
+	if (result?.type === "glob") return result.files.map((path) => ({ path, line: undefined, text: undefined }));
+	if (result?.type !== "grep") return [];
+	return result.files.flatMap((file) => file.lines.filter((line) => line.matched).map((line) => ({ path: file.path, line: line.number, text: line.text })));
 }
 
 /** A field of a call's arguments: its name, and its value as text — a string as it is, anything else as JSON. */

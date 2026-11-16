@@ -796,9 +796,19 @@ export type Revoked = { revoked: string, };
 export type Scope = "threads.read" | "threads.operate" | "files.read" | "terminals.operate" | "browser.operate" | "providers.manage" | "access.read" | "access.write";
 
 /**
+ * A searched file, including context lines distinctly from matching lines.
+ */
+export type SearchFile = { path: string, lines: Array<SearchLine>, };
+
+/**
  * Files to find: under the folder `path`, as the person names it, whose paths match `query`, `limit` at most.
  */
 export type SearchFiles = { path: string, query: string, limit: number, };
+
+/**
+ * A returned search line; clipping applies to text, not to its original line number.
+ */
+export type SearchLine = { number: number, text: string, matched: boolean, clipped: boolean, };
 
 /**
  * A section of what the model is told, by its name, with its text as it is sent; none for a section no longer told.
@@ -890,7 +900,7 @@ export type Streamed = { "type": "began", index: number, item: Item, } | { "type
  * write or an edit changed, whether it made it, and the lines added and taken out; the lines of a file a read holds,
  * and how many it has where the read reached its end.
  */
-export type Structured = { "type": "ran", ended: CommandEnd, output: string, } | { "type": "changed", path: string, created: boolean, additions: number, deletions: number, } | { "type": "read", path: string, text: string, next: number | null, clipped: Array<number>, from: number, to: number, total?: number, };
+export type Structured = { "type": "glob", files: Array<string>, next: number | null, denied: Array<string>, } | { "type": "grep", files: Array<SearchFile>, next: number | null, skippedBinary: number, denied: Array<string>, } | { "type": "ran", ended: CommandEnd, output: string, } | { "type": "changed", path: string, created: boolean, additions: number, deletions: number, } | { "type": "read", path: string, text: string, next: number | null, clipped: Array<number>, from: number, to: number, total?: number, };
 
 /**
  * A subscription made: its id, which its events carry.

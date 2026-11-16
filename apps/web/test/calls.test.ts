@@ -53,11 +53,29 @@ describe("a call as its tool told it", () => {
 		expect(spanOf(ran("read", "…", { type: "read", text: "", next: null, clipped: [], path: "a.md", from: 1, to: 200 }))).toBe("lines 1–200");
 		expect(spanOf(ran("read", "…", { type: "read", text: "", next: null, clipped: [], path: "a.md", from: 201, to: 300, total: 300 }))).toBe("lines 201–300");
 		expect(spanOf(ran("read", "whole", { type: "read", text: "", next: null, clipped: [], path: "a.md", from: 1, to: 12, total: 12 }))).toBeUndefined();
-		expect(foundOf(ran("glob", "src/a.ts\nsrc/b.ts"))).toEqual([
+		expect(foundOf(ran("glob", "display text is not parsed", { type: "glob", files: ["src/a.ts", "src/b.ts"], next: null, denied: [] }))).toEqual([
 			{ path: "src/a.ts", line: undefined, text: undefined },
 			{ path: "src/b.ts", line: undefined, text: undefined },
 		]);
-		expect(foundOf(ran("grep", "src/a.ts:3: let x\nsrc/a.ts:4- context\n[more matches than shown]"))).toEqual([{ path: "src/a.ts", line: 3, text: "let x" }]);
+		expect(
+			foundOf(
+				ran("grep", "display text is not parsed", {
+					type: "grep",
+					files: [
+						{
+							path: "src/a.ts",
+							lines: [
+								{ number: 3, text: "let x", matched: true, clipped: false },
+								{ number: 4, text: "context", matched: false, clipped: false },
+							],
+						},
+					],
+					next: null,
+					skippedBinary: 0,
+					denied: [],
+				}),
+			),
+		).toEqual([{ path: "src/a.ts", line: 3, text: "let x" }]);
 	});
 
 	it("gives arguments as their fields, a value not a string as JSON, and as they were laid out where they are no object", () => {
@@ -78,4 +96,10 @@ it("reads display titles only from metadata", () => {
 	expect(titleOf({ title: "  " })).toBeUndefined();
 	expect(titleOf({ title: 3 })).toBeUndefined();
 	expect(titleOf(null)).toBeUndefined();
+});
+
+it("uses structured search paths without splitting filenames or parsing model content", () => {
+	const path = "src/a:3: odd\nname.ts";
+	expect(foundOf(ran("glob", "not a path", { type: "glob", files: [path], next: null, denied: [] }))).toEqual([{ path, line: undefined, text: undefined }]);
+	expect(foundOf(ran("glob", path))).toEqual([]);
 });

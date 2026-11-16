@@ -48,10 +48,13 @@ text() 和 console.log 写入文本输出；return 保持现有 JSON 返回语�
 - shell：structuredContent 包含 type=ran、原始合并输出 output 和 ended。模型 content 中的提醒和转义不会污染原始 output。
 - read 文本：type=read、path、text、from、to、可确定的 total、下一页 next、被截断的行号 clipped。text 是当前页的行内容，按换行连接；不声称是文件原始字节。
 - write/edit：type=changed、path、created、additions、deletions。
+- glob：type=glob、files、next、denied。files 为当前页的实际路径，next 为下一页的 1-based offset 或 null。
+- grep：type=grep、files（path 与 lines）、next、skippedBinary、denied。每行含 number、text、matched、clipped，保留上下文行但与匹配行明确区分；next 按匹配数计算，不把上下文行计入分页。skippedBinary 是本次搜索实际跳过的二进制文件数，不保证覆盖未扫描文件。
+- 搜索 UI 直接读取上述结构化结果，不再从模型文本解析路径或行号；展示文本只用于模型与说明。
 - MCP：保留服务器 structuredContent；_meta 映射到 metadata，与转换后的模型 content 分开。
 - 其他工具通过相同结果封装返回 content，按实际能力逐步增加业务数据；不制造空的结构化“成功”结果。
 
-文件交付工具 present_file 仍属于后续产品任务，此次协议迁移不实现它。glob/grep 的专用业务结果、完整 MCP 资源内容支持、统一嵌套调用 UI 也单独推进，不借字段改造重写执行内核。
+文件交付工具 present_file 仍属于后续产品任务，此次协议迁移不实现它。完整 MCP 资源内容支持、统一嵌套调用 UI 也单独推进，不借字段改造重写执行内核。
 
 ## 验收
 

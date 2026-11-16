@@ -271,7 +271,85 @@ async fn a_command_a_write_and_a_read_tell_what_they_did_typed_beside_what_the_m
         .await
         .expect("done");
     assert_eq!(
-        globbed.structured_content, None,
-        "a search's lines are what it found, told as they are"
+        globbed.structured_content,
+        Some(json!({ "type": "glob", "files": ["notes.md"], "next": null, "denied": [] }))
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn search_data_preserves_context_clipping_binary_counts_and_pagination() {
+    let beak = Beak::new().expect("Beak");
+    let (context, _folder) = context(&beak, Writes::Workspace).await;
+    let tools = tools();
+    let odd_path = "a:3: name.txt";
+    std::fs::write(
+        context.base.workspace.join(odd_path),
+        format!("before\nneedle {}\nafter\n", "x".repeat(600)),
+    )
+    .expect("text");
+    std::fs::write(context.base.workspace.join("binary.bin"), b"\0needle").expect("binary");
+    let result = tools
+        .exec("grep", context.clone(), json!({ "pattern": "needle", "context": 1 }))
+        .await
+        .expect("grep");
+    let data = result.structured_content.expect("data");
+    assert_eq!(data["files"][0]["path"], odd_path);
+    assert_eq!(
+        data["files"][0]["lines"][0],
+        json!({ "number": 1, "text": "before", "matched": false, "clipped": false })
+    );
+    assert_eq!(data["files"][0]["lines"][1]["matched"], true);
+    assert_eq!(data["files"][0]["lines"][1]["clipped"], true);
+    assert_eq!(data["files"][0]["lines"][1]["text"].as_str().expect("text").chars().count(), 500);
+    assert_eq!(data["skippedBinary"], 1);
+    assert!(data["next"].is_null());
+    std::fs::write(context.base.workspace.join("pages.txt"), "needle\n".repeat(251)).expect("pages");
+    let page = tools
+        .exec("grep", context.clone(), json!({ "path": "pages.txt", "pattern": "needle" }))
+        .await
+        .expect("first")
+        .structured_content
+        .expect("data");
+    assert_eq!(page["next"], 251);
+    let last = tools
+        .exec(
+            "grep",
+            context.clone(),
+            json!({ "path": "pages.txt", "pattern": "needle", "offset": page["next"] }),
+        )
+        .await
+        .expect("next")
+        .structured_content
+        .expect("data");
+    assert_eq!(last["files"][0]["lines"][0]["number"], 251);
+    assert!(last["next"].is_null());
+    context.runtime.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn glob_data_pages_without_losing_or_repeating_paths() {
+    let beak = Beak::new().expect("Beak");
+    let (context, _folder) = context(&beak, Writes::Workspace).await;
+    for number in 0..201 {
+        std::fs::write(context.base.workspace.join(format!("{number}.txt")), "").expect("file");
+    }
+    let tools = tools();
+    let first = tools
+        .exec("glob", context.clone(), json!({ "pattern": "*.txt" }))
+        .await
+        .expect("first")
+        .structured_content
+        .expect("data");
+    assert_eq!(first["files"].as_array().expect("paths").len(), 200);
+    assert_eq!(first["next"], 201);
+    let last = tools
+        .exec("glob", context.clone(), json!({ "pattern": "*.txt", "offset": first["next"] }))
+        .await
+        .expect("next")
+        .structured_content
+        .expect("data");
+    assert_eq!(last["files"].as_array().expect("paths").len(), 1);
+    assert!(last["next"].is_null());
+    assert!(!first["files"].as_array().expect("paths").contains(&last["files"][0]));
+    context.runtime.close().await;
 }

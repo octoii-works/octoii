@@ -84,6 +84,18 @@ impl From<Vec<InputContent>> for Told {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Structured {
+    Glob {
+        files: Vec<String>,
+        next: Option<usize>,
+        denied: Vec<String>,
+    },
+    Grep {
+        files: Vec<SearchFile>,
+        next: Option<usize>,
+        #[serde(rename = "skippedBinary")]
+        skipped_binary: usize,
+        denied: Vec<String>,
+    },
     Ran {
         ended: CommandEnd,
         output: String,
@@ -105,6 +117,22 @@ pub enum Structured {
         #[ts(optional)]
         total: Option<usize>,
     },
+}
+
+/// A searched file, including context lines distinctly from matching lines.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+pub struct SearchFile {
+    pub path: String,
+    pub lines: Vec<SearchLine>,
+}
+
+/// A returned search line; clipping applies to text, not to its original line number.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+pub struct SearchLine {
+    pub number: u64,
+    pub text: String,
+    pub matched: bool,
+    pub clipped: bool,
 }
 
 impl Structured {

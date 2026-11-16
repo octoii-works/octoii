@@ -55,7 +55,10 @@ describe("what the page knows of each tool", () => {
 			kind: "words",
 			text: "no match",
 		});
-		expect(toolOf("glob").aside(called("glob", { pattern: "*" }, "done", "a\nb"))).toEqual({ kind: "words", text: "2 files" });
+		expect(toolOf("glob").aside(called("glob", { pattern: "*" }, "done", "a\nb", { type: "glob", files: ["a", "b"], next: null, denied: [] }))).toEqual({
+			kind: "words",
+			text: "2 files",
+		});
 		const changed: Structured = { type: "changed", path: "a.md", created: false, additions: 1, deletions: 1 };
 		expect(toolOf("edit").aside(called("edit", {}, "done", "@@ -1 +1 @@\n-a\n+b", changed))).toEqual({ kind: "change", added: 1, removed: 1 });
 		expect(toolOf("shell").trouble(called("shell", {}, "done", "oops\n<system-reminder>exit 2</system-reminder>", exited(2)))).toBe("exit 2");
