@@ -46,12 +46,15 @@ fn a_path_names_one_place_whatever_its_spelling_and_is_shown_back_as_the_model_w
         ("~/.config/app.toml", "/home/me/.config/app.toml", "/home/me/.config/app.toml"),
         ("~", "/home/me", "/home/me"),
         ("~me/x", "/work/app/~me/x", "~me/x"),
+        ("./~/x", "/work/app/~/x", "./~/x"),
+        ("/work/app/~", "/work/app/~", "./~"),
         ("/work/application", "/work/application", "/work/application"),
     ];
     for (given, place, shown) in cases {
         let resolved = base.resolve(given);
         assert_eq!(resolved, Path::new(place), "{given}");
         assert_eq!(base.shown(&resolved), shown, "{given}");
+        assert_eq!(base.resolve(shown), resolved, "the displayed path must round-trip: {given}");
     }
 }
 

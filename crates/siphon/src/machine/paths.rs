@@ -32,6 +32,8 @@ impl Base {
         let workspace = clean(&self.workspace);
         match place.strip_prefix(&workspace) {
             Ok(rest) if rest.as_os_str().is_empty() => ".".into(),
+            // A literal first component named ~ must not be read back as the home alias.
+            Ok(rest) if rest.starts_with("~") => format!("./{}", rest.to_string_lossy()),
             Ok(rest) => rest.to_string_lossy().into_owned(),
             Err(_) => place.to_string_lossy().into_owned(),
         }
