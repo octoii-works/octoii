@@ -10,6 +10,7 @@ import { type ReactNode, useState } from "react";
 import type { Ask } from "@octoii-works/octoii-client";
 import { useThreads } from "@octoii-works/octoii-client/react";
 import { MessageCircleQuestion, ShieldQuestion, X } from "lucide-react";
+import { answerError } from "../../core/answers.ts";
 import {
 	type Access,
 	allowed,
@@ -84,7 +85,7 @@ function AskForm(props: {
 	const { answering, submit } = useAnswer(props.thread, props.ask.key);
 	const answer = (value: Json): void => {
 		setRefused(undefined);
-		void submit(value).catch((error: unknown) => setRefused(error instanceof Error ? error.message : String(error)));
+		void submit(value).catch((error: unknown) => setRefused(answerError(error)));
 	};
 	const form = formOf(props.ask);
 	return (

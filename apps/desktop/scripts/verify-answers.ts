@@ -50,10 +50,14 @@ async function stop(): Promise<void> {
 	node = undefined;
 }
 
-async function connect(): Promise<Client> {
+async function connect(observe: (socket: WebSocket) => void = () => undefined): Promise<Client> {
 	const token = (await command("token", "--label", "answer acceptance")).trim();
 	const client = createClient({
-		open: (protocol) => new WebSocket(`${origin.replace("http:", "ws:")}/ws`, { protocols: [protocol], headers: { authorization: `Bearer ${token}` } }),
+		open: (protocol) => {
+			const socket = new WebSocket(`${origin.replace("http:", "ws:")}/ws`, { protocols: [protocol], headers: { authorization: `Bearer ${token}` } });
+			observe(socket);
+			return socket;
+		},
 		randomUUID: () => crypto.randomUUID(),
 		clock: {
 			now: () => Date.now(),
@@ -155,6 +159,57 @@ try {
 	await until(async () => (await first.threads()).find((row) => row.id === allowed)?.status.turn === "replied", "allowed write completed");
 	assert.equal(await readFile(target, "utf8"), "approved once");
 	console.log("PASS: allowing the real tool writes only the intended temporary file");
+	let answerCalls = 0;
+	let dropped = false;
+	const uncertain = await connect((socket) => {
+		let answerId: string | undefined;
+		const send = socket.send.bind(socket);
+		socket.send = (data) => {
+			if (typeof data === "string") {
+				const call: { id: string; method: string } = JSON.parse(data);
+				if (call.method === "threads.answer") {
+					answerCalls++;
+					answerId = call.id;
+				}
+			}
+			return send(data);
+		};
+		// Freeze inbound state after submission, then close on the real commit acknowledgement.
+		socket.addEventListener("message", (event) => {
+			if (answerId === undefined) return;
+			event.stopImmediatePropagation();
+			if (dropped || typeof event.data !== "string") return;
+			const reply: { id?: string; result?: unknown } = JSON.parse(event.data);
+			if (reply.id !== answerId || !("result" in reply)) return;
+			dropped = true;
+			socket.close();
+		});
+	});
+	const committed = await scenario(uncertain, "question");
+	const question = await ask(uncertain, committed);
+	const followed = uncertain.follow(committed);
+	const watched = uncertain.watchThreads();
+	await until(
+		() => followed.view().status?.asks[0]?.key === question.key && watched.view()?.find((row) => row.id === committed)?.status.asks[0]?.key === question.key,
+		"subscriptions see the waiting question",
+	);
+	await assert.rejects(uncertain.answer(committed, question.key, { answers: [{ chosen: ["SQLite"] }] }), { code: "connection-lost" });
+	assert.equal(dropped, true);
+	assert.equal(followed.view().status?.asks[0]?.key, question.key);
+	await until(() => uncertain.status.value.status === "open", "reconnected after lost acknowledgement");
+	await until(async () => (await uncertain.threads()).find((row) => row.id === committed)?.status.turn === "replied", "committed answer completed");
+	assert.equal((await uncertain.threads()).find((row) => row.id === committed)?.status.asks.length, 0);
+	assert.equal((await second.threads()).find((row) => row.id === committed)?.status.asks.length, 0);
+	await until(
+		() => followed.view().status?.turn === "replied" && watched.view()?.find((row) => row.id === committed)?.status.turn === "replied",
+		"subscriptions recover automatically",
+	);
+	assert.equal(followed.view().status?.asks.length, 0);
+	assert.equal(watched.view()?.find((row) => row.id === committed)?.status.asks.length, 0);
+	followed.release();
+	watched.release();
+	assert.equal(answerCalls, 1);
+	console.log("PASS: a lost acknowledgement reports uncertainty, reconnect recovers the committed answer, and no answer is resent");
 } finally {
 	for (const client of clients) client.close();
 	await stop();

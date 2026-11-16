@@ -1,5 +1,5 @@
 /** In-flight answers belong to a client and request, not to any one button or mounted component. */
-import type { Client, JsonValue } from "@octoii-works/octoii-client";
+import { ClientError, type Client, type JsonValue } from "@octoii-works/octoii-client";
 
 export class Answers {
 	readonly #client: Pick<Client, "answer">;
@@ -37,4 +37,12 @@ export class Answers {
 	#changed(): void {
 		for (const listener of [...this.#listeners]) listener();
 	}
+}
+
+/** A lost acknowledgement leaves the outcome unknown; it does not mean the node refused the answer. */
+export function answerError(error: unknown): string {
+	if (error instanceof ClientError && error.code === "connection-lost") {
+		return "The connection dropped before confirmation. Your answer may have been received. Wait for reconnection and check whether the request still needs an answer.";
+	}
+	return error instanceof Error ? error.message : String(error);
 }

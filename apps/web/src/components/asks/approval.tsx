@@ -8,6 +8,7 @@ import { type ReactElement, type ReactNode } from "react";
 import type { Ask } from "@octoii-works/octoii-client";
 import { useThreads } from "@octoii-works/octoii-client/react";
 import { Ellipsis, ShieldQuestion } from "lucide-react";
+import { answerError } from "../../core/answers.ts";
 import { allowed, alwaysText, denied, type DetailLine, formOf, type Json, permissionBody } from "../../core/asks.ts";
 import { useShortcut } from "../effects/shortcut.ts";
 import { useAnswer } from "../state/answer.ts";
@@ -41,7 +42,7 @@ export function useApproval(thread: string, ask: Ask | undefined): Approval | un
 			.then((submitted) => {
 				if (submitted) accepted?.();
 			})
-			.catch((error: unknown) => failed("The answer could not be given", error));
+			.catch((error: unknown) => failed("Answer not confirmed", answerError(error)));
 	};
 	return {
 		key: ask.key,

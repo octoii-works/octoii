@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { Answers } from "../src/core/answers.ts";
+import { ClientError } from "@octoii-works/octoii-client";
+import { answerError, Answers } from "../src/core/answers.ts";
 
 describe("answers shared by a client's request entry points", () => {
 	it("admits only the first decision, even before React renders its disabled state", async () => {
@@ -68,5 +69,18 @@ describe("answers shared by a client's request entry points", () => {
 		await first;
 		expect(seen).toEqual([false]);
 		unsubscribe();
+	});
+});
+
+describe("answer failure wording", () => {
+	it("does not call a lost acknowledgement a rejected answer", () => {
+		expect(answerError(new ClientError("connection-lost", "Disconnected"))).toContain("Your answer may have been received");
+	});
+
+	it("preserves offline and server rejection reasons", () => {
+		for (const code of ["not-connected", "not_given"]) {
+			expect(answerError(new ClientError(code, "Original reason"))).toBe("Original reason");
+		}
+		expect(answerError("Unexpected failure")).toBe("Unexpected failure");
 	});
 });
