@@ -168,7 +168,9 @@ describe("the script's fold and final output", () => {
 		expect(visible).not.toContain("SCRIPT_CODE_ONLY");
 		expect(visible).not.toContain("NESTED_OUTPUT_ONLY");
 		const detail = renderToStaticMarkup(<CallDetail call={call} />);
-		expect(detail).toContain("SCRIPT_CODE_ONLY");
+		expect(detail).toContain("Source code");
+		expect(detail).toContain('aria-expanded="false"');
+		expect(detail).not.toContain("SCRIPT_CODE_ONLY");
 		expect(detail).not.toContain("VISIBLE_FINAL_OUTPUT");
 		const opened = renderToStaticMarkup(
 			<>

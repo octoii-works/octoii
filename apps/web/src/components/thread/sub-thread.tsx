@@ -17,6 +17,7 @@ import { callWords } from "../../core/tools.ts";
 import { Counting } from "../effects/now.ts";
 import { go } from "../state/navigation.ts";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger, FoldChevron } from "../ui/collapsible.tsx";
+import { WorkBranch } from "./work-branch.tsx";
 import { EntityContent, EntityMark, StandingDot } from "./entity.tsx";
 
 /** The delegations of one step, made by the thread `thread`: one a row, several gathered. */
@@ -50,11 +51,11 @@ function Gathered(props: { readonly delegated: readonly { readonly call: CallLin
 				)}
 			</CollapsibleTrigger>
 			<CollapsiblePanel>
-				<div className="work-list work-tight">
+				<WorkBranch className="work-list work-tight">
 					{props.delegated.map(({ call, row }) => (
 						<DelegationRow key={call.id} call={call} row={row} />
 					))}
-				</div>
+				</WorkBranch>
 			</CollapsiblePanel>
 		</Collapsible>
 	);

@@ -1,6 +1,6 @@
 /**
- * The timeline's rows, as its list draws them: each turn laid out flat — the words that began it or steered it on, each
- * part of its work, its reply, and its end: what it does now while it works, else what it changed, what waits on the
+ * The timeline's rows, as its list draws them: each turn's words that began it or steered it on, its work as one fold,
+ * its reply, and its end: what it does now while it works, else what it changed, what waits on the
  * person, why it failed and its foot — and what is the thread's own between turns, a row each; every row with the room
  * it leaves above it, by what stands before it in its turn. A row that is the same as it was stays the same object, so
  * the list draws again only the rows that changed.
@@ -22,14 +22,17 @@ import {
 	workedText,
 } from "./timeline.ts";
 
-/** The room a row leaves above it: a turn's, a message's, a part of a turn's, or a line of its work's. */
-export type Room = "turn" | "message" | "part" | "line";
+/** The room a row leaves above it: a turn's, a message's, or a part of a turn's. */
+export type Room = "turn" | "message" | "part";
 
 /** What a turn that works does now, as its last line tells it: in words, whether that waits on the person, and since when it works. */
 export type Doing = { readonly words: string; readonly waits: boolean; readonly since: number | undefined };
 
 /** The foot of a turn that ended: its reply as it was written, how long it worked, or that it was stopped, and when it ended. */
 export type Foot = { readonly reply: string; readonly worked: string | undefined; readonly endedAt: number | undefined };
+
+/** A turn's work, kept in one fold as it grows: open while working, folded once it ends unless the reader chose otherwise. */
+export type WorkGroup = { readonly parts: readonly Laid[]; readonly working: boolean; readonly label: string };
 
 /**
  * The end of a turn, its last row: the files it changed, once it ended; what waits on the person that no call asks;
@@ -47,7 +50,7 @@ export type TurnEnd = {
 /** A row of the timeline, by its key, which it keeps as the thread grows, and the room it leaves above it. */
 export type TimelineRow =
 	| { readonly kind: "said"; readonly key: string; readonly room: Room; readonly said: Said }
-	| { readonly kind: "work"; readonly key: string; readonly room: Room; readonly laid: Laid }
+	| { readonly kind: "work"; readonly key: string; readonly room: Room; readonly work: WorkGroup }
 	| { readonly kind: "reply"; readonly key: string; readonly room: Room; readonly text: string; readonly writing: boolean }
 	| { readonly kind: "end"; readonly key: string; readonly room: Room; readonly end: TurnEnd }
 	| { readonly kind: "summed-up"; readonly key: string; readonly room: Room }
@@ -77,43 +80,34 @@ export function rowsOf(items: readonly TimelineItem[]): readonly TimelineRow[] {
 const laidTurns = new WeakMap<TimelineTurn, readonly TimelineRow[]>();
 
 /**
- * The rows of `turn`: its words, each part of its work, its reply and its end — the first with a turn's room above it,
- * a message's after its words, a part's between the parts of what it did, a line's between the lines of its work.
+ * The rows of `turn`: its words, its work's fold, its reply and its end — the first with a turn's room above it,
+ * a message's after its words, a part's between its work, reply and end.
  */
 function turnRows(turn: TimelineTurn): readonly TimelineRow[] {
 	const known = laidTurns.get(turn);
 	if (known !== undefined) return known;
 	const rows: TimelineRow[] = [];
-	const roomAfter = (kind: TimelineRow["kind"]): Room => {
+	const roomAfter = (): Room => {
 		const last = rows.at(-1);
 		if (last === undefined) return "turn";
 		if (last.kind === "said") return "message";
-		return kind === "work" && last.kind === "work" ? "line" : "part";
+		return "part";
 	};
-	for (const said of turn.said) rows.push({ kind: "said", key: `said:${said.key}`, room: roomAfter("said"), said });
-	for (const laid of laidOut(turn.work)) rows.push({ kind: "work", key: workKey(laid), room: roomAfter("work"), laid });
+	for (const said of turn.said) rows.push({ kind: "said", key: `said:${said.key}`, room: roomAfter(), said });
+	const parts = laidOut(turn.work);
+	if (parts.length > 0) {
+		const working = turn.ending.state === "working";
+		const label = working ? (waitsOnPerson(turn) ? "Waiting for you" : "Working") : (workedText(turn) ?? "Worked");
+		rows.push({ kind: "work", key: `work:${turn.key}`, room: roomAfter(), work: { parts, working, label } });
+	}
 	const reply = replyOf(turn);
 	const writing = turn.writing.words !== "";
 	const wrote = writing ? turn.writing.request : turn.answer?.key;
-	if (reply !== "") rows.push({ kind: "reply", key: `words:${wrote ?? turn.key}`, room: roomAfter("reply"), text: reply, writing });
+	if (reply !== "") rows.push({ kind: "reply", key: `words:${wrote ?? turn.key}`, room: roomAfter(), text: reply, writing });
 	const end = endOf(turn, reply);
-	if (end !== undefined) rows.push({ kind: "end", key: `end:${turn.key}`, room: roomAfter("end"), end });
+	if (end !== undefined) rows.push({ kind: "end", key: `end:${turn.key}`, room: roomAfter(), end });
 	if (turn.ending.state !== "working") laidTurns.set(turn, rows);
 	return rows;
-}
-
-/** The key of what is laid out: a stretch's, delegations', or its step's. */
-function laidKey(laid: Laid): string {
-	if (laid.kind !== "step") return laid.key;
-	return laid.step.kind === "call" ? laid.step.id : laid.step.key;
-}
-
-/**
- * The key of a part of the work's row: words on the way known by the request that wrote them, as the reply being
- * written is — so words that turn out to be on the way, as calls follow them, stay the row they were.
- */
-function workKey(laid: Laid): string {
-	return laid.kind === "step" && laid.step.kind === "words" ? `words:${laid.step.key}` : `work:${laidKey(laid)}`;
 }
 
 /** The end of `turn`, whose reply is `reply`; none for a part the person steered on that changed nothing and waits on nothing. */
@@ -124,7 +118,8 @@ function endOf(turn: TimelineTurn, reply: string): TurnEnd | undefined {
 		asks: turn.asks,
 		failure: turn.ending.state === "failed" ? turn.ending.why : undefined,
 		doing: working ? { words: doingOf(turn), waits: waitsOnPerson(turn), since: turn.startedAt } : undefined,
-		foot: working || turn.ending.state === "steered" ? undefined : { reply, worked: workedText(turn), endedAt: turn.endedAt },
+		foot:
+			working || turn.ending.state === "steered" ? undefined : { reply, worked: turn.work.length === 0 ? workedText(turn) : undefined, endedAt: turn.endedAt },
 	};
 	const empty = end.changes.length === 0 && end.asks.length === 0 && end.failure === undefined && end.doing === undefined && end.foot === undefined;
 	return empty ? undefined : end;
@@ -156,7 +151,7 @@ function sameRow(a: TimelineRow, b: TimelineRow): boolean {
 		case "said":
 			return b.kind === "said" && a.said === b.said;
 		case "work":
-			return b.kind === "work" && sameLaid(a.laid, b.laid);
+			return b.kind === "work" && a.work.working === b.work.working && a.work.label === b.work.label && sameItems(a.work.parts, b.work.parts, sameLaid);
 		case "reply":
 			return b.kind === "reply" && a.text === b.text && a.writing === b.writing;
 		case "end":

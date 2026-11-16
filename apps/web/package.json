@@ -43,6 +43,7 @@
 		"@types/react-dom": "catalog:",
 		"bun-plugin-tailwind": "catalog:",
 		"fontkit": "2.0.4",
+		"happy-dom": "catalog:",
 		"tailwindcss": "catalog:"
 	}
 }

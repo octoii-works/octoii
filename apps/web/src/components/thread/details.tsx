@@ -1,14 +1,4 @@
-/**
- * A thread's details, on a card floating at the top right of the thread's timeline where the page's column is wide
- * enough, the chat's column staying centred under it, or in a popover from the header's button where it is not: the
- * machine the thread works on and its folder, which opens in
- * the Files view; the folder's repository — its branch, how far ahead of its upstream and behind, and the lines the
- * changes the Diff view shows gained and lost, which open it; what the models remember of its project, which opens
- * each memory to delete; the terminals open in the thread, the model's by the
- * command line each runs, which open in the panel; the thread it came from and those it delegated to; how
- * full its window is, which opens what fills it and compacts it; and what its model's requests read, wrote and cost,
- * which opens where it went, request by request.
- */
+/** A floating details card reserves room beside the conversation and opens on demand on narrow panes. */
 import type { ReactNode } from "react";
 import type { Conversation, Listed, ThreadUsage as Usage, Turn } from "@octoii-works/octoii-client";
 import { useConnection, useThreads } from "@octoii-works/octoii-client/react";
@@ -49,8 +39,7 @@ export type DetailsProps = {
 export type DetailParts = { readonly folder: ReactNode; readonly sections: ReactNode };
 
 /**
- * The header's buttons of the card: where the page's column is wide enough, one that shows the card floating over the
- * timeline or hides it; where it is not, one that opens it as a popover.
+ * The header toggles the inline column where it fits, or opens details on demand where it does not.
  */
 export function DetailsButtons(props: DetailsProps): ReactNode {
 	const shown = useDetailsShown();
@@ -72,15 +61,14 @@ export function DetailsButtons(props: DetailsProps): ReactNode {
 }
 
 /**
- * The card floating at the top right of the room it is set in — the thread's timeline — where the page's column is wide
- * enough and the person shows it, over the chat's column rather than beside it; fading in as it comes.
+ * The floating card keeps its natural height while reserving space beside the timeline and composer. Narrow panes hide it without changing the user's preference.
  */
 export function InlineDetails(props: DetailsProps): ReactNode {
 	if (!useDetailsShown()) return null;
 	return (
 		<aside
 			aria-label="Thread details"
-			className="floating absolute top-3 right-4 z-20 hidden max-h-[calc(100%-1.5rem)] w-(--details-width) overflow-y-auto rounded-md transition-[opacity,scale] duration-150 details-inline:block starting:scale-98 starting:opacity-0 motion-reduce:transition-none"
+			className="floating mx-4 my-3 hidden max-h-[calc(100%-1.5rem)] w-(--details-width) shrink-0 self-start overflow-y-auto rounded-md details-inline:block"
 		>
 			<DetailsCard {...props} />
 		</aside>

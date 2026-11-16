@@ -2,8 +2,7 @@
  * A thread, in the page's frame: its column — its header, with the buttons of its details and the one that shows its
  * panel; its timeline in a column of the chat's width, each turn's words, its work and its answer, the reply being
  * written, kept at its end as it grows; docked at its foot, opaque, the messages waiting for the turn's end over the
- * composer, or over what waits on the person, in the composer's place while it waits; and its details on a card floating at the timeline's top right, where the column is wide enough, the chat's
- * column centred under it — and after it its panel, where it is shown: its files and changes, its terminals and pages,
+ * composer, or over what waits on the person, in the composer's place while it waits; and its details beside the conversation where the column has room — and after it its panel, where it is shown: its files and changes, its terminals and pages,
  * which a path a message names opens in. What the thread brought is seen as it is shown.
  */
 import { type ReactNode, useRef, useState } from "react";
@@ -112,36 +111,40 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 						</div>
 					}
 				/>
-				{/* The timeline's room, between the header and the dock, its details floating at its top right. */}
-				<div className="relative flex min-h-0 flex-1 flex-col">
-					<MessageThreadContext value={{ thread, workspace, pages, terminals }}>
-						<Timeline
-							ref={timeline}
+				{/* Details reserve space beside both the timeline and its composer. */}
+				<div className="flex min-h-0 flex-1">
+					<div className="flex min-h-0 min-w-0 flex-1 flex-col">
+						<div className="relative flex min-h-0 flex-1 flex-col">
+							<MessageThreadContext value={{ thread, workspace, pages, terminals }}>
+								<Timeline
+									ref={timeline}
+									thread={thread}
+									parent={row?.parent?.thread}
+									items={items}
+									read={conversation.read}
+									complete={conversation.complete}
+									working={conversation.status?.turn === "running"}
+									waiting={conversation.asks.length}
+									sent={sent}
+									onEarlier={() => void client.readOlder(thread).catch((error: unknown) => failed("Earlier messages could not be read", error))}
+								/>
+							</MessageThreadContext>
+						</div>
+						<Dock
 							thread={thread}
-							parent={row?.parent?.thread}
-							items={items}
-							read={conversation.read}
-							complete={conversation.complete}
-							working={conversation.status?.turn === "running"}
-							waiting={conversation.asks.length}
-							sent={sent}
-							onEarlier={() => void client.readOlder(thread).catch((error: unknown) => failed("Earlier messages could not be read", error))}
+							row={row}
+							things={thingsOf(reachesThreads ? rows : [], terminals, pages, thread)}
+							sent={theirs}
+							conversation={conversation}
+							device={props.device}
+							onSent={(delivery) => {
+								setSent(delivery);
+								timeline.current?.toEnd();
+							}}
 						/>
-					</MessageThreadContext>
+					</div>
 					<InlineDetails {...details} />
 				</div>
-				<Dock
-					thread={thread}
-					row={row}
-					things={thingsOf(reachesThreads ? rows : [], terminals, pages, thread)}
-					sent={theirs}
-					conversation={conversation}
-					device={props.device}
-					onSent={(delivery) => {
-						setSent(delivery);
-						timeline.current?.toEnd();
-					}}
-				/>
 			</Pane>
 			<PanelFrame>
 				<RightPanel

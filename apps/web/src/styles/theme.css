@@ -5,29 +5,11 @@
  * shadows and palette are taken out, so nothing off the scale can be written.
  */
 
-/*
- * Where the thread's details card floats at the top right of the page's column: where the column is as wide as the
- * chat's, which the device sets, with its gutters and the card's room beside it — the card, its inset and a gap — so
- * the card, floating over the chat's centred column, covers the ends of its lines by half its own width at most. A
- * container query reads no variable, so each width the device may set has its own; the page's column is the container
- * named `pane`.
- */
+/* Reserve 17.5rem for details, 2rem for its margins, and at least 32.5rem for the conversation, including its gutters.
+ * Measure the actual pane after navigation and work panels have taken their space. */
 @custom-variant details-inline {
-	@container pane (min-width: 61rem) {
-		:root[data-chat-width="narrow"] & {
-			@slot;
-		}
-	}
-	/* Comfortable, the device's own until it says otherwise. */
-	@container pane (min-width: 67rem) {
-		:root:not([data-chat-width="narrow"], [data-chat-width="wide"]) & {
-			@slot;
-		}
-	}
-	@container pane (min-width: 79rem) {
-		:root[data-chat-width="wide"] & {
-			@slot;
-		}
+	@container pane (min-width: 52rem) {
+		@slot;
 	}
 }
 

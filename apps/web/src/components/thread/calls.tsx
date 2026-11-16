@@ -27,6 +27,7 @@ import { Prose } from "./markdown.tsx";
 import { usePlaces } from "./message-thread.ts";
 import { type Approval, ApprovalLine, PermissionDetail, useApproval } from "../asks/approval.tsx";
 import { CallMark, Mark } from "./marks.tsx";
+import { WorkBranch } from "./work-branch.tsx";
 
 /** What a stretch's line is given: the thread whose work it is, its steps — its calls and what was thought between them — and its calls. */
 type StretchProps = { readonly thread: string; readonly steps: readonly Work[]; readonly calls: readonly CallLine[] };
@@ -75,21 +76,23 @@ function StretchLine(props: StretchProps & { readonly one: CallLine | undefined 
 					</span>
 				</CollapsibleTrigger>
 				<CollapsiblePanel>
-					{one === undefined ? (
-						<Steps thread={props.thread} steps={props.steps} />
-					) : (
-						<div className="work-indent">
-							{props.steps.map((step) => (step.kind === "thought" ? <ThoughtNote key={step.key} text={step.text} took={step.took} /> : null))}
-							<CallDetail call={one} />
-							{one.calls.length === 0 ? null : (
-								<div className="work-list work-tight">
-									{one.calls.map((call) => (
-										<Calls key={call.id} thread={props.thread} steps={[call]} calls={[call]} />
-									))}
-								</div>
-							)}
-						</div>
-					)}
+					<WorkBranch>
+						{one === undefined ? (
+							<Steps thread={props.thread} steps={props.steps} />
+						) : (
+							<>
+								{props.steps.map((step) => (step.kind === "thought" ? <ThoughtNote key={step.key} text={step.text} took={step.took} /> : null))}
+								<CallDetail call={one} />
+								{one.calls.length === 0 ? null : (
+									<div className="work-list work-tight">
+										{one.calls.map((call) => (
+											<Calls key={call.id} thread={props.thread} steps={[call]} calls={[call]} />
+										))}
+									</div>
+								)}
+							</>
+						)}
+					</WorkBranch>
 				</CollapsiblePanel>
 			</Collapsible>
 			{one?.work !== "script" ? null : (
@@ -110,10 +113,10 @@ function WaitingCall(props: { readonly call: CallLine; readonly approval: Approv
 				<CallMark call={call} />
 				<CallWords call={call} />
 			</div>
-			<div className="work-indent flex flex-col gap-1.5 pb-2">
+			<WorkBranch className="flex flex-col gap-1.5 pb-2">
 				<PermissionDetail lines={props.approval.lines} />
 				<ApprovalLine approval={props.approval} />
-			</div>
+			</WorkBranch>
 		</div>
 	);
 }
@@ -179,11 +182,11 @@ function RunLine(props: { readonly thread: string; readonly run: readonly Though
 				</span>
 			</CollapsibleTrigger>
 			<CollapsiblePanel>
-				<div className="work-list work-tight">
+				<WorkBranch className="work-list work-tight">
 					{props.run.map((each) => (
 						<ThoughtfulCall key={each.call.id} thread={props.thread} shown={each} />
 					))}
-				</div>
+				</WorkBranch>
 			</CollapsiblePanel>
 		</Collapsible>
 	);
@@ -329,7 +332,9 @@ export const Thought = memo(function Thought(props: { readonly text: string; rea
 				<FoldChevron className="quiet-chevron" />
 			</CollapsibleTrigger>
 			<CollapsiblePanel>
-				<Prose text={props.text} className="work-indent pt-0.5 pb-2 text-ui text-muted-foreground" />
+				<WorkBranch className="pt-0.5 pb-2">
+					<Prose text={props.text} className="text-ui text-muted-foreground" />
+				</WorkBranch>
 			</CollapsiblePanel>
 		</Collapsible>
 	);

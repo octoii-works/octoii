@@ -1,6 +1,6 @@
 /**
- * A thread's timeline: its rows in a column of the chat's width — each turn laid out flat, its words, each part of its
- * work, its reply and its end, and what is the thread's own between turns — in the order their ids give, on a list
+ * A thread's timeline: its rows in a column of the chat's width — each turn's words, its work's fold, its reply and its
+ * end, and what is the thread's own between turns — in the order their ids give, on a list
  * that draws the rows in view alone, each as tall as it measures, so a long thread, its images among it, costs what is
  * seen. It opens at its end and keeps to it as it grows while the reader is there — gliding while the thread works,
  * where motion is not asked to be less, as the list follows a reply that streams only so without moving what is read
@@ -26,7 +26,7 @@ import { useDebounced } from "../effects/debounced.ts";
 import { useListPlace } from "../effects/list-place.ts";
 import { REDUCED_MOTION, useMedia } from "../effects/media.ts";
 import { cn } from "../ui/cn.ts";
-import { SummedUp, TurnEndPart, Words, WORDS, WorkPart } from "./turn.tsx";
+import { SummedUp, TurnEndPart, TurnWork, Words, WORDS } from "./turn.tsx";
 
 /**
  * What the timeline shows: the thread, and its parent where it is a sub-thread; its items, whether they reach the log's
@@ -150,7 +150,7 @@ function drawRow(props: { readonly item: TimelineRow }): ReactNode {
 }
 
 /** The room each kind of room leaves above its row. */
-const ROOM: Readonly<Record<Room, string>> = { turn: "pt-8", message: "pt-4", part: "pt-2", line: "pt-0.5" };
+const ROOM: Readonly<Record<Room, string>> = { turn: "pt-8", message: "pt-4", part: "pt-2" };
 
 /** A row in the chat's column, the room above it its own, fading in where it came after the thread was read — once. */
 const RowFrame = memo(function RowFrame(props: { readonly row: TimelineRow }): ReactNode {
@@ -180,7 +180,7 @@ function Row(props: { readonly thread: string; readonly parent: string | undefin
 		case "work":
 			return (
 				<div className="flex flex-col gap-0.5">
-					<WorkPart thread={props.thread} laid={row.laid} />
+					<TurnWork thread={props.thread} work={row.work} />
 				</div>
 			);
 		case "reply":

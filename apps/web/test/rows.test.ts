@@ -1,5 +1,5 @@
 /**
- * The timeline's rows: each turn laid out flat — its words, each part of its work, its reply and its end — with the
+ * The timeline's rows: each turn's words, its work's fold, its reply and its end — with the
  * room each leaves above it, what is the thread's own between turns a row each; and rows that did not change kept as
  * the same objects.
  */
@@ -52,7 +52,7 @@ const turnOf = (given: Partial<TimelineTurn> = {}): TimelineTurn => ({
 const shape = (rows: readonly TimelineRow[]): readonly string[] => rows.map((row) => `${row.kind} ${row.room} ${row.key}`);
 
 describe("the timeline's rows", () => {
-	it("lays a turn out flat — its words, each part of its work, its reply and its end — each with the room above it", () => {
+	it("groups a turn's work under its duration while keeping its reply and end in separate rows", () => {
 		const turn = turnOf({
 			said: [said("i1", "Fix it"), said("i2", "And test it")],
 			work: [
@@ -63,16 +63,14 @@ describe("the timeline's rows", () => {
 			],
 			answer: { key: "r3", text: "Fixed." },
 		});
-		expect(shape(rowsOf([{ kind: "turn", key: turn.key, turn }]))).toEqual([
-			"said turn said:i1",
-			"said message said:i2",
-			// What was thought before a call is held in its line.
-			"work message work:c1",
-			"work line words:r2",
-			"work line work:c2",
-			"reply part words:r3",
-			"end part end:t1",
-		]);
+		const rows = rowsOf([{ kind: "turn", key: turn.key, turn }]);
+		expect(shape(rows)).toEqual(["said turn said:i1", "said message said:i2", "work message work:t1", "reply part words:r3", "end part end:t1"]);
+		const work = rows.find((row) => row.kind === "work");
+		expect(work?.work.label).toBe("Worked for 8s");
+		expect(work?.work.working).toBe(false);
+		expect(work?.work.parts.map((part) => part.kind)).toEqual(["calls", "step", "calls"]);
+		const end = rows.at(-1);
+		expect(end?.kind === "end" ? end.end.foot?.worked : undefined).toBeUndefined();
 	});
 
 	it("ends a turn that works with what it does now, one that ended with its changes and foot, and a part the person steered on with neither", () => {
@@ -116,15 +114,25 @@ describe("the timeline's rows", () => {
 		const held = steadyRows(rowsOf([working({ work: [line] })]), new Map());
 		// Words being written are a reply row of their own, known by the request writing them; the rows that were stay the same objects.
 		const writing = steadyRows(rowsOf([working({ work: [line], writing: { request: "q1", words: "Fix", calls: [] } })]), held.byKey).rows;
-		expect(writing.map((row) => row.key)).toEqual(["said:i1", "work:c1", "words:q1", "end:t1"]);
+		expect(writing.map((row) => row.key)).toEqual(["said:i1", "work:t1", "words:q1", "end:t1"]);
 		expect(writing[2]?.kind === "reply" ? [writing[2].text, writing[2].writing] : []).toEqual(["Fix", true]);
 		expect([writing[0], writing[1], writing[3]]).toEqual([held.rows[0], held.rows[1], held.rows[2]] as TimelineRow[]);
 		[writing[0], writing[1], writing[3]].forEach((row, place) => expect(row).toBe(held.rows[place] as TimelineRow));
-		// A call that joins makes a row of its own; the rows that were stay the same objects.
+		// New work grows the existing group; its stable key keeps a reader's manual fold choice.
 		const grown = steadyRows(rowsOf([working({ work: [line, { kind: "web-search", key: "w1", query: "zig" }] })]), held.byKey).rows;
-		expect(grown.map((row) => row.key)).toEqual(["said:i1", "work:c1", "work:w1", "end:t1"]);
+		expect(grown.map((row) => row.key)).toEqual(["said:i1", "work:t1", "end:t1"]);
 		expect(grown[0]).toBe(held.rows[0] as TimelineRow);
-		expect(grown[1]).toBe(held.rows[1] as TimelineRow);
-		expect(grown[3]).toBe(held.rows[2] as TimelineRow);
+		expect(grown[1]).not.toBe(held.rows[1] as TimelineRow);
+		expect(grown[2]).toBe(held.rows[2] as TimelineRow);
+		const completed = rowsOf([{ kind: "turn", key: "t1", turn: turnOf({ said: [words], work: [line] }) }]);
+		expect(completed[1]?.key).toBe(held.rows[1]?.key);
+		expect(completed[1]?.kind === "work" ? completed[1].work.working : undefined).toBe(false);
+	});
+
+	it("uses a useful label without timestamps and keeps failure details outside completed work", () => {
+		const turn = turnOf({ work: [callOf("c1")], startedAt: undefined, endedAt: undefined, ending: { state: "failed", why: "The provider refused" } });
+		const rows = rowsOf([{ kind: "turn", key: "t1", turn }]);
+		expect(rows[1]?.kind === "work" ? rows[1].work.label : undefined).toBe("Worked");
+		expect(rows.at(-1)?.kind === "end" ? rows.at(-1) : undefined).toMatchObject({ end: { failure: "The provider refused" } });
 	});
 });

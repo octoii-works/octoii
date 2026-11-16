@@ -6,13 +6,16 @@
  * tool noted stands quiet under it.
  */
 import { type ReactNode, useMemo } from "react";
+import { Code } from "lucide-react";
 import { type CallLine } from "../../core/timeline.ts";
 import { prettyArguments, type Told, toldOf } from "../../core/calls.ts";
 import { type Detail, detailOf } from "../../core/tools.ts";
 import { DiffLines } from "../diff/diff-lines.tsx";
 import { PathLink } from "../files/path-link.tsx";
 import { CopyButton } from "../ui/copy-button.tsx";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger, FoldChevron } from "../ui/collapsible.tsx";
 import { OpenDiff } from "./changes.tsx";
+import { WorkBranch } from "./work-branch.tsx";
 
 /** What opens under the line of `call`. */
 export function CallDetail(props: { readonly call: CallLine }): ReactNode {
@@ -76,7 +79,7 @@ function Shaped(props: { readonly detail: Detail }): ReactNode {
 		case "found":
 			return <Found detail={detail} />;
 		case "script":
-			return <Well copied={detail.code}>{detail.code}</Well>;
+			return <ScriptSource code={detail.code} />;
 		case "fields":
 			return (
 				<>
@@ -96,6 +99,24 @@ function Shaped(props: { readonly detail: Detail }): ReactNode {
 				</>
 			);
 	}
+}
+
+/** A script's source opens independently of its calls and output. */
+function ScriptSource(props: { readonly code: string }): ReactNode {
+	return (
+		<Collapsible>
+			<CollapsibleTrigger className="work-line work-opens text-xs">
+				<Code className="size-3.5 shrink-0" />
+				Source code
+				<FoldChevron className="quiet-chevron" />
+			</CollapsibleTrigger>
+			<CollapsiblePanel>
+				<WorkBranch className="pt-0.5 pb-1.5">
+					<Well copied={props.code}>{props.code}</Well>
+				</WorkBranch>
+			</CollapsiblePanel>
+		</Collapsible>
+	);
 }
 
 /** The places a search found, a line each — a file's path, opening it, and the line and its words where it found one — and its notes. */

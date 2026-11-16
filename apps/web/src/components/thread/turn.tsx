@@ -1,23 +1,23 @@
 /**
  * A turn of the thread, as the rows of the timeline draw it: the words that began it, or that steered it on — the
  * person's, a task its parent gave it, or what came of one it gave a sub-thread in the background; each part of its
- * work, laid out alike while it works and once it ended — what it said on its way, each stretch of calls a line that
- * opens to its steps, what it thought — so nothing of it moves as it ends; then its reply, a block at a time; and its
+ * work, open while it works and folded under how long it worked once it ended — what it said on its way, each stretch
+ * of calls a line that opens to its steps, what it thought; then its reply, a block at a time; and its
  * end: the files it changed, what waits on the person, why it failed where it did, and, as its last line, what it does
  * now and how long it has worked while it works, or its foot once it ended. A turn that works only grows as it goes:
  * its parts are added at the end, and what it does now changes its words in one line of its own, so nothing of it
  * moves back as it calls its tools.
  */
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { useThreads } from "@octoii-works/octoii-client/react";
 import { CircleAlert, CornerDownRight, Globe, SquareTerminal } from "lucide-react";
-import type { Doing, Foot, TurnEnd } from "../../core/rows.ts";
+import type { Doing, Foot, TurnEnd, WorkGroup } from "../../core/rows.ts";
 import { pastLabel, runningTime } from "../../core/time.ts";
 import { endedOf } from "../../core/terminal.ts";
 import { type Laid, type Said, SIPHON, siphonWords, TERMINAL, type Work } from "../../core/timeline.ts";
 import { Counting, useNow } from "../effects/now.ts";
 import { cn } from "../ui/cn.ts";
-import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible.tsx";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger, FoldChevron } from "../ui/collapsible.tsx";
 import { CopyButton } from "../ui/copy-button.tsx";
 import { AskLine } from "./ask-line.tsx";
 import { Calls, Thought } from "./calls.tsx";
@@ -30,6 +30,7 @@ import { PresentedFiles } from "./presented-files.tsx";
 import { Delegations, SubThreadTold } from "./sub-thread.tsx";
 import { ThreadMessage } from "./thread-message.tsx";
 import { UserMessage } from "./user-message.tsx";
+import { WorkBranch } from "./work-branch.tsx";
 
 /** The words of a reply, as the page sets them: larger and airier than the work's lines. */
 export const WORDS = "text-body";
@@ -78,9 +79,9 @@ function TerminalEnded(props: { readonly said: Said }): ReactNode {
 				/>
 			</CollapsibleTrigger>
 			<CollapsiblePanel>
-				<div className="work-indent pt-0.5 pb-2">
+				<WorkBranch className="pt-0.5 pb-2">
 					<pre className="well overflow-x-auto px-3 py-2 font-mono text-xs whitespace-pre">{ended.screen === "" ? `[${ended.how}]` : ended.screen}</pre>
-				</div>
+				</WorkBranch>
 			</CollapsiblePanel>
 		</Collapsible>
 	);
@@ -91,20 +92,43 @@ function clockTime(at: number): string {
 	return new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-/** A part of a turn's work, as it is laid out: a stretch of calls, delegations as sub-threads, or a step on its own. */
-export function WorkPart(props: { readonly thread: string; readonly laid: Laid }): ReactNode {
-	const { laid, thread } = props;
-	const files = laid.kind === "step" ? (laid.step.kind === "call" ? laid.step.files : []) : laid.calls.flatMap((call) => call.files);
+/** A turn's work folds automatically as it ends, unless the reader has chosen its state. Delivered files stay visible. */
+export function TurnWork(props: { readonly thread: string; readonly work: WorkGroup }): ReactNode {
+	const { work } = props;
+	const [chosen, setChosen] = useState<boolean | undefined>(undefined);
+	const files = work.parts.flatMap((laid) =>
+		laid.kind === "step" ? (laid.step.kind === "call" ? laid.step.files : []) : laid.calls.flatMap((call) => call.files),
+	);
 	return (
 		<>
-			<WorkContent thread={thread} laid={laid} />
-			<PresentedFiles thread={thread} files={files} />
+			<Collapsible open={chosen ?? work.working} onOpenChange={setChosen}>
+				<CollapsibleTrigger className="work-line work-opens">
+					<span className="inline-flex size-control-2xs shrink-0 items-center justify-center">
+						<FoldChevron />
+					</span>
+					{work.label}
+				</CollapsibleTrigger>
+				<CollapsiblePanel>
+					<WorkBranch className="work-list pt-0.5 pb-2">
+						{work.parts.map((laid) => (
+							<WorkPart key={partKey(laid)} thread={props.thread} laid={laid} />
+						))}
+					</WorkBranch>
+				</CollapsiblePanel>
+			</Collapsible>
+			<PresentedFiles thread={props.thread} files={files} />
 		</>
 	);
 }
 
-/** The work itself; its explicit file deliveries stand beside it even while its details are folded. */
-function WorkContent(props: { readonly thread: string; readonly laid: Laid }): ReactNode {
+/** The first step's key keeps each part in place as the turn's work grows. */
+function partKey(laid: Laid): string {
+	if (laid.kind !== "step") return laid.key;
+	return laid.step.kind === "call" ? laid.step.id : laid.step.key;
+}
+
+/** A part of a turn's work: a stretch of calls, delegations as sub-threads, or a step on its own. */
+function WorkPart(props: { readonly thread: string; readonly laid: Laid }): ReactNode {
 	const { laid } = props;
 	switch (laid.kind) {
 		case "calls":

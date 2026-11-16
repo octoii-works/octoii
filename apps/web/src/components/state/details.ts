@@ -1,5 +1,5 @@
 /**
- * The thread details card, one for the app: whether it shows at the chat's top right, where the chat has room for it
+ * The thread details card, one for the app: whether it shows in its own column, where the chat has room for it
  * beside its column — kept as the person goes between threads, as the panel's place is. Where the chat has no room, the
  * card opens from the header's button instead, as a popover of its own. A store of the page's, outside any component.
  */
