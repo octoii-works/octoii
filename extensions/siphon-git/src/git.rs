@@ -39,6 +39,14 @@ pub struct Repository {
     pub base: Option<String>,
 }
 
+/// A new linked worktree: its absolute path, its own new branch, and the commit it was created from.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct Worktree {
+    pub path: String,
+    pub branch: String,
+    pub base_commit: String,
+}
+
 /// Which changes are asked for: those not yet committed; a branch's against where it parted from its base — the
 /// repository's, where none is named — the working tree's own included; or one commit's.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -123,6 +131,13 @@ pub enum GitError {
     NoRepository(String),
     #[error("git {command}: {said}")]
     Refused { command: String, said: String },
+    #[error("could not create worktree {path} on branch {branch}: {source}")]
+    Worktree {
+        path: String,
+        branch: String,
+        #[source]
+        source: Box<GitError>,
+    },
     #[error(transparent)]
     Run(#[from] RunError),
 }
@@ -146,6 +161,80 @@ fn text(bytes: &[u8]) -> String {
 }
 
 impl Git<'_> {
+    /// Creates a linked worktree at the absolute `destination`, whose parent must exist, on the new literal `branch`.
+    /// `base` is resolved to a commit before anything is created; the source worktree's uncommitted changes stay there.
+    /// Every command, including directory creation and git's hooks and filters, runs on this same machine.
+    ///
+    /// # Errors
+    /// Invalid input, an existing branch or destination, or a command's failure. Nothing is deleted on failure:
+    /// after directory creation, the destination and any branch or worktree git created may remain for inspection.
+    pub async fn create_worktree(&self, folder: &Path, destination: &Path, branch: &str, base: &str) -> Result<Worktree, GitError> {
+        self.new_worktree(folder, destination, branch, base)
+            .await
+            .map_err(|source| GitError::Worktree {
+                path: destination.display().to_string(),
+                branch: branch.to_owned(),
+                source: Box::new(source),
+            })
+    }
+
+    async fn new_worktree(&self, folder: &Path, destination: &Path, branch: &str, base: &str) -> Result<Worktree, GitError> {
+        let refused = |said: &str| GitError::Refused {
+            command: "worktree add".into(),
+            said: said.to_owned(),
+        };
+        if !destination.is_absolute() {
+            return Err(refused("the destination must be an absolute path"));
+        }
+        let path = destination.to_str().ok_or_else(|| refused("the destination must be UTF-8"))?;
+        if branch.starts_with('-') || branch == "HEAD" {
+            return Err(refused("the branch must be a new literal branch name"));
+        }
+        let repository = self.holding(folder).await?;
+        let root = Path::new(&repository.root);
+        // Checking the complete ref rejects @{...} rather than expanding the previous-checkout syntax of --branch.
+        let reference = format!("refs/heads/{branch}");
+        self.output(root, &["check-ref-format", &reference]).await?;
+        if self
+            .line(root, &["rev-parse", "-q", "--verify", "--end-of-options", &reference])
+            .await?
+            .is_some()
+        {
+            return Err(refused("the branch already exists"));
+        }
+        let base_commit = text(
+            &self
+                .output(root, &["rev-parse", "--verify", "--end-of-options", &format!("{base}^{{commit}}")])
+                .await?,
+        )
+        .trim()
+        .to_owned();
+        // Git accepts an existing empty directory. Reserve a new one atomically, so an unrelated folder is never reused.
+        let directory = self
+            .machine
+            .run(
+                self.time,
+                self.under,
+                &Program::new(vec!["mkdir".into(), "--".into(), path.to_owned()], root),
+                &self.cancelled,
+            )
+            .await?;
+        if directory.exit != siphon::machine::Exit::Code(0) {
+            return Err(refused(&format!(
+                "mkdir ({:?}): {}",
+                directory.exit,
+                text(&directory.errors).trim()
+            )));
+        }
+        self.output(root, &["worktree", "add", "-b", branch, "--", path, &base_commit])
+            .await?;
+        Ok(Worktree {
+            path: path.to_owned(),
+            branch: branch.to_owned(),
+            base_commit,
+        })
+    }
+
     /// What git writes, run with `arguments` in `cwd`, a machine's absolute path: its output, where it ended as
     /// `succeeded` takes it to have.
     async fn ran(&self, cwd: &Path, arguments: &[&str], succeeded: impl Fn(i32) -> bool) -> Result<Bytes, GitError> {
