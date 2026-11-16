@@ -388,22 +388,30 @@ static int failed(Engine *engine) {
   return engine->state;
 }
 
-/* What the script returned, kept as JSON — nothing is null; a value JSON cannot hold, as a BigInt, what saying so
-   threw. */
+/* Keep an explicit return as JSON. Undefined has no output; values JSON cannot hold are errors. */
 static int keep_returned(Engine *engine) {
   JSContext *context = engine->context;
   JSValue value = JS_PromiseResult(context, engine->body);
+  if (JS_IsUndefined(value)) {
+    JS_FreeValue(context, value);
+    return engine->state = ENGINE_RETURNED;
+  }
   JSValue json = JS_JSONStringify(context, value, JS_UNDEFINED, JS_UNDEFINED);
   JS_FreeValue(context, value);
   if (JS_IsException(json)) return failed(engine);
-  size_t len = 4;
-  const char *text = JS_IsUndefined(json) ? "null" : JS_ToCStringLen(context, &len, json);
+  if (JS_IsUndefined(json)) {
+    JS_FreeValue(context, json);
+    throw_with(engine, "TypeError", "the return value cannot be represented as JSON");
+    return engine->state;
+  }
+  size_t len = 0;
+  const char *text = JS_ToCStringLen(context, &len, json);
   if (!text) {
     JS_FreeValue(context, json);
     return failed(engine);
   }
   int made = text_of(&engine->returned, text, len);
-  if (!JS_IsUndefined(json)) JS_FreeCString(context, text);
+  JS_FreeCString(context, text);
   JS_FreeValue(context, json);
   if (made) {
     throw_with(engine, "InternalError", "out of memory");
@@ -588,7 +596,7 @@ static void keep_thrown(Engine *engine, JSValueConst error) {
 
 /* Hands the host the JSON of what the script returned, where it returned. */
 void engine_returned(Engine *engine, EngineTextFn *each, void *to) {
-  if (engine->state == ENGINE_RETURNED) each(to, engine->returned.bytes, engine->returned.len);
+  if (engine->state == ENGINE_RETURNED && engine->returned.bytes) each(to, engine->returned.bytes, engine->returned.len);
 }
 
 /* Hands the host what the script threw — an error's name, message and stack — where it threw. */

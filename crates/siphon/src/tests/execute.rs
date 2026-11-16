@@ -764,3 +764,34 @@ async fn delivered_resource_links_survive_script_failure_without_explicit_printi
     }
     calling.close().await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn scripts_emit_only_explicit_output_and_preserve_null_returns() {
+    let beak = Beak::new().expect("Beak");
+    let calling = crate::testing::Calling::start(&beak, |tools| tools.with(ResultTool));
+    let (_folder, workspace) = folder();
+    let cases = [
+        ("", ""),
+        ("console.log('logged');", "logged"),
+        ("text('selected'); return undefined;", "selected"),
+        ("console.log('logged'); return null;", "logged\nnull"),
+        ("await tools.result_test({}); text('after call');", "after call"),
+    ];
+    let results = calling
+        .called(
+            "output",
+            workspace,
+            vec![],
+            cases
+                .iter()
+                .enumerate()
+                .map(|(at, (code, _))| (at.to_string(), "execute".into(), json!({ "code": code }).to_string()))
+                .collect(),
+        )
+        .await;
+    for (result, (code, expected)) in results.iter().zip(cases) {
+        assert_eq!(result.status, CallStatus::Ok, "{code}");
+        assert_eq!(result.text, expected, "{code}");
+    }
+    calling.close().await;
+}

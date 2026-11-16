@@ -37,7 +37,7 @@ const ran = await tools.shell({ command: "cargo test" });
 return { ended: ran.structuredContent.ended };
 ```
 
-text() 和 console.log 写入文本输出；return 保持现有 JSON 返回语义。image() 接受当前脚本工具调用返回的 input_image 内容块，保留其资源引用，不让脚本搬运 base64，不接受任意未返回的资源引用。当前展示顺序为文本和返回值在前、选中的图片在后。
+text() 和 console.log 写入文本输出；return 的显式值按 JSON 输出；没有 return、return undefined 或空 return 不产生返回值，显式 return null 仍输出 null。无法序列化为 JSON 的非 undefined 返回值报错。image() 接受当前脚本工具调用返回的 input_image 内容块，保留其资源引用，不让脚本搬运 base64，不接受任意未返回的资源引用。当前展示顺序为文本和返回值在前、选中的图片在后。
 
 嵌套调用的 resource_link 自动保留；它代表已发生的文件交付，各模型协议只发送引用描述，不读取原件。普通文本、图片不自动追加到模型上下文。资源按原有 thread 文件机制保存；metadata 不自动输出。脚本失败仍保留此前显式输出的文本和图片；已完成工具调用的副作用不回滚。
 

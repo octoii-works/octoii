@@ -110,7 +110,7 @@ pub struct ScriptOutput {
 
 impl Tool for ExecuteTool {
     const NAME: &'static str = "execute";
-    const DESCRIPTION: &'static str = "Run JavaScript as the body of an async function, with your tools on `tools`: `await tools.read({ path: \"a.txt\" })` returns { content, structuredContent?, metadata? } and rejects on failure. Use loops, Promise.all and code to work on the results. Text and images reach the model through explicit text(value), console.log, image(contentBlock), and the return value. Images use input_image blocks from tool results; metadata is not sent automatically. File delivery links are retained automatically, including when the script throws. Use it for work of many steps: reading or changing many files, many browser actions, batch extraction. `tools` has each of your tools by name, except execute and tools that ask the person or start threads, plus the tools listed in <catalog>.";
+    const DESCRIPTION: &'static str = "Run JavaScript as the body of an async function, with your tools on `tools`: `await tools.read({ path: \"a.txt\" })` returns { content, structuredContent?, metadata? } and rejects on failure. Use loops, Promise.all and code to work on the results. Text and images reach the model through explicit text(value), console.log, image(contentBlock), and the return value. No return or return undefined emits no value; explicit null remains null. Images use input_image blocks from tool results; metadata is not sent automatically. File delivery links are retained automatically, including when the script throws. Use it for work of many steps: reading or changing many files, many browser actions, batch extraction. `tools` has each of your tools by name, except execute and tools that ask the person or start threads, plus the tools listed in <catalog>.";
     type Args = ExecuteArgs;
 
     fn output_schema() -> Option<serde_json::Value> {
@@ -307,7 +307,7 @@ impl ScriptProgram {
                     progress = script.resume(time);
                 }
                 Progress::Returned(value) => {
-                    return Replayed::Ended(script_output(&mut script, state, Some(value), None));
+                    return Replayed::Ended(script_output(&mut script, state, value, None));
                 }
                 Progress::Threw(thrown) => {
                     return Replayed::Ended(script_output(

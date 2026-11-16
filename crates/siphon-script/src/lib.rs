@@ -54,12 +54,12 @@ pub struct Thrown {
     pub stack: String,
 }
 
-/// Where a step left a script: waiting on its calls — those it made in the step given — returned a value, as JSON;
-/// threw; or ran past its steps.
+/// Where a step left a script: waiting on calls, returned optional JSON, threw, or ran past its steps.
+/// An undefined return produces no value.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Progress {
     Waiting(Vec<Call>),
-    Returned(String),
+    Returned(Option<String>),
     Threw(Thrown),
     OutOfSteps,
 }
@@ -163,7 +163,7 @@ impl Script {
                 let mut returned: Vec<String> = Vec::new();
                 // SAFETY: as above.
                 unsafe { engine::engine_returned(engine, push_text, (&raw mut returned).cast::<c_void>()) };
-                Progress::Returned(returned.pop().unwrap_or_default())
+                Progress::Returned(returned.pop())
             }
             engine::THREW => {
                 let mut thrown = None;
