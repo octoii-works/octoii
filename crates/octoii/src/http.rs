@@ -66,7 +66,7 @@ pub fn router(node: Node) -> Router {
         )
         .route("/threads/{thread}/files/{hash}", get(crate::files::kept))
         .route("/machine", get(crate::files::machined))
-        .route("/sign-in/{provider}/callback", get(signed_in))
+        .route("/auth/callback", get(signed_in))
         .with_state(node);
     if let Some(app) = app {
         router = router.fallback_service(app);
@@ -263,13 +263,17 @@ where
 
 /// A provider's sign-in come back: finished from the address the person's browser was sent back to — the attempt's own
 /// state and proof what it is checked by, as a provider's redirect carries no cookie of the node's.
-async fn signed_in(State(node): State<Node>, axum::extract::Path(provider): axum::extract::Path<String>, uri: axum::http::Uri) -> Response {
-    let redirect = node.siphon.sign_in.callback.replace("{provider}", &provider);
+async fn signed_in(
+    State(node): State<Node>,
+    axum::extract::Query(returned): axum::extract::Query<SignInReturn>,
+    uri: axum::http::Uri,
+) -> Response {
+    let redirect = &node.siphon.sign_in.callback;
     let redirect = match uri.query() {
         Some(query) => format!("{redirect}?{query}"),
-        None => redirect,
+        None => redirect.clone(),
     };
-    let finished = siphon::providers::finish_sign_in(&node.siphon.models, &node.siphon.sign_ins, &provider, &redirect).await;
+    let finished = siphon::providers::finish_returned_sign_in(&node.siphon.models, &node.siphon.sign_ins, &returned.state, &redirect).await;
     let said = match finished {
         Ok(()) => "Signed in. You may close this page.".to_owned(),
         Err(error) => format!("Not signed in: {error}"),
@@ -279,6 +283,12 @@ async fn signed_in(State(node): State<Node>, axum::extract::Path(provider): axum
         html_escaped(&said)
     ))
     .into_response()
+}
+
+/// What identifies the pending sign-in in a browser return shared by the providers.
+#[derive(Deserialize)]
+struct SignInReturn {
+    state: String,
 }
 
 /// `text` with what HTML reads as markup escaped.

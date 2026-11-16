@@ -74,7 +74,7 @@ function HtmlFrame(props: { readonly html: string; readonly name: string; readon
 			</p>
 		);
 	return (
-		<div className="relative min-h-20 overflow-hidden rounded-md border border-border bg-background">
+		<div className="relative min-h-20 overflow-hidden bg-background">
 			<iframe
 				ref={frame}
 				src="/html-preview.html"

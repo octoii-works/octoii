@@ -1,9 +1,10 @@
-//! `present_file`: a file's original bytes kept in the thread before its resource link is returned.
+//! `present_file`: a file kept in the thread before its resource link is returned; HTML embeds its local images.
 
 use octoii_ai::vocabulary::InputContent;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use siphon::machine::Base;
+use siphon::threads::files;
 use siphon::tools::{Context, Effect, Refusal, Told, Tool};
 
 /// The arguments of `present_file`.
@@ -22,7 +23,7 @@ pub struct PresentFileTool;
 
 impl Tool for PresentFileTool {
     const NAME: &'static str = "present_file";
-    const DESCRIPTION: &'static str = "Present one file to the person for download, keeping its original bytes in this conversation. Use after generating a report, image, archive, or other result. Accepts a regular file up to 32 MiB that this call may read; directories are refused. The saved file survives changes to the source. This does not read the file into model context or publish it on the internet.";
+    const DESCRIPTION: &'static str = include_str!("present_file.md");
     type Args = PresentFileArgs;
 
     fn effect(&self, _: &PresentFileArgs, _: &Base) -> Effect {
@@ -32,7 +33,33 @@ impl Tool for PresentFileTool {
     }
 
     async fn exec(&self, context: &Context, args: PresentFileArgs) -> Result<Told, Refusal> {
-        let (file, size) = context.keep_file(&args.path).await?;
+        let read_context = context.clone();
+        let path = args.path;
+        let (name, bytes) = tokio::task::spawn_blocking(move || {
+            if path.is_empty() || path.contains('\0') {
+                return Err(Refusal::new("invalid file path"));
+            }
+            let machine = read_context.machine()?;
+            let (path, mut bytes) = machine
+                .read_file(&machine.path(&path), files::BYTES_MAX as u64)
+                .map_err(|error| Refusal(format!("{}: {error}", machine.shown(&machine.path(&path)))))?;
+            let name = path.rsplit('/').next().unwrap_or(&path).to_owned();
+            if files::media_type(&name, &bytes) == "text/html" {
+                let source = std::str::from_utf8(&bytes).map_err(|_| Refusal::new("HTML needs UTF-8 text"))?;
+                bytes = siphon_html::inline_local_images(&machine, &path, source)
+                    .map_err(|error| Refusal(error.to_string()))?
+                    .into_bytes()
+                    .into();
+            }
+            Ok((name, bytes))
+        })
+        .await
+        .map_err(|error| Refusal(format!("the file read failed: {error}")))??;
+        let (file, size) = context
+            .volume()
+            .keep_file(&context.thread, bytes, &name)
+            .await
+            .map_err(|error| Refusal(format!("{name}: {error}")))?;
         Ok(Told {
             content: vec![
                 InputContent::text(format!(

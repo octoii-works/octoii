@@ -106,7 +106,13 @@ describe("what the page knows of each tool", () => {
 	});
 
 	it("sums up a stretch of calls by the first three kinds of work it did, as they go where one runs, and how many more", () => {
-		const call = (work: "read" | "command" | "search" | "edit" | "script", state: CallState = "done") => ({ work, state });
+		let path = 0;
+		const call = (work: "read" | "command" | "search" | "edit" | "script", state: CallState = "done") => ({
+			work,
+			state,
+			arguments: JSON.stringify({ path: `file-${path++}` }),
+			structuredContent: undefined,
+		});
 		expect(summaryOf([call("read"), call("read"), call("read"), call("command")])).toBe("read 3 files and ran 1 command");
 		expect(summaryOf([call("read"), call("command", "running")])).toBe("read 1 file and running 1 command");
 		expect(summaryOf([call("read"), call("search"), call("edit"), call("edit")])).toBe("read 1 file, searched 1 time and edited 2 files");

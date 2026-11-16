@@ -15,8 +15,8 @@ use siphon_runtime::Runtime;
 use crate::Siphon;
 use tokio::sync::{mpsc, oneshot};
 
-/// How a host's sign-ins in a browser come back: the address the person's browser is sent back to, `{provider}` in
-/// it the provider's id; and the host's id for a sign-in.
+/// How a host's sign-ins in a browser come back: the address the person's browser is sent back to, and the host's id
+/// for a sign-in.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct SignInSetup {
     pub callback: String,
@@ -30,6 +30,8 @@ pub enum Refused {
     NoSuchProvider(String),
     #[error("no sign-in of {0} waits to be finished")]
     NoSignIn(String),
+    #[error("no sign-in waits for this browser return")]
+    NoSignInReturn,
     #[error("{0}")]
     Provider(String),
     #[error(transparent)]
@@ -42,17 +44,27 @@ pub enum Refused {
 enum Asked {
     Begun {
         provider: String,
+        state: String,
         attempt: Box<dyn SignInAttempt>,
+    },
+    Returned {
+        state: String,
+        reply: oneshot::Sender<Option<(String, Pending)>>,
     },
     Taken {
         provider: String,
-        reply: oneshot::Sender<Option<Box<dyn SignInAttempt>>>,
+        reply: oneshot::Sender<Option<Pending>>,
     },
 }
 
 /// The sign-ins begun and not yet finished, held by a task of their own.
 #[derive(Debug, Clone)]
 pub struct SignIns(mpsc::UnboundedSender<Asked>);
+
+struct Pending {
+    state: String,
+    attempt: Box<dyn SignInAttempt>,
+}
 
 impl std::fmt::Debug for Asked {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -66,12 +78,20 @@ impl SignIns {
     pub fn start() -> Self {
         let (asks, mut asked) = mpsc::unbounded_channel();
         tokio::spawn(async move {
-            let mut waiting: HashMap<String, Box<dyn SignInAttempt>> = HashMap::new();
+            let mut waiting: HashMap<String, Pending> = HashMap::new();
             while let Some(ask) = asked.recv().await {
                 match ask {
                     // A sign-in begun again stands in for the one before it.
-                    Asked::Begun { provider, attempt } => {
-                        waiting.insert(provider, attempt);
+                    Asked::Begun { provider, state, attempt } => {
+                        waiting.insert(provider, Pending { state, attempt });
+                    }
+                    Asked::Returned { state, reply } => {
+                        let provider = waiting
+                            .iter()
+                            .find(|(_, pending)| pending.state == state)
+                            .map(|(provider, _)| provider.clone());
+                        let pending = provider.and_then(|provider| waiting.remove(&provider).map(|pending| (provider, pending)));
+                        let _ = reply.send(pending);
                     }
                     Asked::Taken { provider, reply } => {
                         let _ = reply.send(waiting.remove(&provider));
@@ -132,7 +152,7 @@ pub(crate) fn shown(runtime: &Runtime, models: &Models, credentials: &dyn Creden
 pub(crate) async fn sign_in(models: &Models, sign_ins: &SignIns, setup: &SignInSetup, id: &str) -> Result<String, Refused> {
     let provider = provider(models, id)?;
     let options = SignInOptions {
-        redirect_uri: setup.callback.replace("{provider}", id),
+        redirect_uri: setup.callback.clone(),
         agent_name_hint: "Octoii".to_owned(),
         host_id: setup.host_id.clone(),
     };
@@ -143,6 +163,7 @@ pub(crate) async fn sign_in(models: &Models, sign_ins: &SignIns, setup: &SignInS
         .map_err(|failure| Refused::Provider(failure.message))?;
     let _ = sign_ins.0.send(Asked::Begun {
         provider: id.to_owned(),
+        state: begun.state,
         attempt: begun.attempt,
     });
     Ok(begun.url)
@@ -159,9 +180,30 @@ pub async fn finish_sign_in(models: &Models, sign_ins: &SignIns, id: &str, redir
         provider: id.to_owned(),
         reply,
     });
-    let attempt = taken.await.ok().flatten().ok_or_else(|| Refused::NoSignIn(id.to_owned()))?;
-    attempt
-        .finish(&models.call(&provider), redirect)
+    let pending = taken.await.ok().flatten().ok_or_else(|| Refused::NoSignIn(id.to_owned()))?;
+    finish_attempt(models, &provider, pending, redirect).await
+}
+
+/// Finishes the sign-in whose browser return carries `state`: the matching attempt and provider taken together, so
+/// an earlier return cannot consume another attempt begun meanwhile.
+///
+/// # Errors
+/// `NoSignInReturn`, `NoSuchProvider`; the provider's refusal.
+pub async fn finish_returned_sign_in(models: &Models, sign_ins: &SignIns, state: &str, redirect: &str) -> Result<(), Refused> {
+    let (reply, taken) = oneshot::channel();
+    let _ = sign_ins.0.send(Asked::Returned {
+        state: state.to_owned(),
+        reply,
+    });
+    let (id, pending) = taken.await.ok().flatten().ok_or(Refused::NoSignInReturn)?;
+    let provider = provider(models, &id)?;
+    finish_attempt(models, &provider, pending, redirect).await
+}
+
+async fn finish_attempt(models: &Models, provider: &Provider, pending: Pending, redirect: &str) -> Result<(), Refused> {
+    pending
+        .attempt
+        .finish(&models.call(provider), redirect)
         .await
         .map_err(|failure| Refused::Provider(failure.message))
 }

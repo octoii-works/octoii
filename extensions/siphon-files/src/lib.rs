@@ -1,5 +1,5 @@
-//! Files a thread presents to the person, as an extension of Siphon's: `present_file` keeps the original bytes of a
-//! file the thread may read, then returns a resource link without adding those bytes to the model's context.
+//! Files a thread presents to the person, as an extension of Siphon's: `present_file` keeps a file the thread may
+//! read, embedding local images into HTML, then returns a resource link without adding its bytes to the model's context.
 
 mod tool;
 
@@ -20,7 +20,7 @@ impl Extension for FilesExtension {
     }
 
     fn description(&self) -> &'static str {
-        "The model presents original files to the person, kept in the conversation for download."
+        "The model presents files to the person, with HTML's local images embedded, kept in the conversation for download."
     }
 
     fn build(self: Box<Self>, registrar: &mut Registrar<'_>) {

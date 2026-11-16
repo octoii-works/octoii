@@ -151,23 +151,10 @@ impl Context {
         })
         .await
         .map_err(|error| Refusal(format!("the file read failed: {error}")))??;
-        let size = bytes.len() as u64;
-        let media_type = crate::threads::files::media_type(&name, &bytes);
-        let snapshot = self.runtime.snapshot().map_err(|error| Refusal(error.to_string()))?;
-        let mut changes = Changes::new();
-        let reference = crate::threads::files::keep(&snapshot, &mut changes, &self.thread, bytes)
-            .map_err(|error| Refusal(format!("{name}: {error}")))?;
-        if !changes.is_empty() {
-            self.runtime.commit(changes).await.map_err(|error| Refusal(error.to_string()))?;
-        }
-        Ok((
-            FileRef {
-                reference,
-                media_type: media_type.to_owned(),
-                filename: Some(name),
-            },
-            size,
-        ))
+        self.volume()
+            .keep_file(&self.thread, bytes, &name)
+            .await
+            .map_err(|error| Refusal(format!("{name}: {error}")))
     }
 
     /// The image `bytes`, named `name` where it has one, as the model is shown it: fitted to what every model reads,

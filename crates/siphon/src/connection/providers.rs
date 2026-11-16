@@ -18,7 +18,7 @@ fn json(value: &impl Serialize) -> Result<serde_json::Value, Error> {
 fn told(error: &Refused) -> Error {
     let code = match error {
         Refused::NoSuchProvider(_) => "no_such_provider",
-        Refused::NoSignIn(_) => "no_sign_in",
+        Refused::NoSignIn(_) | Refused::NoSignInReturn => "no_sign_in",
         Refused::Provider(_) => "refused_by_provider",
         Refused::Accounts(_) => "bad_account",
         Refused::Beak(_) => "failed",

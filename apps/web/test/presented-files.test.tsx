@@ -129,6 +129,7 @@ describe("files delivered by tools", () => {
 });
 
 describe("isolated HTML preview messages", () => {
+	const theme = { appearance: "dark", variables: { "--background": "#181818" } } as const;
 	it("sends only the original HTML to its own ready frame and ignores other windows and command messages", () => {
 		const sent: { readonly message: unknown; readonly targetOrigin: string | WindowPostMessageOptions | undefined }[] = [];
 		const destination: Pick<Window, "postMessage"> = {
@@ -148,6 +149,7 @@ describe("isolated HTML preview messages", () => {
 			(height) => {
 				sizes.push(height);
 			},
+			() => theme,
 		);
 		for (const source of [null, {}, { postMessage: destination.postMessage }]) {
 			receive({ source, data: { type: "octoii.html.ready" } });
@@ -161,7 +163,7 @@ describe("isolated HTML preview messages", () => {
 		expect(loaded).toBe(0);
 		expect(sizes).toEqual([]);
 		receive({ source: destination, data: { type: "octoii.html.ready" } });
-		expect(sent).toEqual([{ message: { type: "octoii.html.load", html }, targetOrigin: "*" }]);
+		expect(sent).toEqual([{ message: { type: "octoii.html.load", html, theme }, targetOrigin: "*" }]);
 		receive({ source: destination, data: { type: "octoii.html.loaded" } });
 		expect(loaded).toBe(1);
 	});
@@ -176,12 +178,13 @@ describe("isolated HTML preview messages", () => {
 			(height) => {
 				sizes.push(height);
 			},
+			() => theme,
 		);
-		for (const height of [0, 240.25, 1e12]) receive({ source: destination, data: { type: "octoii.html.size", height } });
-		expect(sizes).toEqual([128, 241, 640]);
+		for (const height of [0, 240.25, 1400, 300, 1e12]) receive({ source: destination, data: { type: "octoii.html.size", height } });
+		expect(sizes).toEqual([80, 241, 1400, 300, 20_000]);
 		for (const height of [-1, "300", NaN, Infinity]) receive({ source: destination, data: { type: "octoii.html.size", height } });
 		receive({ source: destination, data: { type: "octoii.html.size" } });
-		expect(sizes).toEqual([128, 241, 640]);
+		expect(sizes).toEqual([80, 241, 1400, 300, 20_000]);
 	});
 });
 

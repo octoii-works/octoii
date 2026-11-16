@@ -1,6 +1,6 @@
 [package]
 name = "siphon-files"
-description = "Files a thread presents to the person: original bytes kept in the conversation and linked for download"
+description = "Files a thread presents to the person: kept in the conversation for download, with local images embedded in HTML"
 version = "0.0.1"
 edition.workspace = true
 rust-version.workspace = true
@@ -16,6 +16,8 @@ schemars = "1.2.3"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 siphon = { path = "../../crates/siphon" }
+siphon-html = { path = "../siphon-html" }
+tokio = { version = "1.54.1", features = ["rt"] }
 
 [dev-dependencies]
 tempfile = "3.27.0"

@@ -165,7 +165,7 @@ describe("a turn's work fold", () => {
 });
 
 describe("expanded tool details", () => {
-	it("keeps execute source collapsed and independently toggled while nested tools use their own guides", async () => {
+	it("keeps execute output and source collapsed and independently toggled while nested tools use their own guides", async () => {
 		await withView(async ({ draw, element, button, click }) => {
 			const child = callOf("nested");
 			const script = callOf("execute", {
@@ -177,9 +177,11 @@ describe("expanded tool details", () => {
 				calls: [child],
 			});
 			await draw(<Calls thread="thread" steps={[script]} calls={[script]} />);
-			expect(element.textContent).toContain(finalOutput);
+			expect(element.textContent).not.toContain(finalOutput);
 			expect(element.textContent).not.toContain("SCRIPT_SOURCE_ONLY");
 			await click(button("used 1 tool"));
+			expect(button("Output").getAttribute("aria-expanded")).toBe("false");
+			expect(element.textContent).not.toContain(finalOutput);
 			expect(button("Source code").getAttribute("aria-expanded")).toBe("false");
 			expect(element.textContent).not.toContain("SCRIPT_SOURCE_ONLY");
 			await click(button("custom.report"));
@@ -188,7 +190,11 @@ describe("expanded tool details", () => {
 			await click(button("Source code"));
 			expect(element.textContent).toContain("SCRIPT_SOURCE_ONLY");
 			expect(button("custom.report").getAttribute("aria-expanded")).toBe("true");
+			expect(element.textContent).not.toContain(finalOutput);
+			await click(button("Output"));
 			expect(element.textContent?.match(new RegExp(finalOutput, "g"))).toHaveLength(1);
+			await click(button("Output"));
+			expect(button("Output").getAttribute("aria-expanded")).toBe("false");
 			await click(button("Source code"));
 			expect(button("Source code").getAttribute("aria-expanded")).toBe("false");
 			expect(button("custom.report").getAttribute("aria-expanded")).toBe("true");

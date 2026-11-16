@@ -1,41 +1,41 @@
 /*
- * Markdown as an assistant writes it, set to be read: the words at the size its place gives them, every other size a
- * share of it — headings a real step up each, none smaller than the words; blocks spaced evenly; lists nested by
+ * Markdown as an assistant writes it, set to be read: the words at the size its place gives them, headings stepping
+ * up from the conversation's words; blocks spaced evenly; lists nested by
  * marker; links in the palette's colour, a thin line under them; code within a line on a faint tint; a table at the
- * column's width, its words smaller; and a reply drawn a block at a time spaced as one text.
+ * column's width; and a reply drawn a block at a time spaced as one text.
  */
 
 .prose-chat {
-	line-height: 1.6;
-	overflow-wrap: break-word;
+	line-height: var(--text-body--line-height);
+	overflow-wrap: anywhere;
+	word-break: break-word;
 }
 
-.prose-chat :is(p, ul, ol, blockquote) {
-	margin: 0.8em 0;
+.prose-chat :is(p, ul, ol, blockquote, .prose-code, .prose-table) {
+	margin: 0.65rem 0;
 }
 
 .prose-chat :is(h1, h2, h3, h4, h5, h6) {
-	margin: 1.5em 0 0.5em;
+	margin: 1.25rem 0 0.5rem;
 	font-weight: 600;
-	line-height: 1.3;
+	line-height: var(--text-heading--line-height);
 	color: var(--foreground);
 }
 
 .prose-chat h1 {
-	margin-top: 1.3em;
-	font-size: 1.4667em;
+	font-size: var(--text-heading-1);
 }
 
 .prose-chat h2 {
-	font-size: 1.2em;
+	font-size: var(--text-heading-2);
 }
 
 .prose-chat h3 {
-	font-size: 1.0667em;
+	font-size: var(--text-heading-3);
 }
 
 .prose-chat :is(h4, h5, h6) {
-	font-size: 1em;
+	font-size: var(--text-body);
 }
 
 .prose-chat h6 {
@@ -69,13 +69,17 @@
 	list-style-type: lower-alpha;
 }
 
+.prose-chat ol ol ol {
+	list-style-type: lower-roman;
+}
+
 .prose-chat li + li {
-	margin-top: 0.25em;
+	margin-top: 0.25rem;
 }
 
 /* A list within an item keeps near the item's words. */
 .prose-chat li > :is(ul, ol) {
-	margin: 0.25em 0 0;
+	margin: 0.25rem 0 0;
 }
 
 /* GitHub's task lists: the checkbox takes the marker's place. */
@@ -107,47 +111,56 @@
 }
 
 .prose-chat blockquote {
-	border-inline-start: 2px solid var(--border);
-	padding-inline-start: 1em;
-	color: var(--muted-foreground);
+	border-inline-start: 2px solid color-mix(in srgb, currentcolor 35%, transparent);
+	padding-inline-start: 0.8rem;
+	color: inherit;
 }
 
 .prose-chat strong {
-	font-weight: 600;
+	font-weight: 700;
 }
 
 /* Code within a line: in the code face on a faint tint of the words' own colour — quiet enough for a reply that names
    files and commands often, still set apart from the words around it. */
 .prose-chat :not(pre) > code {
+	border: 1px solid transparent;
 	border-radius: 0.25rem;
 	box-decoration-break: clone;
-	background: color-mix(in srgb, currentColor 6%, transparent);
-	padding: 0.1em 0.3em;
-	font-size: 0.867em;
+	background: color-mix(in srgb, currentColor 10%, transparent);
+	padding: 0.1em 0.35em;
+	font-size: 0.85em;
 }
 
-/* A table as wide as the column, scrolled within itself where its columns take more: no column narrower than its head. */
+/* A table as wide as the column, wrapping at words and scrolled within itself where its columns take more. */
 .prose-chat table {
 	width: 100%;
 	border-collapse: collapse;
-	font-size: var(--text-ui);
-	line-height: 1.5;
+	overflow-wrap: normal;
+	word-break: normal;
+	font-size: var(--text-body);
 }
 
 .prose-chat :is(th, td) {
 	border-bottom: 1px solid var(--border);
-	padding: 0.5em 1.25em 0.5em 0;
-	text-align: left;
+	padding: 0.45rem 0.75rem;
+	max-width: 24rem;
+	overflow-wrap: break-word;
+	text-wrap: pretty;
+	text-align: start;
 	vertical-align: top;
 }
 
+.prose-chat :is(th, td):first-child {
+	padding-inline-start: 0;
+}
+
 .prose-chat :is(th, td):last-child {
-	padding-right: 0;
+	padding-inline-end: 0;
 }
 
 .prose-chat th {
+	padding-block: 0.55rem;
 	font-weight: 600;
-	white-space: nowrap;
 }
 
 .prose-chat hr {

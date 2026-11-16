@@ -148,3 +148,63 @@ async fn failed_presentations_return_no_success_resource_or_title() {
     );
     calling.close().await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn html_keeps_local_image_bytes_after_both_source_files_disappear() {
+    let folder = tempfile::tempdir().expect("a folder");
+    let workspace = folder.path().canonicalize().expect("its real path");
+    std::fs::create_dir_all(workspace.join("reports/assets")).expect("asset folder");
+    let image = "<svg xmlns='http://www.w3.org/2000/svg' width='1' height='1'><path d='M0 0h1v1H0z'/></svg>";
+    let source = "<!doctype html><title>Report</title><img src=\"assets/icon.svg\">";
+    std::fs::write(workspace.join("reports/assets/icon.svg"), image).expect("image");
+    std::fs::write(workspace.join("reports/report.html"), source).expect("HTML");
+    let beak = Beak::new().expect("Beak");
+    let calling = Calling::start(&beak, |tools| tools.with(PresentFileTool));
+    let results = called(&calling, "html", &workspace, vec![json!({ "path": "reports/report.html" })]).await;
+    let result = &results[0];
+    assert_eq!(result.status, CallStatus::Ok, "{}", result.text);
+    let InputContent::ResourceLink { file, size } = &result.content[1] else {
+        panic!("a saved HTML resource")
+    };
+    assert_eq!(file.filename.as_deref(), Some("report.html"));
+    assert_eq!(file.media_type, "text/html");
+    assert_ne!(file.reference, files::reference_of(source.as_bytes()));
+    assert_eq!(
+        std::fs::read_to_string(workspace.join("reports/report.html")).expect("unchanged source"),
+        source
+    );
+    std::fs::remove_dir_all(workspace.join("reports")).expect("removed sources");
+    let snapshot = calling.volume().snapshot().expect("snapshot");
+    let kept = files::read(&snapshot, "t1", &file.reference).expect("read").expect("saved HTML");
+    let html = std::str::from_utf8(&kept).expect("UTF-8 HTML");
+    assert!(html.starts_with("<!doctype html><title>Report</title>"));
+    assert!(html.contains("src=\"data:image/svg+xml;base64,"), "{html}");
+    assert!(!html.contains("assets/icon.svg"));
+    assert_eq!(*size, kept.len() as u64);
+    calling.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_invalid_local_image_never_produces_a_stored_html_resource() {
+    let folder = tempfile::tempdir().expect("a folder");
+    let workspace = folder.path().canonicalize().expect("its real path");
+    std::fs::write(workspace.join("secret.png"), "API_KEY=private").expect("renamed secret");
+    std::fs::write(workspace.join("report.html"), "<img src='secret.png'>").expect("HTML");
+    let beak = Beak::new().expect("Beak");
+    let calling = Calling::start(&beak, |tools| tools.with(PresentFileTool));
+    let results = called(&calling, "invalid-image", &workspace, vec![json!({ "path": "report.html" })]).await;
+    assert_eq!(results[0].status, CallStatus::ToolError, "{}", results[0].text);
+    assert!(results[0].text.contains("supported image bytes"), "{}", results[0].text);
+    assert!(results[0].content.iter().all(|part| matches!(part, InputContent::InputText { .. })));
+    assert!(
+        calling
+            .volume()
+            .snapshot()
+            .expect("snapshot")
+            .stat(b"siphon.thread:t1/files")
+            .expect("stat")
+            .is_none(),
+        "a failed HTML preparation stores no blob"
+    );
+    calling.close().await;
+}

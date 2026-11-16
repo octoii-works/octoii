@@ -64,6 +64,12 @@ fn providers() -> Vec<Provider> {
     drivers.into_iter().map(Provider::of).collect()
 }
 
+/// The sign-in host's stable UUID URI, named from the node's persisted public key.
+fn sign_in_host_id(public_key: &str) -> String {
+    let name = format!("urn:octoii:node:{public_key}");
+    uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_URL, name.as_bytes()).urn().to_string()
+}
+
 /// The machine as the person's own: their home folder and shell, the system's temporary folder, the threads shown at
 /// the Home's `threads/`, what the node keeps for itself — its credentials and its state — hidden from what reaches the
 /// machine through Siphon, `~/octoii`, where a thread of no folder works, the person's memory in the Home, and the
@@ -165,8 +171,8 @@ pub async fn serve_until(served: Served, stop: impl Future<Output = ()> + Send +
     let loopback = format!("http://127.0.0.1:{port}");
     let key = octoii_tunnel::key::load_or_make(&home.key()).context("the node's key")?;
     let sign_in = SignInSetup {
-        callback: format!("{loopback}/sign-in/{{provider}}/callback"),
-        host_id: key.public().to_string(),
+        callback: format!("{loopback}/auth/callback"),
+        host_id: sign_in_host_id(&key.public().to_string()),
     };
     let relays = if relays.is_empty() {
         login::address_of(&home).context("the machine's address")?.into_iter().collect()
@@ -248,4 +254,32 @@ async fn stopped() {
     }
     #[cfg(not(unix))]
     let _ = tokio::signal::ctrl_c().await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sign_in_host_id;
+
+    #[test]
+    fn a_sign_in_host_uuid_follows_the_persisted_node_key() {
+        let folder = tempfile::tempdir().expect("a folder");
+        let path = folder.path().join("key");
+        let key = octoii_tunnel::key::load_or_make(&path).expect("a node key");
+        let first = sign_in_host_id(&key.public().to_string());
+        let reloaded = octoii_tunnel::key::load_or_make(&path).expect("the persisted key");
+        assert_eq!(
+            first,
+            sign_in_host_id(&reloaded.public().to_string()),
+            "a restart keeps the host identity"
+        );
+        let uuid = uuid::Uuid::parse_str(&first).expect("a UUID URI");
+        assert_eq!(uuid.get_version(), Some(uuid::Version::Sha1));
+        assert_eq!(first, uuid.urn().to_string());
+        let other = octoii_tunnel::key::load_or_make(&folder.path().join("other")).expect("another node key");
+        assert_ne!(
+            first,
+            sign_in_host_id(&other.public().to_string()),
+            "another node has its own host identity"
+        );
+    }
 }

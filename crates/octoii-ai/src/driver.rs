@@ -173,7 +173,8 @@ pub struct Guidance {
 }
 
 /// What a sign-in in a browser is begun with: the address the person's browser is sent back to, the name the app is
-/// offered under on a first sign-in, and the host's id for a sign-in, kept where the provider's earlier one holds none.
+/// offered under on a first sign-in, and the host's stable absolute URI for a sign-in, kept where the provider's
+/// earlier one holds none.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SignInOptions {
     pub redirect_uri: String,
@@ -181,9 +182,10 @@ pub struct SignInOptions {
     pub host_id: String,
 }
 
-/// A sign-in begun: where the person signs in, and the attempt it finishes by.
+/// A sign-in begun: where the person signs in, the state its browser return carries, and the attempt it finishes by.
 pub struct SignIn {
     pub url: String,
+    pub state: String,
     pub attempt: Box<dyn SignInAttempt>,
 }
 

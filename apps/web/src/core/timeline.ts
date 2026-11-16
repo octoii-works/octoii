@@ -462,7 +462,7 @@ function describedCall(source: CallSource): CallLine {
  * each among them, its words or a failure ending it, a call that waits on the person standing on its own — as one item
  * keyed by its first call, gathered where it made more than one, so a stretch that grows is the same item; what was
  * thought after its last call, before the words, on its own; each call that delegates gathered with those made straight
- * after it; a script on its own so its final output stays visible; every other step on its own.
+ * after it; a script on its own with independently expandable source and output; every other step on its own.
  */
 export type Laid =
 	| { readonly kind: "step"; readonly step: Work }

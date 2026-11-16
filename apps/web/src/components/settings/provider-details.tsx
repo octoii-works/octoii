@@ -11,7 +11,7 @@ import type { ProviderShown as Provider, ProviderStatus } from "@octoii-works/oc
 import { useClient } from "@octoii-works/octoii-client/react";
 import { ChevronLeft } from "lucide-react";
 import { standingOf, takesAccounts, troubled } from "../../core/providers.ts";
-import { isSignInReturn, signInReturnOf } from "../../core/sign-in.ts";
+import { isSignInReturn } from "../../core/sign-in.ts";
 import { vendorOfProvider } from "../../core/vendors.ts";
 import { Button, IconButton } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
@@ -126,7 +126,7 @@ function SignInRows(props: { readonly provider: Provider } & Changes): ReactNode
 	const finish = (event: FormEvent): void => {
 		event.preventDefault();
 		if (!isSignInReturn(pasted)) return;
-		client.finishSignIn(signInReturnOf(pasted) ?? provider.id, pasted.trim()).then(() => {
+		client.finishSignIn(provider.id, pasted.trim()).then(() => {
 			setPasted("");
 			props.onChanged();
 		}, props.onFailed);

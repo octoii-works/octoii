@@ -224,14 +224,26 @@ const ACTIONS: Readonly<Record<WorkKind, readonly [went: (count: number) => stri
  * command and edited 2 files". Calls that failed, were rejected or stopped never claim a completed effect; their
  * counts stand beside the summary.
  */
-export function summaryOf(calls: readonly { readonly work: WorkKind; readonly state: CallState }[]): string {
+type SummaryCall = Pick<ToolCall, "arguments" | "structuredContent" | "state"> & { readonly work: WorkKind };
+
+export function summaryOf(calls: readonly SummaryCall[]): string {
 	const carried = calls.filter((call) => call.state === "done" || call.state === "running" || call.state === "waiting");
 	if (carried.length === 0) return calls.length === 0 ? "" : counted(calls.length, "tool call", "tool calls");
 	const kinds = [...new Set(carried.map((call) => call.work))].slice(0, 3);
 	const said = kinds.map((kind) => {
 		const ofKind = carried.filter((call) => call.work === kind);
 		const [went, going] = ACTIONS[kind];
-		return ofKind.some((call) => call.state === "running" || call.state === "waiting") ? going(ofKind.length) : went(ofKind.length);
+		const active = ofKind.some((call) => call.state === "running" || call.state === "waiting");
+		if (kind !== "read" && kind !== "edit") return active ? going(ofKind.length) : went(ofKind.length);
+		const paths = ofKind.map((call) => {
+			const result = call.structuredContent;
+			return result?.type === "read" || result?.type === "changed" ? result.path : givenOf(call.arguments).path;
+		});
+		const operations = counted(ofKind.length, kind, kind === "read" ? "reads" : "edits");
+		if (paths.some((path) => path === undefined)) return `${active ? "making" : "made"} ${operations}`;
+		const files = new Set(paths).size;
+		const summary = active ? going(files) : went(files);
+		return files === ofKind.length ? summary : `${summary} (${operations})`;
 	});
 	const rest = carried.filter((call) => !kinds.includes(call.work)).length;
 	const parts = rest === 0 ? said : [...said, `${String(rest)} more`];

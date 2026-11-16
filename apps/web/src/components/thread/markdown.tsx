@@ -45,7 +45,7 @@ const COMPONENTS: Components = {
 		return block ? <CodeOf language={language ?? ""} code={text.replace(/\n$/, "")} /> : <code>{props.children}</code>;
 	},
 	table: (props) => (
-		<div className="my-3 overflow-x-auto">
+		<div className="prose-table overflow-x-auto">
 			<table>{props.children}</table>
 		</div>
 	),

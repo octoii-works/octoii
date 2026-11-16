@@ -27,9 +27,44 @@ const OPENER: &str = "<title>Opener</title>\
 <button onclick=\"window.open('/second')\">Open</button>\
 <a href='/file'>Notes</a>";
 
+/// An expandable preview that reports its theme and preserves local interaction state.
+const THEMED_PREVIEW: &str = r#"<!doctype html>
+    <style>#authored { background: rgb(12, 34, 56); color: rgb(210, 220, 230); font-family: serif; }</style>
+    <details open><summary onclick="clicks += 1">Toggle report</summary><div style="height:1400px"></div></details>
+    <code>Code</code><span id="authored">Authored design</span>
+    <script>
+        let clicks = 0;
+        const report = stage => {
+            const root = getComputedStyle(document.documentElement);
+            const body = getComputedStyle(document.body);
+            const authored = getComputedStyle(document.getElementById('authored'));
+            top.postMessage({ type: 'preview.state', stage, clicks,
+                background: root.backgroundColor, foreground: body.color,
+                font: body.fontFamily, mono: getComputedStyle(document.querySelector('code')).fontFamily,
+                scheme: root.colorScheme, authoredBackground: authored.backgroundColor,
+                authoredForeground: authored.color, authoredFont: authored.fontFamily }, '*');
+        };
+        addEventListener('message', event => {
+            if (event.data?.type === 'preview.toggle') document.querySelector('summary').click();
+            if (event.data?.type === 'preview.spoof') {
+                parent.postMessage({ type: 'octoii.html.theme', theme: event.data.theme }, '*');
+            }
+            if (event.data?.stage) requestAnimationFrame(() => requestAnimationFrame(() => report(event.data.stage)));
+        });
+        addEventListener('DOMContentLoaded', () => report('initial'));
+    </script>"#;
+
 /// What the test's site answers `line`, the first line of a request, with: its content type and its body.
 fn answer(line: &str, port: u16) -> (&'static str, String) {
-    if line.starts_with("GET /html-preview.html") {
+    if line.starts_with("GET /remote.js") {
+        ("text/javascript", "console.log('remote script loaded');".to_owned())
+    } else if line.starts_with("GET /remote.css") {
+        ("text/css", "body{--remote-style:loaded}".to_owned())
+    } else if line.starts_with("GET /remote.svg") {
+        ("image/svg+xml", "<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10'><rect width='10' height='10' fill='blue'/></svg>".to_owned())
+    } else if line.starts_with("GET /remote-data") {
+        ("text/plain\r\naccess-control-allow-origin: *", "remote data loaded".to_owned())
+    } else if line.starts_with("GET /html-preview.html") {
         ("text/html", siphon_html::DOCUMENT.to_owned())
     } else if line.starts_with("GET /preview") {
         (
@@ -474,10 +509,16 @@ async fn an_http_html_preview_loads_inside_an_opaque_sandbox_and_runs_isolated_s
     act(&browser, &machine, json!({ "action": "open", "url": format!("{address}/preview") }))
         .await
         .expect("the embedded preview opened");
-    let html = "<!doctype html><h1>Saved report</h1><script>\
+    let html = "<!doctype html><h1>Saved report</h1><h2>Details</h2><script>\
         let isolated = false;\
         try { parent.document.body.textContent = 'escaped'; } catch { isolated = true; }\
-        top.postMessage({ type: 'preview.script', isolated }, '*');\
+        addEventListener('DOMContentLoaded', () => {\
+            const root = getComputedStyle(document.documentElement);\
+            const body = getComputedStyle(document.body);\
+            top.postMessage({ type: 'preview.script', isolated, scheme: root.colorScheme,\
+                background: root.backgroundColor, foreground: body.color,\
+                h1: getComputedStyle(document.querySelector('h1')).fontSize, h2: getComputedStyle(document.querySelector('h2')).fontSize, font: body.fontFamily, margin: body.margin, boxSizing: body.boxSizing, fontSize: root.fontSize, lineHeight: root.lineHeight, padding: root.padding, radius: root.getPropertyValue('--radius').trim() }, '*');\
+        });\
         </script>";
     let payload = json!({ "type": "octoii.html.load", "html": html });
     let expression = format!(
@@ -492,8 +533,8 @@ async fn an_http_html_preview_loads_inside_an_opaque_sandbox_and_runs_isolated_s
             const receive = event => {{
                 if (event.source === frame && event.data?.type === 'octoii.html.loaded') result.loaded = true;
                 if (event.source === frame && event.data?.type === 'octoii.html.size') result.height = event.data.height;
-                if (event.data?.type === 'preview.script') result.isolated = event.data.isolated;
-                if (result.loaded && result.height > 0 && result.isolated !== undefined) finish();
+                if (event.data?.type === 'preview.script') result.script = event.data;
+                if (result.loaded && result.height > 0 && result.script) finish();
             }};
             const timer = setTimeout(finish, 5000);
             addEventListener('message', receive);
@@ -505,8 +546,123 @@ async fn an_http_html_preview_loads_inside_an_opaque_sandbox_and_runs_isolated_s
         .expect("the embedded preview answered");
     let value = outcome.value.expect("the preview's state");
     assert_eq!(value["loaded"], true, "{value}");
-    assert_eq!(value["isolated"], true, "{value}");
+    assert_eq!(value["script"]["isolated"], true, "{value}");
+    assert_eq!(value["script"]["scheme"], "light dark", "{value}");
+    assert_ne!(value["script"]["background"], value["script"]["foreground"], "{value}");
+    assert!(
+        value["script"]["font"].as_str().is_some_and(|font| font.contains("system-ui")),
+        "{value}"
+    );
+    assert_eq!(value["script"]["margin"], "0px", "{value}");
+    assert_eq!(value["script"]["fontSize"], "14px", "{value}");
+    assert_eq!(value["script"]["lineHeight"], "22.75px", "{value}");
+    assert_eq!(value["script"]["h1"], "16px", "{value}");
+    assert_eq!(value["script"]["h2"], "15px", "{value}");
+    assert_eq!(value["script"]["padding"], "8px", "{value}");
+    assert_eq!(value["script"]["radius"], "0.625rem", "{value}");
+    assert_eq!(value["script"]["boxSizing"], "border-box", "{value}");
     assert!(value["height"].as_f64().is_some_and(|height| height > 0.0), "{value}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_html_preview_changes_theme_in_place_and_its_height_shrinks_after_interaction() {
+    let beak = Beak::new().expect("Beak");
+    let (profile, downloads) = (tempfile::tempdir().expect("a folder"), tempfile::tempdir().expect("a folder"));
+    let machine = machine(&beak, profile.path());
+    let Some(browser) = browser(&beak, profile.path(), downloads.path()) else {
+        return;
+    };
+    let address = serve().await;
+    act(&browser, &machine, json!({ "action": "open", "url": format!("{address}/preview") }))
+        .await
+        .expect("the embedded preview opened");
+    let light = json!({ "appearance": "light", "variables": {
+        "--background": "rgb(250, 251, 252)", "--foreground": "rgb(20, 30, 40)",
+        "--font-sans": "sans-serif", "--font-mono": "monospace",
+        "--test-payload": "</script><script>top.postMessage('escaped', '*')</script>"
+    }});
+    let dark = json!({ "appearance": "dark", "variables": {
+        "--background": "rgb(20, 30, 40)", "--foreground": "rgb(230, 240, 250)",
+        "--font-sans": "serif", "--font-mono": "monospace"
+    }});
+    let payload = json!({ "type": "octoii.html.load", "html": THEMED_PREVIEW, "theme": light });
+    let expression = format!(
+        "new Promise(resolve => {{
+            const element = document.querySelector('iframe');
+            const frame = element.contentWindow;
+            const result = {{ loads: 0, heights: [], escaped: false }};
+            let content;
+            let phase = 'initial';
+            let state;
+            let height;
+            const finish = () => {{
+                clearTimeout(timer);
+                removeEventListener('message', receive);
+                resolve(result);
+            }};
+            const receive = event => {{
+                if (event.data === 'escaped') result.escaped = true;
+                if (event.source === frame && event.data?.type === 'octoii.html.loaded') result.loads += 1;
+                if (event.source === frame && event.data?.type === 'octoii.html.size') {{
+                    height = event.data.height;
+                    result.heights.push(height);
+                    element.style.height = height + 'px';
+                }}
+                if (event.data?.type === 'preview.state') {{ content = event.source; state = event.data; }}
+                if (phase === 'initial' && result.loads === 1 && height > 1400 && state?.stage === 'initial') {{
+                    result.initial = state;
+                    phase = 'updated';
+                    frame.postMessage({{ type: 'octoii.html.theme', theme: {dark} }}, '*');
+                    content.postMessage({{ type: 'preview.toggle', stage: 'updated' }}, '*');
+                }} else if (phase === 'updated' && height < 100 && state?.stage === 'updated') {{
+                    result.updated = state;
+                    phase = 'spoofed';
+                    content.postMessage({{ type: 'octoii.html.theme', theme: {light} }}, '*');
+                    content.postMessage({{ type: 'preview.spoof', theme: {light}, stage: 'spoofed' }}, '*');
+                }} else if (phase === 'spoofed' && state?.stage === 'spoofed') {{
+                    result.spoofed = state;
+                    finish();
+                }}
+            }};
+            const timer = setTimeout(finish, 5000);
+            addEventListener('message', receive);
+            frame.postMessage({payload}, '*');
+        }})"
+    );
+    let outcome = act(&browser, &machine, json!({ "action": "evaluate", "expression": expression }))
+        .await
+        .expect("the embedded preview answered");
+    let value = outcome.value.expect("the preview's state");
+    assert_eq!(value["loads"], 1, "theme changes preserve the document: {value}");
+    assert_eq!(value["escaped"], false, "theme variables stay data: {value}");
+    assert_eq!(value["initial"]["background"], "rgb(250, 251, 252)", "{value}");
+    assert_eq!(value["initial"]["foreground"], "rgb(20, 30, 40)", "{value}");
+    assert_eq!(value["initial"]["font"], "sans-serif", "{value}");
+    assert_eq!(value["initial"]["mono"], "monospace", "{value}");
+    assert_eq!(value["initial"]["scheme"], "light", "{value}");
+    assert_eq!(value["initial"]["authoredFont"], "serif", "{value}");
+    for stage in ["updated", "spoofed"] {
+        assert_eq!(value[stage]["background"], "rgb(20, 30, 40)", "{value}");
+        assert_eq!(value[stage]["foreground"], "rgb(230, 240, 250)", "{value}");
+        assert_eq!(value[stage]["font"], "serif", "{value}");
+        assert_eq!(value[stage]["scheme"], "dark", "{value}");
+        assert_eq!(value[stage]["clicks"], 1, "script state survives: {value}");
+        assert_eq!(value[stage]["authoredBackground"], "rgb(12, 34, 56)", "{value}");
+        assert_eq!(value[stage]["authoredForeground"], "rgb(210, 220, 230)", "{value}");
+        assert_eq!(value[stage]["authoredFont"], "serif", "{value}");
+    }
+    let heights = value["heights"].as_array().expect("reported heights");
+    assert!(
+        heights.iter().any(|height| height.as_f64().is_some_and(|height| height > 1400.0)),
+        "{value}"
+    );
+    assert!(
+        heights
+            .last()
+            .and_then(serde_json::Value::as_f64)
+            .is_some_and(|height| height < 100.0),
+        "{value}"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -517,15 +673,18 @@ async fn a_local_html_preview_is_isolated_painted_clicked_and_its_console_is_rea
     let Some(browser) = browser(&beak, profile.path(), downloads.path()) else {
         return;
     };
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("an isolated endpoint");
-    let address = format!("http://{}", listener.local_addr().expect("its address"));
+    let address = serve().await;
     let html = format!(
         "<!doctype html><title>Preview</title>\
          <style>body{{background:white}}button{{position:absolute;left:20px;top:20px;width:180px;height:80px}}</style>\
          <button onclick=\"document.body.style.background='red';console.log('preview clicked')\">Click me</button>\
+         <link rel='stylesheet' href='{address}/remote.css'>\
+         <script src='{address}/remote.js'></script>\
+         <img src='{address}/remote.svg' onload=\"console.log('remote image loaded')\">\
          <script>\
          console.log('preview ready');\
-         fetch('{address}/blocked').catch(() => console.log('network blocked'));\
+         fetch('{address}/remote-data').then(r => r.text()).then(console.log);\
+         addEventListener('load', () => console.log('remote style ' + getComputedStyle(document.body).getPropertyValue('--remote-style')));\
          window.open('{address}/popup');\
          throw new Error('preview error');\
          </script>"
@@ -557,7 +716,10 @@ async fn a_local_html_preview_is_isolated_painted_clicked_and_its_console_is_rea
         .text;
     assert!(console.contains("preview ready"), "{console}");
     assert!(console.contains("preview error"), "{console}");
-    assert!(console.contains("network blocked"), "{console}");
+    assert!(console.contains("remote script loaded"), "{console}");
+    assert!(console.contains("remote image loaded"), "{console}");
+    assert!(console.contains("remote style loaded"), "{console}");
+    assert!(console.contains("remote data loaded"), "{console}");
     act(&browser, &machine, json!({ "action": "click", "target": { "x": 100, "y": 60 } }))
         .await
         .expect("clicked inside the isolated frame");
@@ -572,10 +734,7 @@ async fn a_local_html_preview_is_isolated_painted_clicked_and_its_console_is_rea
         .expect("its logs")
         .text;
     assert!(console.contains("preview clicked"), "{console}");
-    assert!(
-        tokio::time::timeout(Duration::from_millis(200), listener.accept()).await.is_err(),
-        "the preview sends no external request"
-    );
+
 }
 
 #[test]

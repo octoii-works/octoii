@@ -7,8 +7,7 @@
  * it, the calls made under it, then what it was given and what it told. Several say what they did as a person says it,
  * how many failed, and how long they took, led by the mark of the call going on, else of the kind of work they did
  * most; opened, the latest of them each on a line of its own, at the same edges, closer together, those before behind a
- * line that shows them. A script's final output stays visible; its code, nested tools and ordinary command output
- * open beneath the line.
+ * line that shows them. A script's source, output and nested tools all open beneath its summary line.
  */
 import { memo, type ReactNode, useState } from "react";
 import { Ban, Brain } from "lucide-react";
@@ -49,7 +48,7 @@ export const Calls = memo(function Calls(props: StretchProps): ReactNode {
 	return <StretchLine thread={props.thread} steps={props.steps} calls={props.calls} one={one} />;
 }, sameStretch);
 
-/** The line of a stretch: its mark, its words, how it ends and its time; opened, what it holds. A script's final output stays visible. */
+/** The line of a stretch: its mark, its words, how it ends and its time; opened, what it holds. Script output opens with the details. */
 function StretchLine(props: StretchProps & { readonly one: CallLine | undefined }): ReactNode {
 	const { one } = props;
 	const approval = useApproval(props.thread, one?.state === "waiting" ? one.ask : undefined);
@@ -83,6 +82,7 @@ function StretchLine(props: StretchProps & { readonly one: CallLine | undefined 
 							<>
 								{props.steps.map((step) => (step.kind === "thought" ? <ThoughtNote key={step.key} text={step.text} took={step.took} /> : null))}
 								<CallDetail call={one} />
+								{one.work === "script" ? <ScriptOutput call={one} /> : null}
 								{one.calls.length === 0 ? null : (
 									<div className="work-list work-tight">
 										{one.calls.map((call) => (
@@ -95,11 +95,6 @@ function StretchLine(props: StretchProps & { readonly one: CallLine | undefined 
 					</WorkBranch>
 				</CollapsiblePanel>
 			</Collapsible>
-			{one?.work !== "script" ? null : (
-				<div className="work-indent">
-					<ScriptOutput call={one} />
-				</div>
-			)}
 		</>
 	);
 }

@@ -50,6 +50,33 @@ impl Volume {
         self.runtime.now_ms()
     }
 
+    /// Keeps file bytes in the existing thread, named by their content, without fitting them for a model. Returns
+    /// the reference, detected media type, basename and size only once storage commits.
+    ///
+    /// # Errors
+    /// No such thread, a file past the byte limit, or the volume's failure.
+    pub async fn keep_file(&self, thread: &str, bytes: Bytes, name: &str) -> std::result::Result<(FileRef, u64), files::Refused> {
+        let snapshot = self.file_snapshot(thread)?;
+        if bytes.len() > files::BYTES_MAX {
+            return Err(files::Refused::TooLarge);
+        }
+        let size = bytes.len() as u64;
+        let media_type = files::media_type(name, &bytes);
+        let mut changes = Changes::new();
+        let reference = files::keep(&snapshot, &mut changes, thread, bytes)?;
+        if !changes.is_empty() {
+            self.runtime.commit(changes).await?;
+        }
+        Ok((
+            FileRef {
+                reference,
+                media_type: media_type.to_owned(),
+                filename: Some(name.to_owned()),
+            },
+            size,
+        ))
+    }
+
     /// Keeps an image in the existing thread's files, fitted to what every model reads and named by its content.
     /// Returns its reference and fitted size only once storage commits.
     ///
@@ -61,14 +88,7 @@ impl Volume {
         bytes: &[u8],
         name: Option<&str>,
     ) -> std::result::Result<(FileRef, siphon_image::Size), files::Refused> {
-        let snapshot = self.snapshot()?;
-        let exists = snapshot
-            .stat(&thread::path(thread))?
-            .and_then(|entry| entry.directory)
-            .is_some_and(|directory| !operations::removing(&directory));
-        if !exists {
-            return Err(files::Refused::NoSuchThread);
-        }
+        let snapshot = self.file_snapshot(thread)?;
         if bytes.len() > files::BYTES_MAX {
             return Err(files::Refused::TooLarge);
         }
@@ -78,6 +98,18 @@ impl Volume {
             self.runtime.commit(changes).await?;
         }
         Ok(kept)
+    }
+
+    fn file_snapshot(&self, thread: &str) -> std::result::Result<Snapshot, files::Refused> {
+        let snapshot = self.snapshot()?;
+        let exists = snapshot
+            .stat(&thread::path(thread))?
+            .and_then(|entry| entry.directory)
+            .is_some_and(|directory| !operations::removing(&directory));
+        if !exists {
+            return Err(files::Refused::NoSuchThread);
+        }
+        Ok(snapshot)
     }
 
     /// What `work` comes to, given a record of the kind `kind` for the runs it makes — the commands a run of git makes,

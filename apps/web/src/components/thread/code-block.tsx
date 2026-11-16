@@ -28,7 +28,7 @@ export function CodeBlock(props: CodeBlockProps): ReactNode {
 	const fold = codeFoldOf(props.code);
 	const shown = fold === undefined || whole ? props.code : fold.head;
 	return (
-		<div className="well my-3 overflow-hidden">
+		<div className="well prose-code overflow-hidden">
 			<div className="flex h-control items-center justify-between ps-3 pe-1 text-xs text-muted-foreground">
 				<span>{language?.name ?? props.language}</span>
 				<CopyButton text={props.code} label="Copy code" />
@@ -58,7 +58,7 @@ export function CodeBeingWritten(props: CodeBlockProps): ReactNode {
 	const fold = writtenFoldOf(props.code);
 	const shown = fold === undefined ? props.code : fold.head;
 	return (
-		<div className="well my-3 overflow-hidden">
+		<div className="well prose-code overflow-hidden">
 			<div className="flex h-control items-center ps-3 text-xs text-muted-foreground">{language?.name ?? props.language}</div>
 			<div style={{ "--code-lines": shown.split("\n").length }} className="code-well">
 				<pre className="overflow-x-auto py-(--diffs-gap-block) ps-[1ch] leading-(--diffs-line-height) [tab-size:var(--diffs-tab-size,2)]">{shown}</pre>

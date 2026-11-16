@@ -27,13 +27,21 @@ export function CallDetail(props: { readonly call: CallLine }): ReactNode {
 	);
 }
 
-/** A script's final output, visible beside its fold; the script and its nested calls stay inside it. */
+/** A script's output opens independently inside its summary, beside the source and nested calls. */
 export function ScriptOutput(props: { readonly call: CallLine }): ReactNode {
 	if (props.call.output === undefined || props.call.output === "") return null;
 	return (
-		<div className="flex flex-col gap-1.5 pt-0.5 pb-2">
-			<ToldWell told={toldOf(props.call.output)} />
-		</div>
+		<Collapsible>
+			<CollapsibleTrigger className="work-line work-opens text-xs">
+				Output
+				<FoldChevron className="quiet-chevron" />
+			</CollapsibleTrigger>
+			<CollapsiblePanel>
+				<WorkBranch className="pt-0.5 pb-1.5">
+					<ToldWell told={toldOf(props.call.output)} />
+				</WorkBranch>
+			</CollapsiblePanel>
+		</Collapsible>
 	);
 }
 

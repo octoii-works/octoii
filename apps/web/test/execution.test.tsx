@@ -1,4 +1,4 @@
-/** Execute presents actual completed work and its explicit final output, with code and tool details behind the fold. */
+/** Execute presents actual completed work and its final output, source and tool details behind folds. */
 import { describe, expect, it } from "bun:test";
 import { conversationOf, type CallStatus, type Entry, type InputContent, type ThreadView } from "@octoii-works/octoii-client";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -133,7 +133,7 @@ describe("an execution's actual completed calls", () => {
 		expect(call.calls.map((nested) => nested.state)).toEqual(["done", "failed"]);
 		expect(summaryOf(call.calls)).toBe("read 1 file");
 		expect(detailOf(call)).toEqual({ shape: "script", code });
-		expect(renderToStaticMarkup(<ScriptOutput call={call} />)).toContain("the script threw: write refused");
+		expect(call.output).toContain("the script threw: write refused");
 	});
 
 	it("does not report a rejected or failed write as an edited file, even when the script catches it", () => {
@@ -160,25 +160,43 @@ describe("the script's fold and final output", () => {
 		expect(laid[1]?.kind === "calls" ? laid[1].steps : []).toEqual([thought, call]);
 	});
 
-	it("keeps the real summary and final output separate from code and nested results, with one output when expanded", () => {
+	it("keeps output and source collapsed independently", () => {
 		const { call } = executionOf([recorded("read", { path: "actual.txt" }, { output: "NESTED_OUTPUT_ONLY" })]);
 		expect(summaryOf(call.calls)).toBe("read 1 file");
-		const visible = renderToStaticMarkup(<ScriptOutput call={call} />);
-		expect(visible.match(/VISIBLE_FINAL_OUTPUT/g)).toHaveLength(1);
-		expect(visible).not.toContain("SCRIPT_CODE_ONLY");
-		expect(visible).not.toContain("NESTED_OUTPUT_ONLY");
+		const result = renderToStaticMarkup(<ScriptOutput call={call} />);
+		expect(result).toContain("Output");
+		expect(result).toContain('aria-expanded="false"');
+		expect(result).not.toContain("VISIBLE_FINAL_OUTPUT");
+		expect(result).not.toContain("SCRIPT_CODE_ONLY");
+		expect(result).not.toContain("NESTED_OUTPUT_ONLY");
 		const detail = renderToStaticMarkup(<CallDetail call={call} />);
 		expect(detail).toContain("Source code");
 		expect(detail).toContain('aria-expanded="false"');
 		expect(detail).not.toContain("SCRIPT_CODE_ONLY");
-		expect(detail).not.toContain("VISIBLE_FINAL_OUTPUT");
-		const opened = renderToStaticMarkup(
-			<>
-				<CallDetail call={call} />
-				<ScriptOutput call={call} />
-			</>,
+	});
+
+	it("counts paths rather than repeated edits, preserving failures separately", () => {
+		const { call } = executionOf([
+			recorded("edit", { path: "a.txt" }),
+			recorded("edit", { path: "a.txt" }, { id: 1, key: "second" }),
+			recorded("write", { path: "b.txt" }, { id: 2, key: "third" }),
+			recorded("edit", { path: "failed.txt" }, { id: 3, key: "fourth", status: "tool-error" }),
+		]);
+		expect(summaryOf(call.calls)).toBe("edited 2 files (3 edits)");
+	});
+
+	it("uses recorded result paths ahead of argument spelling and keeps case distinct", () => {
+		const changed = (path: string) => ({ type: "changed", path, additions: 1, deletions: 1, created: false });
+		const { call } = executionOf([
+			recorded("edit", { path: "./a.txt" }, { structuredContent: changed("a.txt") }),
+			recorded("edit", { path: "a.txt" }, { structuredContent: changed("a.txt") }),
+			recorded("edit", { path: "A.txt" }, { structuredContent: changed("A.txt") }),
+		]);
+		expect(summaryOf(call.calls)).toBe("edited 2 files (3 edits)");
+		expect(summaryOf(executionOf([recorded("read", { path: "a.txt" }), recorded("read", { path: "a.txt", offset: 10 })]).call.calls)).toBe(
+			"read 1 file (2 reads)",
 		);
-		expect(opened.match(/VISIBLE_FINAL_OUTPUT/g)).toHaveLength(1);
+		expect(summaryOf(executionOf([recorded("edit", {})]).call.calls)).toBe("made 1 edit");
 	});
 
 	it("shows delivered resources only once at the outer boundary, including when the script failed", () => {
@@ -194,6 +212,6 @@ describe("the script's fold and final output", () => {
 			</ReachContext>,
 		);
 		expect(html.match(/More actions for result\.pdf/g)).toHaveLength(1);
-		expect(html.match(/VISIBLE_FINAL_OUTPUT/g)).toHaveLength(1);
+		expect(html).not.toContain("VISIBLE_FINAL_OUTPUT");
 	});
 });

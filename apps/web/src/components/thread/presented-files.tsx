@@ -14,7 +14,7 @@ import { PictureStrip } from "./pictures.tsx";
 export function PresentedFiles(props: { readonly thread: string; readonly files: readonly PresentedFile[] }): ReactNode {
 	if (props.files.length === 0) return null;
 	return (
-		<div className="work-indent flex flex-col items-start gap-2 py-2">
+		<div className="flex w-full min-w-0 flex-col gap-2 py-2">
 			{props.files.map((file, index) => (
 				<FileCard key={`${file.file.ref}:${String(index)}`} thread={props.thread} presented={file} />
 			))}

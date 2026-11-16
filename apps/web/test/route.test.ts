@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { HOME, type Route, routeAddress, routeOf, settingsOf, withOverlay, withSettings } from "../src/core/route.ts";
 import { settingsFound } from "../src/core/settings-search.ts";
-import { isSignInReturn, signInReturnOf } from "../src/core/sign-in.ts";
+import { isSignInReturn } from "../src/core/sign-in.ts";
 
 describe("a route's address", () => {
 	const places: readonly Route[] = [
@@ -43,10 +43,11 @@ describe("a route's address", () => {
 
 describe("a sign-in's return", () => {
 	it("is the node's address with what the issuer gave it, pasted or opened", () => {
-		expect(signInReturnOf("http://127.0.0.1:7600/sign-in/chatgpt/callback?code=c&state=s")).toBe("chatgpt");
-		expect(isSignInReturn("  http://127.0.0.1:7600/sign-in/chatgpt/callback?code=c  ")).toBe(true);
-		expect(isSignInReturn("http://127.0.0.1:7600/sign-in/chatgpt/callback")).toBe(false);
+		expect(isSignInReturn("  http://127.0.0.1:7600/auth/callback?code=c&state=s  ")).toBe(true);
+		expect(isSignInReturn("http://127.0.0.1:7600/auth/callback?error=access_denied&state=s")).toBe(true);
+		expect(isSignInReturn("http://127.0.0.1:7600/auth/callback")).toBe(false);
 		expect(isSignInReturn("http://127.0.0.1:7600/auth/callback?code=c")).toBe(false);
+		expect(isSignInReturn("https://example.com/auth/callback?code=c&state=s")).toBe(false);
 		expect(isSignInReturn("http://127.0.0.1:7600/pair#token=x")).toBe(false);
 		expect(isSignInReturn("not an address")).toBe(false);
 	});

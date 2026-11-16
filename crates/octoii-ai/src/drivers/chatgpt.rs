@@ -279,14 +279,21 @@ fn begin(call: &Call, options: &SignInOptions) -> Result<SignIn, Failure> {
         Some(Credential::OAuth(oauth)) if oauth.issuer == ISSUER => Some(oauth),
         _ => None,
     };
+    let host_id = earlier
+        .as_ref()
+        .and_then(|given| given.host_id.clone())
+        .unwrap_or_else(|| options.host_id.clone());
+    if url::Url::parse(&host_id).is_err() {
+        return Err(Failure::new(
+            FailureKind::InvalidRequest,
+            "ChatGPT requires a stable absolute URI as its host ID, such as urn:uuid:<UUID>; a saved registration with an invalid host ID must be removed before signing in again",
+        ));
+    }
     let verifier = random_text();
     let attempt = Attempt {
         state: random_text(),
         nonce: random_text(),
-        host_id: earlier
-            .as_ref()
-            .and_then(|given| given.host_id.clone())
-            .unwrap_or_else(|| options.host_id.clone()),
+        host_id,
         client_id: earlier.as_ref().map(|given| given.client_id.clone()),
         subject: earlier.and_then(|given| given.subject),
         redirect_uri: options.redirect_uri.clone(),
@@ -314,6 +321,7 @@ fn begin(call: &Call, options: &SignInOptions) -> Result<SignIn, Failure> {
     }
     Ok(SignIn {
         url: url.into(),
+        state: attempt.state.clone(),
         attempt: Box::new(attempt),
     })
 }

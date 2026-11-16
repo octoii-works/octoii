@@ -67,8 +67,8 @@ pub enum Action {
         /// URL to open; a blank page if omitted.
         url: Option<String>,
     },
-    /// Open a local HTML file in an isolated preview and make it current. Inline scripts run; external resource loads,
-    /// fetch requests, popups and access to other files are blocked. Inspect it with look, console and clicks.
+    /// Open a local HTML file in an isolated preview and make it current. Inline scripts run, HTTP/HTTPS resources and fetch
+    /// requests are allowed, and local image references are embedded. Popups and parent-page access remain blocked. Inspect it with look, console and clicks.
     Preview {
         /// HTML file, relative to the workspace, absolute, or starting with ~ for the home folder.
         path: String,

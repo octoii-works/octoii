@@ -13,6 +13,7 @@ use octoii_ai::drivers::ChatGpt;
 
 /// ChatGPT's driver, one for the tests, as a host holds one.
 static CHATGPT: std::sync::LazyLock<ChatGpt> = std::sync::LazyLock::new(ChatGpt::new);
+const HOST_ID: &str = "urn:uuid:00000000-0000-4000-8000-000000000001";
 use octoii_ai::host::{Credential, Credentials, OAuth, Tokens};
 use octoii_ai::transport::{Body, Transport, TransportError};
 use octoii_ai::vocabulary::{FailureKind, InputContent, Item, Message, Request};
@@ -85,7 +86,7 @@ async fn a_sign_in_begun_registers_the_app_and_finished_keeps_the_person_signed_
     let options = SignInOptions {
         redirect_uri: "http://127.0.0.1:7600/auth/callback".into(),
         agent_name_hint: "Octoii".into(),
-        host_id: "urn:uuid:0193".into(),
+        host_id: HOST_ID.into(),
     };
     let begun = CHATGPT.sign_in(&call, &options).await.expect("begun");
     let address = url::Url::parse(&begun.url).expect("an address");
@@ -101,6 +102,7 @@ async fn a_sign_in_begun_registers_the_app_and_finished_keeps_the_person_signed_
         "a first sign-in registers the app"
     );
     assert_eq!(asked("agent_name_hint").as_deref(), Some("Octoii"));
+    assert_eq!(asked("ext_agent_host_id").as_deref(), Some(options.host_id.as_str()));
     assert_eq!(asked("code_challenge_method").as_deref(), Some("S256"));
     let (state, nonce) = (asked("state").expect("a state"), asked("nonce").expect("a nonce"));
     let answering = issuer(
@@ -142,7 +144,7 @@ fn signed_in(expires_at_ms: i64) -> Credential {
     Credential::OAuth(OAuth {
         issuer: "https://auth.openai.com".into(),
         client_id: "client_9".into(),
-        host_id: Some("urn:uuid:0193".into()),
+        host_id: Some(HOST_ID.into()),
         subject: Some("user_1".into()),
         email: None,
         tokens: Some(Tokens {
@@ -152,6 +154,50 @@ fn signed_in(expires_at_ms: i64) -> Credential {
             scopes: vec!["chatgpt.tokens.use.direct".into()],
         }),
     })
+}
+
+#[tokio::test]
+async fn a_sign_in_keeps_its_issued_host_identity_and_rejects_invalid_host_ids() {
+    let store = support::Store::of(signed_in(3600_000));
+    let mut call = support::call(support::Provider::streaming(&[]));
+    call.credentials = store.clone();
+    let mut options = SignInOptions {
+        redirect_uri: "http://127.0.0.1:7600/auth/callback".into(),
+        agent_name_hint: "Octoii".into(),
+        host_id: "a-raw-node-public-key".into(),
+    };
+    let begun = CHATGPT
+        .sign_in(&call, &options)
+        .await
+        .expect("the existing registration's host wins");
+    let address = url::Url::parse(&begun.url).expect("an address");
+    let asked = |name: &str| {
+        address
+            .query_pairs()
+            .find(|(key, _)| key == name)
+            .map(|(_, value)| value.into_owned())
+    };
+    assert_eq!(asked("ext_agent_host_id").as_deref(), Some(HOST_ID));
+    assert_eq!(asked("client_id").as_deref(), Some("client_9"));
+
+    store.keep("test", &Credential::None).expect("a first sign-in");
+    assert_eq!(
+        CHATGPT.sign_in(&call, &options).await.map(|_| ()).map_err(|failure| failure.kind),
+        Err(FailureKind::InvalidRequest),
+        "a raw key cannot identify a new host"
+    );
+
+    let Credential::OAuth(mut earlier) = signed_in(3600_000) else {
+        panic!("an OAuth credential")
+    };
+    earlier.host_id = Some("an-invalid-issued-host".into());
+    store.keep("test", &Credential::OAuth(earlier)).expect("an earlier registration");
+    options.host_id = HOST_ID.into();
+    assert_eq!(
+        CHATGPT.sign_in(&call, &options).await.map(|_| ()).map_err(|failure| failure.kind),
+        Err(FailureKind::InvalidRequest),
+        "an invalid saved identity is not silently replaced"
+    );
 }
 
 fn request() -> Request {

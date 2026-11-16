@@ -6,6 +6,7 @@
 use std::time::Duration;
 
 use bytes::Bytes;
+use futures_util::{SinkExt as _, StreamExt as _};
 use http_body_util::{BodyExt as _, Full};
 use hyper::Method;
 use octoii::control;
@@ -113,6 +114,66 @@ async fn a_browser_and_a_program_reach_the_node_by_the_sessions_its_commands_mak
         Some(8),
         "a link made by the person grants everything"
     );
+
+    let mut client_request = format!("ws://{address}/ws").into_client_request().expect("a request");
+    for (name, value) in browser {
+        client_request.headers_mut().insert(name, value.parse().expect("a header"));
+    }
+    let (mut client, _) = tokio_tungstenite::connect_async(client_request).await.expect("a client");
+    client.next().await.expect("welcomed").expect("a message");
+    client
+        .send(Message::Text(
+            json!({ "id": "sign-in", "method": "providers.sign-in", "params": { "provider": "chatgpt" } })
+                .to_string()
+                .into(),
+        ))
+        .await
+        .expect("a sign-in asked for");
+    let begun = loop {
+        let message = client.next().await.expect("an answer").expect("a message");
+        let answer: Value = serde_json::from_str(message.to_text().expect("text")).expect("an answer");
+        if answer["id"] == "sign-in" {
+            break answer;
+        }
+    };
+    let authorize = reqwest::Url::parse(begun["result"]["url"].as_str().expect("a sign-in begun")).expect("an address");
+    let asked = |name: &str| {
+        authorize
+            .query_pairs()
+            .find(|(key, _)| key == name)
+            .map(|(_, value)| value.into_owned())
+            .expect("an authorization parameter")
+    };
+    assert_eq!(asked("redirect_uri"), format!("{loopback}/auth/callback"));
+    let host_id = asked("ext_agent_host_id");
+    let host_uuid = uuid::Uuid::parse_str(&host_id).expect("a host UUID URI");
+    assert_eq!(host_uuid.get_version(), Some(uuid::Version::Sha1));
+    assert_eq!(host_id, host_uuid.urn().to_string());
+    assert_eq!(asked("code_challenge_method"), "S256");
+    let state = asked("state");
+    assert!(!state.is_empty() && !asked("code_challenge").is_empty());
+    let (_, _, refused) = request(
+        &address,
+        Method::GET,
+        "/auth/callback?error=access_denied&state=other",
+        &[],
+        Value::Null,
+    )
+    .await;
+    assert!(String::from_utf8_lossy(&refused).contains("no sign-in waits"));
+    let returned = format!("/auth/callback?error=access_denied&state={state}");
+    let (_, _, declined) = request(&address, Method::GET, &returned, &[], Value::Null).await;
+    assert!(
+        String::from_utf8_lossy(&declined).contains("The person declined to sign in with ChatGPT"),
+        "a valid state reaches the driver's attempt after an unrelated return"
+    );
+    let (_, _, repeated) = request(&address, Method::GET, &returned, &[], Value::Null).await;
+    assert!(
+        String::from_utf8_lossy(&repeated).contains("no sign-in waits"),
+        "an attempt is consumed once"
+    );
+    client.close(None).await.expect("closed");
+
     let unversioned = [("cookie", session.as_str()), ("origin", loopback.as_str())];
     assert!(
         welcomed(&address, &unversioned).await.is_err(),
