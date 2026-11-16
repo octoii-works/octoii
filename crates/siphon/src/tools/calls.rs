@@ -63,6 +63,8 @@ pub struct Call {
 #[derive(Clone, Copy)]
 pub struct Setting<'a> {
     pub thread: &'a str,
+    /// Where the host exposes the thread files for reads.
+    pub threads: Option<&'a std::path::Path>,
     pub tools: &'a Tools,
     pub primitives: &'a dyn Primitives,
     pub catalog: &'a [String],
@@ -231,10 +233,22 @@ impl Calls {
     pub fn stop(&mut self, run: &mut Run<'_>, setting: &Setting<'_>) -> anyhow::Result<Option<Wait>> {
         for at in 0..self.0.len() {
             match &self.0[at].state {
-                State::Waiting => self.0[at].state = ended(CallStatus::Interrupted, "the turn was stopped before it ran"),
+                State::Waiting => {
+                    self.transition(
+                        at,
+                        run,
+                        setting,
+                        ended(CallStatus::Interrupted, "the turn was stopped before it ran"),
+                    );
+                }
                 State::Awaiting(awaited) => {
                     setting.primitives.withdraw(run, awaited)?;
-                    self.0[at].state = ended(CallStatus::Interrupted, "stopped, and the thread's work on it with it");
+                    self.transition(
+                        at,
+                        run,
+                        setting,
+                        ended(CallStatus::Interrupted, "stopped, and the thread's work on it with it"),
+                    );
                 }
                 _ => {}
             }
@@ -359,18 +373,27 @@ impl Calls {
                     return Ok(());
                 };
                 run.changes.reap(process);
-                let told = setting.tools.finished(&call.tool, &outcome);
-                let status = if matches!(outcome, beak::Outcome::Completed(_)) {
-                    CallStatus::Ok
-                } else {
-                    CallStatus::ToolError
-                };
-                result(status, told)
+                let finished = setting.tools.finished(&call.tool, &outcome);
+                result(finished.status, finished.told)
             }
             State::Waiting | State::Ended { .. } => return Ok(()),
         };
-        self.0[at].state = next;
+        self.transition(at, run, setting, next);
         Ok(())
+    }
+
+    /// Records the next state, bounding model output once as the call ends, with the whole saved in the same commit.
+    fn transition(&mut self, at: usize, run: &mut Run<'_>, setting: &Setting<'_>, mut next: State) {
+        if let State::Ended { output, .. } = &mut next {
+            *output = crate::tools::outlet::bounded(
+                &mut run.changes,
+                setting.thread,
+                &self.0[at].key,
+                setting.threads,
+                std::mem::take(output),
+            );
+        }
+        self.0[at].state = next;
     }
 
     /// Starts each waiting call no call before it holds back.
@@ -389,13 +412,14 @@ impl Calls {
                         } else {
                             CallStatus::Unavailable
                         };
-                        self.0[at].state = ended(status, refusal.0);
+                        self.transition(at, run, setting, ended(status, refusal.0));
                     }
                     Ok(effect) => {
                         let acts = !matches!(effect, Effect::Reads | Effect::Delegates);
                         self.0[at].acts = Some(acts);
                         if !(acting || (acts && unended)) {
-                            self.0[at].state = self.start(at, run, setting, &effect)?;
+                            let next = self.start(at, run, setting, &effect)?;
+                            self.transition(at, run, setting, next);
                         }
                     }
                 }

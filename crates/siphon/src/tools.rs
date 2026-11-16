@@ -35,4 +35,4 @@ pub use effect::Effect;
 pub use plan::{Plan, Report, Spawned};
 pub use projects::{Place, sha256_hex};
 pub use told::Told;
-pub use tool::{Context, Declared, Refusal, Tool, Tools, Toolset};
+pub use tool::{Context, Declared, Finished, Refusal, Tool, Tools, Toolset};

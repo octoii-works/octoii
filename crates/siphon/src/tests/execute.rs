@@ -33,7 +33,9 @@ struct Asking {
 }
 
 /// Takes on one `execute` call, then ends with how it did and what it said.
-struct Caller;
+struct Caller {
+    threads: Option<PathBuf>,
+}
 
 impl Program for Caller {
     const KIND: &'static str = "test.caller";
@@ -54,6 +56,7 @@ impl Program for Caller {
         let setting = Setting {
             primitives: &crate::agent::ThreadPrimitives,
             thread: "t1",
+            threads: self.threads.as_deref(),
             tools: &tools,
             catalog: &[],
             mode: Mode::Default,
@@ -82,27 +85,48 @@ impl Program for Caller {
 }
 
 fn runtime(beak: &Beak, options: Options) -> Runtime {
+    runtime_on(beak, options, Host::default())
+}
+
+fn runtime_on(beak: &Beak, options: Options, host: Host) -> Runtime {
     Runtime::builder()
-        .program(Caller)
+        .program(Caller {
+            threads: host.threads.clone(),
+        })
         .program(ScriptProgram {
             tools: inner(),
             primitives: std::sync::Arc::new(crate::agent::ThreadPrimitives),
         })
-        .handle(|asked: Asked<Exec>| async move { answer_exec(&inner(), &Host::default(), asked).await })
+        .handle(move |asked: Asked<Exec>| {
+            let host = host.clone();
+            async move { answer_exec(&inner(), &host, asked).await }
+        })
         .ask_person::<Permission>()
         .start(beak, options)
         .expect("started")
 }
 
 async fn executed(runtime: &Runtime, workspace: PathBuf, code: &str) -> Bytes {
+    executed_as(runtime, "p1", workspace, code).await
+}
+
+async fn executed_as(runtime: &Runtime, key: &str, workspace: PathBuf, code: &str) -> Bytes {
     let mut changes = Changes::new();
     let asking = Asking {
         workspace,
         code: code.into(),
     };
-    changes.start::<Caller>(Bytes::new(), "p1", &asking).expect("an input");
+    changes.mkdir(crate::threads::thread::path("t1")).meta(
+        crate::threads::thread::path("t1"),
+        vec![(
+            Bytes::from_static(crate::threads::thread::PROJECT_LABEL.as_bytes()),
+            Some(Bytes::new()),
+        )],
+        vec![],
+    );
+    changes.start::<Caller>(Bytes::new(), key, &asking).expect("an input");
     runtime.commit(changes).await.expect("started");
-    layout::process(b"", b"p1")
+    layout::process(b"", key.as_bytes())
 }
 
 async fn ended(runtime: &Runtime, path: &[u8]) -> (CallStatus, String) {
@@ -224,11 +248,152 @@ async fn what_a_script_threw_is_what_it_gives() {
     assert_eq!(
         (status, said.as_str()),
         (
-            CallStatus::Ok,
+            CallStatus::ToolError,
             "began\n<system-reminder>the script threw: TypeError: no such thing</system-reminder>"
         )
     );
     runtime.close().await;
+}
+
+#[test]
+fn a_script_without_a_readable_completion_is_a_tool_error() {
+    for outcome in [Outcome::Completed(None), Outcome::Completed(Some(Bytes::from_static(b"not JSON")))] {
+        let finished = ExecuteTool.finished(&outcome);
+        assert_eq!(finished.status, CallStatus::ToolError);
+        assert!(matches!(&finished.told.content[..], [InputContent::InputText { text }] if text.contains("the script ended as")));
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn script_text_and_return_values_share_the_budget_and_the_whole_is_readable_through_the_thread_view() {
+    let beak = Beak::new().expect("Beak");
+    let (_folder, workspace) = folder();
+    let (_threads_folder, threads) = folder();
+    let runtime = runtime_on(
+        &beak,
+        Options::default(),
+        Host {
+            threads: Some(threads.clone()),
+            ..Host::default()
+        },
+    );
+    let body = (0..1000)
+        .map(|line| format!("{line:04}: {}", "x".repeat(34)))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let cases = [
+        (
+            "console",
+            format!("text({}); return 'after console';", json!(body)),
+            format!("{body}\n\"after console\""),
+            CallStatus::Ok,
+        ),
+        (
+            "returned",
+            format!("return {};", json!(body)),
+            json!(body).to_string(),
+            CallStatus::Ok,
+        ),
+        (
+            "failed",
+            format!("console.log({}); throw Error('after failure');", json!(body)),
+            format!("{body}\n<system-reminder>the script threw: Error: after failure</system-reminder>"),
+            CallStatus::ToolError,
+        ),
+    ];
+    for (key, code, whole, expected_status) in cases {
+        let path = executed_as(&runtime, key, workspace.clone(), &code).await;
+        let (status, said) = ended(&runtime, &path).await;
+        assert_eq!(status, expected_status);
+        assert!(said.contains("characters left out"), "{key}");
+        assert!(said.chars().count() < 31_000, "{key}");
+        assert!(said.starts_with(&whole.chars().take(100).collect::<String>()), "{key}");
+        let tail: String = whole.chars().skip(whole.chars().count() - 100).collect();
+        assert!(said.contains(&tail), "{key}");
+        let place = said.rsplit("kept at ").next().expect("where").split(';').next().expect("the path");
+        let place_path = PathBuf::from(place);
+        assert!(place_path.starts_with(threads.join("t1")));
+        let volume_path = crate::threads::thread::within(
+            "t1",
+            &format!("outputs/{}", place_path.file_name().expect("the output's name").to_string_lossy()),
+        );
+        assert_eq!(
+            runtime
+                .snapshot()
+                .expect("a snapshot")
+                .read(&volume_path, 0, u64::MAX)
+                .expect("read")
+                .expect("the full output"),
+            whole.as_bytes(),
+            "{key}"
+        );
+        let read = format!(
+            "const result = (await tools.read({{ path: {} }})).structuredContent; const whole = {}; return result.clipped.length ? whole.startsWith(result.text) : result.text === whole;",
+            json!(place),
+            json!(whole)
+        );
+        let path = executed_as(&runtime, &format!("read-{key}"), workspace.clone(), &read).await;
+        assert_eq!(ended(&runtime, &path).await, (CallStatus::Ok, "true".into()), "{key}");
+    }
+    runtime.close().await;
+}
+
+#[derive(Debug)]
+struct LongRefusal;
+
+impl Tool for LongRefusal {
+    const NAME: &'static str = "long_refusal";
+    const DESCRIPTION: &'static str = "A tool that fails with a long diagnostic.";
+    type Args = serde_json::Value;
+
+    fn effect(&self, _: &Self::Args, _: &Base) -> crate::tools::Effect {
+        crate::tools::Effect::Reads
+    }
+
+    fn exec(
+        &self,
+        _: &crate::tools::Context,
+        _: Self::Args,
+    ) -> impl std::future::Future<Output = Result<crate::tools::Told, crate::tools::Refusal>> + Send {
+        std::future::ready(Err(crate::tools::Refusal::new(format!("failure: {}: end", "x".repeat(40_000)))))
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn tool_refusals_share_the_output_budget_and_keep_the_full_diagnostic() {
+    let beak = Beak::new().expect("Beak");
+    let calling = crate::testing::Calling::start(&beak, |tools| tools.with(LongRefusal));
+    let (_folder, workspace) = folder();
+    let results = calling
+        .called(
+            "refused",
+            workspace,
+            vec![],
+            vec![("failed".into(), "long_refusal".into(), "{}".into())],
+        )
+        .await;
+    assert_eq!(results[0].status, CallStatus::ToolError);
+    assert!(results[0].text.starts_with("failure: ") && results[0].text.contains(": end"));
+    assert!(results[0].text.contains("characters left out"));
+    assert!(results[0].text.chars().count() < 31_000);
+    let snapshot = calling.volume().snapshot().expect("a snapshot");
+    let outputs = crate::threads::thread::within("t1", "outputs");
+    let files = snapshot
+        .list(
+            &outputs,
+            &beak::Range {
+                limit: usize::MAX,
+                ..beak::Range::default()
+            },
+        )
+        .expect("outputs")
+        .expect("kept");
+    assert_eq!(files.len(), 1);
+    let path = [&outputs[..], b"/", &files[0].name].concat();
+    assert_eq!(
+        snapshot.read(&path, 0, u64::MAX).expect("read").expect("the full refusal"),
+        format!("failure: {}: end", "x".repeat(40_000)).as_bytes()
+    );
 }
 
 #[derive(Debug)]
@@ -293,6 +458,7 @@ async fn scripts_only_forward_selected_images_and_preserve_them_on_failure() {
         "const r = await tools.read({ path: 'shot.png' }); image(r.content.find(c => c.type === 'input_image')); return 'selected';",
         "const r = await tools.read({ path: 'shot.png' }); image(r.content.find(c => c.type === 'input_image')); text('before failure'); throw Error('after image');",
         "image({ type: 'input_image', file: { ref: 'sha256:unknown', media_type: 'image/png' } });",
+        "const r = await tools.read({ path: 'shot.png' }); image(r.content.find(c => c.type === 'input_image')); text('before failure ' + 'x'.repeat(40000)); throw Error('after image');",
     ];
     let results = calling
         .called(
@@ -306,9 +472,21 @@ async fn scripts_only_forward_selected_images_and_preserve_them_on_failure() {
                 .collect(),
         )
         .await;
-    assert_eq!(results.iter().map(|r| r.images).collect::<Vec<_>>(), [0, 1, 1, 0]);
+    assert_eq!(results.iter().map(|r| r.images).collect::<Vec<_>>(), [0, 1, 1, 0, 1]);
+    assert_eq!(
+        results.iter().map(|result| result.status).collect::<Vec<_>>(),
+        [
+            CallStatus::Ok,
+            CallStatus::Ok,
+            CallStatus::ToolError,
+            CallStatus::ToolError,
+            CallStatus::ToolError
+        ]
+    );
     assert!(results[2].text.contains("before failure") && results[2].text.contains("after image"));
     assert!(results[3].text.contains("image() expects"));
+    assert!(results[4].text.contains("characters left out") && results[4].text.contains("after image"));
+    assert!(results[4].text.chars().count() < 31_000);
 }
 
 #[tokio::test(flavor = "multi_thread")]

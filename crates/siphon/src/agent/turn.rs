@@ -273,6 +273,7 @@ impl TurnProgram {
         let setting = Setting {
             primitives: &ThreadPrimitives,
             thread: &input.thread,
+            threads: self.machine.threads.as_deref(),
             tools: &self.tools,
             catalog: &input.catalog,
             mode: config.mode.unwrap_or_default(),
@@ -346,6 +347,7 @@ impl TurnProgram {
                 let setting = Setting {
                     primitives: &ThreadPrimitives,
                     thread: &input.thread,
+                    threads: self.machine.threads.as_deref(),
                     tools: &self.tools,
                     catalog: &input.catalog,
                     mode: config.mode.unwrap_or_default(),

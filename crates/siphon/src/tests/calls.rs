@@ -86,6 +86,7 @@ impl Program for Caller {
         let folder = input.workspace.to_string_lossy().into_owned();
         let setting = Setting {
             thread: &input.thread,
+            threads: None,
             tools: &self.tools,
             primitives: &crate::agent::ThreadPrimitives,
             catalog: &[],
@@ -334,13 +335,23 @@ async fn a_call_s_long_output_is_cut_to_its_head_and_tail_the_whole_kept_in_its_
         &text[..200]
     );
     assert!(text.contains("20000\n<system-reminder>exit 0</system-reminder>"), "its newest tail");
-    let place = text.rsplit("kept at ").next().expect("where").split(';').next().expect("the path");
-    let kept = runtime
-        .snapshot()
-        .expect("a snapshot")
-        .read(place.as_bytes(), 0, u64::MAX)
-        .expect("read")
+    assert!(text.contains("this host does not expose it for file reads"));
+    assert!(!text.contains("kept at siphon.thread:"));
+    let snapshot = runtime.snapshot().expect("a snapshot");
+    let outputs = crate::threads::thread::within("t1", "outputs");
+    let files = snapshot
+        .list(
+            &outputs,
+            &beak::Range {
+                limit: usize::MAX,
+                ..beak::Range::default()
+            },
+        )
+        .expect("outputs")
         .expect("kept");
+    assert_eq!(files.len(), 1);
+    let place = [&outputs[..], b"/", &files[0].name].concat();
+    let kept = snapshot.read(&place, 0, u64::MAX).expect("read").expect("kept");
     assert!(kept.ends_with(b"19999\n20000\n<system-reminder>exit 0</system-reminder>"));
     runtime.close().await;
 }

@@ -1,9 +1,9 @@
-//! Where a call's exec request is answered: its tool exec'd in the context its request names, and what it gives bounded
-//! as every tool's is — text past what the model is told at once cut to its head and its newest tail, the whole kept in
-//! its thread's `outputs/<call>.txt`, read back through the threads view as any file is.
+//! Where a call's exec request is answered, and where every call's model output is bounded as it ends: text past what
+//! the model is told at once cut to its head and its newest tail, the whole kept in its thread's `outputs/<call>.txt`,
+//! read back through the threads view where the host exposes it.
 
 use std::fmt::Write as _;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::machine::Host;
 use crate::machine::paths::Base;
@@ -40,19 +40,21 @@ pub async fn answer_exec(tools: &Tools, host: &Host, asked: Asked<Exec>) -> Resu
         runtime: asked.runtime,
         cancelled: asked.cancelled,
     };
-    let given = tools
-        .exec(&exec.tool, context.clone(), exec.arguments)
+    tools
+        .exec(&exec.tool, context, exec.arguments)
         .await
-        .map_err(|refusal| Unanswered::Failed(refusal.0))?;
-    Ok(Told {
-        content: bounded(&context, given.content).await,
-        ..given
-    })
+        .map_err(|refusal| Unanswered::Failed(refusal.0))
 }
 
 /// `given` as the model is told it: its text, past `TEXT_CHARS_MAX`, cut to its head and its newest tail, the whole kept
 /// in its thread's outputs and named.
-async fn bounded(context: &Context, given: Vec<InputContent>) -> Vec<InputContent> {
+pub(super) fn bounded(
+    changes: &mut Changes,
+    thread: &str,
+    call: &str,
+    threads: Option<&Path>,
+    given: Vec<InputContent>,
+) -> Vec<InputContent> {
     let whole: String = given
         .iter()
         .filter_map(|part| match part {
@@ -72,38 +74,28 @@ async fn bounded(context: &Context, given: Vec<InputContent>) -> Vec<InputConten
         "{head}\n<system-reminder>… {} characters left out …</system-reminder>\n{tail}",
         chars - TEXT_CHARS_MAX
     );
-    match keep(context, Bytes::from(whole)).await {
+    match keep(changes, thread, call, threads, Bytes::from(whole)) {
         Some(place) => {
             let _ = write!(
                 cut,
                 "\n<system-reminder>the whole of it is kept at {place}; read it a page at a time</system-reminder>"
             );
         }
-        None => cut.push_str("\n<system-reminder>the whole of it could not be kept</system-reminder>"),
+        None => cut.push_str(
+            "\n<system-reminder>the whole of it is kept in the thread's volume; this host does not expose it for file reads</system-reminder>",
+        ),
     }
     let mut out = vec![InputContent::text(cut)];
     out.extend(given.into_iter().filter(|part| !matches!(part, InputContent::InputText { .. })));
     out
 }
 
-/// Keeps `whole` in the call's thread's outputs: where the model reads it, through the threads view, or the volume's
-/// path where the host shows the threads nowhere; none where it could not be kept.
-async fn keep(context: &Context, whole: Bytes) -> Option<String> {
-    let outputs = thread::within(&context.thread, "outputs");
-    let file = format!("{}.txt", context.call);
-    let mut changes = Changes::new();
+/// Keeps `whole` with the call's result: where the model reads it through the threads view, where the host exposes one.
+fn keep(changes: &mut Changes, thread: &str, call: &str, threads: Option<&Path>, whole: Bytes) -> Option<String> {
+    let outputs = thread::within(thread, "outputs");
+    let file = format!("{call}.txt");
     changes
         .mkdir(outputs.clone())
         .write([&outputs[..], b"/", file.as_bytes()].concat(), whole);
-    context.runtime.commit(changes).await.ok()?;
-    let shown = match &context.host.threads {
-        Some(folder) => folder
-            .join(String::from_utf8_lossy(&thread::path(&context.thread)).as_ref())
-            .join("outputs")
-            .join(&file)
-            .display()
-            .to_string(),
-        None => format!("{}/{file}", String::from_utf8_lossy(&outputs)),
-    };
-    Some(shown)
+    threads.map(|folder| folder.join(thread).join("outputs").join(&file).display().to_string())
 }

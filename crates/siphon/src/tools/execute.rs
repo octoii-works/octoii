@@ -22,7 +22,7 @@ use crate::threads::CallStatus;
 use crate::tools::calls::{Calls, Setting, State};
 use crate::tools::effect::Effect;
 use crate::tools::told::{Instructions, Told};
-use crate::tools::tool::{Context, Refusal, Tool, Tools};
+use crate::tools::tool::{Context, Finished, Refusal, Tool, Tools};
 
 /// The arguments of `execute`.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -40,6 +40,7 @@ pub struct ExecuteTool;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScriptInput {
     pub thread: String,
+    pub threads: Option<std::path::PathBuf>,
     pub code: String,
     pub catalog: Vec<String>,
     pub workspace: String,
@@ -106,6 +107,7 @@ impl Tool for ExecuteTool {
     ) -> Option<serde_json::Result<()>> {
         let input = ScriptInput {
             thread: setting.thread.to_owned(),
+            threads: setting.threads.map(std::path::Path::to_owned),
             code: args.code.clone(),
             catalog: setting.catalog.to_vec(),
             workspace: setting.base.workspace.to_string_lossy().into_owned(),
@@ -118,13 +120,21 @@ impl Tool for ExecuteTool {
         Some(changes.start::<ScriptProgram>(parent.clone(), key, &input).map(|_| ()))
     }
 
-    fn finished(&self, outcome: &beak::Outcome) -> Told {
+    fn finished(&self, outcome: &beak::Outcome) -> Finished {
         let read = match outcome {
             beak::Outcome::Completed(Some(result)) => serde_json::from_slice::<ScriptOutput>(result).ok(),
             _ => None,
         };
         let Some(output) = read else {
-            return Told::from(vec![InputContent::text(format!("the script ended as {outcome:?}"))]);
+            return Finished {
+                status: CallStatus::ToolError,
+                told: Told::from(vec![InputContent::text(format!("the script ended as {outcome:?}"))]),
+            };
+        };
+        let status = if output.error.is_some() {
+            CallStatus::ToolError
+        } else {
+            CallStatus::Ok
         };
         let mut text = crate::reminder::escaped(&output.console.join("\n")).into_owned();
         match (output.value, output.error) {
@@ -140,14 +150,17 @@ impl Tool for ExecuteTool {
             }
             (None, None) => {}
         }
-        Told {
-            content: std::iter::once(InputContent::text(text.trim_start().to_owned()))
-                .chain(output.images)
-                .collect(),
-            structured_content: None,
-            metadata: None,
-            instructions: output.instructions,
-            plan: crate::tools::Plan::default(),
+        Finished {
+            status,
+            told: Told {
+                content: std::iter::once(InputContent::text(text.trim_start().to_owned()))
+                    .chain(output.images)
+                    .collect(),
+                structured_content: None,
+                metadata: None,
+                instructions: output.instructions,
+                plan: crate::tools::Plan::default(),
+            },
         }
     }
 }
@@ -307,6 +320,7 @@ impl Program for ScriptProgram {
         };
         let setting = Setting {
             thread: &input.thread,
+            threads: input.threads.as_deref(),
             tools: &self.tools,
             primitives: &*self.primitives,
             catalog: &input.catalog,

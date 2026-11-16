@@ -211,6 +211,7 @@ impl siphon_runtime::Program for Caller {
         let setting = crate::tools::Setting {
             primitives: &crate::agent::ThreadPrimitives,
             thread: "t1",
+            threads: None,
             tools: &self.tools,
             catalog: &input.catalog,
             mode: crate::threads::Mode::FullAccess,

@@ -18,6 +18,7 @@ use serde::de::DeserializeOwned;
 use siphon_runtime::{Changes, Runtime};
 use tokio_util::sync::CancellationToken;
 
+use crate::threads::CallStatus;
 use crate::threads::inbox::Ended;
 use crate::tools::calls::Setting;
 use crate::tools::effect::Effect;
@@ -32,6 +33,26 @@ pub struct Refusal(pub String);
 impl Refusal {
     pub fn new(words: impl Into<String>) -> Self {
         Self(words.into())
+    }
+}
+
+/// How a tool's program ended, retaining what it told even where it failed.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Finished {
+    pub status: CallStatus,
+    pub told: Told,
+}
+
+impl Finished {
+    fn of(outcome: &beak::Outcome) -> Self {
+        Self {
+            status: if matches!(outcome, beak::Outcome::Completed(_)) {
+                CallStatus::Ok
+            } else {
+                CallStatus::ToolError
+            },
+            told: Told::from(vec![InputContent::text(format!("{outcome:?}"))]),
+        }
     }
 }
 
@@ -183,8 +204,8 @@ pub trait Tool: Send + Sync + 'static {
     }
 
     /// For a tool that runs as a program: what its process's end tells, as an exec of it tells it.
-    fn finished(&self, outcome: &beak::Outcome) -> Told {
-        Told::from(vec![InputContent::text(format!("{outcome:?}"))])
+    fn finished(&self, outcome: &beak::Outcome) -> Finished {
+        Finished::of(outcome)
     }
 
     /// For a call that ends with how the turn of the thread `thread` that took its delivery ended: what that tells,
@@ -254,7 +275,7 @@ trait Erased: Send + Sync {
         arguments: &serde_json::Value,
         setting: &Setting<'_>,
     ) -> Option<serde_json::Result<()>>;
-    fn finished(&self, outcome: &beak::Outcome) -> Told;
+    fn finished(&self, outcome: &beak::Outcome) -> Finished;
     fn awaited(&self, arguments: &serde_json::Value, thread: &str, ended: Option<&Ended>) -> Told;
 }
 
@@ -288,7 +309,7 @@ impl<T: Tool> Erased for T {
         Tool::start(self, changes, parent, key, &args, setting)
     }
 
-    fn finished(&self, outcome: &beak::Outcome) -> Told {
+    fn finished(&self, outcome: &beak::Outcome) -> Finished {
         Tool::finished(self, outcome)
     }
 
@@ -481,11 +502,10 @@ impl Tools {
 
     /// What the end `outcome` of the process of a call of `name` tells.
     #[must_use]
-    pub fn finished(&self, name: &str, outcome: &beak::Outcome) -> Told {
-        self.entries.get(name).map_or_else(
-            || Told::from(vec![InputContent::text(format!("{outcome:?}"))]),
-            |entry| entry.tool.finished(outcome),
-        )
+    pub fn finished(&self, name: &str, outcome: &beak::Outcome) -> Finished {
+        self.entries
+            .get(name)
+            .map_or_else(|| Finished::of(outcome), |entry| entry.tool.finished(outcome))
     }
 
     /// Execs a call of `name` with `arguments`.
