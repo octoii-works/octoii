@@ -26,6 +26,7 @@ import { SystemDivider } from "./divider.tsx";
 import { EntityContent, EntityMark } from "./entity.tsx";
 import { Prose } from "./markdown.tsx";
 import { Mark } from "./marks.tsx";
+import { PresentedFiles } from "./presented-files.tsx";
 import { Delegations, SubThreadTold } from "./sub-thread.tsx";
 import { ThreadMessage } from "./thread-message.tsx";
 import { UserMessage } from "./user-message.tsx";
@@ -92,6 +93,18 @@ function clockTime(at: number): string {
 
 /** A part of a turn's work, as it is laid out: a stretch of calls, delegations as sub-threads, or a step on its own. */
 export function WorkPart(props: { readonly thread: string; readonly laid: Laid }): ReactNode {
+	const { laid, thread } = props;
+	const files = laid.kind === "step" ? (laid.step.kind === "call" ? laid.step.files : []) : laid.calls.flatMap((call) => call.files);
+	return (
+		<>
+			<WorkContent thread={thread} laid={laid} />
+			<PresentedFiles thread={thread} files={files} />
+		</>
+	);
+}
+
+/** The work itself; its explicit file deliveries stand beside it even while its details are folded. */
+function WorkContent(props: { readonly thread: string; readonly laid: Laid }): ReactNode {
 	const { laid } = props;
 	switch (laid.kind) {
 		case "calls":

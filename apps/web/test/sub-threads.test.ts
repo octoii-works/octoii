@@ -27,6 +27,7 @@ const delegation = (id: string, state: CallLine["state"] = "done"): CallLine => 
 	trouble: undefined,
 	arguments: "{}",
 	output: undefined,
+	files: [],
 	structuredContent: undefined,
 	began: undefined,
 	ended: undefined,

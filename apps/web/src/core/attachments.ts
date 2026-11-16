@@ -69,10 +69,10 @@ export function contentOf(text: string, attachments: readonly Attachment[]): rea
 	return text.trim() === "" ? files : [{ type: "input_text", text }, ...files];
 }
 
-/** The files a message gives: each part of it that names a kept file. */
+/** The files a message gives its model: resource links deliver files to the person instead. */
 export function attachmentsOf(content: readonly InputContent[]): readonly Attachment[] {
 	return content.flatMap((part) => {
-		if (part.type === "input_text") return [];
+		if (part.type !== "input_image" && part.type !== "input_file") return [];
 		const { ref, media_type: mediaType, filename } = part.file;
 		return [{ ref, media_type: mediaType, name: filename ?? "file", size: 0 }];
 	});

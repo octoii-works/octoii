@@ -24,6 +24,7 @@ const callOf = (id: string): CallLine => ({
 	trouble: undefined,
 	arguments: "{}",
 	output: "",
+	files: [],
 	structuredContent: undefined,
 	began: 1_000,
 	ended: 2_000,

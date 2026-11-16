@@ -22,6 +22,7 @@ import {
 	type Work,
 	workedText,
 } from "../src/core/timeline.ts";
+import "../src/extensions/contributions.ts";
 
 /** The turns among the items of `conversation`, in their order. */
 const turnsOf = (conversation: Parameters<typeof itemsOf>[0]): readonly TimelineTurn[] =>
@@ -43,6 +44,7 @@ const callOf = (id: string, tool: string, step: string): CallLine => ({
 	trouble: undefined,
 	arguments: "{}",
 	output: undefined,
+	files: [],
 	structuredContent: undefined,
 	began: undefined,
 	ended: undefined,

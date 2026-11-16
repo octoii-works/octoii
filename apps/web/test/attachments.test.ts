@@ -36,4 +36,13 @@ describe("a message with files", () => {
 		]);
 		expect(attachmentsOf([{ type: "input_text", text: "words alone" }])).toEqual([]);
 	});
+
+	it("keeps deliveries separate from files supplied to the model", () => {
+		expect(
+			attachmentsOf([
+				{ type: "resource_link", file: { ref: "sha256:report", media_type: "application/zip", filename: "report.zip" }, size: 24 },
+				...contentOf("", [image]),
+			]),
+		).toEqual([{ ...image, size: 0 }]);
+	});
 });

@@ -155,6 +155,11 @@ const TOOLS: Readonly<Partial<Record<string, ToolView>>> = {
 		verbs: ["Run a script", "Running a script", "Ran a script"],
 		detail: (call, given) => ({ shape: "script", code: given.code ?? "", told: toldOfCall(call) }),
 	}),
+	present_file: toolView({
+		work: "other",
+		verbs: ["Present file", "Presenting file", "Presented file"],
+		subject: (given) => given.path,
+	}),
 };
 
 /** A tool the page knows nothing of: named as it is, as code. */

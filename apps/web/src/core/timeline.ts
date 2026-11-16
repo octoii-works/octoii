@@ -27,6 +27,7 @@ import {
 	type Turn,
 } from "@octoii-works/octoii-client";
 import { type Attachment, attachmentsOf } from "./attachments.ts";
+import { type PresentedFile, presentedFilesOf } from "./presented-files.ts";
 import { type CallState, structuredOf, titleOf } from "./calls.ts";
 import { duration, mintedAt } from "./time.ts";
 import type { Limited } from "./limits.ts";
@@ -63,6 +64,8 @@ export type CallLine = {
 	readonly arguments: string;
 	/** What its tool told: its result's output; none before it ended. */
 	readonly output: string | undefined;
+	/** Files explicitly delivered by the tool, including those kept before an execute failed. */
+	readonly files: readonly PresentedFile[];
 	/** What it did, as one of Siphon's own tools told it typed; none before it ended, or where its tool told nothing. */
 	readonly structuredContent: Structured | undefined;
 	/** When it began and ended, in ms: as the reply that made it and its result were minted; none of either it has not had. */
@@ -410,6 +413,7 @@ function lineOf(call: Call, turn: Turn, step: Step, ask: Ask | undefined): CallL
 		trouble: tool.trouble(told),
 		arguments: call.arguments,
 		output,
+		files: presentedFilesOf(call.result?.output.output ?? [], call.result?.metadata),
 		structuredContent,
 		began: step.reply === undefined ? undefined : mintedAt(step.reply.id),
 		ended: call.result === undefined ? undefined : mintedAt(call.result.id),
