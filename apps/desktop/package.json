@@ -10,13 +10,15 @@
     "typecheck": "bun check",
     "test": "bun test --no-env-file --no-install ./test",
     "package:mac": "bun scripts/package.ts",
-    "verify:first-run": "bun scripts/verify-first-run.ts"
+    "verify:first-run": "bun scripts/verify-first-run.ts",
+    "verify:answers": "bun scripts/verify-answers.ts"
   },
   "devDependencies": {
     "electron": "catalog:",
     "@types/node": "catalog:",
     "@types/bun": "catalog:",
-    "electron-builder": "26.18.0"
+    "electron-builder": "26.18.0",
+    "@octoii-works/octoii-client": "workspace:*"
   },
   "productName": "Octoii",
   "description": "Octoii desktop: a durable agent on your own computer",

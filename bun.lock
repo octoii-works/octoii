@@ -17,6 +17,7 @@
       "name": "@octoii-works/octoii-desktop",
       "version": "0.0.1",
       "devDependencies": {
+        "@octoii-works/octoii-client": "workspace:*",
         "@types/bun": "catalog:",
         "@types/node": "catalog:",
         "electron": "catalog:",
