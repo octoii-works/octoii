@@ -34,7 +34,10 @@ async function buildPage(entry: string, outdir: string): Promise<void> {
 		reactCompiler: true,
 		plugins: [tailwind],
 	});
-	if (result.success) return;
+	if (result.success) {
+		await cp(`${root}../../extensions/siphon-html/assets/preview.html`, `${outdir}/html-preview.html`);
+		return;
+	}
 	for (const log of result.logs) console.error(log);
 	throw new Error("The interface did not build");
 }

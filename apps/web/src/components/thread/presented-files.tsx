@@ -1,4 +1,4 @@
-/** Files a tool saved for the person: their title, original name and size, image preview, and an authenticated download. */
+/** Files a tool saved for the person: their title, original name and size, preview, and an authenticated download. */
 import { type ReactNode, useState } from "react";
 import { Download, FileText, LoaderCircle } from "lucide-react";
 import { isImage, sizeLabel } from "../../core/attachments.ts";
@@ -6,6 +6,8 @@ import type { PresentedFile } from "../../core/presented-files.ts";
 import { readDownload, saveDownload } from "../files/file-download.ts";
 import { useReach } from "../state/reach.ts";
 import { Button } from "../ui/button.tsx";
+import { cn } from "../ui/cn.ts";
+import { HtmlFile } from "./html-preview.tsx";
 import { PictureStrip } from "./pictures.tsx";
 
 /** Explicit file deliveries, visible even while the call's details are folded. */
@@ -20,7 +22,7 @@ export function PresentedFiles(props: { readonly thread: string; readonly files:
 	);
 }
 
-/** One delivery. HTML and other documents have a download alone; only supported raster images use the picture viewer. */
+/** One delivery, with a raster image viewer or an isolated HTML preview where the file's type supports it. */
 function FileCard(props: { readonly thread: string; readonly presented: PresentedFile }): ReactNode {
 	const { presented, thread } = props;
 	const { file, size, title } = presented;
@@ -40,7 +42,7 @@ function FileCard(props: { readonly thread: string; readonly presented: Presente
 		}
 	};
 	return (
-		<div className="flex w-full max-w-md flex-col gap-2 rounded-md border border-border bg-muted p-3">
+		<div className={cn("flex w-full flex-col gap-2 rounded-md border border-border bg-muted p-3", file.media_type === "text/html" ? undefined : "max-w-md")}>
 			{title === undefined ? null : <p className="text-ui font-medium text-foreground">{title}</p>}
 			<div className="flex min-w-0 items-center gap-2">
 				<FileText className="size-5 shrink-0 text-muted-foreground" />
@@ -64,6 +66,7 @@ function FileCard(props: { readonly thread: string; readonly presented: Presente
 				</Button>
 			</div>
 			{isImage(file.media_type) ? <PictureStrip pictures={[{ kind: "kept", ref: file.ref, name }]} /> : null}
+			{file.media_type === "text/html" ? <HtmlFile thread={thread} file={file} /> : null}
 			{failure === undefined ? null : (
 				<p role="alert" className="text-xs text-error-foreground">
 					{failure}

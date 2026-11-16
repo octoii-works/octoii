@@ -2,9 +2,11 @@
 import { describe, expect, it } from "bun:test";
 import { conversationOf, type Entry, type FileRef, type InputContent, type ThreadView } from "@octoii-works/octoii-client";
 import { renderToStaticMarkup } from "react-dom/server";
+import { htmlPreviewListener } from "../src/components/effects/html-preview.ts";
 import { readDownload } from "../src/components/files/file-download.ts";
 import { type NodeRequest, type Reach, ReachContext } from "../src/components/state/reach.ts";
 import { MessageThreadContext } from "../src/components/thread/message-thread.ts";
+import { HtmlPreview } from "../src/components/thread/html-preview.tsx";
 import { PresentedFiles } from "../src/components/thread/presented-files.tsx";
 import { presentedFilesOf } from "../src/core/presented-files.ts";
 import { itemsOf } from "../src/core/timeline.ts";
@@ -89,7 +91,7 @@ describe("files delivered by tools", () => {
 		expect(html).not.toContain("/machine");
 	});
 
-	it("uses the existing saved image viewer, and gives HTML only a download", () => {
+	it("uses the saved image viewer and reads HTML for a preview without exposing the original's URL", () => {
 		const draw = (file: FileRef): string =>
 			renderToStaticMarkup(
 				<ReachContext value={reach}>
@@ -103,9 +105,82 @@ describe("files delivered by tools", () => {
 		expect(image).toContain('aria-label="Download original.png"');
 		const html = draw({ ref: "sha256:html", media_type: "text/html", filename: "page.html" });
 		expect(html).toContain('aria-label="Download page.html"');
+		expect(html).toContain("Loading preview…");
 		expect(html).not.toContain("<iframe");
+		expect(html).not.toContain("/threads/t1/files/html");
 		expect(html).not.toContain("href=");
 		expect(html).not.toContain("<img");
+	});
+
+	it("shows read HTML in an isolated HTTP frame with an expand action and no document injected into the app", () => {
+		const html = renderToStaticMarkup(<HtmlPreview html="<script>parent.secret()</script><p>Saved document</p>" name="page.html" />);
+		expect(html).toContain('src="/html-preview.html"');
+		expect(html).toContain('sandbox="allow-scripts"');
+		expect(html).toContain('referrerPolicy="no-referrer"');
+		expect(html).toContain('title="Preview of page.html"');
+		expect(html).toContain('aria-label="Expand page.html"');
+		expect(html).not.toContain("allow-same-origin");
+		expect(html).not.toContain("srcDoc");
+		expect(html).not.toContain("blob:");
+		expect(html).not.toContain("parent.secret");
+		expect(html).not.toContain("Saved document");
+	});
+});
+
+describe("isolated HTML preview messages", () => {
+	it("sends only the original HTML to its own ready frame and ignores other windows and command messages", () => {
+		const sent: { readonly message: unknown; readonly targetOrigin: string | WindowPostMessageOptions | undefined }[] = [];
+		const destination: Pick<Window, "postMessage"> = {
+			postMessage(message: unknown, targetOrigin?: string | WindowPostMessageOptions): void {
+				sent.push({ message, targetOrigin });
+			},
+		};
+		const html = "<!doctype html>\r\n<script>parent.postMessage({type:'command',command:'run'}, '*')</script>";
+		let loaded = 0;
+		const sizes: number[] = [];
+		const receive = htmlPreviewListener(
+			destination,
+			html,
+			() => {
+				loaded++;
+			},
+			(height) => {
+				sizes.push(height);
+			},
+		);
+		for (const source of [null, {}, { postMessage: destination.postMessage }]) {
+			receive({ source, data: { type: "octoii.html.ready" } });
+			receive({ source, data: { type: "octoii.html.loaded" } });
+			receive({ source, data: { type: "octoii.html.size", width: 400, height: 300 } });
+		}
+		for (const data of [undefined, null, "ready", { type: "command", command: "run" }, { type: "octoii.html.load", html: "replacement" }]) {
+			receive({ source: destination, data });
+		}
+		expect(sent).toEqual([]);
+		expect(loaded).toBe(0);
+		expect(sizes).toEqual([]);
+		receive({ source: destination, data: { type: "octoii.html.ready" } });
+		expect(sent).toEqual([{ message: { type: "octoii.html.load", html }, targetOrigin: "*" }]);
+		receive({ source: destination, data: { type: "octoii.html.loaded" } });
+		expect(loaded).toBe(1);
+	});
+
+	it("bounds document height and rejects malformed or nonfinite size messages", () => {
+		const destination: Pick<Window, "postMessage"> = { postMessage: () => undefined };
+		const sizes: number[] = [];
+		const receive = htmlPreviewListener(
+			destination,
+			"",
+			() => undefined,
+			(height) => {
+				sizes.push(height);
+			},
+		);
+		for (const height of [0, 240.25, 1e12]) receive({ source: destination, data: { type: "octoii.html.size", height } });
+		expect(sizes).toEqual([128, 241, 640]);
+		for (const height of [-1, "300", NaN, Infinity]) receive({ source: destination, data: { type: "octoii.html.size", height } });
+		receive({ source: destination, data: { type: "octoii.html.size" } });
+		expect(sizes).toEqual([128, 241, 640]);
 	});
 });
 
@@ -122,7 +197,7 @@ describe("downloading saved originals", () => {
 					byte.charCodeAt(0),
 				),
 			},
-			{ name: "page.html", type: "text/html", bytes: new TextEncoder().encode("<!doctype html><script>alert('saved')</script>") },
+			{ name: "page.html", type: "text/html", bytes: new TextEncoder().encode("\uFEFF<!doctype html>\r\n<script>alert('saved')</script>\r\n") },
 		];
 		for (const { name, type, bytes } of cases) {
 			const sent: NodeRequest[] = [];
@@ -142,9 +217,11 @@ describe("downloading saved originals", () => {
 	});
 
 	it("reports denied or missing originals instead of downloading an error response", async () => {
-		await expect(
-			readDownload(async () => ({ status: 403, contentType: "text/plain", bytes: new TextEncoder().encode("Not authorized") }), "t1", report),
-		).rejects.toThrow("Not authorized");
-		await expect(readDownload(async () => ({ status: 404, contentType: undefined, bytes: new Uint8Array() }), "t1", report)).rejects.toThrow("(404)");
+		for (const file of [report, { ref: "sha256:html", media_type: "text/html", filename: "page.html" }]) {
+			await expect(
+				readDownload(async () => ({ status: 403, contentType: "text/plain", bytes: new TextEncoder().encode("Not authorized") }), "t1", file),
+			).rejects.toThrow("Not authorized");
+			await expect(readDownload(async () => ({ status: 404, contentType: undefined, bytes: new Uint8Array() }), "t1", file)).rejects.toThrow("(404)");
+		}
 	});
 });
