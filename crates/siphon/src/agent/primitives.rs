@@ -4,12 +4,12 @@
 //! A thread made is made like the caller's thread; a delivery's end is told to the call, to a process beside the
 //! caller's main process that delivers it to the caller's inbox, or to no one.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::agent::thread::ThreadProgram;
 use crate::agent::waiting::{DelegatedProgram, Waiting, directory_of, label};
 use crate::threads::inbox::{self, Inbound, ReplyTo};
-use crate::threads::{Config, Mode, NewThread, Parent, Threads, thread};
+use crate::threads::{Config, ConfigChange, MarksChange, Mode, NewThread, Parent, Threads, thread};
 use crate::tools::{Awaited, Plan, Primitives, Report, Spawned, Step};
 use beak::layout;
 use siphon_runtime::{Changes, Run};
@@ -62,6 +62,8 @@ impl Primitives for ThreadPrimitives {
             ));
         }
         let mut made = HashSet::new();
+        let mut awakened = HashSet::new();
+        let mut snoozed = HashMap::new();
         let mut changes = Changes::new();
         for step in &plan.steps {
             let refused = match step {
@@ -82,13 +84,13 @@ impl Primitives for ThreadPrimitives {
                     joins,
                     report,
                 } => {
-                    let refused = if made.contains(thread) {
-                        None
+                    let refused = if thread == own {
+                        Some("a thread sends itself no message".to_owned())
                     } else {
-                        refused(run, own, &directory, thread)?
+                        refused(run, &directory, &made, thread)?
                     };
                     if refused.is_none() {
-                        if !made.contains(thread) {
+                        if !made.contains(thread) && awakened.insert(thread.clone()) {
                             Threads::<ThreadProgram>::revive(run.snapshot(), &mut changes, thread)?;
                         }
                         let reply_to = reply_to(run, &mut changes, own, thread, delivery, *report)?;
@@ -99,6 +101,31 @@ impl Primitives for ThreadPrimitives {
                             joins: *joins,
                         };
                         inbox::put(&mut changes, thread, delivery, &inbound)?;
+                    }
+                    refused
+                }
+                Step::Rename { thread, delivery, title } => {
+                    let title = match crate::tools::plan::rename_title(title) {
+                        Ok(title) => title,
+                        Err(reason) => return Ok(Err(reason)),
+                    };
+                    let refused = refused(run, &directory, &made, thread)?;
+                    if refused.is_none() {
+                        if !made.contains(thread) && awakened.insert(thread.clone()) {
+                            Threads::<ThreadProgram>::revive(run.snapshot(), &mut changes, thread)?;
+                        }
+                        rename(&mut changes, own, thread, delivery, title)?;
+                    }
+                    refused
+                }
+                Step::Mark { thread, change } => {
+                    let refused = if change.snoozed_until.is_some_and(|until| until != 0 && until <= run.time_ms()) {
+                        Some("snooze until must be in the future".to_owned())
+                    } else {
+                        refused(run, &directory, &made, thread)?
+                    };
+                    if refused.is_none() {
+                        mark(run, &mut changes, thread, change, &mut snoozed)?;
                     }
                     refused
                 }
@@ -168,15 +195,51 @@ fn spawn(
     Ok(())
 }
 
-/// Why the thread `own`, whose directory is `directory`, may not deliver to `target`: it is itself, it is not there,
-/// or its mode reaches further than `own`'s; none where it may.
-fn refused(run: &Run<'_>, own: &str, directory: &beak::Directory, target: &str) -> anyhow::Result<Option<String>> {
-    if target == own {
-        return Ok(Some("a thread sends itself no message".into()));
+/// Queues only the title in the existing configuration inbox; the thread's main process applies it.
+fn rename(changes: &mut Changes, own: &str, thread: &str, delivery: &str, title: &str) -> anyhow::Result<()> {
+    let inbound = Inbound::Config {
+        actor: own.to_owned(),
+        change: ConfigChange {
+            title: Some(Some(title.to_owned())),
+            ..ConfigChange::default()
+        },
+    };
+    inbox::put(changes, thread, delivery, &inbound)?;
+    Ok(())
+}
+
+/// Applies marks in plan order, including a snooze created or cleared by an earlier step of this same plan.
+fn mark(
+    run: &Run<'_>,
+    changes: &mut Changes,
+    thread: &str,
+    change: &MarksChange,
+    snoozed: &mut HashMap<String, bool>,
+) -> anyhow::Result<()> {
+    let current = snoozed.entry(thread.to_owned()).or_insert(
+        run.snapshot()
+            .stat(&thread::within(thread, crate::threads::marks::SNOOZE_NAME))?
+            .is_some(),
+    );
+    change.add(changes, thread, *current, run.time_ms());
+    if let Some(until) = change.snoozed_until {
+        *current = until > run.time_ms();
+    }
+    Ok(())
+}
+
+/// Why the thread whose directory is `directory` may not change `target`: it is not there, or its mode reaches
+/// further than the caller's; none where it may. Sending to oneself is checked by the delivery's own rule.
+fn refused(run: &Run<'_>, directory: &beak::Directory, made: &HashSet<String>, target: &str) -> anyhow::Result<Option<String>> {
+    if made.contains(target) {
+        return Ok(None);
     }
     let Some(theirs) = directory_of(run, target)? else {
         return Ok(Some(format!("no thread {target}")));
     };
+    if crate::threads::operations::removing(&theirs) {
+        return Ok(Some(format!("no thread {target}")));
+    }
     let reach = |config: &Config| match config.mode.unwrap_or_default() {
         Mode::Default => 0,
         Mode::Auto => 1,
@@ -184,7 +247,7 @@ fn refused(run: &Run<'_>, own: &str, directory: &beak::Directory, target: &str) 
     };
     if reach(&Config::of(&theirs)?) > reach(&Config::of(directory)?) {
         return Ok(Some(format!(
-            "the thread {target} runs in a mode that reaches further than yours: the person must message it"
+            "the thread {target} runs in a mode that reaches further than yours: the person must act on it"
         )));
     }
     Ok(None)

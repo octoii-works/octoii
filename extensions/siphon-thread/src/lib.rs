@@ -36,7 +36,7 @@ impl Extension for ThreadExtension {
     }
 
     fn description(&self) -> &'static str {
-        "The model lists, searches, reads, starts, messages and stops the person's other threads when asked."
+        "The model lists, searches, reads, starts, messages, stops and organizes the person's other threads when asked."
     }
 
     fn build(self: Box<Self>, registrar: &mut Registrar<'_>) {

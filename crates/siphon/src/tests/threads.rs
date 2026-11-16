@@ -54,6 +54,422 @@ fn person(config: Config) -> NewThread {
     }
 }
 
+/// Commits a real thread plan so these tests exercise the same primitive boundary as tool calls.
+struct ApplyPlan;
+impl Program for ApplyPlan {
+    const KIND: &'static str = "test.thread_plan";
+    type Input = (String, crate::tools::Plan);
+    type Checkpoint = ();
+    type Output = Result<(), String>;
+    fn run(&self, run: &mut Run<'_>, (own, plan): Self::Input, _: Option<()>) -> anyhow::Result<Ending<(), Self::Output>> {
+        use crate::tools::Primitives as _;
+        Ok(Ending::Done(crate::agent::ThreadPrimitives.apply(run, &own, "organize", &plan)?))
+    }
+}
+
+fn organizing_threads(beak: &Beak, options: Options) -> Threads<Taker> {
+    Threads::new(Runtime::builder().program(Taker).program(ApplyPlan).start(beak, options).unwrap())
+}
+
+async fn applied(runtime: &Runtime, own: &str, plan: crate::tools::Plan) -> Result<(), String> {
+    let key = runtime.new_id().unwrap();
+    let process = beak::layout::process(b"", key.as_bytes());
+    let mut changes = siphon_runtime::Changes::new();
+    changes.start::<ApplyPlan>(Bytes::new(), &key, &(own.to_owned(), plan)).unwrap();
+    runtime.commit(changes).await.unwrap();
+    let mut committed = runtime.committed();
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if let Some(outcome) = runtime
+                .snapshot()
+                .unwrap()
+                .record(&process)
+                .unwrap()
+                .and_then(|record| record.outcome)
+            {
+                let beak::Outcome::Completed(Some(result)) = outcome else {
+                    panic!("the plan failed to run: {outcome:?}")
+                };
+                return serde_json::from_slice(&result).unwrap();
+            }
+            committed.changed().await.unwrap();
+        }
+    })
+    .await
+    .expect("the plan ended")
+}
+
+async fn inbox_empty(threads: &Threads<Taker>, id: &str) {
+    let mut committed = threads.runtime().committed();
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while !threads.listed(id).unwrap().status.inbox.is_empty() {
+            committed.changed().await.unwrap();
+        }
+    })
+    .await
+    .expect("the title request was taken");
+}
+
+async fn remove_main(runtime: &Runtime, id: &str) {
+    let mut changes = siphon_runtime::Changes::new();
+    changes.remove(crate::threads::thread::main(id), None);
+    runtime.commit(changes).await.unwrap();
+    let mut committed = runtime.committed();
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while runtime
+            .snapshot()
+            .unwrap()
+            .record(&crate::threads::thread::main(id))
+            .unwrap()
+            .is_some()
+        {
+            committed.changed().await.unwrap();
+        }
+    })
+    .await
+    .expect("the main process was removed");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn organizing_plans_reject_higher_mode_missing_targets_and_empty_titles_atomically() {
+    use crate::tools::{Plan, Step};
+    let beak = Beak::new().unwrap();
+    let threads = organizing_threads(&beak, Options::default());
+    let own = threads.create(&person(Config::default()), "own").await.unwrap();
+    let high = threads
+        .create(
+            &person(Config {
+                mode: Some(Mode::FullAccess),
+                ..Config::default()
+            }),
+            "high",
+        )
+        .await
+        .unwrap();
+    let volume = crate::volume::Volume {
+        runtime: threads.runtime().clone(),
+    };
+    let mut rename_high = Plan::default();
+    rename_high.mark(
+        &own,
+        MarksChange {
+            pinned: Some(true),
+            ..MarksChange::default()
+        },
+    );
+    rename_high.rename(&volume, &high, "Higher").unwrap();
+    let mut mark_high = Plan::default();
+    mark_high.rename(&volume, &own, "Own").unwrap();
+    mark_high.mark(
+        &high,
+        MarksChange {
+            archived: Some(true),
+            ..MarksChange::default()
+        },
+    );
+    let mut missing = Plan::default();
+    missing.mark(
+        &own,
+        MarksChange {
+            pinned: Some(true),
+            ..MarksChange::default()
+        },
+    );
+    missing.mark(
+        "missing",
+        MarksChange {
+            pinned: Some(true),
+            ..MarksChange::default()
+        },
+    );
+    let invalid_title = Plan {
+        steps: vec![
+            Step::Mark {
+                thread: own.clone(),
+                change: MarksChange {
+                    pinned: Some(true),
+                    ..MarksChange::default()
+                },
+            },
+            Step::Rename {
+                thread: own.clone(),
+                delivery: volume.new_id().unwrap(),
+                title: " \n\t".into(),
+            },
+        ],
+        awaits: None,
+    };
+    for plan in [rename_high, mark_high, missing, invalid_title] {
+        assert!(applied(threads.runtime(), &own, plan).await.is_err());
+        let row = threads.listed(&own).unwrap();
+        assert!(!row.marks.pinned);
+        assert_eq!(row.config.title, None);
+        assert_eq!(row.status.inbox, []);
+    }
+    threads.runtime().close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sub_threads_cannot_apply_organizing_plans() {
+    use crate::tools::Plan;
+    let beak = Beak::new().unwrap();
+    let threads = organizing_threads(&beak, Options::default());
+    let own = threads.create(&person(Config::default()), "own").await.unwrap();
+    for (index, kind) in [
+        crate::threads::SubThreadKind::Explorer,
+        crate::threads::SubThreadKind::GeneralPurpose,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let child = threads
+            .create(
+                &NewThread {
+                    parent: Some(Parent {
+                        thread: own.clone(),
+                        call: "call".into(),
+                        kind,
+                    }),
+                    ..person(Config::default())
+                },
+                &format!("child-{index}"),
+            )
+            .await
+            .unwrap();
+        let mut plan = Plan::default();
+        plan.mark(
+            &own,
+            MarksChange {
+                pinned: Some(true),
+                ..MarksChange::default()
+            },
+        );
+        assert!(
+            applied(threads.runtime(), &child, plan)
+                .await
+                .unwrap_err()
+                .contains("a sub-thread works on its task alone")
+        );
+        assert!(!threads.listed(&own).unwrap().marks.pinned);
+    }
+    threads.runtime().close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn marks_do_not_revive_or_stop_work_and_snoozes_follow_plan_order_and_expiry() {
+    use crate::tools::Plan;
+    let beak = Beak::new().unwrap();
+    let threads = organizing_threads(&beak, Options::default());
+    let own = threads.create(&person(Config::default()), "own").await.unwrap();
+    let target = threads.create(&person(Config::default()), "target").await.unwrap();
+    remove_main(threads.runtime(), &target).await;
+    let until = threads.runtime().now_ms() + 60_000;
+    let mut plan = Plan::default();
+    let change = MarksChange {
+        pinned: Some(true),
+        archived: Some(true),
+        snoozed_until: Some(until),
+        ..MarksChange::default()
+    };
+    plan.mark(&own, change.clone());
+    plan.mark(&target, change);
+    applied(threads.runtime(), &own, plan.clone()).await.unwrap();
+    applied(threads.runtime(), &own, plan).await.unwrap();
+    assert!(
+        threads
+            .runtime()
+            .snapshot()
+            .unwrap()
+            .record(&crate::threads::thread::main(&target))
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        threads
+            .runtime()
+            .snapshot()
+            .unwrap()
+            .record(&crate::threads::thread::main(&own))
+            .unwrap()
+            .unwrap()
+            .outcome
+            .is_none()
+    );
+    assert_eq!(
+        entries(&threads, &own, |_| true).await.len(),
+        1,
+        "marks add no conversation entries"
+    );
+    let mut clear = Plan::default();
+    clear.mark(
+        &target,
+        MarksChange {
+            snoozed_until: Some(0),
+            ..MarksChange::default()
+        },
+    );
+    clear.mark(
+        &target,
+        MarksChange {
+            snoozed_until: Some(until),
+            ..MarksChange::default()
+        },
+    );
+    clear.mark(
+        &target,
+        MarksChange {
+            snoozed_until: Some(0),
+            ..MarksChange::default()
+        },
+    );
+    applied(threads.runtime(), &own, clear).await.unwrap();
+    assert_eq!(threads.listed(&target).unwrap().marks.snoozed_until, None);
+    let mut expired = Plan::default();
+    expired.mark(
+        &own,
+        MarksChange {
+            pinned: Some(false),
+            ..MarksChange::default()
+        },
+    );
+    expired.mark(
+        &own,
+        MarksChange {
+            snoozed_until: Some(threads.runtime().now_ms() + 5),
+            ..MarksChange::default()
+        },
+    );
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    assert!(applied(threads.runtime(), &own, expired).await.unwrap_err().contains("future"));
+    let own = threads.listed(&own).unwrap();
+    assert!(own.marks.pinned);
+    assert_eq!(own.marks.snoozed_until, Some(until));
+    threads.runtime().close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_own_title_request_and_repeated_marks_apply_once_and_survive_reopening() {
+    use crate::tools::Plan;
+    let beak = Beak::new().unwrap();
+    let storage = tempfile::tempdir().unwrap();
+    let options = Options {
+        directory: Some(storage.path().to_owned()),
+        ..Options::default()
+    };
+    let first = organizing_threads(&beak, options.clone());
+    let own = first.create(&person(Config::default()), "own").await.unwrap();
+    let volume = crate::volume::Volume {
+        runtime: first.runtime().clone(),
+    };
+    let until = first.runtime().now_ms() + 60_000;
+    let mut plan = Plan::default();
+    plan.rename(&volume, &own, "  Renamed  ").unwrap();
+    plan.mark(
+        &own,
+        MarksChange {
+            pinned: Some(true),
+            archived: Some(true),
+            snoozed_until: Some(until),
+            ..MarksChange::default()
+        },
+    );
+    applied(first.runtime(), &own, plan.clone()).await.unwrap();
+    inbox_empty(&first, &own).await;
+    assert_eq!(first.listed(&own).unwrap().config.title.as_deref(), Some("Renamed"));
+    applied(first.runtime(), &own, plan).await.unwrap();
+    inbox_empty(&first, &own).await;
+    let log = entries(&first, &own, |_| true).await;
+    assert_eq!(log.len(), 2, "the repeated title request adds no second configuration change");
+    assert!(log.iter().all(|entry| matches!(entry, Entry::Config { .. })));
+    first.runtime().close().await;
+    drop(volume);
+    drop(first);
+    let reopened = organizing_threads(&beak, options);
+    let row = reopened.listed(&own).unwrap();
+    assert_eq!(row.config.title.as_deref(), Some("Renamed"));
+    assert!(row.marks.pinned && row.marks.archived);
+    assert_eq!(row.marks.snoozed_until, Some(until));
+    reopened.runtime().close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn rename_and_deliver_revive_a_target_once_and_removing_targets_are_refused() {
+    use crate::tools::{Plan, Report};
+    let beak = Beak::new().unwrap();
+    let threads = organizing_threads(&beak, Options::default());
+    let own = threads.create(&person(Config::default()), "own").await.unwrap();
+    let target = threads.create(&person(Config::default()), "target").await.unwrap();
+    remove_main(threads.runtime(), &target).await;
+    let volume = crate::volume::Volume {
+        runtime: threads.runtime().clone(),
+    };
+    let mut plan = Plan::default();
+    plan.rename(&volume, &target, "First").unwrap();
+    plan.rename(&volume, &target, "Second").unwrap();
+    plan.deliver(
+        &volume,
+        &target,
+        vec![InputContent::text("Hello")],
+        inbox::Joins::Step,
+        Report::None,
+    )
+    .unwrap();
+    applied(threads.runtime(), &own, plan).await.unwrap();
+    let row = threads.listed(&target).unwrap();
+    assert_eq!(
+        row.status.inbox.len(),
+        3,
+        "the revived agent program is not registered in this test runtime"
+    );
+    let main = threads
+        .runtime()
+        .snapshot()
+        .unwrap()
+        .record(&crate::threads::thread::main(&target))
+        .unwrap()
+        .unwrap();
+    let mut changes = siphon_runtime::Changes::new();
+    changes.meta(
+        crate::threads::thread::path(&target),
+        vec![(Bytes::from_static(beak::layout::REMOVING_LABEL), Some(Bytes::from_static(b"true")))],
+        Vec::new(),
+    );
+    threads.runtime().commit(changes).await.unwrap();
+    for plan in [
+        {
+            let mut plan = Plan::default();
+            plan.rename(&volume, &target, "Forbidden").unwrap();
+            plan
+        },
+        {
+            let mut plan = Plan::default();
+            plan.mark(
+                &target,
+                MarksChange {
+                    pinned: Some(true),
+                    ..MarksChange::default()
+                },
+            );
+            plan
+        },
+    ] {
+        assert_eq!(
+            applied(threads.runtime(), &own, plan).await.unwrap_err(),
+            format!("no thread {target}")
+        );
+        assert_eq!(inbox::waiting(&threads.runtime().snapshot().unwrap(), &target).unwrap().len(), 3);
+    }
+    let after = threads
+        .runtime()
+        .snapshot()
+        .unwrap()
+        .record(&crate::threads::thread::main(&target))
+        .unwrap()
+        .unwrap();
+    assert_eq!((after.created_seq, after.outcome), (main.created_seq, main.outcome));
+    threads.runtime().close().await;
+}
+
 /// The entries of the log of the thread `id`, once `done` holds of them.
 async fn entries<M>(threads: &Threads<M>, id: &str, done: impl Fn(&[Entry]) -> bool) -> Vec<Entry> {
     let runtime = threads.runtime();

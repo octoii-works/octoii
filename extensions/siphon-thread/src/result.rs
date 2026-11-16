@@ -46,6 +46,32 @@ pub enum ThreadResult {
     Stop {
         thread: String,
     },
+    /// The title change is queued; the thread's main process applies it.
+    RenameRequested {
+        thread: String,
+        delivery: String,
+        title: String,
+    },
+    Pinned {
+        thread: String,
+    },
+    Unpinned {
+        thread: String,
+    },
+    Archived {
+        thread: String,
+    },
+    Unarchived {
+        thread: String,
+    },
+    Snoozed {
+        thread: String,
+        /// When the snooze ends, in milliseconds since the epoch.
+        until: i64,
+    },
+    Unsnoozed {
+        thread: String,
+    },
 }
 
 impl ThreadResult {
@@ -68,6 +94,9 @@ pub struct ThreadSummary {
     pub title: Option<String>,
     pub parent: Option<String>,
     pub archived: bool,
+    pub pinned: bool,
+    /// When the snooze ends, in milliseconds since the epoch; none where the thread is not snoozed.
+    pub snoozed_until: Option<i64>,
     pub current: bool,
 }
 
@@ -81,6 +110,8 @@ impl ThreadSummary {
             title: row.config.title.clone(),
             parent: row.parent.as_ref().map(|parent| parent.thread.clone()),
             archived: row.marks.archived,
+            pinned: row.marks.pinned,
+            snoozed_until: row.marks.snoozed_until,
             current: row.id == own,
         }
     }

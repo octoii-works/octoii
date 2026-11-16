@@ -8,8 +8,8 @@ use octoii_ai::vocabulary::InputContent;
 use serde::{Deserialize, Serialize};
 use siphon_runtime::Run;
 
-use crate::threads::SubThreadKind;
 use crate::threads::inbox::Joins;
+use crate::threads::{MarksChange, SubThreadKind};
 use crate::tools::tool::Refusal;
 
 /// What a call does to threads, in order, and what it ends with: what its tool told, or how a turn ends.
@@ -52,6 +52,10 @@ pub enum Step {
     },
     /// The turn the thread `thread` works on stopped.
     Stop { thread: String },
+    /// A title-only configuration change queued in the thread's inbox, to be applied by its main process.
+    Rename { thread: String, delivery: String, title: String },
+    /// How the person keeps a thread changed, without starting or stopping its work.
+    Mark { thread: String, change: MarksChange },
 }
 
 /// Whose a thread made is: a sub-thread of the call that made it, or a thread of the person's.
@@ -124,11 +128,43 @@ impl Plan {
         self.steps.push(Step::Stop { thread: thread.to_owned() });
     }
 
+    /// Plans a title-only change, taken by the thread's main process: the delivery's id.
+    ///
+    /// # Errors
+    /// An empty title after trimming, or a failure to mint the delivery's id.
+    pub fn rename(&mut self, volume: &crate::volume::Volume, thread: &str, title: &str) -> Result<String, Refusal> {
+        let title = rename_title(title).map_err(Refusal)?;
+        let delivery = minted(volume)?;
+        self.steps.push(Step::Rename {
+            thread: thread.to_owned(),
+            delivery: delivery.clone(),
+            title: title.to_owned(),
+        });
+        Ok(delivery)
+    }
+
+    /// Plans a change to the thread's marks; no work is started or stopped by it.
+    pub fn mark(&mut self, thread: &str, change: MarksChange) {
+        self.steps.push(Step::Mark {
+            thread: thread.to_owned(),
+            change,
+        });
+    }
+
     /// Whether it plans nothing.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.steps.is_empty() && self.awaits.is_none()
     }
+}
+
+/// The title kept by a rename, whether planned through the helper or read back as a persisted step.
+pub(crate) fn rename_title(title: &str) -> Result<&str, String> {
+    let title = title.trim();
+    if title.is_empty() {
+        return Err("give a nonempty thread title".to_owned());
+    }
+    Ok(title)
 }
 
 /// An id minted from the volume.

@@ -14,7 +14,7 @@ use octoii_ai::vocabulary::InputContent;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use siphon::machine::Base;
-use siphon::threads::{Joins, Listed};
+use siphon::threads::{Joins, Listed, MarksChange};
 
 use crate::conversation::{Keywords, Matching};
 use crate::reading;
@@ -85,6 +85,24 @@ pub enum ThreadAction {
         /// The thread's id.
         thread: String,
     },
+    /// Queue a new, nonempty title for the thread; surrounding whitespace is trimmed.
+    Rename { thread: String, title: String },
+    /// Pin a thread in the person's list.
+    Pin { thread: String },
+    /// Unpin a thread in the person's list.
+    Unpin { thread: String },
+    /// Archive a thread; its work is not stopped.
+    Archive { thread: String },
+    /// Restore an archived thread to the person's list.
+    Unarchive { thread: String },
+    /// Hide a thread until a future instant; its work is not stopped.
+    Snooze {
+        thread: String,
+        /// A future ISO timestamp with an explicit UTC offset, such as `2026-12-01T09:00:00+08:00` or `2026-12-01T01:00:00Z`.
+        until: String,
+    },
+    /// End a thread's snooze without starting its work.
+    Unsnooze { thread: String },
 }
 
 /// `thread`.
@@ -94,7 +112,7 @@ pub struct ThreadTool;
 impl Tool for ThreadTool {
     const NAME: &'static str = "thread";
     const REACHES_THREADS: bool = true;
-    const DESCRIPTION: &'static str = "Work with the person's other threads, which they see in their thread list.\n- list: list the threads, the most recently active first: each one's id, how it stands, when it was last active, its project and its title.\n- search: find what was said in the threads: the words the person, the threads and the models said and the calls the models made that hold `keywords` — all of them, or any with `matching: any` — the newest first, each with its thread, its id and the words around the match; `thread` searches one thread alone, and this thread is searched only when named so.\n- read: read a thread's conversation — what the person and the model said, each call and how it ended — the newest page first; `around` an entry's id from search reads the conversation about it; page with `before` or `after` as a page's note says.\n- start: create a thread in this folder with your model and mode; `message` is its first input.\n- send: send a thread a message; it takes it at its next step, or starts a turn with it.\n- stop: stop the turn a thread is working on.\nUse it only when the person asks about other threads, asks for a new thread, or names a thread to message or stop; never for sub-agents, delegation or parallel work. To find what was said about something earlier, search for it rather than page through a thread. A new thread does not see this conversation: put everything it needs in `message`. With `report`, you get a message when the turn that takes your message ends; do not wait for it or poll. Link a thread in your reply as :thread{id=<id>}, or as ::thread{id=<id>} on its own line to show its card.";
+    const DESCRIPTION: &'static str = "Work with the person's other threads, which they see in their thread list.\n- list: list the threads, the most recently active first: each one's id, how it stands, when it was last active, its project and its title.\n- search: find what was said in the threads: the words the person, the threads and the models said and the calls the models made that hold `keywords` — all of them, or any with `matching: any` — the newest first, each with its thread, its id and the words around the match; `thread` searches one thread alone, and this thread is searched only when named so.\n- read: read a thread's conversation — what the person and the model said, each call and how it ended — the newest page first; `around` an entry's id from search reads the conversation about it; page with `before` or `after` as a page's note says.\n- start: create a thread in this folder with your model and mode; `message` is its first input.\n- send: send a thread a message; it takes it at its next step, or starts a turn with it.\n- stop: stop the turn a thread is working on.\n- rename: request a new, nonempty title; it applies when the thread takes its next step.\n- pin/unpin, archive/unarchive, snooze/unsnooze: organize the person's thread list without starting or stopping work. Snooze requires a future ISO timestamp with an explicit UTC offset. These actions and rename can target this thread too.\nUse it only when the person asks about threads, asks for a new thread, or asks to message, stop or organize a named thread; never for sub-agents, delegation or parallel work. To find what was said about something earlier, search for it rather than page through a thread. A new thread does not see this conversation: put everything it needs in `message`. With `report`, you get a message when the turn that takes your message ends; do not wait for it or poll. Link a thread in your reply as :thread{id=<id>}, or as ::thread{id=<id>} on its own line to show its card.";
     type Args = ThreadAction;
 
     fn output_schema() -> Option<serde_json::Value> {
@@ -197,6 +215,12 @@ pub(crate) fn marks(row: &Listed, own: &str) -> String {
     if let Some(parent) = &row.parent {
         let _ = write!(marks, "  (sub-thread of {})", parent.thread);
     }
+    if row.marks.pinned {
+        marks.push_str("  (pinned)");
+    }
+    if let Some(until) = row.marks.snoozed_until {
+        let _ = write!(marks, "  (snoozed until {})", time(until));
+    }
     if row.marks.archived {
         marks.push_str("  (archived)");
     }
@@ -207,6 +231,10 @@ pub(crate) fn marks(row: &Listed, own: &str) -> String {
 }
 
 /// What a `thread` call does, planned for its caller to do with the call's end — a list, nothing — and what it tells.
+#[expect(
+    clippy::too_many_lines,
+    reason = "the explicit thread actions each plan their operation and business result in one exhaustive dispatch"
+)]
 fn planned(context: &Context, action: ThreadAction) -> Result<Told, Refusal> {
     let own = context.thread.as_str();
     let mut plan = Plan::default();
@@ -259,11 +287,102 @@ fn planned(context: &Context, action: ThreadAction) -> Result<Told, Refusal> {
                 ThreadResult::Stop { thread },
             )
         }
+        ThreadAction::Rename { thread, title } => {
+            let delivery = plan.rename(&context.volume(), &thread, &title)?;
+            let title = title.trim().to_owned();
+            (
+                notice(&thread, "was asked to change its title"),
+                ThreadResult::RenameRequested { thread, delivery, title },
+            )
+        }
+        ThreadAction::Pin { thread } => {
+            plan.mark(
+                &thread,
+                MarksChange {
+                    pinned: Some(true),
+                    ..MarksChange::default()
+                },
+            );
+            (notice(&thread, "was pinned"), ThreadResult::Pinned { thread })
+        }
+        ThreadAction::Unpin { thread } => {
+            plan.mark(
+                &thread,
+                MarksChange {
+                    pinned: Some(false),
+                    ..MarksChange::default()
+                },
+            );
+            (notice(&thread, "was unpinned"), ThreadResult::Unpinned { thread })
+        }
+        ThreadAction::Archive { thread } => {
+            plan.mark(
+                &thread,
+                MarksChange {
+                    archived: Some(true),
+                    ..MarksChange::default()
+                },
+            );
+            (
+                notice(&thread, "was archived; its work was not stopped"),
+                ThreadResult::Archived { thread },
+            )
+        }
+        ThreadAction::Unarchive { thread } => {
+            plan.mark(
+                &thread,
+                MarksChange {
+                    archived: Some(false),
+                    ..MarksChange::default()
+                },
+            );
+            (notice(&thread, "was unarchived"), ThreadResult::Unarchived { thread })
+        }
+        ThreadAction::Snooze { thread, until } => {
+            let until = snoozed_until(&until, context.volume().now_ms())?;
+            plan.mark(
+                &thread,
+                MarksChange {
+                    snoozed_until: Some(until),
+                    ..MarksChange::default()
+                },
+            );
+            (
+                notice(&thread, &format!("was snoozed until {}; its work was not stopped", time(until))),
+                ThreadResult::Snoozed { thread, until },
+            )
+        }
+        ThreadAction::Unsnooze { thread } => {
+            plan.mark(
+                &thread,
+                MarksChange {
+                    snoozed_until: Some(0),
+                    ..MarksChange::default()
+                },
+            );
+            (notice(&thread, "was unsnoozed"), ThreadResult::Unsnoozed { thread })
+        }
     };
     Ok(Told {
         plan,
         ..result.told(vec![InputContent::text(text)])
     })
+}
+
+fn notice(thread: &str, action: &str) -> String {
+    format!("<system-reminder>thread {thread} {action}</system-reminder>")
+}
+
+/// The explicit instant the snooze ends; a past instant is refused rather than implicitly clearing a snooze.
+fn snoozed_until(until: &str, now: i64) -> Result<i64, Refusal> {
+    let until = until
+        .parse::<jiff::Timestamp>()
+        .map_err(|error| Refusal(format!("give a snooze timestamp with an explicit UTC offset: {error}")))?
+        .as_millisecond();
+    if until <= now {
+        return Err(Refusal("snooze until must be in the future".to_owned()));
+    }
+    Ok(until)
 }
 
 /// `message` as the thread `own` sends it: saying whose it is.
@@ -285,5 +404,20 @@ fn told_note(report: bool) -> &'static str {
         "; you will get a message when the turn that takes it ends: do not wait for it or poll"
     } else {
         ""
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn snooze_requires_an_explicit_offset_and_a_future_instant() {
+        assert_eq!(snoozed_until("1970-01-01T08:00:01+08:00", 0).unwrap(), 1_000);
+        assert_eq!(snoozed_until("1970-01-01T00:00:01.123Z", 0).unwrap(), 1_123);
+        for until in ["1970-01-01T00:00:01", "1970-01-01", "tomorrow", "1970-01-01T00:00:00Z"] {
+            assert!(snoozed_until(until, 0).is_err(), "{until}");
+        }
+        assert!(snoozed_until("1970-01-01T00:00:01Z", 1_000).unwrap_err().0.contains("future"));
     }
 }

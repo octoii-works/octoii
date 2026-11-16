@@ -7,7 +7,7 @@
 use serde_json::json;
 use siphon::testing::{Beak, Called, Calling};
 use siphon::tools::{CallStatus, Tool};
-use siphon_thread::{ConversationContent, ThreadResult, ThreadStatus, ThreadTool};
+use siphon_thread::{ConversationContent, ThreadResult, ThreadStatus, ThreadSummary, ThreadTool};
 
 /// Successful calls carry business data fitting the schema that the tool declares.
 fn result(call: &Called) -> ThreadResult {
@@ -58,6 +58,126 @@ impl Turn {
         assert!(!report);
         thread
     }
+
+    async fn listed(&self, key: &str, thread: &str) -> ThreadSummary {
+        let calls = self.called(key, vec![json!({ "action": "list", "archived": true })]).await;
+        let ThreadResult::List { threads, .. } = result(&calls[0]) else {
+            panic!("a thread list")
+        };
+        let row = threads.into_iter().find(|row| row.id == thread).expect("the named thread");
+        let line = calls[0]
+            .text
+            .lines()
+            .find(|line| line.starts_with(&format!("{thread} ")))
+            .expect("the model's list row");
+        assert_eq!(line.contains("  (pinned)"), row.pinned);
+        if let Some(until) = row.snoozed_until {
+            let at = jiff::Timestamp::from_millisecond(until).unwrap();
+            assert!(line.contains(&format!("  (snoozed until {at:.0})")));
+        }
+        row
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn marks_are_explicit_typed_actions_and_the_list_exposes_their_state() {
+    let beak = Beak::new().unwrap();
+    let turn = Turn::start(&beak);
+    let child = turn.greeter().await;
+    for (action, expected, pinned, archived) in [
+        ("pin", ThreadResult::Pinned { thread: child.clone() }, true, false),
+        ("archive", ThreadResult::Archived { thread: child.clone() }, true, true),
+        ("unpin", ThreadResult::Unpinned { thread: child.clone() }, false, true),
+        ("unarchive", ThreadResult::Unarchived { thread: child.clone() }, false, false),
+    ] {
+        let calls = turn.called(action, vec![json!({ "action": action, "thread": child })]).await;
+        assert_eq!(result(&calls[0]), expected);
+        let row = turn.listed(&format!("list-{action}"), &child).await;
+        assert_eq!((row.pinned, row.archived), (pinned, archived));
+    }
+    let until = turn.calling.volume().now_ms() + 86_400_000;
+    let at = jiff::Timestamp::from_millisecond(until).unwrap().to_string();
+    let snoozed = turn
+        .called("snooze", vec![json!({ "action": "snooze", "thread": child, "until": at })])
+        .await;
+    assert_eq!(
+        result(&snoozed[0]),
+        ThreadResult::Snoozed {
+            thread: child.clone(),
+            until
+        }
+    );
+    assert_eq!(turn.listed("list-snoozed", &child).await.snoozed_until, Some(until));
+    let unsnoozed = turn
+        .called("unsnooze", vec![json!({ "action": "unsnooze", "thread": child })])
+        .await;
+    assert_eq!(result(&unsnoozed[0]), ThreadResult::Unsnoozed { thread: child.clone() });
+    assert_eq!(turn.listed("list-unsnoozed", &child).await.snoozed_until, None);
+    turn.calling.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn renaming_oneself_returns_a_title_only_request_and_refuses_empty_titles() {
+    let beak = Beak::new().unwrap();
+    let turn = Turn::start(&beak);
+    let calls = turn
+        .called(
+            "rename",
+            vec![json!({ "action": "rename", "thread": "t1", "title": "  New title \n" })],
+        )
+        .await;
+    let ThreadResult::RenameRequested { thread, delivery, title } = result(&calls[0]) else {
+        panic!("a rename request")
+    };
+    assert_eq!((thread.as_str(), title.as_str()), ("t1", "New title"));
+    let own = siphon::threads::list(&turn.calling.volume())
+        .unwrap()
+        .into_iter()
+        .find(|row| row.id == "t1")
+        .unwrap();
+    assert_eq!(own.config.title, None, "the test's main process does not apply the request");
+    let (_, inbound) = own
+        .status
+        .inbox
+        .iter()
+        .find(|(id, _)| id == &delivery)
+        .expect("the rename delivery");
+    assert_eq!(json!(inbound), json!({ "type": "config", "actor": "t1", "title": "New title" }));
+    let rejected = turn
+        .called("empty", vec![json!({ "action": "rename", "thread": "t1", "title": " \n\t" })])
+        .await;
+    assert_eq!(rejected[0].status, CallStatus::ToolError);
+    assert!(rejected[0].text.contains("nonempty thread title"));
+    assert_eq!(rejected[0].structured_content, None);
+    let pinned = turn.called("own-pin", vec![json!({ "action": "pin", "thread": "t1" })]).await;
+    assert_eq!(result(&pinned[0]), ThreadResult::Pinned { thread: "t1".to_owned() });
+    turn.calling.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn organizing_missing_threads_and_invalid_snooze_times_returns_no_success_data() {
+    let beak = Beak::new().unwrap();
+    let turn = Turn::start(&beak);
+    let calls = turn
+        .called(
+            "invalid",
+            vec![
+                json!({ "action": "pin", "thread": "missing" }),
+                json!({ "action": "rename", "thread": "missing", "title": "Title" }),
+                json!({ "action": "snooze", "thread": "t1", "until": "2030-01-01T12:00:00" }),
+                json!({ "action": "snooze", "thread": "t1", "until": "1970-01-01T00:00:00Z" }),
+                json!({ "action": "seen", "thread": "t1" }),
+            ],
+        )
+        .await;
+    for call in &calls[..4] {
+        assert_eq!(call.status, CallStatus::ToolError, "{}", call.text);
+        assert_eq!(call.structured_content, None);
+    }
+    assert_eq!(calls[0].text, "no thread missing");
+    assert_eq!(calls[1].text, "no thread missing");
+    assert_eq!(calls[4].status, CallStatus::InvalidArguments);
+    turn.calling.close().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]

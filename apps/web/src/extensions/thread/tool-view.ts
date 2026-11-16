@@ -12,6 +12,13 @@ const THREAD_VERBS: Readonly<Record<string, Verbs>> = {
 	start: ["Start a thread", "Starting a thread", "Started a thread"],
 	send: ["Message a thread", "Messaging a thread", "Messaged a thread"],
 	stop: ["Stop a thread", "Stopping a thread", "Stopped a thread"],
+	rename: ["Rename a thread", "Requesting a new title", "Requested a new title"],
+	pin: ["Pin a thread", "Pinning a thread", "Pinned a thread"],
+	unpin: ["Unpin a thread", "Unpinning a thread", "Unpinned a thread"],
+	archive: ["Archive a thread", "Archiving a thread", "Archived a thread"],
+	unarchive: ["Unarchive a thread", "Unarchiving a thread", "Unarchived a thread"],
+	snooze: ["Snooze a thread", "Snoozing a thread", "Snoozed a thread"],
+	unsnooze: ["Unsnooze a thread", "Unsnoozing a thread", "Unsnoozed a thread"],
 };
 
 /** The threads extension's tools. */
