@@ -7,10 +7,12 @@
   "scripts": {
     "build": "bun build src/main.ts --target=node --external=electron --outdir=dist",
     "start": "bun run build && electron .",
-    "typecheck": "bun check"
+    "typecheck": "bun check",
+    "test": "bun test --no-env-file --no-install ./test"
   },
   "devDependencies": {
     "electron": "catalog:",
-    "@types/node": "catalog:"
+    "@types/node": "catalog:",
+    "@types/bun": "catalog:"
   }
 }

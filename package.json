@@ -12,7 +12,7 @@
     "format:check": "bun fmt --check \"**/*.{ts,tsx,js,mjs}\"",
     "knip": "knip --no-progress",
     "typecheck": "bun check --no-script -b -p tsconfig.projects.json",
-    "test": "bun run --filter './packages/terminal' --filter './packages/client' --filter './apps/web' --filter './lint-rules' --parallel test",
+    "test": "bun run --filter './packages/terminal' --filter './packages/client' --filter './apps/web' --filter './apps/desktop' --filter './lint-rules' --parallel test",
     "test:node": "node node_modules/vitest/vitest.mjs run",
     "check": "bun run format:check && bun run lint && bun run knip && bun run typecheck && bun run test && bun run test:node",
     "build": "bun run --workspaces --if-present build",
