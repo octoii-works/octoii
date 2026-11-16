@@ -9,7 +9,8 @@
     "start": "bun run build && electron .",
     "typecheck": "bun check",
     "test": "bun test --no-env-file --no-install ./test",
-    "package:mac": "bun scripts/package.ts"
+    "package:mac": "bun scripts/package.ts",
+    "verify:first-run": "bun scripts/verify-first-run.ts"
   },
   "devDependencies": {
     "electron": "catalog:",

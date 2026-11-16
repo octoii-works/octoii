@@ -54,3 +54,9 @@ Runtime tests cover relocation, immutable reuse, retaining the prior version, in
 ## macOS toolbar
 
 The macOS window uses `hiddenInset`: native traffic lights share the existing 52px application header. Only HTML served by the desktop shell receives `data-desktop="mac"`; browser resources keep their existing layout. Sidebar, conversation, settings and panel headers provide drag regions, while buttons, links, fields and tabs remain interactive. The sidebar brand is compact, and headers at the left window edge reserve space for native controls when the sidebar is hidden or the panel fills the page. The existing panel close control indicates its open state.
+
+## Isolated first-run verification
+
+After `package:mac`, run `bun run --cwd apps/desktop verify:first-run` from a logged-in macOS account. This opt-in check installs the built runtime into a temporary directory, starts a uniquely named launchd job on a random port with a fresh Octoii Home and minimal PATH, checks discovery, bundled browser assets and one-time pairing, then moves the source payload and restarts the job to verify retained authorization. The job and temporary files are removed on normal success or failure. It never installs or replaces `com.octoii.serve`; a failed cleanup reports an error instead of deleting files still used by the job.
+
+This is not a clean macOS-account test: it deliberately uses a custom Home, creates its own plist/log folder, and does not exercise the default service installer or Finder launch environment. OS-account credentials may remain discoverable. Default installation, login startup and model onboarding still require a clean account. It performs no model requests.
