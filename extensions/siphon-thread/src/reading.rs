@@ -9,6 +9,7 @@ use siphon::threads::{Entry, History, Listed};
 use siphon::tools::{Context, Refusal, Told};
 
 use crate::conversation::{self, Keywords};
+use crate::result::{ConversationEntry, SearchHit, ThreadResult, ThreadSummary};
 use crate::tool::{marks, time};
 
 /// How many entries a page of a conversation holds.
@@ -67,8 +68,11 @@ pub fn read(context: &Context, thread: &str, page: &Page) -> Result<Told, Refusa
     let history = history_of(context, thread)?;
     let entries = page.entries(&history).map_err(|error| Refusal(error.to_string()))?;
     check_cancelled(context)?;
-    let shown: Vec<String> = entries.iter().filter_map(conversation::told).collect();
+    let visible: Vec<ConversationEntry> = entries.iter().filter_map(conversation::entry).collect();
+    let shown: Vec<String> = visible.iter().map(ConversationEntry::told).collect();
     let mut notes = Vec::new();
+    let mut before = None;
+    let mut after = None;
     if let Some(first) = entries.first() {
         if history
             .before(Some(first.id()), 1)
@@ -78,6 +82,7 @@ pub fn read(context: &Context, thread: &str, page: &Page) -> Result<Told, Refusa
             notes.push("this reaches the conversation's start".to_owned());
         } else {
             notes.push(format!("older entries from before={}", first.id()));
+            before = Some(first.id().to_owned());
         }
         let last = entries.last().expect("a nonempty page");
         if !history
@@ -86,11 +91,18 @@ pub fn read(context: &Context, thread: &str, page: &Page) -> Result<Told, Refusa
             .is_empty()
         {
             notes.push(format!("newer entries from after={}", last.id()));
+            after = Some(last.id().to_owned());
         }
     } else {
         notes.push("no entries on this page".to_owned());
     }
-    Ok(told(&shown, &notes))
+    let result = ThreadResult::Read {
+        thread: thread.to_owned(),
+        entries: visible,
+        before,
+        after,
+    };
+    Ok(told(&shown, &notes, &result))
 }
 
 /// Cancellation is checked between pages and entries, including while a blocking scan is running.
@@ -164,14 +176,11 @@ pub fn search(context: &Context, keywords: &Keywords, thread: Option<&str>, arch
             && let Some(words) = keywords.around(&text)
         {
             if all >= offset && page.len() < HITS {
-                page.push(hit_told(
-                    &Hit {
-                        row: &rows[index],
-                        entry: entry.id().to_owned(),
-                        words,
-                    },
-                    &context.thread,
-                ));
+                page.push(Hit {
+                    row: &rows[index],
+                    entry: entry.id().to_owned(),
+                    words,
+                });
             }
             all += 1;
         }
@@ -190,7 +199,22 @@ pub fn search(context: &Context, keywords: &Keywords, thread: Option<&str>, arch
     } else {
         format!("{all} entries")
     };
-    Ok(told(&page, &[note]))
+    let shown_lines: Vec<String> = page.iter().map(|hit| hit_told(hit, &context.thread)).collect();
+    let result = ThreadResult::Search {
+        hits: page
+            .into_iter()
+            .map(|hit| SearchHit {
+                thread: ThreadSummary::of(hit.row, &context.thread),
+                at: siphon::threads::time_of(&hit.entry),
+                entry: hit.entry,
+                excerpt: hit.words,
+            })
+            .collect(),
+        offset,
+        total: all,
+        next: (shown < all).then_some(shown),
+    };
+    Ok(told(&shown_lines, &[note], &result))
 }
 
 /// `hit` as a search tells it, `own` the thread that asks: when its entry was made, its thread's id and title marked as
@@ -216,8 +240,8 @@ fn history_of(context: &Context, thread: &str) -> Result<History, Refusal> {
 }
 
 /// `lines`, then each of `notes` as a reminder, as a call tells them.
-pub fn told(lines: &[String], notes: &[String]) -> Told {
+pub fn told(lines: &[String], notes: &[String], result: &ThreadResult) -> Told {
     let mut text: Vec<String> = lines.to_vec();
     text.extend(notes.iter().map(|note| format!("<system-reminder>{note}</system-reminder>")));
-    Told::from(vec![InputContent::text(text.join("\n"))])
+    result.told(vec![InputContent::text(text.join("\n"))])
 }

@@ -29,6 +29,8 @@ describe("a call as its tool told it", () => {
 		expect(structuredOf("shell", ended)).toEqual(ended);
 		expect(structuredOf("github.create_issue", { type: "ran" })).toBeUndefined();
 		expect(structuredOf("shell", null)).toBeUndefined();
+		expect(structuredOf("thread", { type: "read", thread: "t1", entries: [] })).toBeUndefined();
+		expect(structuredOf("terminal", { type: "ran" })).toBeUndefined();
 	});
 
 	it("tells how a command ended as its tool told it; nothing while it runs", () => {

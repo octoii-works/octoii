@@ -27,8 +27,8 @@ export type ToolCall = {
 
 /** What one of Siphon's own tools told typed of a call; none for an MCP server's, named `server.tool`, or where it told none. */
 export function structuredOf(tool: string, structuredContent: JsonValue | null | undefined): Structured | undefined {
-	if (tool.includes(".") || structuredContent === undefined || structuredContent === null) return undefined;
-	// SAFETY: Siphon's own tools tell what a call did as `Structured`, as the protocol's types are made from theirs.
+	if (!["read", "write", "edit", "shell", "glob", "grep"].includes(tool) || structuredContent === undefined || structuredContent === null) return undefined;
+	// SAFETY: The kernel file and shell tools tell what a call did as `Structured`, as the protocol's types are made from theirs.
 	return structuredContent as Structured;
 }
 

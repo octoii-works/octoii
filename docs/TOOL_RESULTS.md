@@ -54,7 +54,11 @@ text() 和 console.log 写入文本输出；return 保持现有 JSON 返回语�
 - grep：type=grep、files（path 与 lines）、next、skippedBinary、denied。每行含 number、text、matched、clipped，保留上下文行但与匹配行明确区分；next 按匹配数计算，不把上下文行计入分页。skippedBinary 是本次搜索实际跳过的二进制文件数，不保证覆盖未扫描文件。
 - 搜索 UI 直接读取上述结构化结果，不再从模型文本解析路径或行号；展示文本只用于模型与说明。
 - MCP：保留服务器 structuredContent；_meta 映射到 metadata，与转换后的模型 content 分开。
-- 其他工具通过相同结果封装返回 content，按实际能力逐步增加业务数据；不制造空的结构化“成功”结果。
+- browser：保留原始 text、page（id/url/title）和 evaluate/CDP 的原始 JSON value；原生观测 observation 区分 tabs/info/read/console/downloads，提供页列表、尺寸、元素 refs、日志或下载记录。图片只通过 content 交给模型，不将 JPEG 字节写入结构化 JSON。
+- terminal：返回终端引用、观测到的运行/结束/关闭状态及实际屏幕内容；屏幕不是完整日志。关闭操作返回 close_requested，未提前宣称已关闭；屏幕读取失败明确为 screen_unavailable，保留原有文本行为。结束结果保留退出码或信号。
+- thread：返回实际会话列表、搜索命中、可见历史条目与分页游标，或创建/投递/停止请求的目标；不从展示文字解析数据。
+- delegate：区分 started/continued/completed，完成结果明确 replied/failed/stopped/withdrawn/deleted；回答与错误原因保留原始文字，模型展示继续使用原有转义。
+- 每个扩展声明自己的输出 schema；前端内核文件/命令展示只读取对应工具，不能把同名 type 的扩展结果强制当成内核 Structured。其他工具按实际能力逐步增加业务数据，不制造空的结构化“成功”结果。
 
 present_file 通过 content.resource_link 交付原始文件，metadata.title 提供调用标题；execute 抛错仍保留已成功调用的交付链接。详见 [PRODUCT_TOOLS.md](PRODUCT_TOOLS.md)。完整 MCP 资源内容支持、统一嵌套调用 UI 也单独推进，不借字段改造重写执行内核。
 

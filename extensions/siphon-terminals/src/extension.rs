@@ -65,7 +65,7 @@ async fn answered(terminals: &Terminals, context: &Caller, method: Method) -> Re
                 .open(&open.thread, cwd, size(open.size), Running::Shell)
                 .await
                 .map_err(|error| failed(&error))?;
-            return Ok(json!(protocol::TerminalOpened { terminal }));
+            return Ok(json!(protocol::TerminalOpened { terminal: terminal.id }));
         }
         Method::Write(write) => terminals
             .write(&write.terminal, write.data.into_bytes().into())

@@ -21,7 +21,8 @@ fn taken_under_dialog(method: &str) -> bool {
 
 /// How a page stands and is laid out: its address and title; its view's width and height; how far it is scrolled;
 /// its whole width and height. Or the dialog that holds it.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, schemars::JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum PageInfo {
     Shown {
         url: String,

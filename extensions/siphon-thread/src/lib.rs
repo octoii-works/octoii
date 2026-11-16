@@ -5,6 +5,7 @@
 
 mod conversation;
 mod reading;
+mod result;
 mod tool;
 
 use std::future::Future;
@@ -12,6 +13,10 @@ use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
 
+pub use result::{
+    ContentFile, ContentPart, ConversationContent, ConversationEntry, ModelContent, ReplyItem, ResultStatus, SearchHit, SettingChange,
+    ThreadResult, ThreadStatus, ThreadSummary, TurnOutcome,
+};
 use siphon::agent::{Shared, Teller, Telling};
 use siphon::tools::Place;
 use siphon::{Extension, Registrar};

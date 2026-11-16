@@ -36,8 +36,10 @@ async fn a_terminal_runs_the_person_s_shell_in_its_folder_numbered_in_its_thread
     let terminals = Terminals::start(commands, host);
     let mut events = terminals.events();
     let first = terminals.open("t1", cwd.clone(), SIZE, Running::Shell).await.expect("opened");
-    let second = terminals.open("t1", cwd.clone(), SIZE, Running::Shell).await.expect("opened");
-    let elsewhere = terminals.open("t2", cwd.clone(), SIZE, Running::Shell).await.expect("opened");
+    assert_eq!(first.number, 1);
+    let first = first.id;
+    let second = terminals.open("t1", cwd.clone(), SIZE, Running::Shell).await.expect("opened").id;
+    let elsewhere = terminals.open("t2", cwd.clone(), SIZE, Running::Shell).await.expect("opened").id;
     let numbers = |shown: Vec<siphon_terminals::Shown>| shown.into_iter().map(|each| each.number).collect::<Vec<_>>();
     assert_eq!(numbers(terminals.of_thread("t1").await), [1, 2]);
     assert_eq!(numbers(terminals.of_thread("t2").await), [1]);
@@ -75,7 +77,7 @@ async fn a_terminal_runs_the_person_s_shell_in_its_folder_numbered_in_its_thread
         Err(Error::EmptySize)
     ));
     terminals.close(&first);
-    let third = terminals.open("t1", cwd.clone(), SIZE, Running::Shell).await.expect("opened");
+    let third = terminals.open("t1", cwd.clone(), SIZE, Running::Shell).await.expect("opened").id;
     assert_eq!(numbers(terminals.of_thread("t1").await), [2, 1], "the lowest number free");
     terminals.write(&third, Bytes::from_static(b"exit\n")).await.expect("written");
     let waiting = async {
@@ -116,7 +118,9 @@ async fn a_command_line_the_model_runs_tells_its_end_with_its_screen_and_one_clo
         writes: writes.clone(),
         set: Vec::new(),
     };
-    let id = terminals.open("t1", cwd.clone(), SIZE, running).await.expect("opened");
+    let opened = terminals.open("t1", cwd.clone(), SIZE, running).await.expect("opened");
+    assert_eq!(opened.number, 1, "the actual number is returned before the command can disappear");
+    let id = opened.id;
     let ended = tokio::time::timeout(Duration::from_secs(10), async {
         loop {
             if let Event::Ended {
@@ -142,7 +146,7 @@ async fn a_command_line_the_model_runs_tells_its_end_with_its_screen_and_one_clo
         writes,
         set: Vec::new(),
     };
-    let id = terminals.open("t1", cwd.clone(), SIZE, lasting).await.expect("opened");
+    let id = terminals.open("t1", cwd.clone(), SIZE, lasting).await.expect("opened").id;
     assert_eq!(terminals.of_thread("t1").await[0].line.as_deref(), Some("sleep 30"));
     terminals.close(&id);
     until(&mut events, |event| matches!(event, Event::Closed { id: of } if *of == id)).await;
@@ -174,7 +178,7 @@ async fn a_terminal_closed_ends_what_it_runs_though_it_hangs_up_on_nothing() {
         writes: siphon::machine::Writes::Within(vec![cwd.clone()]),
         set: Vec::new(),
     };
-    let id = terminals.open("t1", cwd.clone(), SIZE, running).await.expect("opened");
+    let id = terminals.open("t1", cwd.clone(), SIZE, running).await.expect("opened").id;
     let pid = tokio::time::timeout(Duration::from_secs(10), async {
         loop {
             if let Ok(text) = std::fs::read_to_string(&pid_file)

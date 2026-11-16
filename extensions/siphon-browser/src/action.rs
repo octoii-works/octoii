@@ -229,22 +229,35 @@ pub enum Action {
 }
 
 /// A page, as an outcome names it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
 pub struct Shown {
     pub id: String,
     pub url: String,
     pub title: String,
 }
 
+/// Native observations, available without parsing the model-facing text.
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Observation {
+    Tabs { pages: Vec<Shown>, current: Option<String> },
+    Info { info: PageInfo },
+    Read { refs: Vec<String> },
+    Console { messages: Vec<crate::browser::Message> },
+    Downloads { downloads: Vec<crate::browser::Download> },
+}
+
 /// What came of an action: the page it left, what came of it in words the model reads, and what it read — a value of
 /// a script's, a picture of the page.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 pub struct Outcome {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub page: Option<Shown>,
     pub text: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observation: Option<Observation>,
     /// A JPEG of the page, for `look`.
     #[serde(skip)]
     pub image: Option<Bytes>,
@@ -272,6 +285,7 @@ fn said(text: impl Into<String>) -> Outcome {
         page: None,
         text: text.into(),
         value: None,
+        observation: None,
         image: None,
     }
 }
@@ -375,7 +389,8 @@ impl Browser {
     async fn tabs(&self, thread: &str) -> Outcome {
         let current = self.current(thread).await;
         let mut text = String::new();
-        for page in self.pages(thread).await {
+        let pages = self.pages(thread).await;
+        for page in &pages {
             let mark = if current.as_deref() == Some(page.id.as_str()) {
                 " (current)"
             } else {
@@ -383,7 +398,20 @@ impl Browser {
             };
             let _ = writeln!(text, "{}{mark}: {} {}", page.id, serde_json::json!(page.title), page.url);
         }
-        said(if text.is_empty() { "no pages".into() } else { text })
+        Outcome {
+            observation: Some(Observation::Tabs {
+                pages: pages
+                    .into_iter()
+                    .map(|page| Shown {
+                        id: page.id,
+                        url: page.url,
+                        title: page.title,
+                    })
+                    .collect(),
+                current,
+            }),
+            ..said(if text.is_empty() { "no pages".into() } else { text })
+        }
     }
 
     /// Does `action`, one of a page's, on `page`.
@@ -401,7 +429,14 @@ impl Browser {
                     ..said("the page as it is painted now")
                 })
             }
-            Action::Info => Ok(said(info_text(&page.info().await?))),
+            Action::Info => {
+                let info = page.info().await?;
+                let text = info_text(&info);
+                Ok(Outcome {
+                    observation: Some(Observation::Info { info }),
+                    ..said(text)
+                })
+            }
             Action::Evaluate { expression, frame } => {
                 let session = frame_of(page, frame.as_deref()).await?;
                 match page.js(&expression, session.as_deref()).await? {
@@ -457,21 +492,31 @@ impl Browser {
                 serde_json::json!(dialog.message)
             );
         }
-        Ok(said(text))
+        Ok(Outcome {
+            observation: Some(Observation::Read {
+                refs: reading.refs.into_iter().map(crate::snapshot::ref_of).collect(),
+            }),
+            ..said(text)
+        })
     }
 
     async fn console(&self, page: &Page, since: u64) -> Outcome {
         let mut text = String::new();
-        for message in self.messages(&page.id, since).await {
+        let messages = self.messages(&page.id, since).await;
+        for message in &messages {
             let _ = writeln!(text, "#{} {}: {}", message.number, message.level, message.text);
         }
-        said(if text.is_empty() { "no messages".into() } else { text })
+        Outcome {
+            observation: Some(Observation::Console { messages }),
+            ..said(if text.is_empty() { "no messages".into() } else { text })
+        }
     }
 
     async fn downloaded(&self, page: &Page) -> Outcome {
         let mut text = String::new();
-        for download in self.downloads(&page.id).await {
-            let kept = download.path.map_or_default(|path| format!(" at {path}"));
+        let downloads = self.downloads(&page.id).await;
+        for download in &downloads {
+            let kept = download.path.as_ref().map_or_default(|path| format!(" at {path}"));
             let _ = writeln!(
                 text,
                 "{} {}: {} of {} bytes{kept}",
@@ -481,7 +526,10 @@ impl Browser {
                 download.total_bytes
             );
         }
-        said(if text.is_empty() { "no downloads".into() } else { text })
+        Outcome {
+            observation: Some(Observation::Downloads { downloads }),
+            ..said(if text.is_empty() { "no downloads".into() } else { text })
+        }
     }
 }
 
@@ -494,6 +542,7 @@ fn landed(landed: Landed) -> Outcome {
         page: None,
         text,
         value: None,
+        observation: None,
         image: None,
     }
 }

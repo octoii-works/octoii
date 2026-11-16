@@ -72,7 +72,7 @@ pub struct Dialog {
 }
 
 /// A message of a page's console, or an error its script threw: its level, its text, and its number among the page's.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, schemars::JsonSchema)]
 pub struct Message {
     pub level: String,
     pub text: String,
@@ -105,7 +105,7 @@ pub struct Frame {
 
 /// A download a page began: the browser's id of it, its address, the name it suggested, how far it got and where it
 /// was kept once it was.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, schemars::JsonSchema)]
 pub struct Download {
     pub id: String,
     pub url: String,

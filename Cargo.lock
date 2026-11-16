@@ -5621,9 +5621,11 @@ dependencies = [
 name = "siphon-delegate"
 version = "0.0.1"
 dependencies = [
+ "jsonschema",
  "octoii-ai",
  "schemars 1.2.3",
  "serde",
+ "serde_json",
  "siphon",
 ]
 
@@ -5795,6 +5797,7 @@ version = "0.0.1"
 dependencies = [
  "anyhow",
  "jiff",
+ "jsonschema",
  "octoii-ai",
  "schemars 1.2.3",
  "serde",

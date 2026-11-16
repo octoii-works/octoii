@@ -11,7 +11,7 @@ pub mod protocol;
 mod tool;
 
 pub use extension::TerminalsExtension;
-pub use tool::{ACTOR, Action, TerminalTool};
+pub use tool::{ACTOR, Action, TerminalEnd, TerminalResult, TerminalTool};
 
 use std::path::{Path, PathBuf};
 
@@ -33,6 +33,13 @@ const EVENTS_MAX: usize = 1024;
 pub struct Size {
     pub rows: u16,
     pub cols: u16,
+}
+
+/// A terminal's id on the machine and its number in the thread.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, schemars::JsonSchema)]
+pub struct TerminalReference {
+    pub id: String,
+    pub number: u32,
 }
 
 /// A terminal as a list of a thread's shows it: its id, its number in its thread, its size, its title, and the command
@@ -102,7 +109,7 @@ enum Message {
         cwd: PathBuf,
         size: Size,
         running: Running,
-        reply: Reply<String>,
+        reply: Reply<TerminalReference>,
     },
     Write {
         id: String,
@@ -180,11 +187,12 @@ impl Terminals {
         answer.await.map_err(|_| Error::Gone)?
     }
 
-    /// Opens a terminal for the thread `thread`, `size` big, in `cwd`, running `running`. Its id.
+    /// Opens a terminal for the thread `thread`, `size` big, in `cwd`, running `running`. Its id and number, even if its
+    /// program ends before the caller reads them.
     ///
     /// # Errors
     /// `EmptySize`, `NoShell`; Beak's failure to start it.
-    pub async fn open(&self, thread: &str, cwd: PathBuf, size: Size, running: Running) -> Result<String, Error> {
+    pub async fn open(&self, thread: &str, cwd: PathBuf, size: Size, running: Running) -> Result<TerminalReference, Error> {
         let thread = thread.to_owned();
         self.ask(|reply| Message::Open {
             thread,
@@ -355,7 +363,7 @@ impl Owner {
         let _ = self.events.send(Event::Changed { thread: thread.to_owned() });
     }
 
-    fn open(&mut self, thread: &str, cwd: &Path, size: Size, running: Running) -> Result<String, Error> {
+    fn open(&mut self, thread: &str, cwd: &Path, size: Size, running: Running) -> Result<TerminalReference, Error> {
         if size.rows == 0 || size.cols == 0 {
             return Err(Error::EmptySize);
         }
@@ -413,7 +421,7 @@ impl Owner {
             _machine: machine,
         });
         self.changed(thread);
-        Ok(id)
+        Ok(TerminalReference { id, number })
     }
 
     fn resize(&mut self, id: &str, size: Size) -> Result<bool, Error> {

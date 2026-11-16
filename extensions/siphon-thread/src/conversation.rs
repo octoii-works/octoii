@@ -3,100 +3,214 @@
 //! changed and a summary of what came before — the model's reasoning and what it was told left out; and what of a
 //! text holds the keywords asked for, every one or any, whatever their case.
 
-use octoii_ai::vocabulary::{InputContent, Item, Message, OutputContent};
-use siphon::threads::{CallStatus, Entry, Outcome};
+use octoii_ai::vocabulary::{FileRef, InputContent, Item, Message, OutputContent};
+use siphon::threads::{Entry, Outcome};
+
+use crate::result::{ContentFile, ContentPart, ConversationContent, ConversationEntry, ModelContent, ReplyItem, ResultStatus, TurnOutcome};
 
 /// The most characters of a call's arguments or of its result that are told; the whole is in the thread's log.
 const CALL_CHARS_MAX: usize = 300;
 
-/// `entry` as the conversation tells it, what the person or a thread said and what a turn's end and a setting changed
-/// with their time, as the entry's id says it; none for what the model was told and a reply that came to nothing.
+/// The visible business fields of `entry`, taken directly from the conversation log.
+#[must_use]
+pub fn entry(entry: &Entry) -> Option<ConversationEntry> {
+    let content = match entry {
+        Entry::Input { actor, content, .. } => ConversationContent::Input {
+            actor: actor.clone(),
+            content: content.iter().map(ContentPart::from).collect(),
+        },
+        Entry::Reply { response, .. } => {
+            let items: Vec<ReplyItem> = response.output.iter().filter_map(reply_item).collect();
+            if items.is_empty() {
+                return None;
+            }
+            ConversationContent::Reply { items }
+        }
+        Entry::Result { call, status, output, .. } => {
+            let content: Vec<ContentPart> = output.output.iter().map(ContentPart::from).collect();
+            let (text, clipped) = bounded(&words_of(&content));
+            ConversationContent::Result {
+                call: call.clone(),
+                status: (*status).into(),
+                text,
+                clipped,
+            }
+        }
+        Entry::TurnEnd { outcome, reason, .. } => ConversationContent::TurnEnd {
+            outcome: match outcome {
+                Outcome::Replied => TurnOutcome::Replied,
+                Outcome::Failed => TurnOutcome::Failed,
+                Outcome::Stopped => TurnOutcome::Stopped,
+            },
+            reason: reason.clone(),
+        },
+        Entry::Config { actor, changed, .. } => {
+            let changes: std::collections::BTreeMap<String, crate::result::SettingChange> =
+                serde_json::from_value(serde_json::json!(changed)).expect("setting changes have from and to values");
+            if changes.is_empty() {
+                return None;
+            }
+            ConversationContent::Config {
+                actor: actor.clone(),
+                changes,
+            }
+        }
+        Entry::Compaction { response, .. } => ConversationContent::Compaction { text: response.words() },
+        Entry::System { .. } | Entry::Discarded { .. } => return None,
+    };
+    Some(ConversationEntry {
+        id: entry.id().to_owned(),
+        at: siphon::threads::time_of(entry.id()),
+        content,
+    })
+}
+
+/// `entry` as the conversation tells it; none for hidden entries or replies with no visible content.
 #[must_use]
 pub fn told(entry: &Entry) -> Option<String> {
-    let at = siphon::threads::time_of(entry.id()).map_or_else(String::new, |ms| format!("{} ", crate::tool::time(ms)));
-    match entry {
-        Entry::Input { actor, content, .. } => {
-            let who = if actor == "person" {
-                "person".to_owned()
-            } else {
-                format!("thread {actor}")
-            };
-            Some(format!("{at}{who}: {}", words_of(content)))
+    self::entry(entry).map(|entry| entry.told())
+}
+
+impl ConversationEntry {
+    /// The model-facing view of this entry, with the same omissions and limits as its business fields.
+    pub(crate) fn told(&self) -> String {
+        let at = self.at.map_or_else(String::new, |ms| format!("{} ", crate::tool::time(ms)));
+        match &self.content {
+            ConversationContent::Input { actor, content } => {
+                let who = if actor == "person" {
+                    "person".to_owned()
+                } else {
+                    format!("thread {actor}")
+                };
+                format!("{at}{who}: {}", words_of(content))
+            }
+            ConversationContent::Reply { items } => items.iter().map(ReplyItem::told).collect::<Vec<_>>().join("\n"),
+            ConversationContent::Result { status, text, clipped, .. } => {
+                let ending = if *clipped { "…" } else { "" };
+                format!("result ({}): {text}{ending}", status_of(*status))
+            }
+            ConversationContent::TurnEnd { outcome, reason } => match outcome {
+                TurnOutcome::Replied => format!("{at}turn ended"),
+                TurnOutcome::Failed => format!("{at}turn failed{}", reason.as_ref().map_or_default(|reason| format!(": {reason}"))),
+                TurnOutcome::Stopped => format!("{at}turn stopped"),
+            },
+            ConversationContent::Config { changes, .. } => {
+                let shown: Vec<String> = changes
+                    .iter()
+                    .map(|(name, change)| format!("{name} {} → {}", change.from, change.to))
+                    .collect();
+                format!("{at}settings: {}", shown.join(", "))
+            }
+            ConversationContent::Compaction { text } => format!("{at}summary of what came before: {text}"),
         }
-        Entry::Reply { response, .. } => {
-            let said: Vec<String> = response.output.iter().filter_map(said).collect();
-            (!said.is_empty()).then(|| said.join("\n"))
-        }
-        Entry::Result { status, output, .. } => Some(format!("result ({}): {}", status_of(*status), cut(&words_of(&output.output)))),
-        Entry::TurnEnd { outcome, reason, .. } => Some(match (outcome, reason) {
-            (Outcome::Replied, _) => format!("{at}turn ended"),
-            (Outcome::Failed, reason) => format!("{at}turn failed{}", reason.as_ref().map_or_default(|reason| format!(": {reason}"))),
-            (Outcome::Stopped, _) => format!("{at}turn stopped"),
-        }),
-        Entry::Config { changed, .. } => changes_of(changed).map(|changes| format!("{at}settings: {changes}")),
-        Entry::Compaction { response, .. } => Some(format!("{at}summary of what came before: {}", response.words())),
-        Entry::System { .. } | Entry::Discarded { .. } => None,
     }
 }
 
-/// What the model's `item` says: its words, or a call it made, with its arguments; none for its reasoning.
-fn said(item: &Item) -> Option<String> {
+/// A visible item of a model reply, excluding reasoning and provider instructions.
+fn reply_item(item: &Item) -> Option<ReplyItem> {
     match item {
-        Item::Message(Message::Assistant { content, .. }) => {
-            let words: Vec<&str> = content
+        Item::Message(Message::Assistant { content, .. }) => Some(ReplyItem::Message {
+            content: content
                 .iter()
                 .map(|part| match part {
-                    OutputContent::OutputText { text, .. } => text.as_str(),
-                    OutputContent::Refusal { refusal } => refusal.as_str(),
+                    OutputContent::OutputText { text, .. } => ModelContent::Text { text: text.clone() },
+                    OutputContent::Refusal { refusal } => ModelContent::Refusal { refusal: refusal.clone() },
                 })
-                .collect();
-            Some(format!("model: {}", words.join("")))
+                .collect(),
+        }),
+        Item::FunctionCall(call) => {
+            let (arguments, clipped) = bounded(&call.arguments);
+            Some(ReplyItem::Call {
+                call_id: call.call_id.clone(),
+                name: call.name.clone(),
+                arguments,
+                clipped,
+            })
         }
-        Item::FunctionCall(call) => Some(format!("call {}: {}", call.name, cut(&call.arguments))),
-        Item::WebSearchCall(_) => Some("web search".to_owned()),
+        Item::WebSearchCall(_) => Some(ReplyItem::WebSearch),
         _ => None,
     }
 }
 
+impl ReplyItem {
+    fn told(&self) -> String {
+        match self {
+            Self::Message { content } => {
+                let words: Vec<&str> = content
+                    .iter()
+                    .map(|part| match part {
+                        ModelContent::Text { text } => text.as_str(),
+                        ModelContent::Refusal { refusal } => refusal.as_str(),
+                    })
+                    .collect();
+                format!("model: {}", words.join(""))
+            }
+            Self::Call {
+                name, arguments, clipped, ..
+            } => {
+                let ending = if *clipped { "…" } else { "" };
+                format!("call {name}: {arguments}{ending}")
+            }
+            Self::WebSearch => "web search".to_owned(),
+        }
+    }
+}
+
+impl From<&FileRef> for ContentFile {
+    fn from(file: &FileRef) -> Self {
+        Self {
+            reference: file.reference.clone(),
+            media_type: file.media_type.clone(),
+            filename: file.filename.clone(),
+        }
+    }
+}
+
+impl From<&InputContent> for ContentPart {
+    fn from(part: &InputContent) -> Self {
+        match part {
+            InputContent::InputText { text } => Self::Text { text: text.clone() },
+            InputContent::InputImage { file, .. } => Self::Image { file: file.into() },
+            InputContent::InputFile { file } => Self::File { file: file.into() },
+            InputContent::ResourceLink { file, size } => Self::ResourceLink {
+                file: file.into(),
+                size: *size,
+            },
+        }
+    }
+}
+
 /// The words of `content`, each image or file named in its place.
-fn words_of(content: &[InputContent]) -> String {
+fn words_of(content: &[ContentPart]) -> String {
     content
         .iter()
         .map(|part| match part {
-            InputContent::InputText { text } => text.clone(),
-            InputContent::InputImage { .. } => "[an image]".to_owned(),
-            InputContent::InputFile { .. } => "[a file]".to_owned(),
-            InputContent::ResourceLink { file, .. } => format!("[file available: {}]", file.filename.as_deref().unwrap_or(&file.reference)),
+            ContentPart::Text { text } => text.clone(),
+            ContentPart::Image { .. } => "[an image]".to_owned(),
+            ContentPart::File { .. } => "[a file]".to_owned(),
+            ContentPart::ResourceLink { file, .. } => format!("[file available: {}]", file.filename.as_deref().unwrap_or(&file.reference)),
         })
         .collect::<Vec<_>>()
         .join("\n")
 }
 
 /// How a call ended, in the log's words.
-fn status_of(status: CallStatus) -> String {
-    serde_json::to_value(status)
-        .ok()
-        .and_then(|value| value.as_str().map(str::to_owned))
-        .unwrap_or_default()
+fn status_of(status: ResultStatus) -> &'static str {
+    match status {
+        ResultStatus::Ok => "ok",
+        ResultStatus::Unavailable => "unavailable",
+        ResultStatus::InvalidArguments => "invalid-arguments",
+        ResultStatus::ToolError => "tool-error",
+        ResultStatus::Rejected => "rejected",
+        ResultStatus::Interrupted => "interrupted",
+    }
 }
 
-/// What a change of settings changed, each field from what it was to what it is; none where it changed none.
-fn changes_of(changed: &impl serde::Serialize) -> Option<String> {
-    let serde_json::Value::Object(fields) = serde_json::to_value(changed).ok()? else {
-        return None;
-    };
-    let shown: Vec<String> = fields
-        .iter()
-        .map(|(name, change)| format!("{name} {} → {}", change["from"], change["to"]))
-        .collect();
-    (!shown.is_empty()).then(|| shown.join(", "))
-}
-
-/// `text` cut to `CALL_CHARS_MAX` characters, an ellipsis where it was cut.
-fn cut(text: &str) -> String {
+/// `text` bounded to `CALL_CHARS_MAX` characters, with whether any characters were left out.
+fn bounded(text: &str) -> (String, bool) {
     let mut chars = text.chars();
-    let head: String = chars.by_ref().take(CALL_CHARS_MAX).collect();
-    if chars.next().is_some() { format!("{head}…") } else { head }
+    let head = chars.by_ref().take(CALL_CHARS_MAX).collect();
+    (head, chars.next().is_some())
 }
 
 /// Keywords, and how a text is to hold them: every one, or any.
@@ -167,6 +281,177 @@ fn folded(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+
+    fn source(value: serde_json::Value) -> Entry {
+        serde_json::from_value(value).expect("a source log entry")
+    }
+
+    fn response(output: serde_json::Value) -> serde_json::Value {
+        let mut response = json!({ "id": "response", "model": "model", "status": "completed" });
+        response["output"] = output;
+        response
+    }
+
+    fn visible(source: &Entry) -> ConversationEntry {
+        let entry = entry(source).expect("a visible entry");
+        let result = crate::result::ThreadResult::Read {
+            thread: "thread".to_owned(),
+            entries: vec![entry.clone()],
+            before: None,
+            after: None,
+        };
+        jsonschema::validate(&schemars::schema_for!(crate::result::ThreadResult).to_value(), &json!(result))
+            .expect("visible entry fields fit the declared result schema");
+        entry
+    }
+
+    #[test]
+    fn inputs_keep_the_actor_text_and_file_reference_separate_from_display_labels() {
+        let source = source(json!({
+            "type": "input", "id": "input", "actor": "person", "delivery": "delivery",
+            "content": [
+                { "type": "input_text", "text": "model: literal text\\nwith labels" },
+                { "type": "resource_link", "file": { "ref": "sha256:123", "media_type": "text/plain", "filename": "report.txt" }, "size": 42 }
+            ]
+        }));
+        let entry = visible(&source);
+        assert_eq!(entry.id, "input");
+        assert_eq!(entry.at, None);
+        let ConversationContent::Input { actor, content } = &entry.content else {
+            panic!("an input");
+        };
+        assert_eq!(actor, "person");
+        assert_eq!(
+            content[0],
+            ContentPart::Text {
+                text: "model: literal text\\nwith labels".to_owned()
+            }
+        );
+        assert_eq!(
+            content[1],
+            ContentPart::ResourceLink {
+                file: ContentFile {
+                    reference: "sha256:123".to_owned(),
+                    media_type: "text/plain".to_owned(),
+                    filename: Some("report.txt".to_owned()),
+                },
+                size: 42,
+            }
+        );
+        assert_eq!(
+            entry.told(),
+            "person: model: literal text\\nwith labels\n[file available: report.txt]"
+        );
+    }
+
+    #[test]
+    fn replies_and_results_preserve_call_fields_and_unicode_clipping_without_exposing_reasoning() {
+        let arguments = "字".repeat(CALL_CHARS_MAX + 1);
+        let reply = source(json!({
+            "type": "reply", "id": "reply", "request": "request",
+            "response": response(json!([
+                { "type": "reasoning", "content": ["private reasoning"], "origin": { "model": "model" } },
+                { "type": "message", "role": "assistant", "content": [
+                    { "type": "output_text", "text": "visible " }, { "type": "refusal", "refusal": "refusal" }
+                ] },
+                { "type": "function_call", "call_id": "call-id", "name": "shell", "arguments": arguments },
+                { "type": "web_search_call", "id": "web", "status": "completed" }
+            ]))
+        }));
+        let entry = visible(&reply);
+        let ConversationContent::Reply { items } = &entry.content else {
+            panic!("a reply");
+        };
+        assert_eq!(items.len(), 3);
+        assert_eq!(
+            items[1],
+            ReplyItem::Call {
+                call_id: "call-id".to_owned(),
+                name: "shell".to_owned(),
+                arguments: "字".repeat(CALL_CHARS_MAX),
+                clipped: true,
+            }
+        );
+        assert_eq!(
+            entry.told(),
+            format!("model: visible refusal\ncall shell: {}…\nweb search", "字".repeat(CALL_CHARS_MAX))
+        );
+        assert!(!json!(entry).to_string().contains("private reasoning"));
+
+        let result = source(json!({
+            "type": "result", "id": "result", "call": "siphon-key", "status": "tool-error",
+            "output": { "call_id": "call-id", "output": [{ "type": "input_text", "text": arguments }], "is_error": true }
+        }));
+        let entry = visible(&result);
+        assert_eq!(
+            entry.content,
+            ConversationContent::Result {
+                call: "siphon-key".to_owned(),
+                status: ResultStatus::ToolError,
+                text: "字".repeat(CALL_CHARS_MAX),
+                clipped: true,
+            }
+        );
+        assert_eq!(entry.told(), format!("result (tool-error): {}…", "字".repeat(CALL_CHARS_MAX)));
+        assert!(!bounded(&"字".repeat(CALL_CHARS_MAX)).1);
+    }
+
+    #[test]
+    fn settings_turn_ends_and_summaries_keep_their_business_fields_and_text() {
+        let configured = source(json!({
+            "type": "config", "id": "config", "actor": "person",
+            "title": { "from": "before", "to": "after" },
+            "budget_nanodollars": { "from": null, "to": 42 }
+        }));
+        let entry = visible(&configured);
+        let ConversationContent::Config { actor, changes } = &entry.content else {
+            panic!("settings");
+        };
+        assert_eq!(actor, "person");
+        assert_eq!(changes["title"].to, json!("after"));
+        assert_eq!(changes["budget_nanodollars"].to, json!(42));
+        assert_eq!(entry.told(), "settings: budget_nanodollars null → 42, title \"before\" → \"after\"");
+
+        let ended = source(json!({ "type": "turn-end", "id": "ended", "outcome": "failed", "reason": "model unavailable" }));
+        let entry = visible(&ended);
+        assert_eq!(entry.told(), "turn failed: model unavailable");
+        assert_eq!(
+            entry.content,
+            ConversationContent::TurnEnd {
+                outcome: TurnOutcome::Failed,
+                reason: Some("model unavailable".to_owned())
+            }
+        );
+
+        let compacted = source(json!({
+            "type": "compaction", "id": "compacted", "request": "request", "from": "input",
+            "response": response(json!([{ "type": "message", "role": "assistant", "content": [{ "type": "output_text", "text": " earlier work " }] }]))
+        }));
+        let entry = visible(&compacted);
+        assert_eq!(
+            entry.content,
+            ConversationContent::Compaction {
+                text: "earlier work".to_owned()
+            }
+        );
+        assert_eq!(entry.told(), "summary of what came before: earlier work");
+    }
+
+    #[test]
+    fn hidden_entries_and_replies_without_visible_items_have_no_projection() {
+        let reasoning = response(json!([{ "type": "reasoning", "content": ["private"], "origin": { "model": "model" } }]));
+        let hidden = [
+            source(json!({ "type": "system", "id": "system", "sections": [] })),
+            source(json!({ "type": "discarded", "id": "discarded", "request": "request", "response": reasoning })),
+            source(json!({ "type": "reply", "id": "reply", "request": "request", "response": reasoning })),
+            source(json!({ "type": "config", "id": "config", "actor": "person" })),
+        ];
+        for source in hidden {
+            assert_eq!(entry(&source), None);
+            assert_eq!(told(&source), None);
+        }
+    }
 
     #[test]
     fn search_preserves_unicode_and_bounds_the_excerpt_around_the_match() {

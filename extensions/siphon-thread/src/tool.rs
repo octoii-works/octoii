@@ -14,10 +14,11 @@ use octoii_ai::vocabulary::InputContent;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use siphon::machine::Base;
-use siphon::threads::{Joins, Listed, Turn};
+use siphon::threads::{Joins, Listed};
 
 use crate::conversation::{Keywords, Matching};
 use crate::reading;
+use crate::result::{ThreadResult, ThreadStatus, ThreadSummary};
 use siphon::tools::{Context, Effect, Plan, Refusal, Report, Spawned, Told, Tool};
 
 /// What the model does with the person's other threads.
@@ -96,6 +97,10 @@ impl Tool for ThreadTool {
     const DESCRIPTION: &'static str = "Work with the person's other threads, which they see in their thread list.\n- list: list the threads, the most recently active first: each one's id, how it stands, when it was last active, its project and its title.\n- search: find what was said in the threads: the words the person, the threads and the models said and the calls the models made that hold `keywords` — all of them, or any with `matching: any` — the newest first, each with its thread, its id and the words around the match; `thread` searches one thread alone, and this thread is searched only when named so.\n- read: read a thread's conversation — what the person and the model said, each call and how it ended — the newest page first; `around` an entry's id from search reads the conversation about it; page with `before` or `after` as a page's note says.\n- start: create a thread in this folder with your model and mode; `message` is its first input.\n- send: send a thread a message; it takes it at its next step, or starts a turn with it.\n- stop: stop the turn a thread is working on.\nUse it only when the person asks about other threads, asks for a new thread, or names a thread to message or stop; never for sub-agents, delegation or parallel work. To find what was said about something earlier, search for it rather than page through a thread. A new thread does not see this conversation: put everything it needs in `message`. With `report`, you get a message when the turn that takes your message ends; do not wait for it or poll. Link a thread in your reply as :thread{id=<id>}, or as ::thread{id=<id>} on its own line to show its card.";
     type Args = ThreadAction;
 
+    fn output_schema() -> Option<serde_json::Value> {
+        Some(schemars::schema_for!(ThreadResult).to_value())
+    }
+
     fn effect(&self, action: &ThreadAction, _: &Base) -> Effect {
         match action {
             ThreadAction::List { .. } | ThreadAction::Search { .. } | ThreadAction::Read { .. } => Effect::Reads,
@@ -135,11 +140,22 @@ fn listed(context: &Context, archived: bool, offset: usize) -> Result<Told, Refu
     } else {
         format!("{all} threads")
     };
-    Ok(reading::told(&page, &[note]))
+    let result = ThreadResult::List {
+        threads: rows
+            .iter()
+            .skip(offset)
+            .take(PAGE)
+            .map(|row| ThreadSummary::of(row, &context.thread))
+            .collect(),
+        offset,
+        total: all,
+        next: (shown < all).then_some(shown),
+    };
+    Ok(reading::told(&page, &[note], &result))
 }
 
 /// When `row` was last active, in ms since the epoch: as its last turn ended, else as it began, else as it was made.
-fn active_at(row: &Listed) -> i64 {
+pub(crate) fn active_at(row: &Listed) -> i64 {
     row.status
         .ended_at
         .max(row.status.began_at)
@@ -151,17 +167,13 @@ fn active_at(row: &Listed) -> i64 {
 /// whether it works, then how its last turn ended; when it was last active; its project, or none; its title; and
 /// whose sub-thread it is, whether it is archived, or whether it is the thread that asks.
 fn line(row: &Listed, own: &str) -> String {
-    let stands = if !row.status.asks.is_empty() {
-        "asks the person"
-    } else if row.status.turn == Turn::Running || !row.status.inbox.is_empty() {
-        "working"
-    } else {
-        match row.status.turn {
-            Turn::Created => "new",
-            Turn::Running | Turn::Replied => "replied",
-            Turn::Failed => "failed",
-            Turn::Stopped => "stopped",
-        }
+    let stands = match ThreadStatus::of(row) {
+        ThreadStatus::Asking => "asks the person",
+        ThreadStatus::Working => "working",
+        ThreadStatus::New => "new",
+        ThreadStatus::Replied => "replied",
+        ThreadStatus::Failed => "failed",
+        ThreadStatus::Stopped => "stopped",
     };
     let project = row.project.as_deref().unwrap_or("no project");
     let title = row.config.title.as_deref().unwrap_or("untitled");
@@ -198,7 +210,7 @@ pub(crate) fn marks(row: &Listed, own: &str) -> String {
 fn planned(context: &Context, action: ThreadAction) -> Result<Told, Refusal> {
     let own = context.thread.as_str();
     let mut plan = Plan::default();
-    let text = match action {
+    let (text, result) = match action {
         ThreadAction::List { archived, offset } => return listed(context, archived, offset),
         ThreadAction::Search {
             keywords,
@@ -218,27 +230,39 @@ fn planned(context: &Context, action: ThreadAction) -> Result<Told, Refusal> {
         } => return reading::read(context, &thread, &reading::Page::of(around, before, after)?),
         ThreadAction::Start { message, title, report } => {
             let started = plan.spawn(&context.volume(), title, Spawned::Thread)?;
-            plan.deliver(&context.volume(), &started, from(own, &message), Joins::Step, reported(report))?;
-            format!(
+            let delivery = plan.deliver(&context.volume(), &started, from(own, &message), Joins::Step, reported(report))?;
+            let text = format!(
                 "<system-reminder>thread {started} started with your message{}</system-reminder>\n<system-reminder>link it for the person as :thread{{id={started}}}</system-reminder>",
                 told_note(report)
+            );
+            (
+                text,
+                ThreadResult::Start {
+                    thread: started,
+                    delivery,
+                    report,
+                },
             )
         }
         ThreadAction::Send { thread, message, report } => {
-            plan.deliver(&context.volume(), &thread, from(own, &message), Joins::Step, reported(report))?;
-            format!(
+            let delivery = plan.deliver(&context.volume(), &thread, from(own, &message), Joins::Step, reported(report))?;
+            let text = format!(
                 "<system-reminder>thread {thread} has your message{}</system-reminder>",
                 told_note(report)
-            )
+            );
+            (text, ThreadResult::Send { thread, delivery, report })
         }
         ThreadAction::Stop { thread } => {
             plan.stop(&thread);
-            format!("<system-reminder>thread {thread} was asked to stop its turn</system-reminder>")
+            (
+                format!("<system-reminder>thread {thread} was asked to stop its turn</system-reminder>"),
+                ThreadResult::Stop { thread },
+            )
         }
     };
     Ok(Told {
         plan,
-        ..Told::from(vec![InputContent::text(text)])
+        ..result.told(vec![InputContent::text(text)])
     })
 }
 

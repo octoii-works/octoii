@@ -6,8 +6,16 @@
 
 use serde_json::json;
 use siphon::testing::{Beak, Called, Calling};
-use siphon::tools::CallStatus;
-use siphon_thread::ThreadTool;
+use siphon::tools::{CallStatus, Tool};
+use siphon_thread::{ConversationContent, ThreadResult, ThreadStatus, ThreadTool};
+
+/// Successful calls carry business data fitting the schema that the tool declares.
+fn result(call: &Called) -> ThreadResult {
+    assert_eq!(call.status, CallStatus::Ok, "{}", call.text);
+    let structured = call.structured_content.as_ref().expect("a structured thread result");
+    jsonschema::validate(&ThreadTool::output_schema().expect("the result schema"), structured).expect("a result fitting its schema");
+    serde_json::from_value(structured.clone()).expect("a typed thread result")
+}
 
 /// Calls of the `thread` tool, by a turn of `t1` working in a fresh folder; the folder held.
 struct Turn {
@@ -43,9 +51,12 @@ impl Turn {
         let started = self
             .called("start", vec![json!({ "action": "start", "message": "say hi", "title": "Greeter" })])
             .await;
-        assert_eq!(started[0].status, CallStatus::Ok, "{}", started[0].text);
-        let listed = self.called("list", vec![json!({ "action": "list" })]).await;
-        listed[0].text.split_whitespace().next().expect("its id").to_owned()
+        let ThreadResult::Start { thread, delivery, report } = result(&started[0]) else {
+            panic!("a start result");
+        };
+        assert_ne!(delivery, "");
+        assert!(!report);
+        thread
     }
 }
 
@@ -53,7 +64,7 @@ impl Turn {
 async fn a_thread_started_is_listed_with_the_others_the_most_recently_active_first() {
     let beak = Beak::new().expect("Beak");
     let turn = Turn::start(&beak);
-    turn.greeter().await;
+    let greeter = turn.greeter().await;
     let listed = turn.called("k1", vec![json!({ "action": "list" })]).await;
     let text = &listed[0].text;
     let lines: Vec<&str> = text.lines().collect();
@@ -61,16 +72,42 @@ async fn a_thread_started_is_listed_with_the_others_the_most_recently_active_fir
     assert!(lines[0].contains("  Greeter"), "the newest first: {text}");
     assert!(lines[1].starts_with("t1  new  ") && lines[1].ends_with("  (this thread)"), "{text}");
     assert_eq!(lines[2], "<system-reminder>2 threads</system-reminder>");
+    let ThreadResult::List {
+        threads,
+        offset,
+        total,
+        next,
+    } = result(&listed[0])
+    else {
+        panic!("a list result");
+    };
+    assert_eq!((offset, total, next), (0, 2, None));
+    assert_eq!(threads[0].id, greeter);
+    assert_eq!(threads[0].title.as_deref(), Some("Greeter"));
+    assert_eq!(threads[1].id, "t1");
+    assert_eq!(threads[1].status, ThreadStatus::New);
+    assert!(threads[1].current);
+    assert_eq!(threads[1].project, None);
+    assert_eq!(threads[1].title, None);
     let past = turn.called("k2", vec![json!({ "action": "list", "offset": 5 })]).await;
     assert_eq!(
         past[0].text,
         "<system-reminder>no threads past offset 5; there are 2</system-reminder>"
     );
+    assert_eq!(
+        result(&past[0]),
+        ThreadResult::List {
+            threads: Vec::new(),
+            offset: 5,
+            total: 2,
+            next: None,
+        }
+    );
     turn.calling.close().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn what_was_said_is_found_by_every_keyword_or_any_and_read_where_it_was_said() {
+async fn what_was_said_is_found_by_every_keyword_or_any() {
     let beak = Beak::new().expect("Beak");
     let turn = Turn::start(&beak);
     let greeter = turn.greeter().await;
@@ -106,12 +143,38 @@ async fn what_was_said_is_found_by_every_keyword_or_any_and_read_where_it_was_sa
         (found[4].status, found[4].text.as_str()),
         (CallStatus::ToolError, "no thread nonesuch")
     );
-    let entry = found[0]
-        .text
-        .split("  entry ")
-        .nth(1)
-        .and_then(|rest| rest.split(':').next())
-        .expect("an entry");
+    let ThreadResult::Search { hits, offset, total, next } = result(&found[0]) else {
+        panic!("a search result");
+    };
+    assert_eq!((offset, total, next), (0, 1, None));
+    assert_eq!(hits[0].thread.id, greeter);
+    assert_eq!(hits[0].thread.title.as_deref(), Some("Greeter"));
+    assert!(hits[0].excerpt.contains("\"Greeter\""));
+    assert!(hits[0].at.is_some());
+    assert_eq!(
+        result(&found[1]),
+        ThreadResult::Search {
+            hits: Vec::new(),
+            offset: 0,
+            total: 0,
+            next: None,
+        }
+    );
+    assert_eq!(found[3].structured_content, None);
+    assert_eq!(found[4].structured_content, None);
+    turn.calling.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn found_entries_are_read_with_anchors_and_typed_settings() {
+    let beak = Beak::new().expect("Beak");
+    let turn = Turn::start(&beak);
+    let greeter = turn.greeter().await;
+    let found = turn.called("find", vec![json!({ "action": "search", "keywords": "GREET" })]).await;
+    let ThreadResult::Search { hits, .. } = result(&found[0]) else {
+        panic!("a search result");
+    };
+    let entry = &hits[0].entry;
     let read = turn
         .called(
             "k2",
@@ -151,6 +214,35 @@ async fn what_was_said_is_found_by_every_keyword_or_any_and_read_where_it_was_sa
     );
     assert_eq!(read[5].text, "<system-reminder>no entries on this page</system-reminder>");
     assert_eq!(read[6].text, "<system-reminder>no entries on this page</system-reminder>");
+    let ThreadResult::Read {
+        thread,
+        entries,
+        before,
+        after,
+    } = result(&read[0])
+    else {
+        panic!("a read result");
+    };
+    assert_eq!(thread, greeter);
+    assert_eq!((before, after), (None, None));
+    assert_eq!(&entries[0].id, entry);
+    let ConversationContent::Config { changes, .. } = &entries[0].content else {
+        panic!("the thread's initial settings");
+    };
+    assert_eq!(changes["title"].from, json!(null));
+    assert_eq!(changes["title"].to, json!("Greeter"));
+    assert_eq!(result(&read[1]), result(&read[0]));
+    for call in &read[5..] {
+        assert_eq!(
+            result(call),
+            ThreadResult::Read {
+                thread: greeter.clone(),
+                entries: Vec::new(),
+                before: None,
+                after: None,
+            }
+        );
+    }
     turn.calling.close().await;
 }
 
@@ -170,7 +262,7 @@ async fn search_merges_threads_newest_first_and_pages_without_duplicates() {
                 .collect(),
         )
         .await;
-    assert!(started.iter().all(|call| call.status == CallStatus::Ok));
+    assert!(started.iter().all(|call| matches!(result(call), ThreadResult::Start { .. })));
     let found = turn
         .called(
             "pages",
@@ -181,23 +273,82 @@ async fn search_merges_threads_newest_first_and_pages_without_duplicates() {
             ],
         )
         .await;
-    let ids = |text: &str| {
-        text.lines()
-            .filter_map(|line| {
-                line.strip_prefix("  entry ")
-                    .and_then(|line| line.split(':').next())
-                    .map(str::to_owned)
-            })
-            .collect::<Vec<_>>()
+    let ids = |call: &Called| {
+        let ThreadResult::Search { hits, .. } = result(call) else {
+            panic!("a search page");
+        };
+        hits.into_iter().map(|hit| hit.entry).collect::<Vec<_>>()
     };
-    let mut all = ids(&found[0].text);
+    let mut all = ids(&found[0]);
     assert_eq!(all.len(), 20);
-    let rest = ids(&found[1].text);
+    let rest = ids(&found[1]);
     assert_eq!(rest.len(), 5);
     all.extend(rest);
     assert!(all.windows(2).all(|pair| pair[0] > pair[1]));
     assert!(found[0].text.contains("entries 1-20 of 25; more from offset 20"));
     assert!(found[2].text.contains("no entries past offset 1000; there are 25"));
+    assert!(matches!(
+        result(&found[0]),
+        ThreadResult::Search {
+            offset: 0,
+            total: 25,
+            next: Some(20),
+            ..
+        }
+    ));
+    assert!(matches!(
+        result(&found[1]),
+        ThreadResult::Search {
+            offset: 20,
+            total: 25,
+            next: None,
+            ..
+        }
+    ));
+    assert!(matches!(result(&found[2]), ThreadResult::Search { offset: 1000, total: 25, next: None, hits } if hits.is_empty()));
+    let listed = turn.called("listed", vec![json!({ "action": "list" })]).await;
+    assert!(matches!(result(&listed[0]), ThreadResult::List { total: 26, next: None, threads, .. } if threads.len() == 26));
+    turn.calling.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn messages_and_stop_requests_identify_the_thread_and_delivery_without_reading_reminders() {
+    let beak = Beak::new().unwrap();
+    let turn = Turn::start(&beak);
+    let started = turn.called("start", vec![json!({ "action": "start", "message": "begin" })]).await;
+    let ThreadResult::Start {
+        thread,
+        delivery: first,
+        report: false,
+    } = result(&started[0])
+    else {
+        panic!("a started thread");
+    };
+    assert_ne!(first, "");
+    let sent = turn
+        .called("send", vec![json!({ "action": "send", "thread": thread, "message": "continue" })])
+        .await;
+    let ThreadResult::Send {
+        thread: target,
+        delivery,
+        report: false,
+    } = result(&sent[0])
+    else {
+        panic!("a sent message");
+    };
+    assert_eq!(target, thread);
+    assert_ne!(delivery, "");
+    assert_ne!(first, delivery);
+    assert_eq!(
+        sent[0].text,
+        format!("<system-reminder>thread {thread} has your message</system-reminder>")
+    );
+    let stopped = turn.called("stop", vec![json!({ "action": "stop", "thread": thread })]).await;
+    assert_eq!(result(&stopped[0]), ThreadResult::Stop { thread: thread.clone() });
+    assert_eq!(
+        stopped[0].text,
+        format!("<system-reminder>thread {thread} was asked to stop its turn</system-reminder>")
+    );
     turn.calling.close().await;
 }
 

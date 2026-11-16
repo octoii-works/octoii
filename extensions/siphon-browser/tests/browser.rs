@@ -149,8 +149,11 @@ async fn the_agent_opens_reads_fills_and_submits_a_form_and_the_person_sees_it_p
         .expect("opened");
     let page = opened.page.expect("its page");
     assert_eq!(page.title, "Form");
-    let read = act(&browser, &machine, json!({ "action": "read" })).await.expect("read").text;
+    let observed = act(&browser, &machine, json!({ "action": "read" })).await.expect("read");
+    let data = serde_json::to_value(&observed).expect("browser observation");
+    let read = observed.text;
     let field = ref_in(&read, "textbox", "Name");
+    assert!(data["observation"]["refs"].as_array().expect("refs").contains(&json!(field)));
     let typed = act(
         &browser,
         &machine,
@@ -186,6 +189,7 @@ async fn the_agent_opens_reads_fills_and_submits_a_form_and_the_person_sees_it_p
     assert!(looked.image.expect("a picture").starts_with(b"\xff\xd8"), "a JPEG");
     let info = act(&browser, &machine, json!({ "action": "info" })).await.expect("measured");
     assert!(info.text.contains("its view 1280×800"), "{}", info.text);
+    assert_eq!(serde_json::to_value(&info).expect("info")["observation"]["info"]["width"], 1280.0);
     let waiting = async {
         loop {
             if let Change::Painted { page: painted, .. } = events.recv().await.expect("an event")
@@ -312,7 +316,11 @@ async fn tabs_are_the_thread_s_its_console_and_downloads_are_told_and_cdp_reache
     tokio::time::timeout(Duration::from_secs(10), waiting)
         .await
         .expect("the page it opened is the thread's");
-    let tabs = act(&browser, &machine, json!({ "action": "tabs" })).await.expect("listed").text;
+    let listed = act(&browser, &machine, json!({ "action": "tabs" })).await.expect("listed");
+    let data = serde_json::to_value(&listed).expect("tabs");
+    assert!(data["observation"]["pages"].as_array().expect("pages").len() >= 2);
+    assert!(data["observation"]["current"].is_string());
+    let tabs = listed.text;
     assert!(tabs.contains(&format!("{} (current)", opener.id)), "{tabs}");
     act(&browser, &machine, json!({ "action": "click", "target": { "selector": "a" } }))
         .await

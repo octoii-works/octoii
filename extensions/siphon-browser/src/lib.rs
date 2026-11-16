@@ -16,7 +16,8 @@ pub mod protocol;
 mod snapshot;
 mod tool;
 
-pub use action::{Action, MouseButton, Outcome, Place, Refusal, Shown};
-pub use browser::{Browser, BrowserError, BrowserHost, Change, Frame, PageView, Size};
+pub use action::{Action, MouseButton, Observation, Outcome, Place, Refusal, Shown};
+pub use browser::{Browser, BrowserError, BrowserHost, Change, Download, Frame, Message, PageView, Size};
 pub use extension::BrowserExtension;
+pub use primitives::PageInfo;
 pub use tool::BrowserTool;

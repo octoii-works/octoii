@@ -8,12 +8,12 @@ use std::time::Duration;
 
 use octoii_ai::vocabulary::InputContent;
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use siphon::machine::Base;
 use siphon::tools::{Context, Effect, Refusal, Told, Tool};
 use tokio::sync::broadcast;
 
-use crate::{Event, Running, Shown, Size, Terminals};
+use crate::{Error, Event, Running, Shown, Size, TerminalReference, Terminals};
 
 /// How big a terminal the model opens is.
 const SIZE: Size = Size { rows: 30, cols: 120 };
@@ -55,6 +55,44 @@ pub enum Action {
     },
 }
 
+/// What a terminal call observed or requested. Its state is a snapshot when observed, not a promise that the program
+/// will keep running. A screen is the terminal's rendered text, not a complete command log.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum TerminalResult {
+    Running {
+        terminal: TerminalReference,
+        /// The terminal's screen as text, without model-facing escaping.
+        screen: String,
+    },
+    Ended {
+        terminal: TerminalReference,
+        ended: TerminalEnd,
+        /// The terminal's last screen as text, not the command's complete output.
+        screen: String,
+    },
+    Closed {
+        terminal: TerminalReference,
+    },
+    /// The close request was submitted to the terminal's owner.
+    CloseRequested {
+        terminal: TerminalReference,
+    },
+    /// The screen or ending could not be read; this does not say whether the program still runs.
+    ScreenUnavailable {
+        terminal: TerminalReference,
+        error: String,
+    },
+}
+
+/// How a terminal's command ended of itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum TerminalEnd {
+    Exited { code: i32 },
+    Signalled { signal: i32 },
+}
+
 /// `terminal`, on the terminals.
 #[derive(Debug, Clone)]
 pub struct TerminalTool {
@@ -65,6 +103,10 @@ impl Tool for TerminalTool {
     const NAME: &'static str = "terminal";
     const DESCRIPTION: &'static str = "Work the thread's terminals, which the person sees beside the chat.\n- open: run a command that does not exit by itself (a server, a watcher) in a new terminal in the workspace, sandboxed as shell commands are. Returns the terminal's number and its screen after a moment. When the command exits you get a message with how it ended and its last screen; do not poll for it.\n- read: return what a terminal shows, the person's terminals included.\n- write: type into a terminal you opened (`\\u0003` for Ctrl-C, `\\r` for Enter); returns the screen after.\n- close: close a terminal you opened, ending its command.\nFor a command that exits by itself, use shell. Link a terminal in your reply as :terminal{id=<number>}, or as ::terminal{id=<number>} on its own line to show its card with its last lines.";
     type Args = Action;
+
+    fn output_schema() -> Option<serde_json::Value> {
+        Some(schemars::schema_for!(TerminalResult).to_value())
+    }
 
     fn effect(&self, action: &Action, _: &Base) -> Effect {
         match action {
@@ -87,77 +129,96 @@ impl Tool for TerminalTool {
     }
 
     async fn exec(&self, context: &Context, action: Action) -> Result<Told, Refusal> {
-        let words = match action {
+        let (words, result) = match action {
             Action::Open { command, .. } => self.open(context, command).await?,
             Action::Read { terminal } => {
                 let shown = self.numbered(&context.thread, terminal).await?;
                 let text = self.terminals.text(&shown.id).await.map_err(|error| Refusal(error.to_string()))?;
-                format!(
+                let words = format!(
                     "<system-reminder>terminal {terminal}: {}</system-reminder>\n{}",
                     what(&shown),
                     screen(&text)
+                );
+                (
+                    words,
+                    TerminalResult::Running {
+                        terminal: reference(shown),
+                        screen: text,
+                    },
                 )
             }
             Action::Write { terminal, text } => {
+                let mut events = self.terminals.events();
                 let shown = self.own(&context.thread, terminal).await?;
                 self.terminals
                     .write(&shown.id, text.into_bytes().into())
                     .await
                     .map_err(|error| Refusal(error.to_string()))?;
                 tokio::time::sleep(SETTLE).await;
-                let text = self.terminals.text(&shown.id).await.unwrap_or_default();
-                format!(
+                let text = self.terminals.text(&shown.id).await;
+                let words = format!(
                     "<system-reminder>terminal {terminal}: {}</system-reminder>\n{}",
                     what(&shown),
-                    screen(&text)
-                )
+                    screen(text.as_deref().unwrap_or_default())
+                );
+                let result = observed(reference(shown), text, &mut events);
+                (words, result)
             }
             Action::Close { terminal } => {
                 let shown = self.own(&context.thread, terminal).await?;
                 self.terminals.close(&shown.id);
-                format!("<system-reminder>terminal {terminal} closed</system-reminder>")
+                (
+                    format!("<system-reminder>terminal {terminal} closed</system-reminder>"),
+                    TerminalResult::CloseRequested {
+                        terminal: reference(shown),
+                    },
+                )
             }
         };
-        Ok(Told::from(vec![InputContent::text(words)]))
+        Ok(Told {
+            content: vec![InputContent::text(words)],
+            structured_content: Some(serde_json::json!(result)),
+            ..Told::default()
+        })
     }
 }
 
 impl TerminalTool {
     /// Runs `command` in a terminal of the thread's own: its screen after a moment, or, where it ended by then, how.
     /// Where it runs on, its end is told to the thread when it comes.
-    async fn open(&self, context: &Context, command: String) -> Result<String, Refusal> {
+    async fn open(&self, context: &Context, command: String) -> Result<(String, TerminalResult), Refusal> {
         let mut events = self.terminals.events();
+        let mut states = events.resubscribe();
         let running = Running::Line {
             line: command.clone(),
             writes: context.writes_of(),
             set: context.variables(),
         };
-        let id = self
+        let terminal = self
             .terminals
             .open(&context.thread, context.base.workspace.clone(), SIZE, running)
             .await
             .map_err(|error| Refusal(error.to_string()))?;
-        let number = self
-            .terminals
-            .of_thread(&context.thread)
-            .await
-            .into_iter()
-            .find(|shown| shown.id == id)
-            .map_or(0, |shown| shown.number);
-        if let Ok(Some(ended)) = tokio::time::timeout(SETTLE, end_of(&mut events, &id)).await {
-            return Ok(ended_words(&ended));
+        if let Ok(Some(Completion::Ended(ended))) = tokio::time::timeout(SETTLE, end_of(&mut events, &terminal.id)).await {
+            return Ok((ended_words(&ended), ended.into_result()));
         }
-        let text = self.terminals.text(&id).await.unwrap_or_default();
+        let text = self.terminals.text(&terminal.id).await;
+        let words = format!(
+            "<system-reminder>terminal {} runs it; you are told when it ends</system-reminder>\n{}",
+            terminal.number,
+            screen(text.as_deref().unwrap_or_default())
+        );
+        let id = terminal.id.clone();
+        let result = observed(terminal, text, &mut states);
         let volume = context.volume();
-        tokio::spawn(async move {
-            if let Some(ended) = end_of(&mut events, &id).await {
-                let _ = tell(&volume, &ended).await;
-            }
-        });
-        Ok(format!(
-            "<system-reminder>terminal {number} runs it; you are told when it ends</system-reminder>\n{}",
-            screen(&text)
-        ))
+        if !matches!(&result, TerminalResult::Closed { .. }) {
+            tokio::spawn(async move {
+                if let Some(Completion::Ended(ended)) = end_of(&mut events, &id).await {
+                    let _ = tell(&volume, &ended).await;
+                }
+            });
+        }
+        Ok((words, result))
     }
 
     /// The terminal numbered `number` in `thread`.
@@ -182,39 +243,103 @@ impl TerminalTool {
     }
 }
 
+fn reference(shown: Shown) -> TerminalReference {
+    TerminalReference {
+        id: shown.id,
+        number: shown.number,
+    }
+}
+
+/// The terminal at the instant its screen was read. A terminal gone by then is described by its lifecycle event,
+/// which carries its last screen where its command ended of itself.
+fn observed(terminal: TerminalReference, screen: Result<String, Error>, events: &mut broadcast::Receiver<Event>) -> TerminalResult {
+    match screen {
+        Ok(screen) => TerminalResult::Running { terminal, screen },
+        Err(Error::NoSuchTerminal) => loop {
+            match events.try_recv() {
+                Ok(event) => match Completion::of(event, &terminal.id) {
+                    Some(Completion::Ended(ended)) => return ended.into_result(),
+                    Some(Completion::Closed) => return TerminalResult::Closed { terminal },
+                    None => {}
+                },
+                Err(broadcast::error::TryRecvError::Lagged(_)) => {}
+                Err(error) => {
+                    return TerminalResult::ScreenUnavailable {
+                        terminal,
+                        error: format!("the terminal is gone; its end could not be read: {error}"),
+                    };
+                }
+            }
+        },
+        Err(error) => TerminalResult::ScreenUnavailable {
+            terminal,
+            error: error.to_string(),
+        },
+    }
+}
+
 /// A command line that ended of itself: its terminal's number in its thread, the line, how it ended, and its screen.
 #[derive(Debug, Clone)]
 struct Ended {
     thread: String,
-    number: u32,
+    terminal: TerminalReference,
     line: String,
     exit: siphon::machine::Exit,
     screen: String,
 }
 
-/// How the command line of the terminal `id` ended of itself, as `events` tell it; none where it was closed first, or
-/// the terminals are gone.
-async fn end_of(events: &mut broadcast::Receiver<Event>, id: &str) -> Option<Ended> {
-    loop {
-        match events.recv().await {
-            Ok(Event::Ended {
+impl Ended {
+    fn into_result(self) -> TerminalResult {
+        let ended = match self.exit {
+            siphon::machine::Exit::Code(code) => TerminalEnd::Exited { code },
+            siphon::machine::Exit::Signal(signal) => TerminalEnd::Signalled { signal },
+        };
+        TerminalResult::Ended {
+            terminal: self.terminal,
+            ended,
+            screen: self.screen,
+        }
+    }
+}
+
+enum Completion {
+    Ended(Ended),
+    Closed,
+}
+
+impl Completion {
+    fn of(event: Event, id: &str) -> Option<Self> {
+        match event {
+            Event::Ended {
                 id: ended,
                 thread,
                 number,
                 line,
                 exit,
                 screen,
-            }) if ended == id => {
-                return Some(Ended {
-                    thread,
-                    number,
-                    line,
-                    exit,
-                    screen,
-                });
+            } if ended == id => Some(Self::Ended(Ended {
+                thread,
+                terminal: TerminalReference { id: ended, number },
+                line,
+                exit,
+                screen,
+            })),
+            Event::Closed { id: closed } if closed == id => Some(Self::Closed),
+            _ => None,
+        }
+    }
+}
+
+/// How the terminal `id` ended, as `events` tell it; none where the terminals are gone.
+async fn end_of(events: &mut broadcast::Receiver<Event>, id: &str) -> Option<Completion> {
+    loop {
+        match events.recv().await {
+            Ok(event) => {
+                if let Some(ended) = Completion::of(event, id) {
+                    return Some(ended);
+                }
             }
-            Ok(Event::Closed { id: closed }) if closed == id => return None,
-            Ok(_) | Err(broadcast::error::RecvError::Lagged(_)) => {}
+            Err(broadcast::error::RecvError::Lagged(_)) => {}
             Err(broadcast::error::RecvError::Closed) => return None,
         }
     }
@@ -233,7 +358,7 @@ fn ended_words(ended: &Ended) -> String {
     };
     format!(
         "<system-reminder>terminal {}, which ran `{}`, ended: {how}</system-reminder>\n{}",
-        ended.number,
+        ended.terminal.number,
         ended.line,
         screen(&ended.screen)
     )

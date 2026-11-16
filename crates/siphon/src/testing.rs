@@ -311,7 +311,9 @@ impl Calling {
     ) -> Vec<Called> {
         let asking = Asking { workspace, catalog, calls };
         let mut changes = siphon_runtime::Changes::new();
-        changes.mkdir(crate::threads::thread::path("t1"));
+        changes
+            .mkdir(crate::threads::thread::path("t1"))
+            .mkdir(crate::threads::inbox::path("t1"));
         changes.start::<Caller>(Bytes::new(), key, &asking).expect("an input");
         self.runtime.commit(changes).await.expect("started");
         let path = beak::layout::process(b"", key.as_bytes());
