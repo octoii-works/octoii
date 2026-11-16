@@ -64,6 +64,7 @@ unsafe extern "C" {
     pub(crate) fn engine_returned(engine: *mut Engine, each: TextFn, to: *mut c_void);
     pub(crate) fn engine_thrown(engine: *mut Engine, each: ThrownFn, to: *mut c_void);
     pub(crate) fn engine_output(engine: *mut Engine, each: TextFn, to: *mut c_void);
+    pub(crate) fn engine_images(engine: *mut Engine, each: TextFn, to: *mut c_void);
     pub(crate) fn engine_steps(engine: *const Engine) -> u64;
     pub(crate) fn engine_free(engine: *mut Engine);
 }

@@ -424,7 +424,8 @@ fn append_results(run: &mut Run<'_>, writer: &mut Writer, thread: &str, calls: &
         let State::Ended {
             status,
             output,
-            structured,
+            structured_content,
+            metadata,
             instructions,
         } = &call.state
         else {
@@ -452,7 +453,8 @@ fn append_results(run: &mut Run<'_>, writer: &mut Writer, thread: &str, calls: &
                 output,
                 is_error: *status != CallStatus::Ok,
             },
-            structured: structured.clone(),
+            structured_content: structured_content.clone(),
+            metadata: metadata.clone(),
         };
         writer.append(&mut run.changes, &entry)?;
         at += 1;
@@ -494,7 +496,8 @@ fn append_unrun(run: &mut Run<'_>, writer: &mut Writer, call: &CallKey, why: &st
             output: vec![InputContent::text(why)],
             is_error: true,
         },
-        structured: None,
+        structured_content: None,
+        metadata: None,
     };
     writer.append(&mut run.changes, &entry)?;
     Ok(())

@@ -75,7 +75,10 @@ pub enum Entry {
         status: CallStatus,
         output: FunctionCallOutput,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        structured: Option<serde_json::Value>,
+        #[serde(rename = "structuredContent")]
+        structured_content: Option<serde_json::Value>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        metadata: Option<serde_json::Value>,
     },
     /// A turn's end: the turn, by its id — none for inputs that failed before a turn ran — how it ended, and why,
     /// unless it replied: the failure of its model that ended it, as the provider told it — a request that failed, or

@@ -57,6 +57,8 @@ typedef struct Engine {
   JSRuntime *runtime;
   JSContext *context;
   JSValue body;
+  JSValue images;
+  uint32_t image_count;
   char *namespace_name;
   char **functions;
   size_t function_count;
@@ -266,6 +268,18 @@ fail:
   return JS_HasException(context) ? JS_EXCEPTION : JS_ThrowOutOfMemory(context);
 }
 
+/* Explicit image outputs, serialized at emission so later mutations cannot change them. */
+static JSValue image_output(JSContext *context, JSValueConst this_value, int argc, JSValueConst *argv) {
+  (void)this_value;
+  if (argc != 1 || !JS_IsObject(argv[0])) return JS_ThrowTypeError(context, "image expects an image content block");
+  Engine *engine = JS_GetContextOpaque(context);
+  JSValue json = JS_JSONStringify(context, argv[0], JS_UNDEFINED, JS_UNDEFINED);
+  if (JS_IsException(json)) return json;
+  if (JS_SetPropertyUint32(context, engine->images, engine->image_count, json) < 0) return JS_EXCEPTION;
+  engine->image_count++;
+  return JS_UNDEFINED;
+}
+
 /* The object at `path` — `a.b` — under `root`, made where it is missing. */
 static JSValue object_at(JSContext *context, JSValueConst root, const char *path, size_t len) {
   JSValue at = JS_DupValue(context, root);
@@ -299,6 +313,9 @@ static void install(Engine *engine, JSContext *context) {
     JS_FreeValue(context, holder);
   }
   JS_SetPropertyStr(context, global, engine->namespace_name, named);
+  engine->images = JS_NewArray(context);
+  JS_SetPropertyStr(context, global, "text", JS_NewCFunction(context, console_line, "text", 1));
+  JS_SetPropertyStr(context, global, "image", JS_NewCFunction(context, image_output, "image", 1));
   JSValue console = JS_NewObject(context);
   const char *levels[] = {"log", "info", "warn", "error", "debug"};
   for (size_t i = 0; i < sizeof levels / sizeof levels[0]; i++)
@@ -324,6 +341,7 @@ Engine *engine_new(EngineName namespace_name, const EngineName *functions, size_
   Engine *engine = calloc(1, sizeof(Engine));
   if (!engine) return NULL;
   engine->body = JS_UNDEFINED;
+  engine->images = JS_UNDEFINED;
   engine->steps_max = steps_max;
   engine->state = ENGINE_WAITING;
   seed_random(engine, seed);
@@ -589,6 +607,18 @@ void engine_output(Engine *engine, EngineTextFn *each, void *to) {
   engine->line_count = 0;
 }
 
+/* Hands the host explicitly selected image blocks as JSON. */
+void engine_images(Engine *engine, EngineTextFn *each, void *to) {
+  for (uint32_t i = 0; i < engine->image_count; i++) {
+    JSValue json = JS_GetPropertyUint32(engine->context, engine->images, i);
+    size_t len = 0;
+    const char *text = JS_ToCStringLen(engine->context, &len, json);
+    if (text) each(to, text, len);
+    JS_FreeCString(engine->context, text);
+    JS_FreeValue(engine->context, json);
+  }
+}
+
 uint64_t engine_steps(const Engine *engine) { return engine->steps; }
 
 /* Frees the engine and all it holds. */
@@ -605,6 +635,7 @@ void engine_free(Engine *engine) {
   }
   if (engine->context) {
     JS_FreeValue(engine->context, engine->body);
+    JS_FreeValue(engine->context, engine->images);
     JS_FreeContext(engine->context);
   }
   if (engine->runtime) {

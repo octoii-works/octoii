@@ -117,6 +117,10 @@ impl Tool for ReadTool {
     const DESCRIPTION: &'static str = "Read a file, or list a directory (directory names end in /). Text is returned as is, without line numbers, up to 2000 lines or 48 KB per call; lines over 2000 characters are truncated. A note after the text gives the lines returned and the offset to continue from. Images are shown to you; PDFs and other binary files are named, not shown.";
     type Args = ReadArgs;
 
+    fn output_schema() -> Option<serde_json::Value> {
+        Some(Structured::schema("read"))
+    }
+
     fn effect(&self, _: &ReadArgs, _: &Base) -> Effect {
         Effect::Reads
     }
@@ -154,9 +158,12 @@ impl Tool for ReadTool {
                     page.lines.first().map_or(0, |line| line.number),
                     page.lines.last().map_or(0, |line| line.number),
                 );
-                let total = page.whole.then_some(to);
+                let total = page.whole.then_some(page.seen);
                 Some(Structured::Read {
                     path: name.clone(),
+                    text: page.lines.iter().map(|line| line.text.as_str()).collect::<Vec<_>>().join("\n"),
+                    next: (!page.whole).then_some(to + 1),
+                    clipped: page.lines.iter().filter(|line| line.cut).map(|line| line.number).collect(),
                     from,
                     to,
                     total,
@@ -166,7 +173,7 @@ impl Tool for ReadTool {
         };
         let output = shown(context, &name, read).await?;
         let mut told = match lines {
-            Some(lines) => Told::structured(output, &lines),
+            Some(lines) => Told::structured_content(output, &lines),
             None => Told::from(output),
         };
         told.instructions = found;
@@ -265,6 +272,10 @@ impl Tool for WriteTool {
     const DESCRIPTION: &'static str = "Write a whole file, creating it and any missing directories. Returns how many lines were added and removed. To change part of a file, use edit.";
     type Args = WriteArgs;
 
+    fn output_schema() -> Option<serde_json::Value> {
+        Some(Structured::schema("changed"))
+    }
+
     fn effect(&self, args: &WriteArgs, base: &Base) -> Effect {
         edits(base, &args.path)
     }
@@ -283,7 +294,7 @@ impl Tool for WriteTool {
                 additions: change.diff.additions,
                 deletions: change.diff.deletions,
             };
-            let mut told = Told::structured(words, &changed);
+            let mut told = Told::structured_content(words, &changed);
             told.instructions = on_the_way(machine, &machine.path(&workspace.to_string_lossy()), folder_of(&path));
             Ok(told)
         })
@@ -313,6 +324,10 @@ impl Tool for EditTool {
     const NAME: &'static str = "edit";
     const DESCRIPTION: &'static str = "Replace text in a file. `old` must match exactly one place, or every place with `all`; include just enough lines to make it unique. Matching tries the exact text, then with typographic characters (curly quotes, dashes, special spaces) read as plain ones, then line by line ignoring trailing whitespace; an inexact match is noted. Returns the change as a unified diff. If `old` is not found, the closest lines in the file are shown, or a note says `new` is already there.";
     type Args = EditArgs;
+
+    fn output_schema() -> Option<serde_json::Value> {
+        Some(Structured::schema("changed"))
+    }
 
     fn effect(&self, args: &EditArgs, base: &Base) -> Effect {
         edits(base, &args.path)
@@ -345,7 +360,7 @@ impl Tool for EditTool {
                     if edited.replacements > 1 {
                         let _ = write!(out, "\n<system-reminder>{} places replaced</system-reminder>", edited.replacements);
                     }
-                    let mut told = Told::structured(text(out), &changed);
+                    let mut told = Told::structured_content(text(out), &changed);
                     told.instructions = on_the_way(machine, &machine.path(&workspace.to_string_lossy()), folder_of(&path));
                     Ok(told)
                 }

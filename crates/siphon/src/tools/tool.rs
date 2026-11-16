@@ -145,6 +145,12 @@ pub trait Tool: Send + Sync + 'static {
     const REACHES_THREADS: bool = false;
     type Args: JsonSchema + DeserializeOwned + Send;
 
+    /// The schema of structuredContent, where this tool provides programmatic results.
+    #[must_use]
+    fn output_schema() -> Option<serde_json::Value> {
+        None
+    }
+
     /// What a call with `args` does to the machine, its paths starting at `base`.
     fn effect(&self, args: &Self::Args, base: &Base) -> Effect;
 
@@ -308,6 +314,7 @@ pub struct Declared {
     pub name: String,
     pub description: String,
     pub parameters: serde_json::Value,
+    pub output_schema: Option<serde_json::Value>,
     pub reaches_threads: bool,
 }
 
@@ -371,6 +378,7 @@ impl Tools {
             description: tool.described(),
             parameters: parameters(schemars::schema_for!(T::Args).to_value()),
             reaches_threads: T::REACHES_THREADS,
+            output_schema: T::output_schema(),
         };
         Arc::make_mut(&mut self.entries).insert(
             T::NAME.to_owned(),

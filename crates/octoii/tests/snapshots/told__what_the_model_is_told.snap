@@ -796,7 +796,7 @@ Replace text in a file. `old` must match exactly one place, or every place with 
 }
 
 === tool execute
-Run JavaScript as the body of an async function, with your tools on `tools`: `await tools.read({ path: "a.txt" })` returns the tool's text result and rejects on failure. Use loops, Promise.all and code to work on the results. Returns the script's return value as JSON and anything written with console.log. Use it for work of many steps: reading or changing many files, many browser actions, batch extraction. `tools` has each of your tools by name, except execute and tools that ask the person or start threads, plus the tools listed in <catalog>.
+Run JavaScript as the body of an async function, with your tools on `tools`: `await tools.read({ path: "a.txt" })` returns { content, structuredContent?, metadata? } and rejects on failure. Use loops, Promise.all and code to work on the results. Only explicit text(value), console.log, image(contentBlock), and the return value reach the model. Images use input_image blocks from tool results; metadata is not sent automatically. Use it for work of many steps: reading or changing many files, many browser actions, batch extraction. `tools` has each of your tools by name, except execute and tools that ask the person or start threads, plus the tools listed in <catalog>.
 --- parameters
 {
   "properties": {

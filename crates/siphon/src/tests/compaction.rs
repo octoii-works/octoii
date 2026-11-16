@@ -51,7 +51,8 @@ fn result(id: &str, bytes: usize) -> Entry {
             output: vec![InputContent::text("y".repeat(bytes))],
             is_error: false,
         },
-        structured: None,
+        structured_content: None,
+        metadata: None,
     }
 }
 

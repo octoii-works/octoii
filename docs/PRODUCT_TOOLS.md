@@ -22,7 +22,7 @@ Octoii 是 run anywhere 的 Agent。产品工具让它操作用户能够看见�
 | 终端 | siphon-terminals，画面、输入、命令退出通知 | 保留；不复制为 task 工具 |
 | 会话与子任务 | thread、delegate | thread 补整理能力；delegate 继续只负责子任务 |
 | 会话文件 | threads/files.rs，内容寻址、现有授权读取 | 原样成果保存与交付展示 |
-| 工具结果 | Told.output / Told.structured | 给模型简短引用，给界面明确的文件信息 |
+| 工具结果 | Told.content / structuredContent / metadata | 给模型简短引用，给界面明确的文件信息 |
 | Git | siphon-git，为 Diff 提供仓库、补丁、版本读取 | 后续增加新任务工作区准备；不包装全部 git 命令 |
 
 ## 工具命名与接口原则
@@ -37,7 +37,7 @@ Octoii 是 run anywhere 的 Agent。产品工具让它操作用户能够看见�
 
 ## 结果契约前置试验
 
-现有工具输出与 execute 的设计试验见 [TOOL_RESULTS.md](TOOL_RESULTS.md)。先验证原生结果的可编程数据与资源输出，再实现文件交付。下方早期 presented_file 示例的重复元数据以该试验提出的 value + attachments 方向重新评估；两者均非已发布协议。
+现有工具输出与 execute 的设计试验见 [TOOL_RESULTS.md](TOOL_RESULTS.md)。先验证原生结果的可编程数据与资源输出，再实现文件交付。工具结果统一采用 content + structuredContent + metadata；下方 presented_file 示例仍是后续产品工具的草案。
 
 ## P01：文件成果交付
 

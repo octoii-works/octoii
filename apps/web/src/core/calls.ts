@@ -20,15 +20,16 @@ export type ToolCall = {
 	readonly tool: string;
 	readonly arguments: string;
 	readonly output: string | undefined;
-	readonly structured: Structured | undefined;
+	readonly structuredContent: Structured | undefined;
+	readonly metadata?: JsonValue | undefined;
 	readonly state: CallState;
 };
 
 /** What one of Siphon's own tools told typed of a call; none for an MCP server's, named `server.tool`, or where it told none. */
-export function structuredOf(tool: string, structured: JsonValue | null | undefined): Structured | undefined {
-	if (tool.includes(".") || structured === undefined || structured === null) return undefined;
+export function structuredOf(tool: string, structuredContent: JsonValue | null | undefined): Structured | undefined {
+	if (tool.includes(".") || structuredContent === undefined || structuredContent === null) return undefined;
 	// SAFETY: Siphon's own tools tell what a call did as `Structured`, as the protocol's types are made from theirs.
-	return structured as Structured;
+	return structuredContent as Structured;
 }
 
 /** What a tool told: its text, and Octoii's notes after it. */
@@ -57,7 +58,7 @@ export function commandToldOf(output: string): Told {
 
 /** How the command `call` ran ended, as its tool told; none while it runs, or where its tool tells nothing. */
 export function endOf(call: ToolCall): CommandEnd | undefined {
-	return call.structured?.type === "ran" ? call.structured.ended : undefined;
+	return call.structuredContent?.type === "ran" ? call.structuredContent.ended : undefined;
 }
 
 /** What an edit or a write added and took out, in lines. */
@@ -65,8 +66,8 @@ export type Change = { readonly added: number; readonly removed: number };
 
 /** What the edit or the write `call` changed, as its tool told; none for any other call, or one that did not go through. */
 export function changeOf(call: ToolCall): Change | undefined {
-	if (call.structured?.type !== "changed" || call.state !== "done") return undefined;
-	return { added: call.structured.additions, removed: call.structured.deletions };
+	if (call.structuredContent?.type !== "changed" || call.state !== "done") return undefined;
+	return { added: call.structuredContent.additions, removed: call.structuredContent.deletions };
 }
 
 /** The diff the edit `call` gave, from its first hunk on — its head, which names the file its line names, left out; none for any other call, or one that did not go through. */
@@ -85,8 +86,8 @@ export function hunksOf(call: ToolCall): string | undefined {
 
 /** The lines a read held, "lines 1–200"; none where it held a whole file. */
 export function spanOf(call: ToolCall): string | undefined {
-	if (call.structured?.type !== "read") return undefined;
-	const { from, to, total } = call.structured;
+	if (call.structuredContent?.type !== "read") return undefined;
+	const { from, to, total } = call.structuredContent;
 	if (total !== undefined && from <= 1) return undefined;
 	return `lines ${String(from)}–${String(to)}`;
 }
@@ -130,4 +131,12 @@ export function prettyArguments(text: string): string {
 	} catch {
 		return text;
 	}
+}
+
+const DisplayMetadata = Type.Object({ title: Type.String() });
+
+/** A tool's optional display title; business data remains in structuredContent. */
+export function titleOf(metadata: JsonValue | undefined): string | undefined {
+	if (!matches(DisplayMetadata, metadata)) return undefined;
+	return metadata.title.trim() === "" ? undefined : metadata.title;
 }

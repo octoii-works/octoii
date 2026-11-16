@@ -350,7 +350,8 @@ fn settle(run: &mut Run<'_>, id: &str, ended: TurnOutcome, why: Option<Why>, tur
                 output: vec![InputContent::text("cut off as its turn ended; it may or may not have acted")],
                 is_error: true,
             },
-            structured: None,
+            structured_content: None,
+            metadata: None,
         };
         writer.append(&mut run.changes, &entry)?;
     }

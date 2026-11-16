@@ -5,10 +5,10 @@
  */
 import { describe, expect, it } from "bun:test";
 import type { Structured } from "@octoii-works/octoii-client";
-import { changeOf, endOf, fieldsOf, foundOf, hunksOf, prettyArguments, spanOf, structuredOf, type ToolCall, toldOf } from "../src/core/calls.ts";
+import { changeOf, endOf, fieldsOf, foundOf, hunksOf, prettyArguments, spanOf, structuredOf, type ToolCall, toldOf, titleOf } from "../src/core/calls.ts";
 
-/** A call of `tool` that ran, its tool having told `output`, and `structured` typed. */
-const ran = (tool: string, output: string, structured?: Structured): ToolCall => ({ tool, arguments: "{}", output, structured, state: "done" });
+/** A call of `tool` that ran, its tool having told `output`, and `structuredContent` typed. */
+const ran = (tool: string, output: string, structuredContent?: Structured): ToolCall => ({ tool, arguments: "{}", output, structuredContent, state: "done" });
 
 describe("a call as its tool told it", () => {
 	it("tells a tool's text from Octoii's notes after it, the text left as it is and a note within it in its own words", () => {
@@ -25,15 +25,18 @@ describe("a call as its tool told it", () => {
 	});
 
 	it("takes what one of Siphon's own tools told typed, none of an MCP server's", () => {
-		const ended: Structured = { type: "ran", ended: { type: "exited", code: 0 } };
+		const ended: Structured = { type: "ran", output: "", ended: { type: "exited", code: 0 } };
 		expect(structuredOf("shell", ended)).toEqual(ended);
 		expect(structuredOf("github.create_issue", { type: "ran" })).toBeUndefined();
 		expect(structuredOf("shell", null)).toBeUndefined();
 	});
 
 	it("tells how a command ended as its tool told it; nothing while it runs", () => {
-		expect(endOf(ran("shell", "built\n[exit 0]", { type: "ran", ended: { type: "exited", code: 0 } }))).toEqual({ type: "exited", code: 0 });
-		expect(endOf(ran("shell", "[ended by signal 9]", { type: "ran", ended: { type: "signalled", signal: 9 } }))).toEqual({ type: "signalled", signal: 9 });
+		expect(endOf(ran("shell", "built\n[exit 0]", { type: "ran", output: "", ended: { type: "exited", code: 0 } }))).toEqual({ type: "exited", code: 0 });
+		expect(endOf(ran("shell", "[ended by signal 9]", { type: "ran", output: "", ended: { type: "signalled", signal: 9 } }))).toEqual({
+			type: "signalled",
+			signal: 9,
+		});
 		expect(endOf({ ...ran("shell", ""), output: undefined, state: "running" })).toBeUndefined();
 	});
 
@@ -47,9 +50,9 @@ describe("a call as its tool told it", () => {
 	});
 
 	it("reads the lines a read held, and what a glob and a grep found", () => {
-		expect(spanOf(ran("read", "…", { type: "read", path: "a.md", from: 1, to: 200 }))).toBe("lines 1–200");
-		expect(spanOf(ran("read", "…", { type: "read", path: "a.md", from: 201, to: 300, total: 300 }))).toBe("lines 201–300");
-		expect(spanOf(ran("read", "whole", { type: "read", path: "a.md", from: 1, to: 12, total: 12 }))).toBeUndefined();
+		expect(spanOf(ran("read", "…", { type: "read", text: "", next: null, clipped: [], path: "a.md", from: 1, to: 200 }))).toBe("lines 1–200");
+		expect(spanOf(ran("read", "…", { type: "read", text: "", next: null, clipped: [], path: "a.md", from: 201, to: 300, total: 300 }))).toBe("lines 201–300");
+		expect(spanOf(ran("read", "whole", { type: "read", text: "", next: null, clipped: [], path: "a.md", from: 1, to: 12, total: 12 }))).toBeUndefined();
 		expect(foundOf(ran("glob", "src/a.ts\nsrc/b.ts"))).toEqual([
 			{ path: "src/a.ts", line: undefined, text: undefined },
 			{ path: "src/b.ts", line: undefined, text: undefined },
@@ -68,4 +71,11 @@ describe("a call as its tool told it", () => {
 		expect(prettyArguments('{"path":"a.md","limit":2}')).toBe('{\n  "path": "a.md",\n  "limit": 2\n}');
 		expect(prettyArguments("{not json")).toBe("{not json");
 	});
+});
+
+it("reads display titles only from metadata", () => {
+	expect(titleOf({ title: "Test results" })).toBe("Test results");
+	expect(titleOf({ title: "  " })).toBeUndefined();
+	expect(titleOf({ title: 3 })).toBeUndefined();
+	expect(titleOf(null)).toBeUndefined();
 });

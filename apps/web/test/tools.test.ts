@@ -9,17 +9,17 @@ import type { CallState } from "../src/core/calls.ts";
 import { callWords, detailOf, summaryOf, toolOf, verbOf } from "../src/core/tools.ts";
 import "../src/extensions/contributions.ts";
 
-/** A call of `tool` with `given`, standing as `state`, its tool having told `output`, and `structured` typed. */
-const called = (tool: string, given: object, state: CallState = "done", output?: string, structured?: Structured) => ({
+/** A call of `tool` with `given`, standing as `state`, its tool having told `output`, and `structuredContent` typed. */
+const called = (tool: string, given: object, state: CallState = "done", output?: string, structuredContent?: Structured) => ({
 	tool,
 	arguments: JSON.stringify(given),
 	output,
-	structured,
+	structuredContent,
 	state,
 });
 
 /** A command that ended with `code`, as the shell tool tells it. */
-const exited = (code: number): Structured => ({ type: "ran", ended: { type: "exited", code } });
+const exited = (code: number): Structured => ({ type: "ran", output: "", ended: { type: "exited", code } });
 
 describe("what the page knows of each tool", () => {
 	it("says a call by its verb as it stands and what it works on, a tool it knows nothing of by its name", () => {
@@ -43,6 +43,9 @@ describe("what the page knows of each tool", () => {
 	it("says beside a call what came of it, and at its end how a command went wrong though it ran", () => {
 		const read = called("read", { path: "a.md" }, "done", "…\n<system-reminder>lines 1-200; more from offset 201</system-reminder>", {
 			type: "read",
+			text: "",
+			next: null,
+			clipped: [],
 			path: "a.md",
 			from: 1,
 			to: 200,
@@ -57,7 +60,7 @@ describe("what the page knows of each tool", () => {
 		expect(toolOf("edit").aside(called("edit", {}, "done", "@@ -1 +1 @@\n-a\n+b", changed))).toEqual({ kind: "change", added: 1, removed: 1 });
 		expect(toolOf("shell").trouble(called("shell", {}, "done", "oops\n<system-reminder>exit 2</system-reminder>", exited(2)))).toBe("exit 2");
 		expect(toolOf("shell").trouble(called("shell", {}, "done", "fine\n<system-reminder>exit 0</system-reminder>", exited(0)))).toBeUndefined();
-		const timedOut: Structured = { type: "ran", ended: { type: "timed_out", seconds: 120 } };
+		const timedOut: Structured = { type: "ran", output: "", ended: { type: "timed_out", seconds: 120 } };
 		expect(toolOf("shell").trouble(called("shell", {}, "done", "<system-reminder>its 120 s ran out; it was ended</system-reminder>", timedOut))).toBe(
 			"timed out",
 		);

@@ -27,7 +27,7 @@ import {
 	type Turn,
 } from "@octoii-works/octoii-client";
 import { type Attachment, attachmentsOf } from "./attachments.ts";
-import { type CallState, structuredOf } from "./calls.ts";
+import { type CallState, structuredOf, titleOf } from "./calls.ts";
 import { duration, mintedAt } from "./time.ts";
 import type { Limited } from "./limits.ts";
 import { type Aside, givenOf, summaryOf, toolOf, verbOf, type WorkKind } from "./tools.ts";
@@ -64,7 +64,7 @@ export type CallLine = {
 	/** What its tool told: its result's output; none before it ended. */
 	readonly output: string | undefined;
 	/** What it did, as one of Siphon's own tools told it typed; none before it ended, or where its tool told nothing. */
-	readonly structured: Structured | undefined;
+	readonly structuredContent: Structured | undefined;
 	/** When it began and ended, in ms: as the reply that made it and its result were minted; none of either it has not had. */
 	readonly began: number | undefined;
 	readonly ended: number | undefined;
@@ -392,8 +392,8 @@ function lineOf(call: Call, turn: Turn, step: Step, ask: Ask | undefined): CallL
 	const given = givenOf(call.arguments);
 	const state = call.result === undefined ? liveState(turn, ask) : CALL_STATES[call.result.status];
 	const output = call.result === undefined ? undefined : partsText(call.result.output.output);
-	const structured = structuredOf(call.name, call.result?.structured);
-	const told = { tool: call.name, arguments: call.arguments, output, structured, state };
+	const structuredContent = structuredOf(call.name, call.result?.structuredContent);
+	const told = { tool: call.name, arguments: call.arguments, output, structuredContent, metadata: call.result?.metadata, state };
 	const calls: readonly CallLine[] = [];
 	return {
 		kind: "call",
@@ -404,13 +404,13 @@ function lineOf(call: Call, turn: Turn, step: Step, ask: Ask | undefined): CallL
 		tool: call.name,
 		work: tool.work,
 		verb: verbOf(told),
-		subject: tool.subject(given),
+		subject: titleOf(call.result?.metadata) ?? tool.subject(given),
 		code: tool.code,
 		aside: calls.length > 0 ? { kind: "words", text: summaryOf(calls) } : tool.aside(told),
 		trouble: tool.trouble(told),
 		arguments: call.arguments,
 		output,
-		structured,
+		structuredContent,
 		began: step.reply === undefined ? undefined : mintedAt(step.reply.id),
 		ended: call.result === undefined ? undefined : mintedAt(call.result.id),
 		state,

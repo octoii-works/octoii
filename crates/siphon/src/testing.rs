@@ -164,7 +164,8 @@ pub struct Called {
     pub status: crate::threads::CallStatus,
     pub text: String,
     pub images: usize,
-    pub structured: Option<Value>,
+    pub structured_content: Option<Value>,
+    pub metadata: Option<Value>,
 }
 
 /// Model calls run as a turn runs them, for an extension's tests of its tools: in full access, of the thread `t1`, each
@@ -230,7 +231,8 @@ fn called(call: crate::tools::Call) -> Called {
     let crate::tools::State::Ended {
         status,
         output,
-        structured,
+        structured_content,
+        metadata,
         ..
     } = call.state
     else {
@@ -238,7 +240,8 @@ fn called(call: crate::tools::Call) -> Called {
             status: crate::threads::CallStatus::Interrupted,
             text: String::new(),
             images: 0,
-            structured: None,
+            structured_content: None,
+            metadata: None,
         };
     };
     let mut texts = Vec::new();
@@ -254,7 +257,8 @@ fn called(call: crate::tools::Call) -> Called {
         status,
         text: texts.join("\n"),
         images,
-        structured,
+        structured_content,
+        metadata,
     }
 }
 

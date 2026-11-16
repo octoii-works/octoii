@@ -135,6 +135,14 @@ impl Script {
         lines
     }
 
+    /// Image blocks explicitly emitted by the script, as JSON snapshots.
+    pub fn images(&mut self) -> Vec<String> {
+        let mut images = Vec::new();
+        // SAFETY: the engine is live and the callback receives the vector for this call only.
+        unsafe { engine::engine_images(self.engine.as_ptr(), push_text, (&raw mut images).cast::<c_void>()) };
+        images
+    }
+
     /// The steps it spent.
     #[must_use]
     pub fn steps(&self) -> u64 {

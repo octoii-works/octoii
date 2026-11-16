@@ -44,7 +44,7 @@ fn calling(beak: &Beak, servers: &Servers) -> Calling {
 
 /// What a call came to, as these tests compare it: how it ended, its text, its images, and what it told typed.
 fn said(called: Called) -> (CallStatus, String, usize, Option<serde_json::Value>) {
-    (called.status, called.text, called.images, called.structured)
+    (called.status, called.text, called.images, called.structured_content)
 }
 
 fn call(id: &str, tool: &str, arguments: &serde_json::Value) -> (String, String, String) {
@@ -133,7 +133,7 @@ async fn the_person_s_servers_tools_are_listed_and_called_as_the_model_s_own() {
     assert_eq!(names, ["test.say", "test.fail", "test.where", "test.picture"]);
     let told = siphon::tools::declarations(&catalog.tools);
     assert!(told.starts_with("interface Tools {\n  test: {\n"), "{told}");
-    assert!(told.contains("    /**\n     * Says the words back.\n     */\n    say(args: {\n      /**\n       * What to say.\n       */\n      words: string;\n    }): Promise<string>;\n"), "{told}");
+    assert!(told.contains("    /**\n     * Says the words back.\n     */\n    say(args: {\n      /**\n       * What to say.\n       */\n      words: string;\n    }): Promise<"), "{told}");
     let catalog: Vec<String> = names.iter().map(|name| (*name).to_owned()).collect();
     let said: Vec<_> = calling
         .called(
@@ -149,7 +149,7 @@ async fn the_person_s_servers_tools_are_listed_and_called_as_the_model_s_own() {
                 call(
                     "f",
                     "execute",
-                    &json!({ "code": "return await tools.test.say({ words: 'from a script' });" }),
+                    &json!({ "code": "const r = await tools.test.say({ words: 'from a script' }); if (r.metadata.title !== 'Echo') throw Error('lost metadata'); return r.content[0].text;" }),
                 ),
             ],
         )

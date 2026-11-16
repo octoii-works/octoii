@@ -54,8 +54,7 @@ pub struct ScriptInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settled {
     pub id: u32,
-    pub ok: bool,
-    pub text: String,
+    pub result: Result<serde_json::Value, String>,
     pub time_ms: i64,
 }
 
@@ -79,13 +78,14 @@ pub struct ScriptOutput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     pub console: Vec<String>,
+    pub images: Vec<InputContent>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub instructions: Vec<Instructions>,
 }
 
 impl Tool for ExecuteTool {
     const NAME: &'static str = "execute";
-    const DESCRIPTION: &'static str = "Run JavaScript as the body of an async function, with your tools on `tools`: `await tools.read({ path: \"a.txt\" })` returns the tool's text result and rejects on failure. Use loops, Promise.all and code to work on the results. Returns the script's return value as JSON and anything written with console.log. Use it for work of many steps: reading or changing many files, many browser actions, batch extraction. `tools` has each of your tools by name, except execute and tools that ask the person or start threads, plus the tools listed in <catalog>.";
+    const DESCRIPTION: &'static str = "Run JavaScript as the body of an async function, with your tools on `tools`: `await tools.read({ path: \"a.txt\" })` returns { content, structuredContent?, metadata? } and rejects on failure. Use loops, Promise.all and code to work on the results. Only explicit text(value), console.log, image(contentBlock), and the return value reach the model. Images use input_image blocks from tool results; metadata is not sent automatically. Use it for work of many steps: reading or changing many files, many browser actions, batch extraction. `tools` has each of your tools by name, except execute and tools that ask the person or start threads, plus the tools listed in <catalog>.";
     type Args = ExecuteArgs;
 
     fn effect(&self, _: &ExecuteArgs, _: &Base) -> Effect {
@@ -129,16 +129,23 @@ impl Tool for ExecuteTool {
         let mut text = crate::reminder::escaped(&output.console.join("\n")).into_owned();
         match (output.value, output.error) {
             (_, Some(error)) => {
-                let _ = write!(text, "\n<system-reminder>the script threw: {error}</system-reminder>");
+                let _ = write!(
+                    text,
+                    "\n<system-reminder>the script threw: {}</system-reminder>",
+                    crate::reminder::escaped(&error)
+                );
             }
             (Some(value), None) => {
-                let _ = write!(text, "\n{value}");
+                let _ = write!(text, "\n{}", crate::reminder::escaped(&value));
             }
             (None, None) => {}
         }
         Told {
-            output: vec![InputContent::text(text.trim_start().to_owned())],
-            structured: None,
+            content: std::iter::once(InputContent::text(text.trim_start().to_owned()))
+                .chain(output.images)
+                .collect(),
+            structured_content: None,
+            metadata: None,
             instructions: output.instructions,
             plan: crate::tools::Plan::default(),
         }
@@ -170,6 +177,39 @@ fn text_of(output: &[InputContent]) -> String {
         .join("\n")
 }
 
+/// Finish with explicit outputs only. Resource references must have come from this script's calls.
+fn script_output(script: &mut Script, state: &ScriptState, value: Option<String>, mut error: Option<String>) -> ScriptOutput {
+    let mut images = Vec::new();
+    for json in script.images() {
+        let image = serde_json::from_str::<InputContent>(&json);
+        match image {
+            Ok(image @ InputContent::InputImage { .. })
+                if state.settled.iter().any(|settled| {
+                    settled
+                        .result
+                        .as_ref()
+                        .ok()
+                        .and_then(|result| result["content"].as_array())
+                        .is_some_and(|content| content.contains(&serde_json::json!(image)))
+                }) =>
+            {
+                images.push(image);
+            }
+            _ => {
+                error = Some("image() expects an input_image block returned by a tool in this script".into());
+                break;
+            }
+        }
+    }
+    ScriptOutput {
+        value,
+        error,
+        console: script.output(),
+        images,
+        instructions: state.instructions.clone(),
+    }
+}
+
 /// What a run of the script came to: its end, or the calls it made that are not yet settled.
 enum Replayed {
     Ended(ScriptOutput),
@@ -197,8 +237,8 @@ impl ScriptProgram {
                     for call in calls {
                         match state.settled.iter().find(|settled| settled.id == call.id) {
                             Some(settled) => {
-                                let json = serde_json::to_string(&settled.text).unwrap_or_default();
-                                let _ = script.settle(call.id, if settled.ok { Ok(&json) } else { Err(&settled.text) });
+                                let json = settled.result.as_ref().map(serde_json::Value::to_string);
+                                let _ = script.settle(call.id, json.as_deref().map_err(|error| error.as_str()));
                                 time = time.max(settled.time_ms);
                             }
                             None => unsettled.push(call),
@@ -210,28 +250,23 @@ impl ScriptProgram {
                     progress = script.resume(time);
                 }
                 Progress::Returned(value) => {
-                    return Replayed::Ended(ScriptOutput {
-                        value: Some(value),
-                        error: None,
-                        console: script.output(),
-                        instructions: state.instructions.clone(),
-                    });
+                    return Replayed::Ended(script_output(&mut script, state, Some(value), None));
                 }
                 Progress::Threw(thrown) => {
-                    return Replayed::Ended(ScriptOutput {
-                        value: None,
-                        error: Some(format!("{}: {}", thrown.name, thrown.message)),
-                        console: script.output(),
-                        instructions: state.instructions.clone(),
-                    });
+                    return Replayed::Ended(script_output(
+                        &mut script,
+                        state,
+                        None,
+                        Some(format!("{}: {}", thrown.name, thrown.message)),
+                    ));
                 }
                 Progress::OutOfSteps => {
-                    return Replayed::Ended(ScriptOutput {
-                        value: None,
-                        error: Some("it ran past the steps a script may take".into()),
-                        console: script.output(),
-                        instructions: state.instructions.clone(),
-                    });
+                    return Replayed::Ended(script_output(
+                        &mut script,
+                        state,
+                        None,
+                        Some("it ran past the steps a script may take".into()),
+                    ));
                 }
             }
         }
@@ -291,7 +326,8 @@ impl Program for ScriptProgram {
                 status,
                 output,
                 instructions,
-                ..
+                structured_content,
+                metadata,
             } = call.state
             else {
                 continue;
@@ -303,8 +339,15 @@ impl Program for ScriptProgram {
             }
             state.settled.push(Settled {
                 id: call.id.parse().unwrap_or_default(),
-                ok: status == CallStatus::Ok,
-                text: text_of(&output),
+                result: if status == CallStatus::Ok {
+                    Ok(serde_json::json!({
+                        "content": output,
+                        "structuredContent": structured_content,
+                        "metadata": metadata,
+                    }))
+                } else {
+                    Err(text_of(&output))
+                },
                 time_ms: run.time_ms(),
             });
         }

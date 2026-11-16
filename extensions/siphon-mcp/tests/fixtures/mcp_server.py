@@ -31,7 +31,7 @@ def send(message):
 
 def called(name, arguments):
     if name == "say":
-        return {"content": [{"type": "text", "text": arguments["words"]}], "structuredContent": {"words": arguments["words"]}}
+        return {"content": [{"type": "text", "text": arguments["words"]}], "structuredContent": {"words": arguments["words"]}, "_meta": {"title": "Echo"}}
     if name == "fail":
         return {"content": [{"type": "text", "text": "it failed"}], "isError": True}
     if name == "where":

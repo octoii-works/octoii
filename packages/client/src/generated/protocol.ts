@@ -207,7 +207,7 @@ export type Delivered = { delivery: string, };
 /**
  * An entry of a thread's log.
  */
-export type Entry = { "type": "config", id: string, actor: string, model?: Changed<string> | null, effort?: Changed<ReasoningEffort> | null, mode?: Changed<Mode> | null, workspace?: Changed<string> | null, title?: Changed<string> | null, budget_nanodollars?: Changed<number> | null, } | { "type": "input", id: string, actor: string, delivery: string, content: Array<InputContent>, reply_to?: ReplyTo | null, } | { "type": "system", id: string, sections: Array<Section>, tools?: Array<Tool>, } | { "type": "reply", id: string, request: string, response: Response, calls?: Array<CallKey>, cancelled?: boolean, } | { "type": "result", id: string, call: string, status: CallStatus, output: FunctionCallOutput, structured?: JsonValue | null, } | { "type": "turn-end", id: string, turn?: string | null, outcome: Outcome, reason?: string | null, failure?: Failure | null, } | { "type": "compaction", id: string, request: string, kept?: string | null, from: string, effort?: ReasoningEffort | null, response: Response, } | { "type": "discarded", id: string, request: string, response: Response, };
+export type Entry = { "type": "config", id: string, actor: string, model?: Changed<string> | null, effort?: Changed<ReasoningEffort> | null, mode?: Changed<Mode> | null, workspace?: Changed<string> | null, title?: Changed<string> | null, budget_nanodollars?: Changed<number> | null, } | { "type": "input", id: string, actor: string, delivery: string, content: Array<InputContent>, reply_to?: ReplyTo | null, } | { "type": "system", id: string, sections: Array<Section>, tools?: Array<Tool>, } | { "type": "reply", id: string, request: string, response: Response, calls?: Array<CallKey>, cancelled?: boolean, } | { "type": "result", id: string, call: string, status: CallStatus, output: FunctionCallOutput, structuredContent?: JsonValue | null, metadata?: JsonValue | null, } | { "type": "turn-end", id: string, turn?: string | null, outcome: Outcome, reason?: string | null, failure?: Failure | null, } | { "type": "compaction", id: string, request: string, kept?: string | null, from: string, effort?: ReasoningEffort | null, response: Response, } | { "type": "discarded", id: string, request: string, response: Response, };
 
 /**
  * The environment's settings.
@@ -890,7 +890,7 @@ export type Streamed = { "type": "began", index: number, item: Item, } | { "type
  * write or an edit changed, whether it made it, and the lines added and taken out; the lines of a file a read holds,
  * and how many it has where the read reached its end.
  */
-export type Structured = { "type": "ran", ended: CommandEnd, } | { "type": "changed", path: string, created: boolean, additions: number, deletions: number, } | { "type": "read", path: string, from: number, to: number, total?: number, };
+export type Structured = { "type": "ran", ended: CommandEnd, output: string, } | { "type": "changed", path: string, created: boolean, additions: number, deletions: number, } | { "type": "read", path: string, text: string, next: number | null, clipped: Array<number>, from: number, to: number, total?: number, };
 
 /**
  * A subscription made: its id, which its events carry.

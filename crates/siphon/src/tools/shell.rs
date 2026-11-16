@@ -42,6 +42,10 @@ impl Tool for ShellTool {
     const DESCRIPTION: &'static str = "Run a bash command in the workspace (no need to cd there). Its input is closed. Returns stdout and stderr together, then a note of how it ended: exit N, a signal, or a timeout. The time limit is 120 seconds; set `timeout_seconds` for up to 600. For reading, searching and editing files, use read, grep, glob and edit instead. In default mode commands run in a sandbox that can write only the workspace and the folders <environment> lists; to write anywhere else (such as a global install), run the command again with `escalate` and a `justification`, and the person decides.";
     type Args = ShellArgs;
 
+    fn output_schema() -> Option<serde_json::Value> {
+        Some(Structured::schema("ran"))
+    }
+
     fn effect(&self, args: &ShellArgs, _: &Base) -> Effect {
         Effect::Runs {
             line: args.command.clone(),
@@ -67,7 +71,7 @@ impl Tool for ShellTool {
                     beak::Exit::Code(code) => CommandEnd::Exited { code },
                     beak::Exit::Signal(signal) => CommandEnd::Signalled { signal },
                 };
-                (crate::reminder::escaped(&String::from_utf8_lossy(&ran.output)).into_owned(), end)
+                (String::from_utf8_lossy(&ran.output).into_owned(), end)
             }
             Err(RunError::TimedOut(_)) => (String::new(), CommandEnd::TimedOut { seconds }),
             Err(RunError::Stopped) => (String::new(), CommandEnd::Stopped),
@@ -83,7 +87,10 @@ impl Tool for ShellTool {
             CommandEnd::TooLarge { bytes } => format!("<system-reminder>it wrote past {bytes} bytes; it was ended</system-reminder>"),
         };
         let separator = if output.is_empty() || output.ends_with('\n') { "" } else { "\n" };
-        let words = vec![InputContent::text(format!("{output}{separator}{ended}"))];
-        Ok(Told::structured(words, &Structured::Ran { ended: end }))
+        let words = vec![InputContent::text(format!(
+            "{}{separator}{ended}",
+            crate::reminder::escaped(&output)
+        ))];
+        Ok(Told::structured_content(words, &Structured::Ran { ended: end, output }))
     }
 }

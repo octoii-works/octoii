@@ -155,6 +155,7 @@ impl Servers {
                     description: tool.description.map_or_default(String::from),
                     parameters: serde_json::Value::Object((*tool.input_schema).clone()),
                     reaches_threads: false,
+                    output_schema: tool.output_schema.map(|schema| serde_json::Value::Object((*schema).clone())),
                 })),
                 Err(why) => catalog.problems.push(format!("the MCP server {}: {why}", server.name)),
             }
@@ -452,9 +453,9 @@ async fn given(context: &Context, result: CallToolResult) -> Result<Told, Refusa
     }
     // Its structured content, a client's to read, is the model's too where the server gave it no content.
     if texts.is_empty()
-        && let Some(structured) = &result.structured_content
+        && let Some(structured_content) = &result.structured_content
     {
-        texts.push(structured.to_string());
+        texts.push(structured_content.to_string());
     }
     let text = texts.join("\n");
     if result.is_error == Some(true) {
@@ -468,8 +469,9 @@ async fn given(context: &Context, result: CallToolResult) -> Result<Told, Refusa
         out.extend(context.show_image(&bytes, None).await?);
     }
     Ok(Told {
-        output: out,
-        structured: result.structured_content,
+        content: out,
+        structured_content: result.structured_content,
+        metadata: result.meta.map(|meta| serde_json::Value::Object(meta.0)),
         instructions: Vec::new(),
         ..Told::default()
     })

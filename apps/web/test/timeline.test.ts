@@ -43,7 +43,7 @@ const callOf = (id: string, tool: string, step: string): CallLine => ({
 	trouble: undefined,
 	arguments: "{}",
 	output: undefined,
-	structured: undefined,
+	structuredContent: undefined,
 	began: undefined,
 	ended: undefined,
 	state: "done",
@@ -72,13 +72,13 @@ const reply = (at: string, request: string, output: Item[]): Entry => ({
 	response: { id: "r", model: "m", status: "completed", output },
 	calls: keysOf(output),
 });
-const result = (at: string, callId: string, status: "ok" | "tool-error" | "rejected", output = "…", structured?: Structured): Entry => ({
+const result = (at: string, callId: string, status: "ok" | "tool-error" | "rejected", output = "…", structuredContent?: Structured): Entry => ({
 	id: at,
 	type: "result",
 	call: `k${callId}`,
 	status,
 	output: { call_id: callId, output: text(output) },
-	...(structured === undefined ? {} : { structured }),
+	...(structuredContent === undefined ? {} : { structuredContent }),
 });
 const end = (at: string, outcome: "replied" | "failed" | "stopped", reason?: string): Entry => ({
 	id: at,

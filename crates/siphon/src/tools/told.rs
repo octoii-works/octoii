@@ -13,9 +13,14 @@ use ts_rs::TS;
 /// which its caller gives the model where the model was not given them yet.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Told {
-    pub output: Vec<InputContent>,
+    /// Model-facing text and resource references.
+    pub content: Vec<InputContent>,
+    /// Business data for programmatic callers, independent of model formatting.
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "structuredContent")]
+    pub structured_content: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub structured: Option<serde_json::Value>,
+    /// Presentation information, never automatically added to model context.
+    pub metadata: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub instructions: Vec<Instructions>,
     /// What the call does to threads, which its caller does as it takes the call's end.
@@ -48,12 +53,13 @@ impl Instructions {
 }
 
 impl Told {
-    /// What a call did, the model reading `output`, a client `structured`.
+    /// What a call did, the model reading `content`, a client `structured_content`.
     #[must_use]
-    pub fn structured(output: Vec<InputContent>, structured: &Structured) -> Self {
+    pub fn structured_content(content: Vec<InputContent>, structured_content: &Structured) -> Self {
         Self {
-            output,
-            structured: serde_json::to_value(structured).ok(),
+            content,
+            structured_content: Some(serde_json::json!(structured_content)),
+            metadata: None,
             instructions: Vec::new(),
             plan: Plan::default(),
         }
@@ -61,10 +67,11 @@ impl Told {
 }
 
 impl From<Vec<InputContent>> for Told {
-    fn from(output: Vec<InputContent>) -> Self {
+    fn from(content: Vec<InputContent>) -> Self {
         Self {
-            output,
-            structured: None,
+            content,
+            structured_content: None,
+            metadata: None,
             instructions: Vec::new(),
             plan: Plan::default(),
         }
@@ -74,11 +81,12 @@ impl From<Vec<InputContent>> for Told {
 /// What a call of one of Siphon's own tools did, as a client reads it: a command that ran, and how it ended; a file a
 /// write or an edit changed, whether it made it, and the lines added and taken out; the lines of a file a read holds,
 /// and how many it has where the read reached its end.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Structured {
     Ran {
         ended: CommandEnd,
+        output: String,
     },
     Changed {
         path: String,
@@ -88,6 +96,9 @@ pub enum Structured {
     },
     Read {
         path: String,
+        text: String,
+        next: Option<usize>,
+        clipped: Vec<usize>,
         from: usize,
         to: usize,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -96,9 +107,27 @@ pub enum Structured {
     },
 }
 
+impl Structured {
+    /// One tool's result variant, retaining the definitions referenced by its schema.
+    pub fn schema(kind: &str) -> serde_json::Value {
+        let schema = schemars::schema_for!(Self).to_value();
+        let mut variant = schema["oneOf"]
+            .as_array()
+            .expect("tagged result variants")
+            .iter()
+            .find(|variant| variant["properties"]["type"]["const"] == kind)
+            .expect("known result variant")
+            .clone();
+        if let Some(definitions) = schema.get("$defs") {
+            variant["$defs"] = definitions.clone();
+        }
+        variant
+    }
+}
+
 /// How a command ended: it exited with a code, a signal ended it, its time ran out, it was stopped, or it wrote past
 /// what a call takes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum CommandEnd {
     Exited { code: i32 },

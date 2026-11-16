@@ -34,7 +34,10 @@ pub enum State {
         output: Vec<InputContent>,
         /// What it did, typed by its tool, where the tool told it.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        structured: Option<serde_json::Value>,
+        #[serde(rename = "structuredContent")]
+        structured_content: Option<serde_json::Value>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        metadata: Option<serde_json::Value>,
         /// The instructions its tool came upon on its way, for the model where it was not given them yet.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         instructions: Vec<crate::tools::told::Instructions>,
@@ -99,8 +102,9 @@ fn awaited_end(run: &mut Run<'_>, setting: &Setting<'_>, call: &Call, awaited: &
         } else {
             CallStatus::ToolError
         },
-        output: told.output,
-        structured: told.structured,
+        output: told.content,
+        structured_content: told.structured_content,
+        metadata: told.metadata,
         instructions: told.instructions,
     }))
 }
@@ -115,12 +119,7 @@ fn planned(run: &mut Run<'_>, setting: &Setting<'_>, call: &str, told: crate::to
     }
     Ok(match told.plan.awaits {
         Some(awaited) => State::Awaiting(awaited),
-        None => State::Ended {
-            status: CallStatus::Ok,
-            output: told.output,
-            structured: told.structured,
-            instructions: told.instructions,
-        },
+        None => result(CallStatus::Ok, told),
     })
 }
 
@@ -128,11 +127,22 @@ fn planned(run: &mut Run<'_>, setting: &Setting<'_>, call: &str, told: crate::to
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Calls(pub Vec<Call>);
 
+fn result(status: CallStatus, told: crate::tools::Told) -> State {
+    State::Ended {
+        status,
+        output: told.content,
+        structured_content: told.structured_content,
+        metadata: told.metadata,
+        instructions: told.instructions,
+    }
+}
+
 fn ended(status: CallStatus, words: impl Into<String>) -> State {
     State::Ended {
         status,
         output: vec![InputContent::text(words)],
-        structured: None,
+        structured_content: None,
+        metadata: None,
         instructions: Vec::new(),
     }
 }
@@ -320,7 +330,8 @@ impl Calls {
                     Answer::Given(given) => State::Ended {
                         status: CallStatus::Ok,
                         output: setting.tools.answered(&call.tool, &serde_json::from_str(&call.arguments)?, given),
-                        structured: None,
+                        structured_content: None,
+                        metadata: None,
                         instructions: Vec::new(),
                     },
                     Answer::Failed(words) => ended(CallStatus::ToolError, words),
@@ -349,16 +360,12 @@ impl Calls {
                 };
                 run.changes.reap(process);
                 let told = setting.tools.finished(&call.tool, &outcome);
-                State::Ended {
-                    status: if matches!(outcome, beak::Outcome::Completed(_)) {
-                        CallStatus::Ok
-                    } else {
-                        CallStatus::ToolError
-                    },
-                    output: told.output,
-                    structured: told.structured,
-                    instructions: told.instructions,
-                }
+                let status = if matches!(outcome, beak::Outcome::Completed(_)) {
+                    CallStatus::Ok
+                } else {
+                    CallStatus::ToolError
+                };
+                result(status, told)
             }
             State::Waiting | State::Ended { .. } => return Ok(()),
         };

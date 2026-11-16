@@ -2,7 +2,7 @@
 //! in it: the members of an interface `Tools` — which TypeScript merges with every other declaration of it, so the
 //! tools told apart, the built-in ones and the servers' ones, are one interface — each a function taking its arguments
 //! as one object — the JSON Schema of its parameters written as the TypeScript type of that object, each description a
-//! doc comment beside what it describes — and resolving to what the tool gives, as text. A name with dots is nested
+//! doc comment beside what it describes — and resolving to its content, structured data and presentation metadata. A name with dots is nested
 //! as a script reaches it: `github.create_issue` is `create_issue` of `github`.
 
 use std::collections::BTreeMap;
@@ -63,7 +63,15 @@ impl<'a> Group<'a> {
                         let _ = writeln!(out, "{}", doc(&tool.description, &pad));
                     }
                     let parameters = type_of(&tool.parameters, &tool.parameters, indent, 0);
-                    let _ = writeln!(out, "{pad}{}(args: {parameters}): Promise<string>;", quoted_key(name));
+                    let result = tool
+                        .output_schema
+                        .as_ref()
+                        .map_or_else(|| "unknown".into(), |schema| type_of(schema, schema, indent, 0));
+                    let _ = writeln!(
+                        out,
+                        "{pad}{}(args: {parameters}): Promise<{{ content: Array<{{ type: string; text?: string; file?: unknown; detail?: string }}>; structuredContent?: {result} | null; metadata?: unknown }}>;",
+                        quoted_key(name)
+                    );
                 }
                 Member::Group(group) => {
                     let _ = writeln!(out, "{pad}{}: {{", quoted_key(name));
