@@ -12,7 +12,7 @@
 		},
 		"apps/desktop": {
 			"entry": ["src/main.ts", "test/**/*.ts"],
-			"project": ["src/**/*.ts", "test/**/*.ts"]
+			"project": ["src/**/*.ts", "scripts/**/*.ts", "test/**/*.ts"]
 		},
 		"apps/web": {
 			// The pages' entries, as their HTML loads them.

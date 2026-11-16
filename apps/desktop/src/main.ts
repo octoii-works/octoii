@@ -1,11 +1,14 @@
 /** A desktop window onto the node's existing interface. The node lives independently of the window. */
-import { app, BrowserWindow, dialog, Menu, shell } from "electron";
+import { app, BrowserWindow, dialog, Menu, shell, protocol, session } from "electron";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { LocalNode, localAddress } from "./local-node.ts";
 import { pairLocalNode } from "./pairing.ts";
+import { desktopResponse } from "./assets.ts";
+import { STARTUP_URL, connectingPage, failedPage } from "./startup.ts";
 
 app.setName("Octoii");
+protocol.registerSchemesAsPrivileged([{ scheme: "octoii-desktop", privileges: { standard: true, secure: true } }]);
 
 /** External pages use the system browser, which has no access to the desktop window. */
 function openExternal(address: string): void {
@@ -19,6 +22,18 @@ async function start(): Promise<void> {
 	const initial = explicit === undefined ? undefined : localAddress(explicit);
 	const node = new LocalNode(process.env["OCTOII_BIN"] ?? join(homedir(), ".local/bin/octoii"), process.env["OCTOII_HOME"] ?? join(homedir(), ".octoii"));
 	await app.whenReady();
+	let origin: string | undefined;
+	let startup = connectingPage();
+	const desktopSession = session.defaultSession;
+	desktopSession.protocol.handle("octoii-desktop", (request) => {
+		if (request.url !== STARTUP_URL) return new Response(null, { status: 404 });
+		return new Response(startup, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
+	});
+	desktopSession.protocol.handle("http", (request) =>
+		desktopResponse(request, join(app.getAppPath(), "dist/web"), origin, (forwarded) =>
+			desktopSession.fetch(forwarded, { bypassCustomProtocolHandlers: true }),
+		),
+	);
 	Menu.setApplicationMenu(
 		Menu.buildFromTemplate([
 			...(process.platform === "darwin" ? [{ role: "appMenu" as const }] : []),
@@ -30,7 +45,7 @@ async function start(): Promise<void> {
 	);
 
 	function createWindow(): void {
-		let origin: string | undefined;
+		let connecting = false;
 		const window = new BrowserWindow({
 			title: "Octoii",
 			width: 1280,
@@ -47,6 +62,12 @@ async function start(): Promise<void> {
 			return { action: "deny" };
 		});
 		window.webContents.on("will-navigate", (event, url) => {
+			if (window.webContents.getURL() === STARTUP_URL && (url === `${STARTUP_URL}retry` || url === `${STARTUP_URL}close`)) {
+				event.preventDefault();
+				if (url === `${STARTUP_URL}close`) window.close();
+				else connect();
+				return;
+			}
 			if (new URL(url).origin === origin) return;
 			event.preventDefault();
 			openExternal(url);
@@ -56,31 +77,31 @@ async function start(): Promise<void> {
 		});
 
 		async function load(): Promise<void> {
+			if (connecting || window.isDestroyed()) return;
+			connecting = true;
 			try {
-				window.setTitle("Octoii — Connecting…");
+				startup = connectingPage();
+				await window.loadURL(STARTUP_URL);
 				const address = initial ?? (await node.connect());
 				if (window.isDestroyed()) return;
 				origin = address.origin;
-				if (initial === undefined) await pairLocalNode(node, address, window.webContents.session);
+				if (initial === undefined) await pairLocalNode(node, address, desktopSession);
 				if (window.isDestroyed()) return;
 				await window.loadURL(address.href);
-				window.setTitle("Octoii");
 			} catch (error) {
 				if (window.isDestroyed()) return;
-				const { response } = await dialog.showMessageBox(window, {
-					type: "error",
-					message: "Cannot connect to Octoii",
-					detail: initial === undefined && error instanceof Error ? error.message : "Could not load the selected node. Check that it is running, then retry.",
-					buttons: ["Retry", "Close"],
-					defaultId: 0,
-					cancelId: 1,
-				});
-				if (window.isDestroyed()) return;
-				if (response === 0) await load();
-				else window.close();
+				startup = failedPage(
+					initial === undefined && error instanceof Error ? error.message : "Could not load the selected node. Check that it is running, then retry.",
+				);
+				await window.loadURL(STARTUP_URL);
+			} finally {
+				connecting = false;
 			}
 		}
-		void load().catch(() => dialog.showErrorBox("Octoii", "Could not load the desktop window."));
+		function connect(): void {
+			void load().catch(() => dialog.showErrorBox("Octoii", "Could not load the desktop window."));
+		}
+		connect();
 	}
 
 	app.on("second-instance", () => {
