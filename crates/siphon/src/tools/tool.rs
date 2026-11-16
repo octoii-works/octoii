@@ -213,9 +213,13 @@ pub trait Tool: Send + Sync + 'static {
         None
     }
 
-    /// For a tool the person answers: their `answer` to a call with `args`, as the model reads it.
-    fn answered(&self, _: &Self::Args, answer: serde_json::Value) -> Vec<InputContent> {
-        vec![InputContent::text(answer.to_string())]
+    /// For a tool the person answers: their `answer` to a call with `args`, as model content and programmatic data.
+    fn answered(&self, _: &Self::Args, answer: serde_json::Value) -> Told {
+        Told {
+            content: vec![InputContent::text(answer.to_string())],
+            structured_content: Some(answer),
+            ..Told::default()
+        }
     }
 
     /// What the model is told it does: its description, unless it says more as it stands — as a tool that tells the
@@ -293,7 +297,7 @@ trait Erased: Send + Sync {
     fn effect(&self, arguments: &serde_json::Value, base: &Base) -> Result<Effect, Refusal>;
     fn exec(self: Arc<Self>, context: Context, arguments: serde_json::Value) -> Execing;
     fn asks(&self, arguments: &serde_json::Value) -> Option<serde_json::Value>;
-    fn answered(&self, arguments: &serde_json::Value, answer: serde_json::Value) -> Vec<InputContent>;
+    fn answered(&self, arguments: &serde_json::Value, answer: serde_json::Value) -> Told;
     fn start(
         &self,
         changes: &mut Changes,
@@ -317,10 +321,14 @@ impl<T: Tool> Erased for T {
         Tool::asks(self, &args)
     }
 
-    fn answered(&self, arguments: &serde_json::Value, answer: serde_json::Value) -> Vec<InputContent> {
+    fn answered(&self, arguments: &serde_json::Value, answer: serde_json::Value) -> Told {
         match serde_json::from_value::<T::Args>(arguments.clone()) {
             Ok(args) => Tool::answered(self, &args, answer),
-            Err(_) => vec![InputContent::text(answer.to_string())],
+            Err(_) => Told {
+                content: vec![InputContent::text(answer.to_string())],
+                structured_content: Some(answer),
+                ..Told::default()
+            },
         }
     }
 
@@ -511,10 +519,14 @@ impl Tools {
 
     /// The person's `answer` to a call of `name` with `arguments`, as the model reads it.
     #[must_use]
-    pub fn answered(&self, name: &str, arguments: &serde_json::Value, answer: serde_json::Value) -> Vec<InputContent> {
+    pub fn answered(&self, name: &str, arguments: &serde_json::Value, answer: serde_json::Value) -> Told {
         match self.entries.get(name) {
             Some(entry) => entry.tool.answered(arguments, answer),
-            None => vec![InputContent::text(answer.to_string())],
+            None => Told {
+                content: vec![InputContent::text(answer.to_string())],
+                structured_content: Some(answer),
+                ..Told::default()
+            },
         }
     }
 

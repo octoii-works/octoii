@@ -53,6 +53,12 @@ execute 的 structuredContent 为 `{ calls: [...] }`。每条记录来自实际�
 
 客户端完成后展示真实调用摘要和最终输出，展开复用每个工具的详情。被拒绝、失败或停止的调用不能汇总为已完成的文件修改。执行中实时子调用，以及未形成最终结果的强制停止，不在本轮展示保证内。
 
+## 统一规则
+
+普通 exec、持久程序 finished、委派 awaited 和人工回答 answered 都返回 Told，完成记录保存同一组 content / structuredContent / metadata。不存在人工回答仅返回文本的另一套接口。
+
+统一契约不要求每次调用填满三个字段：有业务数据时提供 structuredContent；文件引用和图片已经是 content 中的类型化块，不复制到 structuredContent；没有额外展示信息时省略 metadata；MCP 服务器未提供的数据不从文本推断。模型文本、程序数据和界面展示信息分别消费各自字段。
+
 ## 已落地的业务数据
 
 - shell：structuredContent 包含 type=ran、原始合并输出 output 和 ended。模型 content 中的提醒和转义不会污染原始 output。
@@ -66,7 +72,9 @@ execute 的 structuredContent 为 `{ calls: [...] }`。每条记录来自实际�
 - terminal：返回终端引用、观测到的运行/结束/关闭状态及实际屏幕内容；屏幕不是完整日志。关闭操作返回 close_requested，未提前宣称已关闭；屏幕读取失败明确为 screen_unavailable，保留原有文本行为。结束结果保留退出码或信号。
 - thread：返回实际会话列表、搜索命中、可见历史条目与分页游标，或创建/投递/停止请求的目标；不从展示文字解析数据。
 - delegate：区分 started/continued/completed，完成结果明确 replied/failed/stopped/withdrawn/deleted；回答与错误原因保留原始文字，模型展示继续使用原有转义。
-- 每个扩展声明自己的输出 schema；前端内核文件/命令展示只读取对应工具，不能把同名 type 的扩展结果强制当成内核 Structured。其他工具按实际能力逐步增加业务数据，不制造空的结构化“成功”结果。
+- 有结构化业务结果的扩展声明自己的输出 schema；前端内核文件/命令展示只读取对应工具，不能把同名 type 的扩展结果强制当成内核 Structured。其他工具按实际能力逐步增加业务数据，不制造空的结构化“成功”结果。
+
+`question` 使用与普通执行工具相同的 Told 结果：content 保留可读回答，structuredContent 原样保存 answers / dismissed（含空缺、null、选项数组与自由文本），并声明输出 schema。回答准入仍使用依问题生成的动态 schema；不从显示文字还原用户选择。所有人工回答工具的完成路径统一保留 structuredContent / metadata，不再在内核中强制清空。
 
 present_file 通过 content.resource_link 交付原始文件，metadata.title 提供调用标题；execute 抛错仍保留已成功调用的交付链接。详见 [PRODUCT_TOOLS.md](PRODUCT_TOOLS.md)。完整 MCP 资源内容支持、统一嵌套调用 UI 也单独推进，不借字段改造重写执行内核。
 

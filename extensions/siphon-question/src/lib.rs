@@ -3,7 +3,7 @@
 
 mod question;
 
-pub use question::{Asked, Choice, QuestionArgs, QuestionTool};
+pub use question::{Asked, Choice, QuestionAnswer, QuestionArgs, QuestionResult, QuestionTool};
 use siphon::{Extension, Registrar};
 
 /// Questions, as a host adds them.

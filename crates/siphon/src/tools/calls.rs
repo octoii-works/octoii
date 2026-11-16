@@ -343,13 +343,10 @@ impl Calls {
                 };
                 run.take_mail(&call.key);
                 match answer {
-                    Answer::Given(given) => State::Ended {
-                        status: CallStatus::Ok,
-                        output: setting.tools.answered(&call.tool, &serde_json::from_str(&call.arguments)?, given),
-                        structured_content: None,
-                        metadata: None,
-                        instructions: Vec::new(),
-                    },
+                    Answer::Given(given) => result(
+                        CallStatus::Ok,
+                        setting.tools.answered(&call.tool, &serde_json::from_str(&call.arguments)?, given),
+                    ),
                     Answer::Failed(words) => ended(CallStatus::ToolError, words),
                     Answer::Interrupted => ended(CallStatus::Interrupted, "the call was cut off before the person answered"),
                 }

@@ -43,11 +43,27 @@ fn an_answer_fits_the_choices_each_question_offers() {
 fn the_model_is_told_each_question_and_what_was_answered() {
     let answer = json!({ "answers": [{ "chosen": ["SQLite"] }, null, { "chosen": ["auth", "search"], "text": "both" }] });
     assert_eq!(
-        text(&QuestionTool.answered(&questions(), answer)),
+        text(&QuestionTool.answered(&questions(), answer).content),
         "Which database?\n→ SQLite\nAnything else?\n→ (unanswered)\nWhich features?\n→ auth, search; both"
     );
     assert_eq!(
-        text(&QuestionTool.answered(&questions(), json!({ "dismissed": true }))),
+        text(&QuestionTool.answered(&questions(), json!({ "dismissed": true })).content),
         "the person dismissed the questions, answering none"
     );
+}
+
+#[test]
+fn structured_answers_preserve_choices_skips_dismissal_and_original_text() {
+    let schema = QuestionTool::output_schema().expect("an output schema");
+    let validator = jsonschema::validator_for(&schema).expect("a valid schema");
+    for answer in [
+        json!({ "answers": [{ "chosen": ["SQLite"] }, null, { "chosen": ["auth", "search"], "text": "  both\nplease  " }] }),
+        json!({ "answers": [] }),
+        json!({ "dismissed": true }),
+        json!({}),
+    ] {
+        let told = QuestionTool.answered(&questions(), answer.clone());
+        assert_eq!(told.structured_content, Some(answer.clone()));
+        assert!(validator.is_valid(&answer), "{answer}");
+    }
 }

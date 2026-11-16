@@ -6,7 +6,7 @@ use std::fmt::Write as _;
 
 use octoii_ai::vocabulary::InputContent;
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use siphon::machine::Base;
 
@@ -44,6 +44,26 @@ pub struct QuestionArgs {
     pub questions: Vec<Asked>,
 }
 
+/// The person's original answers; omitted entries and null entries remain unanswered.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct QuestionResult {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub answers: Option<Vec<Option<QuestionAnswer>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dismissed: Option<bool>,
+}
+
+/// Selected labels and free text, preserved without parsing the model-facing summary.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct QuestionAnswer {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chosen: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+}
+
 /// `question`.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct QuestionTool;
@@ -52,6 +72,10 @@ impl Tool for QuestionTool {
     const NAME: &'static str = "question";
     const DESCRIPTION: &'static str = "Ask the person one to eight questions at once. A question can offer options to choose one of, or several with `multiple`, or no options for a free-text answer. The person may answer in their own words, skip questions, or dismiss them all. Put your recommended option first and add \"(recommended)\" to its label. Ask only what you cannot find out yourself and what changes what you do.";
     type Args = QuestionArgs;
+
+    fn output_schema() -> Option<Value> {
+        Some(schemars::schema_for!(QuestionResult).to_value())
+    }
 
     fn effect(&self, _: &QuestionArgs, _: &Base) -> Effect {
         Effect::Reads
@@ -87,23 +111,31 @@ impl Tool for QuestionTool {
         }))
     }
 
-    fn answered(&self, args: &QuestionArgs, answer: Value) -> Vec<InputContent> {
-        if answer["dismissed"].as_bool() == Some(true) {
-            return vec![InputContent::text("the person dismissed the questions, answering none")];
+    fn answered(&self, args: &QuestionArgs, answer: Value) -> Told {
+        Told {
+            content: answer_content(args, &answer),
+            structured_content: Some(answer),
+            ..Told::default()
         }
-        let mut out = String::new();
-        for (at, asked) in args.questions.iter().enumerate() {
-            let given = &answer["answers"][at];
-            let chosen: Vec<&str> = given["chosen"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
-            let words = given["text"].as_str().filter(|text| !text.trim().is_empty());
-            let said = match (chosen.is_empty(), words) {
-                (false, Some(words)) => format!("{}; {words}", chosen.join(", ")),
-                (false, None) => chosen.join(", "),
-                (true, Some(words)) => words.to_owned(),
-                (true, None) => "(unanswered)".to_owned(),
-            };
-            let _ = writeln!(out, "{}\n→ {said}", asked.question);
-        }
-        vec![InputContent::text(out.trim_end())]
     }
+}
+
+fn answer_content(args: &QuestionArgs, answer: &Value) -> Vec<InputContent> {
+    if answer["dismissed"].as_bool() == Some(true) {
+        return vec![InputContent::text("the person dismissed the questions, answering none")];
+    }
+    let mut out = String::new();
+    for (at, asked) in args.questions.iter().enumerate() {
+        let given = &answer["answers"][at];
+        let chosen: Vec<&str> = given["chosen"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+        let words = given["text"].as_str().filter(|text| !text.trim().is_empty());
+        let said = match (chosen.is_empty(), words) {
+            (false, Some(words)) => format!("{}; {words}", chosen.join(", ")),
+            (false, None) => chosen.join(", "),
+            (true, Some(words)) => words.to_owned(),
+            (true, None) => "(unanswered)".to_owned(),
+        };
+        let _ = writeln!(out, "{}\n→ {said}", asked.question);
+    }
+    vec![InputContent::text(out.trim_end())]
 }

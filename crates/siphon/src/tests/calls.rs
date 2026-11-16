@@ -102,8 +102,13 @@ impl Tool for Pick {
         Some(json!({ "enum": args.colours }))
     }
 
-    fn answered(&self, _: &PickArgs, answer: serde_json::Value) -> Vec<InputContent> {
-        vec![InputContent::text(format!("picked {}", answer.as_str().unwrap_or_default()))]
+    fn answered(&self, _: &PickArgs, answer: serde_json::Value) -> Told {
+        Told {
+            content: vec![InputContent::text(format!("picked {}", answer.as_str().unwrap_or_default()))],
+            structured_content: Some(answer),
+            metadata: Some(json!({ "title": "Picked colour" })),
+            ..Told::default()
+        }
     }
 }
 
@@ -158,9 +163,28 @@ impl Program for Caller {
 }
 
 fn said(call: crate::tools::Call) -> (CallStatus, String) {
-    let crate::tools::State::Ended { status, output, .. } = call.state else {
+    let crate::tools::State::Ended {
+        status,
+        output,
+        structured_content,
+        metadata,
+        ..
+    } = call.state
+    else {
         return (CallStatus::Interrupted, String::new());
     };
+    if call.tool == "pick" && status == CallStatus::Ok {
+        assert_eq!(
+            structured_content,
+            Some(json!("blue")),
+            "the completed call keeps the person's answer"
+        );
+        assert_eq!(
+            metadata,
+            Some(json!({ "title": "Picked colour" })),
+            "answer presentation survives completion"
+        );
+    }
     let text = output
         .iter()
         .filter_map(|part| match part {
