@@ -699,9 +699,13 @@ impl Owner {
     async fn resize(&mut self, id: &str, size: Size) -> Result<(), BrowserError> {
         let page = self.page_mut(id).ok_or(BrowserError::NoSuchPage)?;
         page.size = size;
+        let thread = page.thread.clone();
         if let (Some(session), Some(running)) = (page.session.clone(), &self.running) {
             lay_out(&running.cdp, &session, size).await?;
+            running.cdp.call(Some(&session), "Page.stopScreencast", json!({})).await?;
+            start_screencast(&running.cdp, &session).await?;
         }
+        self.told(&thread);
         Ok(())
     }
 
@@ -1094,14 +1098,19 @@ async fn set_up(cdp: &Cdp, session: &str, size: Size) -> Result<(), CdpError> {
     // Its frames of other sites' processes attached to as they are made, held at their start, as the page itself was.
     let frames = json!({ "autoAttach": true, "waitForDebuggerOnStart": true, "flatten": true });
     cdp.call(Some(session), "Target.setAutoAttach", frames).await?;
-    let screencast = json!({ "format": "jpeg", "quality": FRAME_QUALITY, "everyNthFrame": 1 });
-    cdp.call(Some(session), "Page.startScreencast", screencast).await?;
-    Ok(())
+    start_screencast(cdp, session).await
 }
 
 async fn lay_out(cdp: &Cdp, session: &str, size: Size) -> Result<(), CdpError> {
     let metrics = json!({ "width": size.width, "height": size.height, "deviceScaleFactor": size.scale, "mobile": false });
     cdp.call(Some(session), "Emulation.setDeviceMetricsOverride", metrics).await?;
+    Ok(())
+}
+
+/// Starts with a fresh frame, including after a static page changes its viewport.
+async fn start_screencast(cdp: &Cdp, session: &str) -> Result<(), CdpError> {
+    let screencast = json!({ "format": "jpeg", "quality": FRAME_QUALITY, "everyNthFrame": 1 });
+    cdp.call(Some(session), "Page.startScreencast", screencast).await?;
     Ok(())
 }
 

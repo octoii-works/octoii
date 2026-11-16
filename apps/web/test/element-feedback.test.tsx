@@ -44,7 +44,9 @@ describe("browser element feedback", () => {
 			},
 		};
 		const evidence = elementEvidence(data);
-		const json = JSON.parse(evidence.slice(evidence.indexOf("\n") + 1));
+		const code = evidence.split("```json\n")[1]?.split("\n```")[0];
+		if (code === undefined) throw new Error("Expected captured facts in a JSON code block");
+		const json = JSON.parse(code);
 		expect(json.url.length).toBe(2048);
 		expect(json.document.length).toBe(256);
 		expect(json.thread.length).toBe(128);

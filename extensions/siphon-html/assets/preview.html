@@ -32,7 +32,6 @@
 				const policy =
 					"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data: blob:; media-src data: blob:; frame-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'";
 				let frame;
-				let address;
 
 				function measure() {
 					let pending = false;
@@ -73,8 +72,7 @@
 					next.title = "HTML content";
 					next.sandbox = "allow-scripts";
 					next.referrerPolicy = "no-referrer";
-					const nextAddress = URL.createObjectURL(new Blob([prefix, html], { type: "text/html;charset=utf-8" }));
-					next.src = nextAddress;
+					next.srcdoc = prefix + html;
 					next.addEventListener(
 						"load",
 						() => {
@@ -83,9 +81,7 @@
 						{ once: true },
 					);
 					frame?.remove();
-					if (address !== undefined) URL.revokeObjectURL(address);
 					frame = next;
-					address = nextAddress;
 					document.body.append(next);
 				}
 

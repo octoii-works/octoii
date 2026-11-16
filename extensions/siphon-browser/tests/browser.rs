@@ -7,7 +7,7 @@ use std::time::Duration;
 use serde_json::json;
 use siphon::machine::{Base, Host, Machine, Writes};
 use siphon::testing::Beak;
-use siphon_browser::{Action, Browser, BrowserHost, Change, Outcome, Place, Refusal};
+use siphon_browser::{Action, Browser, BrowserHost, Change, Outcome, Place, Refusal, Size};
 
 /// A form: a field, a button that greets what was typed, a choice, a button a box covers, one that raises a dialog,
 /// and a link to a second page.
@@ -29,7 +29,14 @@ const OPENER: &str = "<title>Opener</title>\
 
 /// What the test's site answers `line`, the first line of a request, with: its content type and its body.
 fn answer(line: &str, port: u16) -> (&'static str, String) {
-    if line.starts_with("GET /second") {
+    if line.starts_with("GET /html-preview.html") {
+        ("text/html", siphon_html::DOCUMENT.to_owned())
+    } else if line.starts_with("GET /preview") {
+        (
+            "text/html",
+            "<title>Embedded preview</title><iframe src='/html-preview.html' sandbox='allow-scripts'></iframe>".to_owned(),
+        )
+    } else if line.starts_with("GET /second") {
         ("text/html", "<title>Second</title><h1>Second</h1>".to_owned())
     } else if line.starts_with("GET /file") {
         (
@@ -203,6 +210,67 @@ async fn the_agent_opens_reads_fills_and_submits_a_form_and_the_person_sees_it_p
         .await
         .expect("painted for the person");
     assert!(browser.frame(&page.id).await.expect("a frame").jpeg.starts_with(b"\xff\xd8"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn resizing_a_page_tells_its_thread_the_view_that_matches_the_new_frame() {
+    let beak = Beak::new().expect("Beak");
+    let (profile, downloads) = (tempfile::tempdir().expect("a folder"), tempfile::tempdir().expect("a folder"));
+    let machine = machine(&beak, profile.path());
+    let Some(browser) = browser(&beak, profile.path(), downloads.path()) else {
+        return;
+    };
+    let opened = act(&browser, &machine, json!({ "action": "open", "url": serve().await }))
+        .await
+        .expect("opened");
+    let page = opened.page.expect("its page");
+    let mut events = browser.events();
+    for size in [
+        Size {
+            width: 913,
+            height: 571,
+            scale: 2.0,
+        },
+        Size {
+            width: 640,
+            height: 480,
+            scale: 1.0,
+        },
+    ] {
+        let before = browser.frame(&page.id).await.expect("a frame before resizing").number;
+        browser.resize(&page.id, size).await.expect("resized");
+        let synchronized = async {
+            let mut listed = None;
+            let mut painted = None;
+            loop {
+                match events.recv().await.expect("an event") {
+                    Change::Pages { thread } if thread == "t1" => {
+                        listed = browser
+                            .pages(&thread)
+                            .await
+                            .into_iter()
+                            .find(|view| view.id == page.id && view.size == size);
+                    }
+                    Change::Painted { page: id, .. } if id == page.id => {
+                        painted = browser
+                            .frame(&id)
+                            .await
+                            .filter(|frame| frame.number > before && (frame.width, frame.height) == (size.width, size.height));
+                    }
+                    _ => {}
+                }
+                if let (Some(listed), Some(painted)) = (&listed, &painted) {
+                    return (listed.clone(), painted.clone());
+                }
+            }
+        };
+        let (listed, frame) = tokio::time::timeout(Duration::from_secs(5), synchronized)
+            .await
+            .expect("the page list and painted frame agree after a resize");
+        assert_eq!(listed.size, size);
+        assert_eq!((frame.width, frame.height), (size.width, size.height));
+        assert!(frame.jpeg.starts_with(b"\xff\xd8"), "a JPEG");
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -392,6 +460,53 @@ async fn a_script_runs_inside_a_frame_of_another_site_s_process() {
         .await
         .expect("the frame reached");
     assert_eq!(outcome.value, Some(json!("inside")));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_http_html_preview_loads_inside_an_opaque_sandbox_and_runs_isolated_scripts() {
+    let beak = Beak::new().expect("Beak");
+    let (profile, downloads) = (tempfile::tempdir().expect("a folder"), tempfile::tempdir().expect("a folder"));
+    let machine = machine(&beak, profile.path());
+    let Some(browser) = browser(&beak, profile.path(), downloads.path()) else {
+        return;
+    };
+    let address = serve().await;
+    act(&browser, &machine, json!({ "action": "open", "url": format!("{address}/preview") }))
+        .await
+        .expect("the embedded preview opened");
+    let html = "<!doctype html><h1>Saved report</h1><script>\
+        let isolated = false;\
+        try { parent.document.body.textContent = 'escaped'; } catch { isolated = true; }\
+        top.postMessage({ type: 'preview.script', isolated }, '*');\
+        </script>";
+    let payload = json!({ "type": "octoii.html.load", "html": html });
+    let expression = format!(
+        "new Promise(resolve => {{
+            const frame = document.querySelector('iframe').contentWindow;
+            const result = {{ loaded: false }};
+            const finish = () => {{
+                clearTimeout(timer);
+                removeEventListener('message', receive);
+                resolve(result);
+            }};
+            const receive = event => {{
+                if (event.source === frame && event.data?.type === 'octoii.html.loaded') result.loaded = true;
+                if (event.source === frame && event.data?.type === 'octoii.html.size') result.height = event.data.height;
+                if (event.data?.type === 'preview.script') result.isolated = event.data.isolated;
+                if (result.loaded && result.height > 0 && result.isolated !== undefined) finish();
+            }};
+            const timer = setTimeout(finish, 5000);
+            addEventListener('message', receive);
+            frame.postMessage({payload}, '*');
+        }})"
+    );
+    let outcome = act(&browser, &machine, json!({ "action": "evaluate", "expression": expression }))
+        .await
+        .expect("the embedded preview answered");
+    let value = outcome.value.expect("the preview's state");
+    assert_eq!(value["loaded"], true, "{value}");
+    assert_eq!(value["isolated"], true, "{value}");
+    assert!(value["height"].as_f64().is_some_and(|height| height > 0.0), "{value}");
 }
 
 #[tokio::test(flavor = "multi_thread")]

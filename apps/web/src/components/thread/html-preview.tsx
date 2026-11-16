@@ -69,7 +69,7 @@ function HtmlFrame(props: { readonly html: string; readonly name: string; readon
 	const { frame, height, loaded, failure } = useHtmlFrame(props.html);
 	if (failure !== undefined)
 		return (
-			<p role="alert" className="text-xs text-error-foreground">
+			<p role="alert" className="min-h-20 rounded-md border border-border p-3 text-xs text-error-foreground">
 				{failure}
 			</p>
 		);

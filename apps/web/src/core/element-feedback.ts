@@ -12,7 +12,7 @@ export function elementSummary(feedback: ElementFeedback): string {
 /** Captured facts describe a past document; they never act as a locator on a live page. */
 export function elementEvidence(feedback: ElementFeedback): string {
 	const element = feedback.element;
-	return `Historical browser context captured from the element the user selected; its saved screenshot follows. Re-read the live page before using any selector or coordinates.\n${JSON.stringify(
+	return `Historical browser context captured from the element the user selected; its saved screenshot follows. Re-read the live page before using any selector or coordinates.\n\n\`\`\`json\n${JSON.stringify(
 		{
 			thread: bounded(feedback.thread, 128),
 			page: bounded(feedback.page, 128),
@@ -36,7 +36,7 @@ export function elementEvidence(feedback: ElementFeedback): string {
 				rect: { x: element.rect.x, y: element.rect.y, width: element.rect.width, height: element.rect.height },
 			},
 		},
-	)}`;
+	)}\n\`\`\``;
 }
 
 /** A feedback item's two adjacent parts keep the screenshot with its own captured context. */

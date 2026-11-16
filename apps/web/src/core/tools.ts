@@ -214,7 +214,7 @@ const ACTIONS: Readonly<Record<WorkKind, readonly [went: (count: number) => stri
 	browse: [(n) => `used the browser ${counted(n, "time", "times")}`, () => "using the browser"],
 	ask: [(n) => `asked ${counted(n, "question", "questions")}`, (n) => `asking ${counted(n, "question", "questions")}`],
 	delegate: [(n) => `delegated ${counted(n, "task", "tasks")}`, (n) => `delegating ${counted(n, "task", "tasks")}`],
-	thread: [(n) => `worked with ${counted(n, "thread", "threads")}`, (n) => `working with ${counted(n, "thread", "threads")}`],
+	thread: [(n) => `used the thread tool ${counted(n, "time", "times")}`, () => "using the thread tool"],
 	other: [(n) => `used ${counted(n, "tool", "tools")}`, (n) => `using ${counted(n, "tool", "tools")}`],
 };
 
