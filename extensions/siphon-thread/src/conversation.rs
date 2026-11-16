@@ -322,6 +322,9 @@ mod tests {
             panic!("an input");
         };
         assert_eq!(actor, "person");
+        let file = serde_json::to_value(&content[1]).expect("a resource link");
+        assert_eq!(file["file"]["ref"], "sha256:123");
+        assert!(file["file"].get("reference").is_none());
         assert_eq!(
             content[0],
             ContentPart::Text {

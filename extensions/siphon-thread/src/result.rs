@@ -178,6 +178,7 @@ pub enum ContentPart {
 /// A file kept by the thread, identified by its content reference.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ContentFile {
+    #[serde(rename = "ref")]
     pub reference: String,
     pub media_type: String,
     pub filename: Option<String>,
