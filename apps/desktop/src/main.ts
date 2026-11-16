@@ -61,6 +61,7 @@ async function start(): Promise<void> {
 		let connecting = false;
 		const window = new BrowserWindow({
 			title: "Octoii",
+			...(process.platform === "darwin" ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 16, y: 19 } } : {}),
 			width: 1280,
 			height: 860,
 			minWidth: 800,

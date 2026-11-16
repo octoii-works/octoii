@@ -41,7 +41,9 @@ export async function desktopResponse(
 	if (!contentType) return new Response(null, { status: 404 });
 	try {
 		const bytes = await readFile(join(directory, name));
-		return new Response(request.method === "HEAD" ? null : bytes, {
+		// Only the desktop response reserves native window controls; browser assets stay unchanged.
+		const body = name === "index.html" && process.platform === "darwin" ? bytes.toString("utf8").replace("<html", '<html data-desktop="mac"') : bytes;
+		return new Response(request.method === "HEAD" ? null : body, {
 			headers: { "Content-Type": contentType, "Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff" },
 		});
 	} catch (error) {

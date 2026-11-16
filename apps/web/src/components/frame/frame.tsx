@@ -68,6 +68,7 @@ export function Frame(props: FrameProps): ReactNode {
 		<SidebarContext value={sidebar}>
 			{/* The frame keeps clear of the screen's own edges — a notch, a phone's status bar — its ground the sidebar's where the sidebar stands beside the page. */}
 			<div
+				data-sidebar={beside ? "beside" : "hidden"}
 				className={cn(
 					"flex h-dvh flex-col overflow-hidden pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)]",
 					beside ? "bg-sidebar" : "bg-background",
@@ -98,7 +99,7 @@ function SidebarColumn(props: { readonly children: ReactNode }): ReactNode {
 	const { device, set } = useDevice();
 	const { size: width, edge } = useDragSize(device.sidebar_width, SIDEBAR_BOUNDS, (sidebar_width) => set({ sidebar_width }));
 	return (
-		<aside style={{ width }} className="relative flex h-full shrink-0 flex-col border-e border-border bg-sidebar text-foreground">
+		<aside style={{ width }} className="sidebar-column relative flex h-full shrink-0 flex-col border-e border-border bg-sidebar text-foreground">
 			{edge}
 			{props.children}
 		</aside>
@@ -111,7 +112,7 @@ function SidebarColumn(props: { readonly children: ReactNode }): ReactNode {
  */
 export function Pane(props: { readonly children: ReactNode }): ReactNode {
 	return (
-		<div className="@container/pane relative flex min-h-0 min-w-90 flex-1 flex-col overflow-hidden bg-background has-[+[data-fills]]:hidden max-lg:min-w-0">
+		<div className="page-pane @container/pane relative flex min-h-0 min-w-90 flex-1 flex-col overflow-hidden bg-background has-[+[data-fills]]:hidden max-lg:min-w-0">
 			{props.children}
 		</div>
 	);
@@ -191,9 +192,9 @@ export function ShowPanel(props: { readonly className?: string }): ReactNode {
 /** The button that hides the panel, ⌘⌥B. */
 export function HidePanel(): ReactNode {
 	return (
-		<IconButton label="Hide panel" shortcut="⌘⌥B" onClick={() => placePanel("hidden")}>
+		<ToggleButton label="Hide panel" shortcut="⌘⌥B" pressed onPressedChange={() => placePanel("hidden")}>
 			<PanelRight className="size-4" />
-		</IconButton>
+		</ToggleButton>
 	);
 }
 

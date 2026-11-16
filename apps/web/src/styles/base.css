@@ -83,3 +83,38 @@
 		font-size: max(16px, 1em);
 	}
 }
+
+/* The macOS shell shares one 52px row with native window controls. Browser layouts stay unchanged. */
+html[data-desktop="mac"] {
+	--topbar-height: 52px;
+}
+
+html[data-desktop="mac"] .window-toolbar {
+	-webkit-app-region: drag;
+	user-select: none;
+}
+
+/* Electron inherits app-region: only interactive elements exclude their hit area from window dragging. */
+html[data-desktop="mac"] .window-toolbar * {
+	-webkit-app-region: inherit;
+}
+
+html[data-desktop="mac"] .window-toolbar :is(button, a, input, [role="tab"], [role="button"]),
+html[data-desktop="mac"] .window-toolbar :is(button, a, input, [role="tab"], [role="button"]) * {
+	-webkit-app-region: no-drag;
+}
+
+html[data-desktop="mac"] .sidebar-column > .window-toolbar,
+html[data-desktop="mac"] [data-sidebar="hidden"] .page-pane:not(:has(+ [data-fills])) > .window-toolbar,
+html[data-desktop="mac"] [data-sidebar="hidden"] [data-fills] .window-toolbar {
+	padding-left: 88px;
+}
+
+html[data-desktop="mac"] .sidebar-brand {
+	padding-inline-start: 0;
+	overflow: hidden;
+}
+
+html[data-desktop="mac"] .sidebar-brand [role="img"] {
+	height: 16px;
+}

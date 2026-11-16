@@ -46,8 +46,8 @@ export function Sidebar(props: SidebarProps): ReactNode {
 	const current = props.route.place === "thread" ? lineOf(rows ?? [], props.route.thread) : [];
 	return (
 		<>
-			<div className="flex h-[var(--topbar-height)] shrink-0 items-center gap-1.5 px-2">
-				<span className="flex min-w-0 flex-1 ps-2">
+			<div className="window-toolbar flex h-[var(--topbar-height)] shrink-0 items-center gap-1.5 px-2">
+				<span className="sidebar-brand flex min-w-0 flex-1 ps-2">
 					<Logo />
 				</span>
 				<HideSidebar />

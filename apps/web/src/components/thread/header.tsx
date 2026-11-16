@@ -22,7 +22,7 @@ export type HeaderProps = {
 /** The header. */
 export function ChatHeader(props: HeaderProps): ReactNode {
 	return (
-		<header className="flex h-[var(--topbar-height)] shrink-0 items-center gap-2 bg-background px-3 @xl/pane:px-5">
+		<header className="window-toolbar flex h-[var(--topbar-height)] shrink-0 items-center gap-2 bg-background px-3 @xl/pane:px-5">
 			<ShowSidebar className="-ml-1" />
 			<div className="flex min-w-0 flex-1 items-center gap-1.5 text-ui">
 				{props.project === undefined ? null : (
@@ -35,7 +35,9 @@ export function ChatHeader(props: HeaderProps): ReactNode {
 				<h2 className="min-w-0 truncate font-medium text-foreground">{props.title}</h2>
 				{props.status === undefined ? null : <StatusPill status={props.status} />}
 			</div>
-			{props.actions}
+			<div role="group" aria-label="View controls" className="flex shrink-0 items-center gap-1">
+				{props.actions}
+			</div>
 		</header>
 	);
 }

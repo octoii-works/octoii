@@ -11,6 +11,7 @@ function page(title: string, message: string, actions: string): string {
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
 <title>Octoii</title><style>
 :root { color-scheme: light dark; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #fafafa; color: #242424; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: 52px; -webkit-app-region: drag; }
 body { margin: 0; min-height: 100vh; display: grid; place-items: center; }
 main { width: min(440px, calc(100vw - 64px)); padding: 48px 0; }
 .brand { font-size: 16px; font-weight: 650; letter-spacing: -.5px; margin-bottom: 48px; }

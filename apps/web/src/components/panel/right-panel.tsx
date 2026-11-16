@@ -54,7 +54,7 @@ export function RightPanel(props: RightPanelProps): ReactNode {
 	};
 	return (
 		<Tabs.Root value={shown?.key ?? null} onValueChange={(key: SurfaceKey) => showSurface(props.thread, key)} className="flex min-h-0 flex-1 flex-col">
-			<div className="flex h-[var(--topbar-height)] shrink-0 items-center gap-1 px-2">
+			<div className="window-toolbar flex h-[var(--topbar-height)] shrink-0 items-center gap-1 px-2">
 				<ShowSidebarFromPanel />
 				{/* Positioned, as the list measures where a tab stands in it to keep the one chosen in view. */}
 				<Tabs.List aria-label="The panel's tabs" className="relative flex min-w-0 items-center gap-1 overflow-x-auto scrollbar-none">

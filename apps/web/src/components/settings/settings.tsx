@@ -53,7 +53,7 @@ export function SettingsNav(props: SettingsProps): ReactNode {
 	const searching = search.trim() !== "";
 	return (
 		<>
-			<div className="flex h-[var(--topbar-height)] shrink-0 items-center gap-1.5 px-2">
+			<div className="window-toolbar flex h-[var(--topbar-height)] shrink-0 items-center gap-1.5 px-2">
 				<span className="min-w-0 flex-1 ps-2 text-ui font-semibold tracking-tight">Settings</span>
 				<HideSidebar />
 			</div>
@@ -120,7 +120,7 @@ export function SettingsPage(props: SettingsProps): ReactNode {
 	useIntoView(props.at);
 	return (
 		<Pane>
-			<header className="flex h-[var(--topbar-height)] shrink-0 items-center gap-2 bg-background px-3 @xl/pane:px-5">
+			<header className="window-toolbar flex h-[var(--topbar-height)] shrink-0 items-center gap-2 bg-background px-3 @xl/pane:px-5">
 				<ShowSidebar className="-ml-1" />
 				<span className="flex-1" />
 				<IconButton label="Close settings" onClick={() => props.onSection(undefined)} className="-mr-1">

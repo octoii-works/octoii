@@ -50,3 +50,7 @@ On first launch, the bundled node and browser assets are copied atomically to `~
 An already running node is reused. An existing launchd definition is never overwritten. A node reporting a different version is rejected with an actionable message, without restarting it; finish its tasks before explicitly upgrading the service. The version check is a coarse release check, not a guarantee that different development builds of the same version are protocol-compatible. `OCTOII_BIN` still overrides the bundled CLI; explicit `OCTOII_DESKTOP_URL` mode skips runtime installation.
 
 Runtime tests cover relocation, immutable reuse, retaining the prior version, incomplete installation cleanup and manifest path validation. See the acceptance record for actual bundle checks and the remaining fresh-service-install scenario.
+
+## macOS toolbar
+
+The macOS window uses `hiddenInset`: native traffic lights share the existing 52px application header. Only HTML served by the desktop shell receives `data-desktop="mac"`; browser resources keep their existing layout. Sidebar, conversation, settings and panel headers provide drag regions, while buttons, links, fields and tabs remain interactive. The sidebar brand is compact, and headers at the left window edge reserve space for native controls when the sidebar is hidden or the panel fills the page. The existing panel close control indicates its open state.
