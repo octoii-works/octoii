@@ -1,3 +1,4 @@
+import type { Client } from "../../src/index.ts";
 /**
  * The client against the node itself, on a Home of the test's own: welcomed as the session its token holds; the list of
  * threads as it stands, then each change; a thread followed from its latest entries, on from where its reader stood
@@ -41,6 +42,31 @@ describe("a client of the node's", () => {
 		const thread = await client.create({ title: "first" });
 		expect((await client.threads()).map((row) => row.id)).toContain(thread);
 		client.close();
+	});
+
+	test("recovers creation and delivery with saved keys after both client and node restart", async () => {
+		const config = { title: "saved submission" };
+		const content = [{ type: "input_text" as const, text: "A saved first message" }];
+		const key = crypto.randomUUID();
+		const first = node.client({ report });
+		let restored: Client | undefined;
+		try {
+			await until(() => first.status.value.status === "open", "the welcome");
+			const thread = await first.call("threads.create", { config, key: `${key}-create` }).then((result) => result.thread);
+			const delivery = await first.call("threads.deliver", { thread, content, key: `${key}-deliver` }).then((result) => result.delivery);
+			first.close();
+			await node.stop();
+			await node.serve();
+			restored = node.client({ report });
+			const resumed = restored;
+			await until(() => resumed.status.value.status === "open", "the restored welcome");
+			expect(await restored.call("threads.create", { config, key: `${key}-create` }).then((result) => result.thread)).toBe(thread);
+			expect(await restored.call("threads.deliver", { thread, content, key: `${key}-deliver` }).then((result) => result.delivery)).toBe(delivery);
+			expect((await restored.threads()).filter((row) => row.config.title === config.title)).toHaveLength(1);
+		} finally {
+			first.close();
+			restored?.close();
+		}
 	});
 
 	test("watches the threads as they stand, then each as it changes or goes", async () => {

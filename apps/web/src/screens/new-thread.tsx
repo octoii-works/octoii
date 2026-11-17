@@ -7,13 +7,16 @@
  * chosen, else the one the environment's settings name, and the message's first line as its title, delivers the
  * message, and goes to the thread.
  */
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useState } from "react";
 import type { ReasoningEffort as Effort, Mode } from "@octoii-works/octoii-client";
 import { useClient, useSettings, useThreads } from "@octoii-works/octoii-client/react";
 import { ChevronDown, FolderOpen, FolderPlus, FolderX } from "lucide-react";
 import type { Device } from "../core/device.ts";
 import { recentModelsOf } from "../core/models.ts";
-import { NewThread } from "../core/new-thread.ts";
+import type { NewThread, PendingThread } from "../core/new-thread.ts";
+import { usePendingThread } from "../components/effects/pending-thread.ts";
+import { failed } from "../components/state/notices.ts";
+import { clearPendingDraft } from "../components/state/draft.ts";
 import { thingsOf } from "../core/mentions.ts";
 import { useExtension } from "../components/state/extensions.ts";
 import { folderName, type Project, projectsOf } from "../core/threads.ts";
@@ -38,7 +41,7 @@ type Chosen = { readonly folder: string | undefined };
 /** The new thread's page. */
 export function NewThreadScreen(props: NewThreadScreenProps): ReactNode {
 	const client = useClient();
-	const starting = useMemo(() => new NewThread(client), [client]);
+	const { starting, pending, loaded, setPending, error, retry } = usePendingThread(client, props.project);
 	const rows = useThreads() ?? [];
 	const reachesThreads = useExtension("thread");
 	const projects = projectsOf(rows);
@@ -66,32 +69,56 @@ export function NewThreadScreen(props: NewThreadScreenProps): ReactNode {
 					</h1>
 					{/* The composer stands over the folder's strip, which shows from under its foot. */}
 					<div className="relative z-10">
-						<Composer
-							model={running}
-							onModel={setModel}
-							mode={mode}
-							onMode={setMode}
-							effort={effort}
-							onEffort={setEffort}
-							working={false}
-							sendShortcut={props.device.send_shortcut}
-							draft={{ project: folder }}
-							folder={folder}
-							things={thingsOf(reachesThreads ? rows : [], [], [], undefined)}
-							onSend={async (draft) => {
-								const thread = await starting.send(
-									{
-										...(folder === undefined ? {} : { workspace: folder }),
-										...(running === undefined ? {} : { model: running }),
-										...(chosenMode === undefined ? {} : { mode: chosenMode }),
-										...(effort === undefined ? {} : { effort }),
-									},
-									draft,
-								);
-								go({ place: "thread", thread });
-							}}
-							onStop={() => undefined}
-						/>
+						{!loaded ? (
+							<p className="p-4 text-body text-muted-foreground">
+								{error === undefined ? (
+									"Loading saved task…"
+								) : (
+									<>
+										Saved tasks could not be read: {error}.{" "}
+										<button type="button" className="underline" onClick={retry}>
+											Retry
+										</button>
+									</>
+								)}
+							</p>
+						) : pending !== undefined ? (
+							<PendingTask pending={pending} starting={starting} onForgotten={() => setPending(undefined)} />
+						) : (
+							<Composer
+								model={running}
+								onModel={setModel}
+								mode={mode}
+								onMode={setMode}
+								effort={effort}
+								onEffort={setEffort}
+								working={false}
+								sendShortcut={props.device.send_shortcut}
+								draft={{ project: folder }}
+								folder={folder}
+								things={thingsOf(reachesThreads ? rows : [], [], [], undefined)}
+								onSend={async (draft) => {
+									if (starting === undefined) throw new Error("Wait for the node connection.");
+									try {
+										const thread = await starting.send(
+											{
+												...(folder === undefined ? {} : { workspace: folder }),
+												...(running === undefined ? {} : { model: running }),
+												...(chosenMode === undefined ? {} : { mode: chosenMode }),
+												...(effort === undefined ? {} : { effort }),
+											},
+											draft,
+										);
+										go({ place: "thread", thread });
+										await starting.acknowledge();
+									} catch (error) {
+										setPending(await starting.read());
+										throw error;
+									}
+								}}
+								onStop={() => undefined}
+							/>
+						)}
 					</div>
 					<FolderStrip folder={folder} projects={projects} onChoose={choose} onAnother={() => setChoosing(true)} />
 					<FolderChooser open={choosing} onOpenChange={setChoosing} start={folder} projects={projects} onChoose={choose} />
@@ -145,6 +172,74 @@ function FolderStrip(props: {
 				</MenuPopup>
 			</Menu>
 			{mcp ? <ServersMenu folder={props.folder} /> : null}
+		</div>
+	);
+}
+
+function PendingTask({
+	pending,
+	starting,
+	onForgotten,
+}: {
+	readonly pending: PendingThread;
+	readonly starting: NewThread | undefined;
+	readonly onForgotten: () => void;
+}): ReactNode {
+	const [resuming, setResuming] = useState(false);
+	return (
+		<div className="rounded-lg border border-border p-4 text-body">
+			<p className="font-medium">Unfinished submission</p>
+			<p className="my-3 max-h-48 overflow-auto whitespace-pre-wrap">{pending.draft.text}</p>
+			<p className="text-muted-foreground">
+				{pending.config.workspace ?? "No project"} · {pending.draft.attachments.length} attachments
+			</p>
+			<p className="my-3 text-muted-foreground">
+				Continue the original submission. If it was already accepted, this opens its thread without sending it again.
+			</p>
+			<button
+				type="button"
+				disabled={resuming}
+				className="rounded-md bg-primary px-3 py-2 text-primary-foreground disabled:opacity-50"
+				onClick={() => {
+					if (starting === undefined || resuming) return;
+					setResuming(true);
+					void starting
+						.resume()
+						.then(async (thread) => {
+							clearPendingDraft({ project: pending.config.workspace ?? undefined }, pending.draft);
+							go({ place: "thread", thread });
+							await starting.acknowledge();
+						})
+						.catch((error: unknown) => failed("The task could not be resumed", error))
+						.finally(() => setResuming(false));
+				}}
+			>
+				{resuming ? "Continuing…" : "Continue task"}
+			</button>
+			{pending.thread === undefined ? null : (
+				<button type="button" className="ml-3 text-primary underline" onClick={() => go({ place: "thread", thread: pending.thread ?? "" })}>
+					View existing thread
+				</button>
+			)}
+			<p className="mt-3 text-xs text-muted-foreground">
+				Recovery is available for 23 hours. Discarding this saved copy does not stop or delete an existing thread.
+			</p>
+			<button
+				type="button"
+				disabled={resuming}
+				className="mt-2 text-xs text-muted-foreground underline"
+				onClick={() => {
+					if (starting === undefined || resuming) return;
+					setResuming(true);
+					void starting
+						.forget(pending.key)
+						.then(onForgotten)
+						.catch((error: unknown) => failed("The saved copy could not be discarded", error))
+						.finally(() => setResuming(false));
+				}}
+			>
+				Discard saved copy
+			</button>
 		</div>
 	);
 }

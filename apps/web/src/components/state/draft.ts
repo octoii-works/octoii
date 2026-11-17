@@ -63,3 +63,17 @@ export function useDraft(place: DraftPlace): DraftHandle {
 		},
 	};
 }
+
+/** Clears a restored submission by its saved identities, keeping edits made after it was sent. */
+export function clearPendingDraft(place: DraftPlace, submitted: Draft): void {
+	const key = draftKey(place);
+	const current = drafts.get(key) ?? EMPTY_DRAFT;
+	changed(
+		key,
+		afterSubmission(current, {
+			text: submitted.text,
+			attachments: current.attachments.filter((file) => submitted.attachments.some((saved) => saved.ref === file.ref)),
+			feedback: current.feedback.filter((capture) => submitted.feedback.some((saved) => JSON.stringify(saved) === JSON.stringify(capture))),
+		}),
+	);
+}
