@@ -1,8 +1,8 @@
 /** A floating details card reserves room beside the conversation and opens on demand on narrow panes. */
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import type { Conversation, Listed, ThreadUsage as Usage, Turn } from "@octoii-works/octoii-client";
 import { useConnection, useThreads } from "@octoii-works/octoii-client/react";
-import { Coins, CornerLeftUp, Folder, FolderX, Gauge, Laptop, SquareMenu } from "lucide-react";
+import { ChevronDown, Coins, CornerLeftUp, Folder, FolderX, Gauge, Laptop, SquareMenu } from "lucide-react";
 import { cachedShare, type Context, contextOf, fullnessOf } from "../../core/details.ts";
 import { modelOf } from "../../core/models.ts";
 import { dollarsFormat, tokens, TOKENS_FORMAT } from "../../core/numbers.ts";
@@ -17,6 +17,7 @@ import { cn } from "../ui/cn.ts";
 import { Meter } from "../ui/meter.tsx";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover.tsx";
 import { RollingNumber } from "../ui/rolling-number.tsx";
+import { CopyButton } from "../ui/copy-button.tsx";
 import { SpendingCard } from "./spending.tsx";
 import { ContextCard } from "./context-card.tsx";
 import { isCompacting } from "../../core/context.ts";
@@ -98,7 +99,7 @@ function DetailsCard(props: DetailsProps): ReactNode {
 	const folder = useFolder(props.row);
 	return (
 		<div className="flex flex-col divide-y divide-border text-ui">
-			<Workspace thread={props.thread} folder={folder} parts={props.parts.folder} />
+			<Workspace thread={props.thread} folder={folder} project={props.row?.project ?? undefined} parts={props.parts.folder} />
 			{props.parts.sections}
 			<Lineage thread={props.thread} row={props.row} />
 			<Spending thread={props.thread} row={props.row} turns={props.turns} compactions={props.compactions} />
@@ -149,22 +150,65 @@ export function RowContent(props: { readonly icon: ReactNode; readonly label: Re
  * The machine the thread works on, by the name it goes by; and its folder, opened in the Files view, or that it works in
  * none; and what is remembered of its project.
  */
-function Workspace(props: { readonly thread: string; readonly folder: string | undefined; readonly parts: ReactNode }): ReactNode {
+function Workspace(props: {
+	readonly thread: string;
+	readonly folder: string | undefined;
+	readonly project: string | undefined;
+	readonly parts: ReactNode;
+}): ReactNode {
 	const connection = useConnection();
-	const machine = connection.status === "open" ? connection.machine.name : undefined;
-	const { folder } = props;
+	const machine = connection.status === "open" ? connection.machine.name : "This machine";
+	const [open, setOpen] = useState(false);
+	const { folder, project } = props;
+	const name = folder === undefined ? "No folder" : folderName(project ?? folder);
 	return (
 		<section className="p-1.5">
-			<DetailRow icon={<Laptop />} label={machine ?? "This machine"} />
-			{folder === undefined ? (
-				<DetailRow icon={<FolderX />} label="Works in no folder" />
-			) : (
-				<>
-					<DetailRow icon={<Folder />} label={folderName(folder)} title={folder} onOpen={() => showSurface(props.thread, "files")} />
-					{props.parts}
-				</>
-			)}
+			<Popover open={open} onOpenChange={setOpen}>
+				<PopoverTrigger render={<button type="button" aria-label="Workspace details" className={cn(ROW, OPENING)} />}>
+					<RowContent icon={<Laptop />} label={name} aside={<ChevronDown className="size-3.5" />} />
+				</PopoverTrigger>
+				<PopoverPopup side="bottom" align="end" className="w-72 max-w-[calc(100vw-1rem)] p-1.5 text-ui">
+					<DetailRow icon={<Laptop />} label={machine} />
+					{folder === undefined ? (
+						<DetailRow icon={<FolderX />} label="Works in no folder" />
+					) : (
+						<>
+							<div className="flex items-start gap-2 px-2 py-2">
+								<div className="min-w-0 flex-1">
+									<p className="mb-1 text-xs text-muted-foreground">{project !== undefined && project !== folder ? "Thread workspace" : "Current checkout"}</p>
+									<p className="break-all font-mono text-xs">{folder}</p>
+								</div>
+								<CopyButton text={folder} label="Copy workspace path" />
+							</div>
+							<DetailRow
+								icon={<Folder />}
+								label="Open files"
+								onOpen={() => {
+									setOpen(false);
+									showSurface(props.thread, "files");
+								}}
+							/>
+						</>
+					)}
+				</PopoverPopup>
+			</Popover>
+			{folder === undefined ? null : props.parts}
 		</section>
+	);
+}
+
+/** Long lists reveal their remaining rows on demand, within a bounded scrolling area. */
+export function DetailList({ children, label }: { readonly children: readonly ReactNode[]; readonly label: string }): ReactNode {
+	const [expanded, setExpanded] = useState(false);
+	return (
+		<>
+			<div className="max-h-60 overflow-y-auto">{expanded ? children : children.slice(0, 3)}</div>
+			{children.length <= 3 ? null : (
+				<button type="button" aria-expanded={expanded} onClick={() => setExpanded(!expanded)} className={cn(ROW, OPENING, "text-xs text-muted-foreground")}>
+					{expanded ? "Show less" : `Show ${String(children.length - 3)} more ${label}`}
+				</button>
+			)}
+		</>
 	);
 }
 
@@ -185,18 +229,20 @@ function Lineage(props: { readonly thread: string; readonly row: Listed | undefi
 					onOpen={() => go({ place: "thread", thread: parent })}
 				/>
 			)}
-			{children.map((child) => {
-				const worked = workedOf([child]);
-				return (
-					<DetailRow
-						key={child.id}
-						icon={<SubThreadAvatar standing={standingOf(child)} />}
-						label={threadTitle(child)}
-						{...(worked === undefined ? {} : { aside: <WorkedFor worked={worked} /> })}
-						onOpen={() => go({ place: "thread", thread: child.id })}
-					/>
-				);
-			})}
+			<DetailList label="tasks">
+				{children.map((child) => {
+					const worked = workedOf([child]);
+					return (
+						<DetailRow
+							key={child.id}
+							icon={<SubThreadAvatar standing={standingOf(child)} />}
+							label={threadTitle(child)}
+							{...(worked === undefined ? {} : { aside: <WorkedFor worked={worked} /> })}
+							onOpen={() => go({ place: "thread", thread: child.id })}
+						/>
+					);
+				})}
+			</DetailList>
 		</section>
 	);
 }
