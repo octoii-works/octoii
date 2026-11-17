@@ -45,3 +45,9 @@ backend packages need not match one-to-one.
 
 The current web app still contains product UI modules under `apps/web/src/extensions` and shared components. Independent UI packages are deferred; keep clear module boundaries inside the web app. This directory migration does
 not introduce a dynamic plugin loader or change execution behavior.
+
+## Proposed source-distribution boundary
+
+The proposed closed Siphon implementation and public Octoii/extension boundary, including current coupling and
+binary distribution prerequisites, is documented in [SIPHON_DISTRIBUTION.md](SIPHON_DISTRIBUTION.md).
+It is a proposal; the package structure and dependency rules above remain the current implementation.
