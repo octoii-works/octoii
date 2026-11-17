@@ -34,6 +34,8 @@ def allowed(source, target):
         return target_layer == "extensions" or dependency == "octoii"
     if name in FOUNDATION:
         return dependency in FOUNDATION
+    if name == "siphon-ffi":
+        return dependency in {"beak", "siphon-runtime"}
     if name == "siphon-runtime":
         return target_layer == "kernel"
     if name == "octoii":
@@ -58,7 +60,7 @@ def main():
     for package in packages:
         path = Path(package["manifest_path"]).resolve().parent
         identity = (package["name"], layer(path))
-        if identity[1] == "core" and identity[0] not in FOUNDATION | {"octoii", "siphon-runtime"}:
+        if identity[1] == "core" and identity[0] not in FOUNDATION | {"octoii", "siphon-runtime", "siphon-ffi"}:
             raise ValueError(f"Core package needs a dependency rule: {identity[0]}")
         identities[path] = identity
     violations = []

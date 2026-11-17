@@ -246,7 +246,7 @@ The existing script, shell, image and text dependencies also require public repl
 package before deleting siphon/. Merely wrapping siphon-runtime leaves private dependencies in place.
 No public Beak/kernel escape hatch is introduced to make product compilation pass.
 
-### B2.1: binary lifecycle and storage slice — pending core confirmation
+### B2.1: binary lifecycle and storage slice — implemented, CI validation in progress
 
 Start with a small executable slice before committing to the full callback protocol:
 open a runtime, commit supported Changes, read a retained Snapshot, close, immediately reopen and verify
@@ -290,3 +290,27 @@ Do not publish a placeholder 0.0.1 that cannot serve the promised product interf
 
 References: Rust Reference, https://doc.rust-lang.org/reference/linkage.html;
 Rustonomicon FFI, https://doc.rust-lang.org/stable/nomicon/ffi.html.
+
+## B2.1 implementation record
+
+Private Siphon commit 5447fa4 adds the approved siphon-ffi crate. Public interface source is at
+https://github.com/octoii-works/octoii-siphon-lib (8d9cd8e). The wrapper uses only checked-in C declarations
+and a verified native archive; it has no private source dependency or consumer bindgen step.
+
+The implemented slice covers atomic mkdir/write/append/delete batches, retained snapshots and reads,
+explicit shutdown, implicit shutdown on release, and persistent reopen. A dedicated host thread owns
+the native executor, so opening/closing from a caller's Tokio task does not nest runtime destruction.
+Snapshot handles may retain storage after runtime close and must be released before reopening it.
+Directory paths currently require UTF-8. Calls are synchronous; async hosts should offload long operations.
+
+Local validation: 47 Siphon workspace tests, strict Clippy and formatting; a separately linked C lifecycle
+program; 3 public Rust integration tests covering persistence, snapshot consistency, atomic rollback and
+10 asynchronous-host failed-open/drop/reopen cycles. Wrong target, ABI metadata and archive checksum are
+rejected. Header copies match. CI builds an isolated-symbol static archive, runs the C consumer, checks
+out the public wrapper at a fixed commit and runs its checks/tests using that binary alone.
+
+This is an unpublished macOS ARM64 development artifact. SIPHON_LIB_DIR is an explicit local development
+artifact input, not the final download/install protocol. The local manifest hash is not a release signature.
+No binary release or crates.io version is published, no Windows/Linux support is claimed, and the product's
+siphon/ submodule remains until B2.2–B4 replace all private dependencies. Program/request callbacks and
+processing capabilities remain pending; a storage-only wrapper is not a complete Siphon distribution.
