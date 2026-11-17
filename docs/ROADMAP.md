@@ -34,7 +34,7 @@ Rust 已按 `core/`、`extensions/`、`apps/node/` 分层，Cargo 依赖与 CI �
 | Thread 整理 | 历史搜索与读取、重命名、置顶、归档、Snooze | 先验证现有入口，不添加标签 |
 | 文件与 HTML | present_file、持久资源、主题联动预览、浏览器自检 | 文件审阅反馈统一；各端实际下载、展示验收 |
 | 浏览器反馈 | 元素选取、截图、反馈草稿与发送已实现 | 统一引用交互；完整应用和手机验收，不重复实现 |
-| Git 工作目录 | Git::create_worktree 准备原语已实现 | 尚无创建 RPC、thread.start 和界面闭环；未实现跨崩溃自动恢复 |
+| Git 工作目录 | Git::create_worktree 准备原语及查询、创建 RPC 已实现 | 尚无目录准备与 Thread 启动、界面闭环；未实现跨崩溃自动恢复 |
 | 桌面 | Electron、节点发现与配对、随包资源与节点、隔离安装验证 | 干净 macOS 账号首装、正式签名公证及升级验收 |
 | 远程与手机 | 节点配对、权限、隧道、Web 入口、共享客户端 | iPhone 真机跨网络连接和完整接续；原生框架未定 |
 | 多机器 | 日志、快照和执行基础 | 不代表已实现复制、交接或远程子任务 |
@@ -146,3 +146,5 @@ Rust 已按 `core/`、`extensions/`、`apps/node/` 分层，Cargo 依赖与 CI �
 ## 下一项任务
 
 R0 已完成。下一步设计并实施 R1a：复用 Git worktree 准备原语，打通新 Thread 的目录准备与启动。每次只推进一个可验收的产品闭环，不同时重构内核和扩展体系。
+
+R1a 的 worktree RPC 前置切片已完成，权限与验收见 [WORKTREE_START.md](WORKTREE_START.md)；R1a 整体尚未完成。

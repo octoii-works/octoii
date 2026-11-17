@@ -26,10 +26,11 @@ pub const SESSION_LASTS: Duration = Duration::from_hours(365 * 24);
 pub const LINK_LASTS: Duration = Duration::from_mins(5);
 
 /// Every scope there is, as a session the person makes for themselves holds them.
-pub const ALL: [Scope; 8] = [
+pub const ALL: [Scope; 9] = [
     Scope::ThreadsRead,
     Scope::ThreadsOperate,
     Scope::FilesRead,
+    Scope::GitOperate,
     Scope::TerminalsOperate,
     Scope::BrowserOperate,
     Scope::ProvidersManage,

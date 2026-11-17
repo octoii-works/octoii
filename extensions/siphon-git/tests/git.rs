@@ -146,3 +146,71 @@ async fn git_tells_a_repository_s_changes_patches_versions_and_commits() {
     assert_eq!(client.answer(&id).await["error"]["code"], "no_repository");
     siphon.runtime.close().await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn worktree_rpc_requires_git_permission_and_checks_out_the_requested_base() {
+    let folder = tempfile::tempdir().unwrap();
+    let root = folder.path().canonicalize().unwrap();
+    let source = root.join("source");
+    std::fs::create_dir(&source).unwrap();
+    git(&source, &["init"]);
+    std::fs::write(source.join("value.txt"), "base\n").unwrap();
+    git(&source, &["add", "."]);
+    git(&source, &["commit", "-m", "base"]);
+    let base = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(&source)
+        .output()
+        .unwrap();
+    assert!(base.status.success());
+    let base = String::from_utf8(base.stdout).unwrap().trim().to_owned();
+    std::fs::write(source.join("value.txt"), "later commit\n").unwrap();
+    git(&source, &["commit", "-am", "later"]);
+    std::fs::write(source.join("value.txt"), "uncommitted\n").unwrap();
+    std::fs::write(source.join("untracked.txt"), "keep here\n").unwrap();
+
+    let beak = Beak::new().unwrap();
+    let siphon = Siphon::builder(&beak, testing::setup(siphon::machine::Host::default()))
+        .unwrap()
+        .extension(siphon_base::BaseExtension::default())
+        .extension(siphon_git::GitExtension)
+        .start()
+        .unwrap();
+    let mut reader = Client::connect(&siphon, vec![Scope::FilesRead], 64);
+    reader.message().await;
+    let listed = asked(&mut reader, "git.worktrees", json!({"path": source})).await;
+    assert_eq!(listed["worktrees"].as_array().unwrap().len(), 1);
+    let destination = root.join("task");
+    let params = json!({"path": source, "destination": destination, "branch": "task", "base": base});
+    let id = reader.call("git.create-worktree", params.clone()).await;
+    assert_eq!(reader.answer(&id).await["error"]["code"], "forbidden");
+    assert!(!destination.exists());
+    let branch = Command::new("git")
+        .args(["show-ref", "--verify", "refs/heads/task"])
+        .current_dir(&source)
+        .output()
+        .unwrap();
+    assert!(!branch.status.success());
+
+    let mut writer = Client::connect(&siphon, vec![Scope::GitOperate], 64);
+    writer.message().await;
+    let made = asked(&mut writer, "git.create-worktree", params.clone()).await;
+    assert_eq!(made, json!({"path": destination, "branch": "task", "base_commit": base}));
+    assert_eq!(std::fs::read_to_string(destination.join("value.txt")).unwrap(), "base\n");
+    assert!(!destination.join("untracked.txt").exists());
+    assert_eq!(std::fs::read_to_string(source.join("value.txt")).unwrap(), "uncommitted\n");
+    let listed = asked(&mut reader, "git.worktrees", json!({"path": source})).await;
+    assert_eq!(listed["worktrees"].as_array().unwrap().len(), 2);
+    assert!(
+        listed["worktrees"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|entry| entry["path"] == destination.to_string_lossy().as_ref())
+    );
+    std::fs::write(destination.join("keep.txt"), "keep me\n").unwrap();
+    let id = writer.call("git.create-worktree", params).await;
+    assert!(!writer.answer(&id).await["error"].is_null());
+    assert_eq!(std::fs::read_to_string(destination.join("keep.txt")).unwrap(), "keep me\n");
+    siphon.runtime.close().await;
+}

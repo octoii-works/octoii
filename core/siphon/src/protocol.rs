@@ -57,6 +57,8 @@ pub enum Scope {
     ThreadsOperate,
     #[serde(rename = "files.read")]
     FilesRead,
+    #[serde(rename = "git.operate")]
+    GitOperate,
     #[serde(rename = "terminals.operate")]
     TerminalsOperate,
     #[serde(rename = "browser.operate")]

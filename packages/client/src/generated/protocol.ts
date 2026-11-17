@@ -178,6 +178,13 @@ export type ContextPart = "system" | "instructions" | "skills" | "catalog" | "to
 
 export type CreateThread = { config: Config, key: string, };
 
+/**
+ * Prepare a new task's directory, without changing a thread's workspace.
+ * `path` is within the source repository; `destination` is absolute; `branch` is a new literal name;
+ * `base` is an explicit commit or revision.
+ */
+export type CreateWorktree = { path: string, destination: string, branch: string, base: string, };
+
 export type Created = { thread: string, };
 
 /**
@@ -823,7 +830,7 @@ export type Revoked = { revoked: string, };
 /**
  * What a session lets its client do: each scope opens some of the methods.
  */
-export type Scope = "threads.read" | "threads.operate" | "files.read" | "terminals.operate" | "browser.operate" | "providers.manage" | "access.read" | "access.write";
+export type Scope = "threads.read" | "threads.operate" | "files.read" | "git.operate" | "terminals.operate" | "browser.operate" | "providers.manage" | "access.read" | "access.write";
 
 /**
  * A searched file, including context lines distinctly from matching lines.
@@ -1073,6 +1080,21 @@ export type Withdraw = { thread: string, delivery: string, };
 
 export type Withdrawn = { withdrawn: boolean, };
 
+/**
+ * A new linked worktree: its absolute path, its own new branch, and the commit it was created from.
+ */
+export type Worktree = { path: string, branch: string, base_commit: string, };
+
+/**
+ * A registered worktree, including detached, bare, locked and prunable entries.
+ */
+export type WorktreeEntry = { path: string, head: string | null, branch: string | null, bare: boolean, detached: boolean, locked: string | null, prunable: string | null, };
+
+/**
+ * The worktrees registered with the repository.
+ */
+export type Worktrees = { worktrees: Array<WorktreeEntry>, };
+
 export type WriteTerminal = { terminal: string, data: string, };
 
 /** What a client subscribes to. */
@@ -1133,6 +1155,8 @@ export type Methods = {
   'terminals.text': { params: OfTerminal; result: TerminalText };
   'memory.list': { params: InFolder; result: MemoryListed };
   'memory.delete': { params: DeleteMemory; result: Nothing };
+  'git.worktrees': { params: InFolder; result: Worktrees };
+  'git.create-worktree': { params: CreateWorktree; result: Worktree };
   'git.repository': { params: InFolder; result: InRepository };
   'git.changes': { params: GitChanges; result: Changes };
   'git.patch': { params: GitPatch; result: Patch };

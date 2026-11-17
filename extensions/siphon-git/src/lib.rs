@@ -10,12 +10,13 @@ use std::path::Path;
 
 use serde::Serialize;
 use siphon::connection::refusal;
+use siphon::machine::{Base, Writes};
 use siphon::protocol::Error;
 use siphon::{Caller, Extension, Registrar};
 use tokio_util::sync::CancellationToken;
 
 use crate::git::{Git, GitError};
-use crate::protocol::{Commits, InRepository, Method, Patch, Versions};
+use crate::protocol::{Commits, InRepository, Method, Patch, Versions, Worktrees};
 
 /// Git, as a host adds it.
 #[derive(Debug, Clone, Copy, Default)]
@@ -60,8 +61,22 @@ fn told(error: &GitError) -> Error {
 
 /// Does the git method `method` for the client of `caller`, its runs recorded while they run.
 async fn answered(caller: &Caller, method: Method) -> Result<serde_json::Value, Error> {
-    let machine = caller.person_machine().map_err(failed)?;
     let volume = caller.volume();
+    let machine = match &method {
+        Method::GitCreateWorktree(_) => {
+            caller.require_scope(siphon::protocol::Scope::GitOperate)?;
+            volume.commands().open(
+                caller.host(),
+                Base {
+                    workspace: "/".into(),
+                    home: caller.host().home.clone(),
+                },
+                &Writes::Anywhere,
+            )
+        }
+        _ => caller.person_machine(),
+    }
+    .map_err(failed)?;
     let time = volume.now_ms();
     volume
         .recorded(RECORD_KIND, |record| async move {
@@ -83,6 +98,14 @@ fn json(value: &impl Serialize) -> Result<serde_json::Value, Error> {
 
 async fn told_by(git: &Git<'_>, method: Method) -> Result<serde_json::Value, Error> {
     match method {
+        Method::GitWorktrees(asked) => json(&Worktrees {
+            worktrees: git.worktrees(Path::new(&asked.path)).await.map_err(|error| told(&error))?,
+        }),
+        Method::GitCreateWorktree(asked) => json(
+            &git.create_worktree(Path::new(&asked.path), Path::new(&asked.destination), &asked.branch, &asked.base)
+                .await
+                .map_err(|error| told(&error))?,
+        ),
         Method::GitRepository(asked) => json(&InRepository {
             repository: git.repository(Path::new(&asked.path)).await.map_err(|error| told(&error))?,
         }),

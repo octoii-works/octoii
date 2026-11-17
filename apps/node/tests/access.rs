@@ -31,3 +31,26 @@ async fn a_link_pairs_once_and_a_credential_holds_only_its_own_session() {
     );
     siphon.runtime.close().await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn stored_scopes_do_not_gain_new_git_permission() {
+    use siphon::protocol::Scope;
+    let folder = tempfile::tempdir().unwrap();
+    let home = Home::at(folder.path());
+    home.prepare().unwrap();
+    let siphon = octoii::serve::siphon(&home, siphon::providers::SignInSetup::default()).unwrap();
+    let access = Access::new(siphon.runtime.clone());
+    let scopes: Vec<_> = access::ALL.iter().copied().filter(|scope| *scope != Scope::GitOperate).collect();
+    let link = access
+        .link(Some("existing client".into()), scopes.clone(), access::LINK_LASTS)
+        .await
+        .unwrap();
+    let session = access.redeem(&link.credential, Holder::Bearer).await.unwrap();
+    siphon.runtime.close().await;
+    drop(access);
+    drop(siphon);
+    let siphon = octoii::serve::siphon(&home, siphon::providers::SignInSetup::default()).unwrap();
+    let access = Access::new(siphon.runtime.clone());
+    assert_eq!(access.held(&session.credential).unwrap().unwrap().scopes, scopes);
+    siphon.runtime.close().await;
+}

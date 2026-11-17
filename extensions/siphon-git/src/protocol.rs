@@ -1,14 +1,18 @@
 //! Git's methods, as its extension adds them to the protocol: the repository a folder is in, its changes, a file's patch
-//! and its two versions, and a branch's commits — what the Diff view reads.
+//! and its two versions, a branch's commits, and linked worktrees prepared for new tasks.
 
 use serde::{Deserialize, Serialize};
 use siphon::protocol::Scope;
 use siphon::protocol::siphon::InFolder;
 use ts_rs::TS;
 
-use crate::git::{ChangedFile, Changes, ChangesScope, Commit, Comparison, Repository};
+use crate::git::{ChangedFile, Changes, ChangesScope, Commit, Comparison, Repository, Worktree, WorktreeEntry};
 
 siphon::methods! {
+    /// List the repository's registered worktrees.
+    "git.worktrees" GitWorktrees(InFolder) -> Worktrees, Some(Scope::FilesRead);
+    /// Create a linked worktree on a new branch from an explicit base; does not start or move a thread.
+    "git.create-worktree" GitCreateWorktree(CreateWorktree) -> Worktree, Some(Scope::GitOperate);
     /// The repository a folder of the machine's is in, as git tells of it; none where it is in none.
     "git.repository" GitRepository(InFolder) -> InRepository, Some(Scope::FilesRead);
     /// The changes asked for of the repository a folder is in: each file with the lines it gained and lost.
@@ -85,4 +89,22 @@ pub struct GitCommits {
 pub struct Commits {
     pub commits: Vec<Commit>,
     pub truncated: bool,
+}
+
+/// The worktrees registered with the repository.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct Worktrees {
+    pub worktrees: Vec<WorktreeEntry>,
+}
+
+/// Prepare a new task's directory, without changing a thread's workspace.
+/// `path` is within the source repository; `destination` is absolute; `branch` is a new literal name;
+/// `base` is an explicit commit or revision.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct CreateWorktree {
+    pub path: String,
+    pub destination: String,
+    pub branch: String,
+    pub base: String,
 }

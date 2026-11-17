@@ -49,7 +49,7 @@ pub struct Worktree {
 }
 
 /// A registered worktree, including detached, bare, locked and prunable entries.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
 pub struct WorktreeEntry {
     pub path: String,
     pub head: Option<String>,
