@@ -1,5 +1,5 @@
 ---
-source: core/octoii-ai/tests/responses.rs
+source: libs/octoii-ai/tests/responses.rs
 expression: "sent_to(&OPENAI, \"openai\", \"gpt-6-sol\", &conversation()).await"
 ---
 {

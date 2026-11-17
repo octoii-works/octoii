@@ -1,5 +1,5 @@
 ---
-source: core/octoii-ai/tests/chat_completions.rs
+source: libs/octoii-ai/tests/chat_completions.rs
 expression: response.output
 ---
 [

@@ -1,5 +1,5 @@
 ---
-source: core/octoii-ai/tests/anthropic.rs
+source: libs/octoii-ai/tests/anthropic.rs
 expression: response
 ---
 {

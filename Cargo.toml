@@ -1,16 +1,14 @@
 [workspace]
 resolver = "3"
-members = ["core/*", "apps/node", "extensions/*", "vendor/beak/crates/*"]
+members = ["libs/*", "apps/node", "extensions/*"]
+exclude = ["siphon"]
 
 [workspace.dependencies]
-beak = { path = "vendor/beak/crates/beak" }
-octoii-ai = { path = "core/octoii-ai" }
-siphon = { path = "core/siphon" }
-siphon-image = { path = "core/siphon-image" }
-siphon-runtime = { path = "core/siphon-runtime" }
-siphon-script = { path = "core/siphon-script" }
-siphon-shell = { path = "core/siphon-shell" }
-siphon-text = { path = "core/siphon-text" }
+beak = { path = "siphon/vendor/beak/crates/beak" }
+octoii-ai = { path = "libs/octoii-ai" }
+siphon = { path = "siphon/crates/siphon" }
+siphon-image = { path = "siphon/crates/siphon-image" }
+siphon-runtime = { path = "siphon/crates/siphon-runtime" }
 siphon-base = { path = "extensions/siphon-base" }
 siphon-browser = { path = "extensions/siphon-browser" }
 siphon-claude-code = { path = "extensions/siphon-claude-code" }

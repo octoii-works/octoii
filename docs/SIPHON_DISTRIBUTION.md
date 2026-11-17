@@ -73,7 +73,15 @@ Rust Reference 明确说明 Rust ABI 没有稳定性保证。
 - [Rust ABI](https://doc.rust-lang.org/reference/items/external-blocks.html#abi)：Rust ABI 无稳定性保证；C ABI 仍需自行定义数据、所有权和版本契约。
 - [Cargo dependencies](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html)：Cargo 的 registry、Git、path 依赖来源。
 
-## 当前决策与实施顺序
+## 当前优先级：先做本地 workspace 拆分
+
+用户后续确认先在当前仓库拆成两个 Cargo workspace，构建验证后再迁往 devxiyang/octoii-siphon。
+Siphon 六个包位于 siphon/crates，Beak 与 QuickJS 在 siphon/vendor；octoii-ai 位于 libs/octoii-ai。
+本阶段只做目录/构建组织，暂缓 S1；以下边界收敛顺序仍作为后续计划。
+早期事实表与边界清单的 core 路径是盘点时位置，当前路径以 ARCHITECTURE.md 为准。
+私有仓库尚未创建，当前仍是一个 Git 仓库，不能宣称历史源码已闭源。
+
+## 后续接口收敛顺序
 
 2026-11-17 更新：先收紧上层依赖和公开接口，再验证二进制分发，最后分离实现与迁库。
 当前不是第二轮内核重写。“分发必须先于迁移解决”仍成立，但不要求先做全面 FFI 才整理调用边界。

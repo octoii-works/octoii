@@ -12,9 +12,13 @@ FOUNDATION = {"octoii-ai", "siphon-script", "siphon-shell", "siphon-text", "siph
 
 def layer(path):
     relative = path.relative_to(ROOT)
-    if relative.parts[:2] == ("vendor", "beak"):
+    if relative.parts[:3] == ("siphon", "vendor", "beak"):
         return "kernel"
-    if relative.parts[0] in {"core", "extensions", "apps"}:
+    if relative.parts[:2] == ("siphon", "crates"):
+        return "core"
+    if relative.parts[0] == "libs":
+        return "core"
+    if relative.parts[0] in {"extensions", "apps"}:
         return relative.parts[0]
     raise ValueError(f"Unclassified workspace package: {relative}")
 
@@ -28,6 +32,8 @@ def allowed(source, target):
         return target_layer == "kernel"
     if source_layer == "extensions":
         return target_layer == "extensions" or dependency in {"siphon", "octoii-ai"}
+    if name == "octoii-ai":
+        return dependency == "octoii-ai"
     if name in FOUNDATION:
         return dependency in FOUNDATION
     if name == "siphon-runtime":
@@ -38,13 +44,18 @@ def allowed(source, target):
 
 
 def main():
-    result = subprocess.run(
-        ["cargo", "metadata", "--format-version", "1", "--no-deps", "--locked", "--offline"],
-        cwd=ROOT, check=True, capture_output=True, text=True,
-    )
-    metadata = json.loads(result.stdout)
-    members = set(metadata["workspace_members"])
-    packages = [p for p in metadata["packages"] if p["id"] in members]
+    packages_by_path = {}
+    for manifest in [ROOT / "Cargo.toml", ROOT / "siphon/Cargo.toml"]:
+        result = subprocess.run(
+            ["cargo", "metadata", "--manifest-path", str(manifest), "--format-version", "1", "--no-deps", "--locked", "--offline"],
+            cwd=ROOT, check=True, capture_output=True, text=True,
+        )
+        metadata = json.loads(result.stdout)
+        members = set(metadata["workspace_members"])
+        for package in metadata["packages"]:
+            if package["id"] in members:
+                packages_by_path[Path(package["manifest_path"]).resolve()] = package
+    packages = list(packages_by_path.values())
     identities = {}
     for package in packages:
         path = Path(package["manifest_path"]).resolve().parent
