@@ -43,6 +43,5 @@ UI packages stay separate from Rust extensions. Product UI packages consume the 
 application internals. Apps assemble them. A frontend feature may consume several backend capabilities; frontend and
 backend packages need not match one-to-one.
 
-The current web app still contains product UI modules under `apps/web/src/extensions` and shared components. Extracting
-these into independent packages is subsequent work; this directory migration does not introduce a dynamic plugin
-loader or change execution behavior.
+The current web app still contains product UI modules under `apps/web/src/extensions` and shared components. Independent UI packages are deferred; keep clear module boundaries inside the web app. This directory migration does
+not introduce a dynamic plugin loader or change execution behavior.
