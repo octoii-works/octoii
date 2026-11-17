@@ -96,22 +96,22 @@ function TabButton(props: { readonly tab: Surface; readonly onClose: () => void 
 	const { icon, label } = props.tab;
 	return (
 		<span className="group/tab flex h-control-sm max-w-48 min-w-16 items-center rounded-md text-ui text-muted-foreground hover:bg-accent has-data-active:bg-accent has-data-active:text-foreground">
-			<Tabs.Tab
-				value={props.tab.key}
-				title={label}
-				className="flex h-full min-w-0 cursor-pointer items-center gap-1.5 rounded-md pr-1 pl-2 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset [&>svg]:size-3.5 [&>svg]:shrink-0"
-			>
-				{icon}
-				<span className="truncate">{label}</span>
-			</Tabs.Tab>
 			<button
 				type="button"
 				aria-label={`Close ${label}`}
 				onClick={props.onClose}
-				className="mr-1 flex size-control-2xs shrink-0 cursor-pointer items-center justify-center rounded-sm opacity-0 group-focus-within/tab:opacity-100 group-hover/tab:opacity-100 hover:bg-accent pointer-coarse:size-control-xs pointer-coarse:opacity-100"
+				className="ml-1 flex size-control-2xs shrink-0 cursor-pointer items-center justify-center rounded-sm opacity-0 group-focus-within/tab:opacity-100 group-hover/tab:opacity-100 hover:bg-accent pointer-coarse:size-control-xs pointer-coarse:opacity-100"
 			>
 				<X className="size-3" />
 			</button>
+			<Tabs.Tab
+				value={props.tab.key}
+				title={label}
+				className="flex h-full min-w-0 cursor-pointer items-center gap-1.5 rounded-md pr-2 pl-1 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset [&>svg]:size-3.5 [&>svg]:shrink-0"
+			>
+				{icon}
+				<span className="truncate">{label}</span>
+			</Tabs.Tab>
 		</span>
 	);
 }
