@@ -48,10 +48,9 @@ Paths below are relative to the root of `devxiyang/octoii-siphon`:
 | New `crates/siphon-ffi/tests/program.rs`, `crates/siphon-ffi/tests/c/program.c`; existing `crates/siphon-ffi/tests/lifecycle.rs`, `crates/siphon-ffi/tests/c/lifecycle.c` | Exercise callbacks from separately built hosts; migrate the storage tests to the same builder/open path. |
 | `crates/siphon-ffi/Cargo.toml`, `Cargo.lock`, `README.md`, `.github/workflows/check.yml` | Add only dependencies needed by the adapter and tests; document and verify the updated ABI and native consumer in CI. |
 
-An extension can only register Rust programs with the source-built runtime. The current native library opens a
-runtime with no registrations, so a public consumer cannot execute a program through the existing binary. A small
-registration adapter and ABI changes are required. Beak, the dispatcher, request handling and storage formats
-are outside this slice.
+An extension can only register Rust programs with the source-built runtime. ABI 1 could open a runtime but could
+not register programs, so this slice required a binary adapter. Beak, the dispatcher, request handling and storage
+formats remained unchanged.
 
 In `octoii-works/octoii-siphon-lib`, update the matching header, raw declarations, `build.rs` and safe Rust wrapper;
 add typed Program/Run adapters and tests. The product keeps its current runtime pending the remaining slices.
@@ -76,15 +75,13 @@ On macOS ARM64 with Rust 1.100.0, the real ABI 2 archive passed both independent
 all 8 public Rust integration tests. The private runtime and FFI passed 20 tests, and both repositories
 passed formatting and strict Clippy for the changed crates. The existing Octoii library compile and the
 workspace dependency boundary check passed. The local Rust build directories, test binaries and state
-were removed after verification. No binary or Cargo release was published.
+were removed after verification. [Private macOS CI](https://github.com/devxiyang/octoii-siphon/actions/runs/44193572801)
+also passed against the pinned wrapper. No binary or Cargo release was published.
 
 ## Following slices
 
-- **B2.2b — Host Requests.** Reuse the current request mailbox and delivery. Give each delivered request a
-  one-shot answer handle and let the host run its async handler. Stop signals cancellation and still allows an
-  answer with a partial result. On reopen, an unanswered request becomes `Interrupted` through the current
-  recovery path; the host does not receive it again. Verify that a late or duplicate response cannot answer
-  another delivery and that shutdown does not wait on a host handler.
+- **[B2.2b — Host Requests](SIPHON_REQUESTS.md).** Register a host handler, submit and await its result through
+  the existing mailbox, and verify cancellation, partial answers and reopen without redelivery.
 - **B2.2c — Streaming and person.** Expose the existing stream and person interfaces required by Octoii. Verify
   stream ordering and human answers through the binary. Machine and processing work follows in B3, then artifact
   validation on macOS, Windows and Linux and the product switch in B4.

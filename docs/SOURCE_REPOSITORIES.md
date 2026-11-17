@@ -4,8 +4,9 @@
 
 | Dependency | Source | Product integration |
 | --- | --- | --- |
-| Siphon | [devxiyang/octoii-siphon](https://github.com/devxiyang/octoii-siphon), private | siphon/ submodule at 91272f465dd2ee48b969eb41230571f65457fb9f |
+| Siphon | [devxiyang/octoii-siphon](https://github.com/devxiyang/octoii-siphon), private | Fixed by the `siphon/` gitlink in this checkout |
 | octoii-ai | [crates.io/octoii-ai](https://crates.io/crates/octoii-ai/0.0.2), public MIT package | Cargo version 0.0.2; resolved source and checksum in Cargo.lock |
+| Siphon binary interface | [octoii-works/octoii-siphon-lib](https://github.com/octoii-works/octoii-siphon-lib), public | Development wrapper tested independently against the native archive; not yet a product dependency |
 
 AI source and independent CI live in [octoii-works/octoii-ai](https://github.com/octoii-works/octoii-ai).
 Its 0.0.2 tag names release commit 9b3bcec729b83609a1783c381bf2c269b239a65b. The original 0.0.1 tag is unchanged.
@@ -68,16 +69,16 @@ with the Actions secret when necessary.
 The agreed target is a public octoii-works/octoii-siphon-lib repository and published library named
 octoii-siphon-lib, containing the safe Rust interface wrapper, ABI declarations, documentation and
 versioned platform binaries accessible without private repository credentials. The private repository would retain
-implementation source. This is not implemented yet: a real binary-boundary execution/recovery test
-and convergence of the current Beak/runtime access are prerequisites. The product still requires
+implementation source. [Binary execution and recovery slices](SIPHON_EXECUTION.md) are underway;
+convergence of the remaining Beak/runtime access is a prerequisite. The product still requires
 private Siphon source today. Final acceptance requires building and running Octoii without private
 source access; Octoii must no longer directly depend on Beak, siphon-runtime or the Siphon source submodule.
 
 macOS, Windows and Linux binary support is a required release goal, not an optional later claim.
 The implementation plan must explicitly define CPU architectures, Linux libc/ABI baselines and supported
 OS versions, with artifacts and real execution, persistence/recovery, cancellation and permission tests
-for each supported target. The existing Beak distribution contains only aarch64-apple-darwin; additional
-underlying artifacts and platform implementations must be established before declaring those targets supported.
+for each supported target. Native binary validation is currently macOS ARM64; additional artifacts and
+platform implementations must be established before their targets are supported.
 
 ## Public AI package validation
 
@@ -97,6 +98,6 @@ AI's initial GitHub CI passed. Siphon's initial GitHub CI passed compilation and
 an existing memory-limit test assumption: the exhausted engine reported Thrown instead of InternalError.
 The separately approved correction in Siphon commit 91272f465dd2ee48b969eb41230571f65457fb9f uses
 one finite allocation workload: it must fail at a 4 MiB limit and return the full count at 64 MiB.
-The product now pins this follow-up commit. All 9 script tests and targeted Clippy passed locally;
+The product pinned this follow-up commit before the binary work. All 9 script tests and targeted Clippy passed locally;
 production code is unchanged. The full standalone GitHub CI passed on this follow-up commit
 ([run 44114764949](https://github.com/devxiyang/octoii-siphon/actions/runs/44114764949)).
