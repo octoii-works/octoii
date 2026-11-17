@@ -13,9 +13,6 @@ use siphon_runtime::{Answer, Ending, Program, Run, Wait};
 use crate::agent::model::ModelRequest;
 use crate::agent::turn::charge;
 
-/// What a title request asks of the model, after the window.
-pub const INSTRUCTION: &str = "Do not answer the person or do what they ask. Write a title for this thread instead: the topic of what they ask, in at most six words, in the language they wrote in, names, paths and numbers kept as written, with no quotes and no full stop. Write the title alone.";
-
 /// The most bytes a title is kept to.
 const TITLE_BYTES_MAX: usize = 80;
 
@@ -26,8 +23,10 @@ pub struct TitleInput {
 }
 
 /// The program of a thread's title process, keyed `KEY` under its main process.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct TitleProgram;
+#[derive(Debug, Clone, Copy)]
+pub struct TitleProgram {
+    pub instruction: &'static str,
+}
 
 impl TitleProgram {
     pub const KEY: &'static str = "title";
@@ -52,7 +51,7 @@ impl Program for TitleProgram {
                 thread: id.clone(),
                 until: first.id().to_owned(),
                 model,
-                instruction: Some(INSTRUCTION.to_owned()),
+                instruction: Some(self.instruction.to_owned()),
             };
             run.request(&key, &request)?;
             return Ok(Ending::Wait(key.clone(), Wait::new().mail(key)));

@@ -71,11 +71,13 @@ impl Driver for Scripted {
     fn stream<'a>(&'a self, _: &'a Call, model: &'a Model, request: &'a Request) -> BoxFuture<'a, Result<Source, Failure>> {
         Box::pin(async move {
             let script = &self.0;
-            let output = if asks(request, crate::agent::title::INSTRUCTION) {
+            let output = if asks(request, crate::testing::PROMPTS.title) {
                 vec![says("Writing a file.")]
-            } else if asks(request, crate::agent::compaction::RECAP) {
+            } else if asks(request, crate::testing::PROMPTS.recap) {
                 vec![says("the recap")]
             } else if request.format.is_some() {
+                assert!(matches!(request.input.first(), Some(Item::Message(Message::Developer { content }))
+                    if content == &[InputContent::text(crate::testing::PROMPTS.review)]));
                 let told = format!("{:?}", request.input);
                 let removes = told.rsplit("<call>").next().is_some_and(|call| call.contains("rm -rf"));
                 vec![says(
@@ -212,8 +214,12 @@ fn runtime(beak: &Beak, script: &Arc<Script>) -> Runtime {
             tools: inner,
             primitives: std::sync::Arc::new(crate::agent::ThreadPrimitives),
         })
-        .program(TitleProgram)
-        .program(crate::agent::CompactProgram)
+        .program(TitleProgram {
+            instruction: crate::testing::PROMPTS.title,
+        })
+        .program(crate::agent::CompactProgram {
+            instruction: crate::testing::PROMPTS.recap,
+        })
         .program(DelegatedProgram)
         .program(crate::agent::ResumeProgram)
         .handle(move |asked: Asked<Gather>| {
@@ -229,7 +235,7 @@ fn runtime(beak: &Beak, script: &Arc<Script>) -> Runtime {
         })
         .handle(move |asked: Asked<Review>| {
             let models = Arc::clone(&models);
-            async move { answer_review(&models, asked).await }
+            async move { answer_review(&models, crate::testing::PROMPTS.review, asked).await }
         })
         .handle(move |asked: Asked<Exec>| {
             let tools = execs.clone();

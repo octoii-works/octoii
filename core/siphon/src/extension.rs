@@ -197,6 +197,7 @@ pub(crate) struct Builder {
     pub(crate) owners: HashMap<String, String>,
     pub(crate) providers: Vec<Provider>,
     pub(crate) tellers: Vec<OwnedTeller>,
+    pub(crate) prompts: Vec<Owned<crate::agent::Prompts>>,
     pub(crate) natives: Vec<(String, octoii_ai::vocabulary::Tool)>,
     pub(crate) writables: Vec<crate::agent::Writable>,
     pub(crate) writable_folders: crate::agent::WritableFolders,
@@ -341,6 +342,14 @@ impl Registrar<'_> {
     /// A tool its model's provider runs, given where the model runs it: the web search.
     pub fn native(&mut self, tool: octoii_ai::vocabulary::Tool) {
         self.builder.natives.push((self.extension.to_owned(), tool));
+    }
+
+    /// Supplies the independent model instructions. Only base may register them, exactly once.
+    pub fn prompts(&mut self, prompts: crate::agent::Prompts) {
+        self.builder.prompts.push(Owned {
+            extension: self.extension.to_owned(),
+            item: prompts,
+        });
     }
 
     /// What tells a thread's model, before each turn, what is `shared` that widely.

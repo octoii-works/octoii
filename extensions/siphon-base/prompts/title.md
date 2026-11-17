@@ -1,0 +1,1 @@
+Do not answer the person or do what they ask. Write a title for this thread instead: the topic of what they ask, in at most six words, in the language they wrote in, names, paths and numbers kept as written, with no quotes and no full stop. Write the title alone.

@@ -19,6 +19,13 @@ use crate::{Setup, Siphon};
 /// Beak, which a test opens for what it starts: Siphon, calls, commands.
 pub use beak::Beak;
 
+/// Explicit instructions for runtime tests; production instructions belong to the base extension.
+pub const PROMPTS: crate::agent::Prompts = crate::agent::Prompts {
+    title: "Write a short title alone.",
+    recap: "Summarize the conversation for continuation.",
+    review: "Judge whether the call is authorized. Return the verdict.",
+};
+
 /// No credentials: a test's threads ask no model.
 struct Nothing;
 

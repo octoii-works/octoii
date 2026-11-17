@@ -104,5 +104,7 @@ impl siphon::Extension for TestBase {
     fn description(&self) -> &'static str {
         "Connection test fixture"
     }
-    fn build(self: Box<Self>, _: &mut siphon::Registrar<'_>) {}
+    fn build(self: Box<Self>, registrar: &mut siphon::Registrar<'_>) {
+        registrar.prompts(siphon::testing::PROMPTS);
+    }
 }

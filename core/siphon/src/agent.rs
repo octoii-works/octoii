@@ -32,6 +32,14 @@ pub(crate) use turn::TurnProgram;
 pub(crate) use waiting::DelegatedProgram;
 pub use writable::{Writable, WritableFolders};
 
+/// Instructions for the three independent model calls, supplied by the required base extension.
+#[derive(Debug, Clone, Copy)]
+pub struct Prompts {
+    pub title: &'static str,
+    pub recap: &'static str,
+    pub review: &'static str,
+}
+
 /// What extensions and hosts use of it.
 pub use gather::{Shared, Teller, Telling};
 pub use primitives::{deliver, parent_of};

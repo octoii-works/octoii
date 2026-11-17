@@ -101,8 +101,12 @@ fn runtime(beak: &Beak, models: &Arc<Models>) -> Runtime {
             tools: inner,
             primitives: std::sync::Arc::new(crate::agent::ThreadPrimitives),
         })
-        .program(TitleProgram)
-        .program(CompactProgram)
+        .program(TitleProgram {
+            instruction: crate::testing::PROMPTS.title,
+        })
+        .program(CompactProgram {
+            instruction: crate::testing::PROMPTS.recap,
+        })
         .handle(move |asked: Asked<Gather>| {
             let sources = sources.clone();
             async move { answer_gather(&sources, asked).await }

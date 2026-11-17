@@ -199,6 +199,7 @@ impl Siphon {
             owners: HashMap::new(),
             providers,
             tellers: Vec::new(),
+            prompts: Vec::new(),
             natives: Vec::new(),
             writables: Vec::new(),
             writable_folders: crate::agent::WritableFolders::new(),
@@ -267,7 +268,7 @@ impl Building {
     /// Siphon, started on the current Tokio runtime.
     ///
     /// # Errors
-    /// The volume's failure, or a missing or duplicate base extension.
+    /// The volume's failure, a missing or duplicate base extension, or invalid independent model prompts.
     pub fn start(self) -> beak::Result<Siphon> {
         let base_count = self
             .builder
@@ -280,6 +281,23 @@ impl Building {
             return Err(beak::Error {
                 status: beak::Status::Invalid,
                 reason: format!("exactly one base extension is required; found {base_count}"),
+            });
+        }
+        let [registered] = self.builder.prompts.as_slice() else {
+            return Err(beak::Error {
+                status: beak::Status::Invalid,
+                reason: "base must supply independent model prompts exactly once".into(),
+            });
+        };
+        let prompts = registered.item;
+        if registered.extension != "base"
+            || [prompts.title, prompts.recap, prompts.review]
+                .iter()
+                .any(|text| text.trim().is_empty())
+        {
+            return Err(beak::Error {
+                status: beak::Status::Invalid,
+                reason: "independent model prompts must be nonempty and supplied by base".into(),
             });
         }
         let Building {
@@ -300,6 +318,7 @@ impl Building {
             owners,
             providers,
             tellers,
+            prompts: _,
             natives,
             writables,
             writable_folders: _,
@@ -314,7 +333,8 @@ impl Building {
             natives,
             models: Arc::clone(&models),
         };
-        let runtime = programs(runtime, &machine, &models, sources.clone(), tools, writables).start_on((kernel, events), options)?;
+        let runtime =
+            programs(runtime, &machine, &models, sources.clone(), tools, writables, prompts).start_on((kernel, events), options)?;
         let siphon = Siphon {
             machine,
             threads: Threads::new(runtime.clone()),
@@ -355,6 +375,7 @@ fn programs(
     sources: Sources,
     tools: Tools,
     writables: Vec<crate::agent::Writable>,
+    prompts: crate::agent::Prompts,
 ) -> siphon_runtime::Builder {
     let (gathering, asking, reviewing) = (sources, Arc::clone(models), Arc::clone(models));
     let (execs, host) = (tools.clone(), machine.clone());
@@ -370,8 +391,12 @@ fn programs(
             tools,
             primitives: Arc::new(crate::agent::ThreadPrimitives),
         })
-        .program(TitleProgram)
-        .program(CompactProgram)
+        .program(TitleProgram {
+            instruction: prompts.title,
+        })
+        .program(CompactProgram {
+            instruction: prompts.recap,
+        })
         .program(DelegatedProgram)
         .program(ResumeProgram)
         .handle(move |asked: Asked<Gather>| {
@@ -384,7 +409,7 @@ fn programs(
         })
         .handle(move |asked: Asked<Review>| {
             let models = Arc::clone(&reviewing);
-            async move { answer_review(&models, asked).await }
+            async move { answer_review(&models, prompts.review, asked).await }
         })
         .handle(move |asked: Asked<Exec>| {
             let (tools, host) = (execs.clone(), host.clone());
@@ -429,5 +454,42 @@ mod base_tests {
             .start()
             .unwrap_err();
         assert!(duplicate.reason.contains("found 2"));
+    }
+
+    #[tokio::test]
+    async fn starting_rejects_invalid_independent_prompts() {
+        let empty = crate::agent::Prompts {
+            title: " ",
+            ..testing::PROMPTS
+        };
+        for registrations in [
+            vec![],
+            vec![("base", testing::PROMPTS), ("base", testing::PROMPTS)],
+            vec![("other", testing::PROMPTS)],
+            vec![("base", empty)],
+            vec![(
+                "base",
+                crate::agent::Prompts {
+                    recap: "",
+                    ..testing::PROMPTS
+                },
+            )],
+            vec![(
+                "base",
+                crate::agent::Prompts {
+                    review: "\n",
+                    ..testing::PROMPTS
+                },
+            )],
+        ] {
+            let beak = Beak::new().unwrap();
+            let mut building = Siphon::builder(&beak, testing::setup(Host::default())).unwrap().extension(Base);
+            for (owner, prompts) in registrations {
+                building.builder.registrar(owner).prompts(prompts);
+            }
+            let error = building.start().unwrap_err();
+            assert_eq!(error.status, beak::Status::Invalid);
+            assert!(error.reason.contains("prompts"));
+        }
     }
 }

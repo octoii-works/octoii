@@ -440,5 +440,7 @@ impl crate::Extension for TestBase {
     fn description(&self) -> &'static str {
         "Connection test fixture"
     }
-    fn build(self: Box<Self>, _: &mut crate::Registrar<'_>) {}
+    fn build(self: Box<Self>, registrar: &mut crate::Registrar<'_>) {
+        registrar.prompts(crate::testing::PROMPTS);
+    }
 }

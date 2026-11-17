@@ -32,6 +32,11 @@ impl Extension for BaseExtension {
     }
 
     fn build(self: Box<Self>, registrar: &mut Registrar<'_>) {
+        registrar.prompts(siphon::agent::Prompts {
+            title: include_str!("../prompts/title.md").trim(),
+            recap: include_str!("../prompts/recap.md").trim(),
+            review: include_str!("../prompts/review.md").trim(),
+        });
         registrar.teller(Shared::Machine, Arc::new(Base));
         registrar.teller(Shared::Project, Arc::new(instructions::Instructions { config: self.config }));
         let environment = environment::Environment {

@@ -26,24 +26,6 @@ pub const RESERVE_TOKENS: u64 = 16 * 1024;
 /// The tokens of the latest entries a compaction keeps as they stand, at most — though always from the latest step on.
 pub const KEPT_TOKENS: u64 = 20_000;
 
-/// What a recap request asks of the model, after the conversation it recaps.
-pub const RECAP: &str = "Write a recap of the conversation above, for a model that carries on the work with the recap in place of it; the person's latest request and the latest messages follow it as they are. That model is given the instructions and the environment anew, so leave them out. Use these headings, with (none) under one that has nothing:
-## Goal
-What the person asked for, in their own words where the words matter.
-## Constraints
-What they required or ruled out, and what was promised to them.
-## Done
-What was done and found: the files, the symbols, the commands and what they gave, the errors, word for word.
-## In progress
-What is under way and where it stands: what is changed, tested, committed, pushed.
-## Decisions
-What was decided, and why.
-## Next
-What is still to do, in order.
-## Files
-The files to open first to go on, at most fifteen, each with why.
-Where the conversation begins with an earlier recap, carry forward what still holds: this recap takes its place. Write the recap alone, with no greeting, no question and no tool call.";
-
 /// Where a window is cut: the input it keeps as the person gave it, the latest before the cut — none where the cut
 /// falls at an input; the first entry it keeps after; and the last entry the recap covers.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -148,8 +130,10 @@ pub enum CompactState {
 }
 
 /// The program of a thread's compaction, keyed `KEY` under its main process.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct CompactProgram;
+#[derive(Debug, Clone, Copy)]
+pub struct CompactProgram {
+    pub instruction: &'static str,
+}
 
 impl CompactProgram {
     pub const KEY: &'static str = thread::COMPACTION_KEY;
@@ -187,7 +171,7 @@ impl Program for CompactProgram {
     fn run(&self, run: &mut Run<'_>, input: CompactInput, state: Option<CompactState>) -> anyhow::Result<Ending<CompactState, ()>> {
         let id = &input.thread;
         match state {
-            None => recap(run, id),
+            None => recap(run, id, self.instruction),
             Some(CompactState::Recapping { key, cut }) => recapped(run, id, key, cut),
             Some(CompactState::Gathering { key, cut, recap, response }) => compacted(run, id, &key, &cut, recap, response),
         }
@@ -204,7 +188,7 @@ fn config_of(run: &Run<'_>, id: &str) -> anyhow::Result<Config> {
 }
 
 /// Asks the model to recap the window up to its cut, and sleeps till it answers; done where there is nothing to recap.
-fn recap(run: &mut Run<'_>, id: &str) -> anyhow::Result<Ending<CompactState, ()>> {
+fn recap(run: &mut Run<'_>, id: &str, instruction: &str) -> anyhow::Result<Ending<CompactState, ()>> {
     let Some(model) = config_of(run, id)?.model else {
         return Ok(Ending::Fail("the thread names no model".into()));
     };
@@ -215,7 +199,7 @@ fn recap(run: &mut Run<'_>, id: &str) -> anyhow::Result<Ending<CompactState, ()>
         thread: id.to_owned(),
         until: cut.until.clone(),
         model,
-        instruction: Some(RECAP.to_owned()),
+        instruction: Some(instruction.to_owned()),
     };
     run.request(&key, &request)?;
     Ok(Ending::Wait(
