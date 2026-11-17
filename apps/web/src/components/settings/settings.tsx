@@ -117,7 +117,7 @@ export function SettingsDialog(props: SettingsProps): ReactNode {
 			<DialogPopup
 				ref={surface}
 				initialFocus={surface}
-				className="h-[min(48rem,calc(100dvh-4rem))] w-[72rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg"
+				className="h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] overflow-hidden rounded-lg sm:h-[calc(100dvh-3rem)] sm:w-[calc(100vw-3rem)] sm:max-h-[60rem] sm:max-w-[80rem] lg:h-[calc(100dvh-5rem)] lg:w-[calc(100vw-5rem)]"
 			>
 				<DialogTitle className="sr-only">Settings</DialogTitle>
 				<header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
