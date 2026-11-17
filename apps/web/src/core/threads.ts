@@ -16,10 +16,14 @@ import { mintedAt } from "./time.ts";
 export type Project = { readonly folder: string; readonly name: string };
 
 /** How a thread stands, as its row's icon says: asking the person, working, failed, or at rest. */
-export type ThreadStatus = "asks" | "working" | "failed" | "ready";
+export type ThreadStatus = "asks" | "working" | "failed" | "ready" | "preparing";
 
 /** How a thread stands: what waits on the person first, then a turn that runs or inputs that wait, then how the last ended. */
 export function statusOf(row: Listed): ThreadStatus {
+	const start = row.status.start?.state;
+	if (start?.state === "pending") return "preparing";
+	if (start?.state === "failed") return "failed";
+	if (start?.state === "cancelled") return "ready";
 	if (asksOf(row).length > 0) return "asks";
 	if (row.status.turn === "running" || row.status.inbox.length > 0) return "working";
 	return row.status.turn === "failed" ? "failed" : "ready";
@@ -97,7 +101,7 @@ export function lastActiveAt(row: Listed, standing: ThreadStanding): number {
  * counted from when the person brought it back, where that came later.
  */
 export function isSettled(row: Listed, standing: ThreadStanding, now: number): boolean {
-	if (standing.status === "asks" || standing.status === "working") return false;
+	if (standing.status === "asks" || standing.status === "working" || standing.status === "preparing") return false;
 	const last = Math.max(lastActiveAt(row, standing), row.marks.unsettled_at ?? 0);
 	if ((row.marks.settled_at ?? 0) > last) return true;
 	return now - last > SETTLES_AFTER_MS;

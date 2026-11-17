@@ -5,6 +5,7 @@
  * composer, or over what waits on the person, in the composer's place while it waits; and its details beside the conversation where the column has room — and after it its panel, where it is shown: its files and changes, its terminals and pages,
  * which a path a message names opens in. What the thread brought is seen as it is shown.
  */
+import { WorktreeStart } from "../extensions/git/thread-start.tsx";
 import { type ReactNode, useRef, useState } from "react";
 import type { Conversation, Listed } from "@octoii-works/octoii-client";
 import { useClient, useConversation, usePages, useTerminals, useThreads } from "@octoii-works/octoii-client/react";
@@ -182,6 +183,17 @@ function Dock(props: {
 	const working = conversation.status?.turn === "running" || conversation.inbox.length > 0;
 	// A call's permission, the oldest of what waits, is answered in the composer; anything else waits docked in its place.
 	const approval = useApproval(thread, conversation.asks.toSorted((a, b) => (a.key < b.key ? -1 : 1))[0]);
+	if (row?.status.start?.request.owner === "git.worktree" && row.status.start.state.state !== "ready") {
+		return (
+			<WorktreeStart
+				key={`${thread}:${row.status.start.token}:${row.status.start.state.state}`}
+				thread={thread}
+				start={row.status.start}
+				inbox={row.status.inbox}
+			/>
+		);
+	}
+
 	return (
 		<div className="relative shrink-0 bg-background pb-[max(--spacing(4),env(safe-area-inset-bottom))]">
 			<div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-full h-6 bg-linear-to-t from-background to-transparent" />

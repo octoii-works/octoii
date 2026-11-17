@@ -45,6 +45,12 @@ export function ChatHeader(props: HeaderProps): ReactNode {
 /** How the thread stands, as a pill: waiting on the person, working, or failed; nothing at rest. */
 function StatusPill(props: { readonly status: ThreadStatus }): ReactNode {
 	switch (props.status) {
+		case "preparing":
+			return (
+				<Pill tone="waiting" icon={<StatusMark status="preparing" />}>
+					Awaiting preparation
+				</Pill>
+			);
 		case "asks":
 			return (
 				<Pill tone="waiting" icon={<StatusMark status="asks" />}>

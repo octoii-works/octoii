@@ -304,6 +304,12 @@ function StatusSlot(props: { readonly row: Listed; readonly standing: ThreadStan
 	}
 	const { status } = standing;
 	switch (status) {
+		case "preparing":
+			return (
+				<Standing mark={<StatusMark status={status} />} className="text-muted-foreground">
+					Awaiting preparation
+				</Standing>
+			);
 		case "asks":
 			return (
 				<Standing mark={<StatusMark status={status} />} className="text-warning-foreground">
