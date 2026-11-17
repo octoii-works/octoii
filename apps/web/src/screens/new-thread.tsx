@@ -7,8 +7,8 @@
  * chosen, else the one the environment's settings name, and the message's first line as its title, delivers the
  * message, and goes to the thread.
  */
-import { type ReactNode, useState } from "react";
-import type { ReasoningEffort as Effort, Mode } from "@octoii-works/octoii-client";
+import { type ReactNode, useMemo, useState } from "react";
+import type { ReasoningEffort as Effort, Mode, CreateWorktree } from "@octoii-works/octoii-client";
 import { useClient, useSettings, useThreads } from "@octoii-works/octoii-client/react";
 import { ChevronDown, FolderOpen, FolderPlus, FolderX } from "lucide-react";
 import type { Device } from "../core/device.ts";
@@ -27,6 +27,10 @@ import { go } from "../components/state/navigation.ts";
 import { ChatHeader } from "../components/thread/header.tsx";
 import { Menu, MenuItem, MenuItemLabel, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuTrigger } from "../components/ui/menu.tsx";
 import { ProjectMark } from "../components/files/project-mark.tsx";
+import { useReach } from "../components/state/reach.ts";
+import { acceptWorktree } from "../extensions/git/submit.ts";
+import type { AcceptWorktree } from "../core/new-thread.ts";
+import { NewWorktree } from "../extensions/git/new-worktree.tsx";
 import { ServersMenu } from "../extensions/mcp/servers-menu.tsx";
 
 /** What the new thread's page is given: the project's folder asked for, and the device's settings. */
@@ -41,11 +45,14 @@ type Chosen = { readonly folder: string | undefined };
 /** The new thread's page. */
 export function NewThreadScreen(props: NewThreadScreenProps): ReactNode {
 	const client = useClient();
-	const { starting, pending, loaded, setPending, error, retry } = usePendingThread(client, props.project);
+	const { send } = useReach();
+	const accept = useMemo<AcceptWorktree>(() => (submission) => acceptWorktree(send, submission), [send]);
+	const { starting, pending, loaded, setPending, error, retry } = usePendingThread(client, props.project, accept);
 	const rows = useThreads() ?? [];
 	const reachesThreads = useExtension("thread");
 	const projects = projectsOf(rows);
 	const [chosen, setChosen] = useState<Chosen | undefined>(undefined);
+	const [worktree, setWorktree] = useState<CreateWorktree | undefined>(undefined);
 	const [choosing, setChoosing] = useState(false);
 	const [model, setModel] = useState<string | undefined>(undefined);
 	const [chosenMode, setMode] = useState<Mode | undefined>(undefined);
@@ -57,6 +64,7 @@ export function NewThreadScreen(props: NewThreadScreenProps): ReactNode {
 	const running = model ?? recentModelsOf(rows)[0];
 	const choose = (next: string | undefined): void => {
 		setChosen({ folder: next });
+		setWorktree(undefined);
 		setChoosing(false);
 	};
 	return (
@@ -100,15 +108,15 @@ export function NewThreadScreen(props: NewThreadScreenProps): ReactNode {
 								onSend={async (draft) => {
 									if (starting === undefined) throw new Error("Wait for the node connection.");
 									try {
-										const thread = await starting.send(
-											{
-												...(folder === undefined ? {} : { workspace: folder }),
-												...(running === undefined ? {} : { model: running }),
-												...(chosenMode === undefined ? {} : { mode: chosenMode }),
-												...(effort === undefined ? {} : { effort }),
-											},
-											draft,
-										);
+										const config = {
+											...(folder === undefined ? {} : { workspace: folder }),
+											...(running === undefined ? {} : { model: running }),
+											...(chosenMode === undefined ? {} : { mode: chosenMode }),
+											...(effort === undefined ? {} : { effort }),
+										};
+										if (worktree !== undefined && (!worktree.base || worktree.path !== folder || !worktree.branch.trim() || !worktree.destination.trim()))
+											throw new Error("Enter a new branch and an absolute directory for the worktree.");
+										const thread = worktree === undefined ? await starting.send(config, draft) : await starting.sendWorktree(config, draft, worktree);
 										go({ place: "thread", thread });
 										await starting.acknowledge();
 									} catch (error) {
@@ -121,6 +129,9 @@ export function NewThreadScreen(props: NewThreadScreenProps): ReactNode {
 						)}
 					</div>
 					<FolderStrip folder={folder} projects={projects} onChoose={choose} onAnother={() => setChoosing(true)} />
+					{pending === undefined ? (
+						<NewWorktree key={folder} folder={folder} value={worktree?.path === folder ? worktree : undefined} onChange={setWorktree} />
+					) : null}
 					<FolderChooser open={choosing} onOpenChange={setChoosing} start={folder} projects={projects} onChoose={choose} />
 				</div>
 			</div>
@@ -193,6 +204,11 @@ function PendingTask({
 			<p className="text-muted-foreground">
 				{pending.config.workspace ?? "No project"} · {pending.draft.attachments.length} attachments
 			</p>
+			{pending.worktree === undefined ? null : (
+				<p className="mt-2 break-all text-muted-foreground">
+					New worktree: {pending.worktree.branch} · {pending.worktree.destination}
+				</p>
+			)}
 			<p className="my-3 text-muted-foreground">
 				Continue the original submission. If it was already accepted, this opens its thread without sending it again.
 			</p>
@@ -222,7 +238,7 @@ function PendingTask({
 				</button>
 			)}
 			<p className="mt-3 text-xs text-muted-foreground">
-				Recovery is available for 23 hours. Discarding this saved copy does not stop or delete an existing thread.
+				{pending.worktree === undefined ? "Recovery is available for 23 hours. " : ""}Discarding this saved copy does not stop or delete an existing thread.
 			</p>
 			<button
 				type="button"

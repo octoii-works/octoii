@@ -1,6 +1,9 @@
-import type { Client, Config, InputContent } from "@octoii-works/octoii-client";
+import type { Client, Config, CreateWorktree, InputContent } from "@octoii-works/octoii-client";
 import { contentOf } from "./attachments.ts";
 import type { Draft } from "./drafts.ts";
+
+export type WorktreeSubmission = { readonly key: string; readonly config: Config; readonly draft: Draft; readonly worktree: CreateWorktree };
+export type AcceptWorktree = (submission: WorktreeSubmission) => Promise<string>;
 
 /** The immutable submitted message and the acknowledgements saved while starting its thread. */
 export type PendingThread = {
@@ -8,6 +11,7 @@ export type PendingThread = {
 	readonly savedAt: number;
 	readonly config: Config;
 	readonly draft: Draft;
+	readonly worktree?: CreateWorktree;
 	readonly thread?: string;
 	readonly content?: readonly InputContent[];
 	readonly delivered?: string;
@@ -27,12 +31,14 @@ export type PendingThreadStore = {
 export class NewThread {
 	readonly #client: Pick<Client, "call" | "keepFile">;
 	readonly #store: PendingThreadStore;
+	readonly #acceptWorktree: AcceptWorktree;
 	#sending: Promise<string> | undefined;
 	#completed: string | undefined;
 
-	constructor(client: Pick<Client, "call" | "keepFile">, store: PendingThreadStore) {
+	constructor(client: Pick<Client, "call" | "keepFile">, store: PendingThreadStore, acceptWorktree: AcceptWorktree) {
 		this.#client = client;
 		this.#store = store;
+		this.#acceptWorktree = acceptWorktree;
 	}
 
 	read(): Promise<PendingThread | undefined> {
@@ -41,6 +47,10 @@ export class NewThread {
 
 	send(config: Config, draft: Draft): Promise<string> {
 		return this.#run(() => this.#store.begin({ key: crypto.randomUUID(), savedAt: Date.now(), config, draft }));
+	}
+
+	sendWorktree(config: Config, draft: Draft, worktree: CreateWorktree): Promise<string> {
+		return this.#run(() => this.#store.begin({ key: crypto.randomUUID(), savedAt: Date.now(), config, draft, worktree }));
 	}
 
 	resume(): Promise<string> {
@@ -80,6 +90,12 @@ export class NewThread {
 	}
 
 	async #submit(saved: PendingThread): Promise<string> {
+		if (saved.worktree !== undefined) {
+			if (saved.thread !== undefined) return saved.thread;
+			const thread = await this.#acceptWorktree({ ...saved, worktree: saved.worktree });
+			await this.#store.write({ ...saved, thread });
+			return thread;
+		}
 		let pending = saved;
 		if (pending.delivered !== undefined && pending.thread !== undefined) return pending.thread;
 		assertRecoverable(pending);

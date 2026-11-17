@@ -3,6 +3,10 @@ import { describe, expect, it, mock, spyOn } from "bun:test";
 import { NewThread, type PendingThread, type PendingThreadStore } from "../src/core/new-thread.ts";
 import { EMPTY_DRAFT } from "../src/core/drafts.ts";
 
+const unexpectedWorktree = async (): Promise<string> => {
+	throw new Error("Unexpected worktree submission");
+};
+
 function client() {
 	const create = mock(async (_params: ParamsOf<"threads.create">) => ({ thread: "thread-1" }));
 	const deliver = mock(async (_params: ParamsOf<"threads.deliver">) => ({ delivery: "delivery-1" }));
@@ -49,9 +53,9 @@ describe("recovering a submitted task", () => {
 		const calls = client();
 		const kept = store();
 		calls.keepFile.mockRejectedValueOnce(new Error("upload failed"));
-		await expect(new NewThread(calls, kept).send({ workspace: "/project" }, draft)).rejects.toThrow("upload failed");
+		await expect(new NewThread(calls, kept, unexpectedWorktree).send({ workspace: "/project" }, draft)).rejects.toThrow("upload failed");
 		expect(calls.deliver).not.toHaveBeenCalled();
-		const restored = new NewThread(calls, kept);
+		const restored = new NewThread(calls, kept, unexpectedWorktree);
 		expect(await (await restored.read())?.draft.attachments[0]?.bytes?.text()).toBe("note");
 		expect(await restored.resume()).toBe("thread-1");
 		expect(calls.create).toHaveBeenCalledTimes(1);
@@ -65,8 +69,8 @@ describe("recovering a submitted task", () => {
 		const calls = client();
 		const kept = store();
 		calls.create.mockRejectedValueOnce(new Error("connection closed"));
-		await expect(new NewThread(calls, kept).send({}, draft)).rejects.toThrow();
-		await new NewThread(calls, kept).resume();
+		await expect(new NewThread(calls, kept, unexpectedWorktree).send({}, draft)).rejects.toThrow();
+		await new NewThread(calls, kept, unexpectedWorktree).resume();
 		expect(calls.create.mock.calls[1]).toEqual(calls.create.mock.calls[0]);
 	});
 
@@ -74,8 +78,8 @@ describe("recovering a submitted task", () => {
 		const calls = client();
 		const kept = store();
 		calls.deliver.mockRejectedValueOnce(new Error("answer lost"));
-		await expect(new NewThread(calls, kept).send({}, draft)).rejects.toThrow();
-		const restored = new NewThread(calls, kept);
+		await expect(new NewThread(calls, kept, unexpectedWorktree).send({}, draft)).rejects.toThrow();
+		const restored = new NewThread(calls, kept, unexpectedWorktree);
 		await restored.resume();
 		expect(calls.deliver.mock.calls[1]).toEqual(calls.deliver.mock.calls[0]);
 		expect(calls.keepFile).toHaveBeenCalledTimes(1);
@@ -93,7 +97,7 @@ describe("recovering a submitted task", () => {
 				throw new Error("storage full");
 			},
 		};
-		await expect(new NewThread(calls, kept).send({}, draft)).rejects.toThrow("storage full");
+		await expect(new NewThread(calls, kept, unexpectedWorktree).send({}, draft)).rejects.toThrow("storage full");
 		expect(calls.create).not.toHaveBeenCalled();
 		expect(calls.deliver).not.toHaveBeenCalled();
 	});
@@ -106,14 +110,14 @@ describe("recovering a submitted task", () => {
 			if (pending.content !== undefined) throw new Error("storage full");
 			await write(pending);
 		};
-		await expect(new NewThread(calls, kept).send({}, draft)).rejects.toThrow("storage full");
+		await expect(new NewThread(calls, kept, unexpectedWorktree).send({}, draft)).rejects.toThrow("storage full");
 		expect(calls.deliver).not.toHaveBeenCalled();
 	});
 
 	it("coalesces concurrent sends and never replaces a pending message with new input", async () => {
 		const calls = client();
 		const kept = store();
-		const starting = new NewThread(calls, kept);
+		const starting = new NewThread(calls, kept, unexpectedWorktree);
 		const first = starting.send({}, draft);
 		expect(starting.send({}, draft)).toBe(first);
 		await first;
@@ -130,7 +134,7 @@ it("refuses old or future-dated recovery without remote writes", async () => {
 			const kept = store();
 			await kept.begin({ key: "old", savedAt, config: {}, draft });
 			const calls = client();
-			await expect(new NewThread(calls, kept).resume()).rejects.toThrow("too old");
+			await expect(new NewThread(calls, kept, unexpectedWorktree).resume()).rejects.toThrow("too old");
 			expect(calls.create).not.toHaveBeenCalled();
 			expect(calls.deliver).not.toHaveBeenCalled();
 		}
@@ -141,12 +145,53 @@ it("refuses old or future-dated recovery without remote writes", async () => {
 
 it("an old acknowledgement cannot remove a newer submission", async () => {
 	const kept = store();
-	const first = new NewThread(client(), kept);
+	const first = new NewThread(client(), kept, unexpectedWorktree);
 	await first.send({}, draft);
 	await first.acknowledge();
-	const next = new NewThread(client(), kept);
+	const next = new NewThread(client(), kept, unexpectedWorktree);
 	await next.send({}, draft);
 	const saved = await next.read();
 	await first.acknowledge();
 	expect((await next.read())?.key).toBe(saved?.key);
+});
+
+const worktree = { path: "/project", destination: "/task", branch: "task", base: "a".repeat(40) };
+
+it("retries the immutable worktree submission after losing its answer, without creating or delivering separately", async () => {
+	const calls = client();
+	const kept = store();
+	const accept = mock(async () => "accepted-thread");
+	accept.mockRejectedValueOnce(new Error("lost answer"));
+	await expect(new NewThread(calls, kept, accept).sendWorktree({ workspace: "/project" }, draft, worktree)).rejects.toThrow("lost answer");
+	const saved = await kept.read();
+	expect(saved?.worktree).toEqual(worktree);
+	const restored = new NewThread(calls, kept, accept);
+	expect(await restored.resume()).toBe("accepted-thread");
+	expect(accept.mock.calls[0]).toEqual(accept.mock.calls[1]);
+	expect(calls.create).not.toHaveBeenCalled();
+	expect(calls.keepFile).not.toHaveBeenCalled();
+	expect(calls.deliver).not.toHaveBeenCalled();
+	expect(await restored.resume()).toBe("accepted-thread");
+	expect(accept).toHaveBeenCalledTimes(2);
+	await restored.acknowledge();
+	expect(await kept.read()).toBeUndefined();
+});
+
+it("worktree claims remain recoverable after the ordinary delivery key window", async () => {
+	const kept = store();
+	await kept.begin({ key: "permanent", savedAt: 0, config: {}, draft, worktree });
+	const accept = mock(async () => "accepted-thread");
+	expect(await new NewThread(client(), kept, accept).resume()).toBe("accepted-thread");
+});
+
+it("replays acceptance if persisting its acknowledgement fails", async () => {
+	const kept = store();
+	const write = mock(kept.write);
+	write.mockRejectedValueOnce(new Error("disk full"));
+	const accept = mock(async () => "accepted-thread");
+	const starting = new NewThread(client(), { ...kept, write }, accept);
+	await expect(starting.sendWorktree({}, draft, worktree)).rejects.toThrow("disk full");
+	expect((await kept.read())?.thread).toBeUndefined();
+	expect(await starting.resume()).toBe("accepted-thread");
+	expect(accept.mock.calls[0]).toEqual(accept.mock.calls[1]);
 });
