@@ -13,6 +13,12 @@
   need, exact scope, and why an extension-only solution is insufficient, then obtain a separate explicit confirmation
   for that core change. General approval to implement a feature or refactor is not this confirmation. Read-only
   investigation and checks are allowed; do not bypass core boundaries to avoid asking.
+- **Upper-layer boundary**: apps, product services, extensions and their shared libraries interact with Siphon through
+  its public interfaces, not directly with Beak or `siphon-runtime`. Direct lower-layer access is an exception only
+  where genuinely necessary: document why Siphon's public interface cannot serve the need and keep the access in the
+  smallest possible boundary, such as node initialization. An existing direct dependency is not permission to add
+  more. Do not expose kernel internals or bypass Siphon's state, permissions or execution rules for convenience.
+  Changes to `core/` still require the separate confirmation above.
 - **Extensions**: an extension reaches Siphon by its public interface alone, never Beak or `siphon-runtime`, and writes
   the volume only through Siphon's primitives (`Volume`, `machine::Commands`, a plan's spawn and deliver). What an
   extension needs that Siphon lacks becomes a primitive of Siphon's, never a way around it.
