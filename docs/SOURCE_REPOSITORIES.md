@@ -4,7 +4,7 @@
 
 | Dependency | Source | Product integration |
 | --- | --- | --- |
-| Siphon | [devxiyang/octoii-siphon](https://github.com/devxiyang/octoii-siphon), private | siphon/ submodule at 5447fa49b641d3048e1625f2dee5543b00b542f2 |
+| Siphon | [devxiyang/octoii-siphon](https://github.com/devxiyang/octoii-siphon), private | siphon/ submodule at 91272f465dd2ee48b969eb41230571f65457fb9f |
 | octoii-ai | [crates.io/octoii-ai](https://crates.io/crates/octoii-ai/0.0.2), public MIT package | Cargo version 0.0.2; resolved source and checksum in Cargo.lock |
 
 AI source and independent CI live in [octoii-works/octoii-ai](https://github.com/octoii-works/octoii-ai).
@@ -95,7 +95,7 @@ The extracted sources were compared against the product revision: 76 existing Si
 47 existing AI files are byte-identical; changes are standalone configuration and documentation.
 AI's initial GitHub CI passed. Siphon's initial GitHub CI passed compilation and Clippy but exposed
 an existing memory-limit test assumption: the exhausted engine reported Thrown instead of InternalError.
-The separately approved correction in Siphon commit 5447fa49b641d3048e1625f2dee5543b00b542f2 uses
+The separately approved correction in Siphon commit 91272f465dd2ee48b969eb41230571f65457fb9f uses
 one finite allocation workload: it must fail at a 4 MiB limit and return the full count at 64 MiB.
 The product now pins this follow-up commit. All 9 script tests and targeted Clippy passed locally;
 production code is unchanged. The full standalone GitHub CI passed on this follow-up commit

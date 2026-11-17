@@ -54,8 +54,9 @@ In product Octoii: change its existing Beak dependency path, update Cargo.lock a
 include the independent beak/Cargo.toml in the dependency checker and classify its packages as kernel, and update documentation. This migration
 retains existing upper-layer accesses as tracked debt; it does not authorize new direct kernel access.
 
-Beak's separate local checkout has an uncommitted toolchain change. Do not modify it. Preserve provenance
-in the private repository; after migration, Siphon's internal copy is the maintenance source for this product.
+At import time, Beak's separate local checkout had an uncommitted toolchain change and was left untouched.
+After migration, the user authorized archiving devxiyang/octoii-beak and deleting that checkout; both are done.
+Its toolchain change is retained in Siphon's internal copy, which is now the maintenance source for this product.
 Import all tracked Beak files, including its workspace manifest, lockfile, format/toolchain configuration
 and distribution script. Do not import .git or target caches. Preserve independent dependency resolution:
 building Siphon resolves its dependency graph using Siphon's lockfile; standalone Beak checks use Beak's lockfile. No nested submodule credentials are needed.
@@ -70,7 +71,7 @@ Siphon first and then the product pin. If a source fix is required, seek a separ
 macOS, Windows and Linux are mandatory binary release platforms. Define supported CPU architectures,
 OS baselines and Linux libc/ABI explicitly before release. Each advertised target requires actual
 execution, persistence/recovery, cancellation and permission tests, not only successful cross-compilation.
-The current shipped Beak artifact only supports macOS ARM64; source integration alone is not proof of
+The former bundled Beak artifact supported only macOS ARM64; source integration alone is not proof of
 other platform support. This requirement must be addressed before declaring binary distribution complete.
 
 ## B1 imported source inventory
@@ -246,7 +247,7 @@ The existing script, shell, image and text dependencies also require public repl
 package before deleting siphon/. Merely wrapping siphon-runtime leaves private dependencies in place.
 No public Beak/kernel escape hatch is introduced to make product compilation pass.
 
-### B2.1: binary lifecycle and storage slice — implemented, CI validation in progress
+### B2.1: binary lifecycle and storage slice — complete
 
 Start with a small executable slice before committing to the full callback protocol:
 open a runtime, commit supported Changes, read a retained Snapshot, close, immediately reopen and verify
@@ -294,7 +295,7 @@ Rustonomicon FFI, https://doc.rust-lang.org/stable/nomicon/ffi.html.
 ## B2.1 implementation record
 
 Private Siphon commit 5447fa4 adds the approved siphon-ffi crate. Public interface source is at
-https://github.com/octoii-works/octoii-siphon-lib (8d9cd8e). The wrapper uses only checked-in C declarations
+https://github.com/octoii-works/octoii-siphon-lib (01f304d). The wrapper uses only checked-in C declarations
 and a verified native archive; it has no private source dependency or consumer bindgen step.
 
 The implemented slice covers atomic mkdir/write/append/delete batches, retained snapshots and reads,
@@ -314,3 +315,15 @@ artifact input, not the final download/install protocol. The local manifest hash
 No binary release or crates.io version is published, no Windows/Linux support is claimed, and the product's
 siphon/ submodule remains until B2.2–B4 replace all private dependencies. Program/request callbacks and
 processing capabilities remain pending; a storage-only wrapper is not a complete Siphon distribution.
+
+The final macOS packaging flow retains the native Rust unwind personality during partial linking, then
+renames it to siphon_rust_eh_personality using the toolchain's llvm-objcopy before stripping symbols.
+This keeps the C binary self-contained without colliding with a Rust consumer's personality symbol.
+A separate caught-panic C-host probe passed locally. CI confirmed C linking with this isolation; its
+public consumer has independent Cargo and rustfmt configuration, including when checked out below Siphon.
+
+Final B2.1 acceptance: private Siphon 91272f4, public wrapper 01f304d. Clean macOS ARM64 CI passed
+all Beak/Siphon checks, native archive packaging, the independently linked C lifecycle test and the
+public wrapper's format/Clippy/integration tests:
+https://github.com/devxiyang/octoii-siphon/actions/runs/44133851820.
+This completes the approved B2.1 slice only; B2.2–B4 remain required for public release and product migration.
