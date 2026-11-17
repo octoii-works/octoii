@@ -12,7 +12,7 @@ FOUNDATION = {"siphon-script", "siphon-shell", "siphon-text", "siphon-image"}
 
 def layer(path):
     relative = path.relative_to(ROOT)
-    if relative.parts[:3] == ("siphon", "vendor", "beak"):
+    if relative.parts[:2] == ("siphon", "beak"):
         return "kernel"
     if relative.parts[:2] == ("siphon", "crates"):
         return "core"
@@ -43,7 +43,7 @@ def allowed(source, target):
 
 def main():
     packages_by_path = {}
-    for manifest in [ROOT / "Cargo.toml", ROOT / "siphon/Cargo.toml"]:
+    for manifest in [ROOT / "Cargo.toml", ROOT / "siphon/Cargo.toml", ROOT / "siphon/beak/Cargo.toml"]:
         result = subprocess.run(
             ["cargo", "metadata", "--manifest-path", str(manifest), "--format-version", "1", "--no-deps", "--locked", "--offline"],
             cwd=ROOT, check=True, capture_output=True, text=True,

@@ -1,12 +1,12 @@
 # Package boundaries
 
-Two local Cargo workspaces separate the product and private Siphon. The root owns apps, extensions and
+Three local Cargo workspaces separate the product, private Siphon and its internal Beak source. The root owns apps, extensions and
 libs/octoii; siphon/ is a pinned submodule. octoii-ai 0.0.2 is a crates.io dependency, with its source
 and independent workspace in its own public repository. Runtime behavior remains unchanged.
 
 | Location | Responsibility |
 | --- | --- |
-| `siphon/vendor/beak/` | Beak's Rust bindings, C header and prebuilt kernel distribution |
+| `siphon/beak/` | Complete Beak source with an independent Cargo workspace |
 | `siphon/crates/siphon-runtime/` | Durable execution, requests and recovery on Beak; no AI dependency |
 | crates.io `octoii-ai` | Model vocabulary, providers and transports; no local source directory |
 | `siphon/crates/siphon-{script,shell,text,image}/` | Foundational processing libraries |
@@ -19,8 +19,7 @@ and independent workspace in its own public repository. Runtime behavior remains
 ## Rust dependencies
 
 Each workspace declares its own package defaults, lints, profiles and dependencies, and keeps its own Cargo.lock.
-The product uses path dependencies into siphon/; Siphon has no dependency on AI or the product. Beak and QuickJS
-distribution files live inside siphon/vendor. AI has no dependency on Siphon or the product.
+The product uses path dependencies into siphon/; Siphon has no dependency on AI or the product. Beak lives in siphon/beak; QuickJS sources live in siphon/vendor. AI has no dependency on Siphon or the product.
 
 The repositories are extracted and pinned. Controlled storage, machine and authorization mechanisms still need
 boundary convergence. Existing licensing is retained. See [SOURCE_REPOSITORIES.md](SOURCE_REPOSITORIES.md).

@@ -4,7 +4,7 @@
 
 | Dependency | Source | Product integration |
 | --- | --- | --- |
-| Siphon | [devxiyang/octoii-siphon](https://github.com/devxiyang/octoii-siphon), private | siphon/ submodule at 03602727d30826ca3f4ea41fcafd466ba15d8ccb |
+| Siphon | [devxiyang/octoii-siphon](https://github.com/devxiyang/octoii-siphon), private | siphon/ submodule at aa73a09fdc8dda6a32d502815a63360450d5887d |
 | octoii-ai | [crates.io/octoii-ai](https://crates.io/crates/octoii-ai/0.0.2), public MIT package | Cargo version 0.0.2; resolved source and checksum in Cargo.lock |
 
 AI source and independent CI live in [octoii-works/octoii-ai](https://github.com/octoii-works/octoii-ai).
@@ -29,14 +29,16 @@ cargo build --locked -p octoii-node --bin octoii
 
 The integration remains on codex/mvp until merged into main. Submodule updates use the recorded commit,
 not --remote branch tips. Cargo downloads octoii-ai from crates.io without GitHub credentials.
-The bundled Beak artifact currently supports aarch64-apple-darwin.
+Beak is built from source in siphon/beak, an independent workspace copied into the private repository.
+No nested Beak checkout or additional repository credential is required. Platform validation currently targets macOS.
 
-Validate the two local workspaces:
+Validate the three local workspaces:
 
 ```sh
 python3 tools/check-rust-layers.py
 cargo test --locked --workspace
 cargo test --locked --manifest-path siphon/Cargo.toml --workspace
+cargo test --locked --manifest-path siphon/beak/Cargo.toml --workspace
 ```
 
 Run fmt and Clippy with those same manifests. AI's own tests run in its separate public repository;
@@ -93,7 +95,7 @@ The extracted sources were compared against the product revision: 76 existing Si
 47 existing AI files are byte-identical; changes are standalone configuration and documentation.
 AI's initial GitHub CI passed. Siphon's initial GitHub CI passed compilation and Clippy but exposed
 an existing memory-limit test assumption: the exhausted engine reported Thrown instead of InternalError.
-The separately approved correction in Siphon commit 03602727d30826ca3f4ea41fcafd466ba15d8ccb uses
+The separately approved correction in Siphon commit aa73a09fdc8dda6a32d502815a63360450d5887d uses
 one finite allocation workload: it must fail at a 4 MiB limit and return the full count at 64 MiB.
 The product now pins this follow-up commit. All 9 script tests and targeted Clippy passed locally;
 production code is unchanged. The full standalone GitHub CI passed on this follow-up commit

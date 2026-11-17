@@ -4,7 +4,7 @@ members = ["libs/*", "apps/node", "extensions/*"]
 exclude = ["siphon"]
 
 [workspace.dependencies]
-beak = { path = "siphon/vendor/beak/crates/beak" }
+beak = { path = "siphon/beak/crates/beak" }
 octoii-ai = "0.0.2"
 octoii = { path = "libs/octoii" }
 siphon-script = { path = "siphon/crates/siphon-script" }
