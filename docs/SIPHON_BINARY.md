@@ -221,3 +221,72 @@ The product's access suite initially failed once when reopening a just-closed vo
 runtime destruction inside an async context. The isolated rerun, complete product rerun, and ten additional
 access-suite runs passed. This intermittent failure is recorded, not claimed fixed by the command cleanup
 change. Node binary build also passed. No access-test assertions or runtime lifecycle behavior were changed.
+
+## B2 implementation and product exit criteria
+
+The final integration must remove the product's siphon/ gitlink, .gitmodules entry, all Cargo path
+references into siphon/, private checkout steps and SIPHON_DEPLOY_KEY use. Octoii depends on the
+published octoii-siphon-lib package and crates.io octoii-ai. Repository creation alone is not completion.
+
+### Boundary
+
+The public package owns safe Rust types, serialization, typed Program/Request adapters, FFI declarations,
+artifact selection and verification. The private binary owns durable state, scheduling, commit semantics,
+request interruption/recovery, machine operations and the existing processing implementations.
+Do not export Rust trait objects, Future, Tokio objects, references, Vec or String layouts across the ABI.
+Use versioned C declarations, opaque handles, byte slices and explicit ownership/release functions.
+Catch unwinding panics inside each side of a foreign call; never promise recovery from aborting panics.
+
+Keep existing Program, Run, Changes, Wait, Request and Answer semantics. Runtime registration currently
+uses associated constants and private erased traits; adapting those is a later explicitly scoped batch,
+not justification for rebuilding the scheduler in the public wrapper. Run-scoped snapshots must keep
+one consistent view, and a phase's changes and ending must still commit atomically.
+
+The existing script, shell, image and text dependencies also require public replacement through this
+package before deleting siphon/. Merely wrapping siphon-runtime leaves private dependencies in place.
+No public Beak/kernel escape hatch is introduced to make product compilation pass.
+
+### B2.1: binary lifecycle and storage slice — pending core confirmation
+
+Start with a small executable slice before committing to the full callback protocol:
+open a runtime, commit supported Changes, read a retained Snapshot, close, immediately reopen and verify
+data. The runtime uses the existing Builder and public APIs; no new scheduler or storage implementation.
+The C boundary owns its executor and destroys it safely even when called from a host Tokio task.
+All failure paths, including open on an already locked directory, release owned resources without unwinding
+across the ABI. Shutdown is explicit and distinguishes closing execution from releasing read handles.
+
+Exact private scope (relative to octoii-siphon):
+- Add crates/siphon-ffi/Cargo.toml (staticlib/rlib, unpublished workspace member).
+- Add crates/siphon-ffi/src/{lib,abi,runtime,snapshot,changes}.rs and include/siphon.h.
+- Add crates/siphon-ffi/tests/lifecycle.rs and tests/c/lifecycle.c.
+- Update Cargo.lock, README.md, .github/workflows/check.yml for this slice and C-host verification.
+- Existing runtime and Beak implementation files remain unchanged in this first slice.
+
+Public work: establish octoii-works/octoii-siphon-lib; implement its matching safe wrapper, checked-in
+FFI declarations, build configuration and contract tests. Consumer builds must not need bindgen/Clang
+or private source. Before publishing, the package must carry immutable artifact identity and checksums,
+reject ABI mismatches and unsupported targets, and fail clearly without a private-source fallback.
+
+Why core work is necessary: only the private build can compile the implementation into a native library;
+an extension or an alias crate would still require the private sources at consumer build time.
+
+B2.1 is not the product migration. B2.2 adds typed program/request registration over the ABI and validates
+phase execution, host answers, streaming, cancellation, shutdown and crash recovery. Its exact core files
+will be separately reviewed after the first binary slice. B3 migrates the remaining machine/storage and
+processing callers. B4 publishes the complete verified package and removes private checkout dependencies.
+
+### Distribution verification
+
+Initial target matrix: aarch64-apple-darwin, x86_64-apple-darwin, x86_64-pc-windows-msvc,
+x86_64-unknown-linux-gnu. Add Linux ARM64 when native validation is available. Record OS/libc minimums
+from the actual build environment before publication; do not infer them from the target name.
+Static library symbol isolation and platform system libraries must be validated on each native runner;
+the old Beak shell distribution script is not a Windows distribution implementation.
+
+Release artifacts include target, interface/binary versions, SHA-256, license notices and platform minimums.
+A clean public consumer CI job has no private checkout or credential and runs persistent recovery and
+host-callback tests against the actual release binaries. Product CI must ultimately use that same path.
+Do not publish a placeholder 0.0.1 that cannot serve the promised product interface.
+
+References: Rust Reference, https://doc.rust-lang.org/reference/linkage.html;
+Rustonomicon FFI, https://doc.rust-lang.org/stable/nomicon/ffi.html.
