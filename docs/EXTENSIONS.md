@@ -46,3 +46,15 @@ Git 创建 worktree 不等于切换 Thread。目录切换、项目归属、上�
 Delegate 已完成显式 action 迁移，包含参数校验、真实调用测试、模型提示词快照和 UI 摘要；等待与后台通知沿用原实现。Browser 已完成 type/fill/press 拆分，真实 Chromium 验证覆盖输入、替换、清空、只读拒绝和显式提交。Git 已注册四个 action，复用已有仓库查询与 worktree 创建实现；补充列表、非强制移除、独立操作权限和真实工具调用测试。
 
 移除扩展开关和 common 目录迁移分别提交，不混入工具参数变更。冻结的 core 中自包含执行测试夹具不是扩展真实契约的替代；真实扩展 schema、权限和调用行为在扩展自身测试中验证。
+
+## Git 官方语义核对
+
+依据 [git-worktree 官方手册](https://git-scm.com/docs/git-worktree)（2026-11-17 核对）：
+
+- 创建使用 `git worktree add -b <branch> -- <path> <base>`，让 Git 创建目录、检查分支和管理工作树元数据；接受已有空目录。不预先 mkdir，不手动修改 `.git/worktrees`。
+- 验证 base 为提交后仍将原始 revision 传给 Git，保留远程分支与 `branch.autoSetupMerge` 的跟踪语义；创建后读取实际 HEAD 作为结果中的 base_commit。
+- 列表使用官方面向脚本的 `--porcelain -z`，保留含换行的路径和锁定原因。
+- 移除调用 `git worktree remove`，不以删除目录代替，不自动使用 force、删除分支或 prune。
+- 移动、修复与过期元数据清理由 Git 的 move/repair/prune 管理；便携盘或不常挂载的共享盘可用 lock 防止被清理。这些暂不增加工具 action，必要时通过 shell 显式操作。
+
+只创建新分支、不提供强制覆盖，以及不切换 Thread，是当前产品接口的范围限制，不是声称 Git 只支持这些能力。

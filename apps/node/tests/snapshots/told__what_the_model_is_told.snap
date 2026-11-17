@@ -967,7 +967,7 @@ Inspect the workspace repository and manage linked worktrees. status returns the
           "type": "string"
         },
         "path": {
-          "description": "New directory; relative to the workspace, absolute, or starting with ~/. Its parent must exist.",
+          "description": "New directory; relative to the workspace, absolute, or starting with ~/. Git creates missing parent directories and accepts an existing empty directory.",
           "type": "string"
         }
       },

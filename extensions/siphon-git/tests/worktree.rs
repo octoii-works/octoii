@@ -157,7 +157,6 @@ async fn existing_branches_and_paths_are_rejected_and_preserved() {
     let root = folder.path().canonicalize().expect("its real path");
     let base = repository(&root);
     git(&root, &["branch", "taken"]);
-    let branches = git(&root, &["for-each-ref", "--format=%(refname):%(objectname)", "refs/heads/"]);
     let beak = Beak::new().expect("Beak");
     let worktrees = Worktrees::start(&beak, &root, &Writes::Within(vec![root.clone()]));
     let unused = root.join("unused");
@@ -176,9 +175,10 @@ async fn existing_branches_and_paths_are_rejected_and_preserved() {
     std::fs::write(occupied.join("keep.txt"), "keep\n").expect("written");
     let file = root.join("file");
     std::fs::write(&file, "a file\n").expect("written");
-    for destination in [&empty, &occupied, &file] {
+    for (index, destination) in [&occupied, &file].into_iter().enumerate() {
+        let branch = format!("new-branch-{index}");
         let error = worktrees
-            .create(&root, destination, "new-branch", "HEAD")
+            .create(&root, destination, &branch, "HEAD")
             .await
             .expect_err("an existing path");
         assert!(error.to_string().contains(destination.to_str().expect("a path")));
@@ -187,10 +187,9 @@ async fn existing_branches_and_paths_are_rejected_and_preserved() {
     assert_eq!(std::fs::read_dir(&empty).expect("read").count(), 0);
     assert_eq!(std::fs::read_to_string(occupied.join("keep.txt")).expect("read"), "keep\n");
     assert_eq!(std::fs::read_to_string(&file).expect("read"), "a file\n");
-    assert_eq!(
-        git(&root, &["for-each-ref", "--format=%(refname):%(objectname)", "refs/heads/"]),
-        branches
-    );
+    // Git may create the new branch before refusing the directory; never roll it back ourselves.
+    assert_eq!(git(&root, &["rev-parse", "main"]), base);
+    assert_eq!(git(&root, &["rev-parse", "taken"]), base);
     worktrees.calling.close().await;
 }
 
@@ -247,7 +246,7 @@ async fn invalid_branches_and_bases_never_create_a_destination() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_git_failure_leaves_the_reserved_directory_and_existing_worktree_alone() {
+async fn a_git_failure_preserves_the_existing_worktree_without_reserving_a_directory() {
     let folder = tempfile::tempdir().expect("a folder");
     let root = folder.path().canonicalize().expect("its real path");
     let base = repository(&root);
@@ -267,7 +266,7 @@ async fn a_git_failure_leaves_the_reserved_directory_and_existing_worktree_alone
         .expect_err("still registered");
     assert!(error.to_string().contains(destination.to_str().expect("a path")));
     assert!(error.to_string().contains("new-branch"));
-    assert_eq!(std::fs::read_dir(&destination).expect("the reserved directory remains").count(), 0);
+    assert!(!destination.exists());
     assert_eq!(std::fs::read_to_string(moved.join("keep.txt")).expect("read"), "existing work\n");
     assert_eq!(git(&root, &["rev-parse", "existing"]), base);
     worktrees.calling.close().await;
@@ -364,4 +363,25 @@ async fn agent_worktree_actions_keep_the_workspace_and_protect_uncommitted_work(
     );
     assert!(root.join("tracked.txt").exists());
     calling.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn creation_uses_git_directory_and_remote_tracking_semantics() {
+    let folder = tempfile::tempdir().unwrap();
+    let root = folder.path().canonicalize().unwrap();
+    let commit = repository(&root);
+    git(&root, &["remote", "add", "origin", "."]);
+    git(&root, &["update-ref", "refs/remotes/origin/main", &commit]);
+    git(&root, &["config", "branch.autoSetupMerge", "true"]);
+    let beak = Beak::new().unwrap();
+    let worktrees = Worktrees::start(&beak, &root, &Writes::Within(vec![root.clone()]));
+    let empty = root.join("empty");
+    std::fs::create_dir(&empty).unwrap();
+    let created = worktrees.create(&root, &empty, "tracked", "origin/main").await.unwrap();
+    assert_eq!(created.base_commit, commit);
+    assert_eq!(git(&empty, &["rev-parse", "--abbrev-ref", "@{upstream}"]), "origin/main");
+    let nested = root.join("missing/parent/worktree");
+    worktrees.create(&root, &nested, "nested", "HEAD").await.unwrap();
+    assert!(nested.join("tracked.txt").exists());
+    worktrees.calling.close().await;
 }

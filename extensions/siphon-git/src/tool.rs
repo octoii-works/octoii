@@ -17,7 +17,7 @@ pub enum Action {
     ListWorktrees,
     /// Create a new linked worktree and branch from a committed revision. Does not switch the thread.
     CreateWorktree {
-        /// New directory; relative to the workspace, absolute, or starting with ~/. Its parent must exist.
+        /// New directory; relative to the workspace, absolute, or starting with ~/. Git creates missing parent directories and accepts an existing empty directory.
         path: String,
         /// New literal branch name.
         branch: String,

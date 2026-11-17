@@ -221,13 +221,13 @@ impl Git<'_> {
         Ok(())
     }
 
-    /// Creates a linked worktree at the absolute `destination`, whose parent must exist, on the new literal `branch`.
-    /// `base` is resolved to a commit before anything is created; the source worktree's uncommitted changes stay there.
-    /// Every command, including directory creation and git's hooks and filters, runs on this same machine.
+    /// Creates a linked worktree at the absolute `destination` on the new literal `branch`.
+    /// `base` is verified as a commit before creation; Git retains its branch-tracking semantics; the source worktree's uncommitted changes stay there.
+    /// Git creates the directory and runs its hooks and filters on this same machine.
     ///
     /// # Errors
-    /// Invalid input, an existing branch or destination, or a command's failure. Nothing is deleted on failure:
-    /// after directory creation, the destination and any branch or worktree git created may remain for inspection.
+    /// Invalid input, an existing branch, an occupied destination, or a command's failure. Git manages its own
+    /// cleanup; this wrapper never deletes directories or branches after a failure.
     pub async fn create_worktree(&self, folder: &Path, destination: &Path, branch: &str, base: &str) -> Result<Worktree, GitError> {
         self.new_worktree(folder, destination, branch, base)
             .await
@@ -262,32 +262,12 @@ impl Git<'_> {
         {
             return Err(refused("the branch already exists"));
         }
-        let base_commit = text(
-            &self
-                .output(root, &["rev-parse", "--verify", "--end-of-options", &format!("{base}^{{commit}}")])
-                .await?,
-        )
-        .trim()
-        .to_owned();
-        // Git accepts an existing empty directory. Reserve a new one atomically, so an unrelated folder is never reused.
-        let directory = self
-            .machine
-            .run(
-                self.time,
-                self.under,
-                &Program::new(vec!["mkdir".into(), "--".into(), path.to_owned()], root),
-                &self.cancelled,
-            )
+        self.output(root, &["rev-parse", "--verify", "--end-of-options", &format!("{base}^{{commit}}")])
             .await?;
-        if directory.exit != siphon::machine::Exit::Code(0) {
-            return Err(refused(&format!(
-                "mkdir ({:?}): {}",
-                directory.exit,
-                text(&directory.errors).trim()
-            )));
-        }
-        self.output(root, &["worktree", "add", "-b", branch, "--", path, &base_commit])
-            .await?;
+        self.output(root, &["worktree", "add", "-b", branch, "--", path, base]).await?;
+        let base_commit = text(&self.output(destination, &["rev-parse", "--verify", "HEAD"]).await?)
+            .trim()
+            .to_owned();
         Ok(Worktree {
             path: path.to_owned(),
             branch: branch.to_owned(),
