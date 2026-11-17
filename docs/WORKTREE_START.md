@@ -4,7 +4,7 @@
 
 ## 复用现状
 
-siphon-git::Git 已实现 repository、worktrees 和 create_worktree，Agent 的 git 工具已使用这些实现。客户端协议只提供仓库、diff、版本和提交等只读方法。新 Thread 已支持在创建时指定 Config.workspace，但目录准备和首条消息目前没有统一的失败恢复流程。
+siphon-git::Git 已实现 repository、worktrees 和 create_worktree，Agent 的 git 工具已使用这些实现。客户端协议原先只提供仓库、diff、版本和提交等只读方法，本切片补齐 worktree 查询和创建。新 Thread 已支持在创建时指定 Config.workspace，但目录准备和首条消息目前没有统一的失败恢复流程。
 
 不新增 Workspace 管理层、worktree 池、自动合并或运行中 Thread 迁移。本切片只提供客户端创建任务所需的 Git 原语，不把创建目录包装成启动任务。
 
@@ -42,3 +42,19 @@ siphon-git::Git 已实现 repository、worktrees 和 create_worktree，Agent 的
 ## 验证记录
 
 Git 测试 10 项通过；节点访问权限与协议生成测试 3 项通过。Clippy（siphon-git、octoii 全目标）、TypeScript 类型检查、Rust 依赖边界检查通过。重启测试验证旧 session 的权限保持原值。
+
+## 第二切片：首条消息失败重试
+
+已修复新建页面在 Thread 创建成功、附件上传或消息投递失败后，重试又创建空 Thread 的问题。页面中的 NewThread 保留按创建配置区分的 Thread；附件全部保存后才投递首条消息，成功后才导航和清理已提交草稿。上传顺序执行，失败返回时不会还有同一批上传在后台继续。并发发送共享同一次提交，修改草稿后的显式重试使用最新内容；不同目录或模型配置不混用 Thread。
+
+复用 Client.create / deliver 已有的幂等键和断线重试机制，不改 core，不新增启动 RPC。客户端方法内部的连接重试仍使用原键；这次页面层仅处理这些调用明确失败后的用户重试。
+
+边界：保留状态仅在同一新建页面实例内有效。离开页面、刷新、关闭客户端后的恢复尚未实现；已经失败的空 Thread 不自动删除。worktree 写操作仍不自动重试，也尚未接入新建界面。
+
+验证：新增 5 项测试覆盖上传失败、投递拒绝、重复发送、目录切换和创建拒绝；Web 全套 215 项测试通过，类型检查和 lint 通过。本轮未做浏览器交互验收。
+
+后续顺序：
+
+1. 持久保留新任务输入、附件和创建/投递幂等键，并按节点隔离；明确刷新后的恢复入口，避免自动启动未确认任务。
+2. 接入目录准备状态。worktree 创建结果不确定时先核查现场，不盲目重建、不自动删除；目录确定后才创建对应 Thread。
+3. 衔接首条消息，验收节点重启、响应丢失、重复提交与部分失败，然后才开放新建 worktree 界面。

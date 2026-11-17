@@ -7,13 +7,13 @@
  * chosen, else the one the environment's settings name, and the message's first line as its title, delivers the
  * message, and goes to the thread.
  */
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import type { ReasoningEffort as Effort, Mode } from "@octoii-works/octoii-client";
 import { useClient, useSettings, useThreads } from "@octoii-works/octoii-client/react";
 import { ChevronDown, FolderOpen, FolderPlus, FolderX } from "lucide-react";
 import type { Device } from "../core/device.ts";
 import { recentModelsOf } from "../core/models.ts";
-import { contentOf } from "../core/attachments.ts";
+import { NewThread } from "../core/new-thread.ts";
 import { thingsOf } from "../core/mentions.ts";
 import { useExtension } from "../components/state/extensions.ts";
 import { folderName, type Project, projectsOf } from "../core/threads.ts";
@@ -38,6 +38,7 @@ type Chosen = { readonly folder: string | undefined };
 /** The new thread's page. */
 export function NewThreadScreen(props: NewThreadScreenProps): ReactNode {
 	const client = useClient();
+	const starting = useMemo(() => new NewThread(client), [client]);
 	const rows = useThreads() ?? [];
 	const reachesThreads = useExtension("thread");
 	const projects = projectsOf(rows);
@@ -77,21 +78,16 @@ export function NewThreadScreen(props: NewThreadScreenProps): ReactNode {
 							draft={{ project: folder }}
 							folder={folder}
 							things={thingsOf(reachesThreads ? rows : [], [], [], undefined)}
-							onSend={async ({ text, attachments, feedback }) => {
-								const thread = await client.create({
-									...(folder === undefined ? {} : { workspace: folder }),
-									...(running === undefined ? {} : { model: running }),
-									...(chosenMode === undefined ? {} : { mode: chosenMode }),
-									...(effort === undefined ? {} : { effort }),
-								});
-								const kept = await Promise.all(
-									attachments.map(async (attachment) => {
-										if (attachment.bytes === undefined) return attachment;
-										const made = await client.keepFile(thread, attachment.bytes, attachment.name);
-										return { ref: made.ref, media_type: made.media_type, name: made.filename ?? attachment.name, size: attachment.size };
-									}),
+							onSend={async (draft) => {
+								const thread = await starting.send(
+									{
+										...(folder === undefined ? {} : { workspace: folder }),
+										...(running === undefined ? {} : { model: running }),
+										...(chosenMode === undefined ? {} : { mode: chosenMode }),
+										...(effort === undefined ? {} : { effort }),
+									},
+									draft,
 								);
-								await client.deliver(thread, contentOf(text, kept, feedback));
 								go({ place: "thread", thread });
 							}}
 							onStop={() => undefined}
