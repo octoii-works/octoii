@@ -92,10 +92,8 @@ async fn a_device_pairs_through_the_tunnel_and_speaks_the_protocol_by_its_bearer
     );
 
     let welcome = welcomed(&peer, Some(credential)).await.expect("welcomed");
-    assert_eq!(
-        (welcome["event"].as_str(), welcome["scopes"].as_array().map(Vec::len)),
-        (Some("welcome"), Some(8))
-    );
+    assert_eq!(welcome["event"], "welcome");
+    assert_eq!(welcome["scopes"], json!(octoii::access::ALL));
     let session = access.held(credential).expect("read").expect("its session");
     assert_eq!(session.holder, Some(access::Holder::Bearer));
     assert_eq!(welcome["session"].as_str(), Some(session.id.as_str()));

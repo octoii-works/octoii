@@ -110,8 +110,8 @@ async fn a_browser_and_a_program_reach_the_node_by_the_sessions_its_commands_mak
     let welcome = welcomed(&address, &browser).await.expect("welcomed");
     assert_eq!(welcome["event"], "welcome");
     assert_eq!(
-        welcome["scopes"].as_array().map(Vec::len),
-        Some(8),
+        welcome["scopes"],
+        json!(octoii::access::ALL),
         "a link made by the person grants everything"
     );
 
