@@ -3948,7 +3948,9 @@ dependencies = [
 
 [[package]]
 name = "octoii-ai"
-version = "0.0.1"
+version = "0.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "33c5544495a7268aa3500ea145f0cc501787f8ca47479f952ed10f7856fafe9e"
 dependencies = [
  "async-stream",
  "base64 0.23.1",

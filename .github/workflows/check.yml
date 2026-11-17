@@ -48,18 +48,10 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - name: Read pinned dependency commits
+      - name: Read pinned Siphon commit
         id: dependencies
         run: |
           echo "siphon=$(git rev-parse HEAD:siphon)" >> "$GITHUB_OUTPUT"
-          echo "ai=$(git rev-parse HEAD:libs/octoii-ai)" >> "$GITHUB_OUTPUT"
-      - name: Checkout public AI
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          repository: octoii-works/octoii-ai
-          ref: ${{ steps.dependencies.outputs.ai }}
-          path: libs/octoii-ai
-          persist-credentials: false
       - name: Checkout private Siphon
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -71,13 +63,10 @@ jobs:
       - run: rustup toolchain install
       - uses: ./.github/actions/setup-bun
       - run: cargo fmt --all --check
-      - run: cargo fmt --manifest-path libs/octoii-ai/Cargo.toml --all --check
       - run: cargo fmt --manifest-path siphon/Cargo.toml --all --check
       - run: python3 tools/check-rust-layers.py
       - run: cargo clippy --manifest-path siphon/Cargo.toml --locked --workspace --all-targets -- -D warnings
       - run: cargo clippy --locked --workspace --all-targets -- -D warnings
-      - run: cargo clippy --manifest-path libs/octoii-ai/Cargo.toml --locked --workspace --all-targets -- -D warnings
       - run: cargo test --manifest-path siphon/Cargo.toml --locked --workspace
       - run: cargo test --locked --workspace
-      - run: cargo test --manifest-path libs/octoii-ai/Cargo.toml --locked --workspace
       - run: bun run --filter ./packages/client test:against-node

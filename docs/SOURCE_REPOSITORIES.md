@@ -1,71 +1,89 @@
 # Source repositories and reproducible builds
 
-2026-11-17. The user approved extracting the existing sources into independent repositories,
-with pinned submodules at their existing product paths. This moves repositories before completing
-A2's mechanism boundary work; that work remains tracked in SIPHON_EXTRACTION.md.
+2026-11-18. The product consumes public octoii-ai 0.0.2 from crates.io. Only Siphon remains a submodule.
 
-| Repository | Access | Product path | Initial pinned commit |
-| --- | --- | --- | --- |
-| [devxiyang/octoii-siphon](https://github.com/devxiyang/octoii-siphon) | Private | siphon/ | 8b4ae3b06f78ca6f941dfdd9c4c6a264f4bf7667 |
-| [octoii-works/octoii-ai](https://github.com/octoii-works/octoii-ai) | Public, existing MIT license | libs/octoii-ai/ | d6742fdbe6eb56c07ba6665efa204dbfb7a5cd42 |
+| Dependency | Source | Product integration |
+| --- | --- | --- |
+| Siphon | [devxiyang/octoii-siphon](https://github.com/devxiyang/octoii-siphon), private | siphon/ submodule at 03602727d30826ca3f4ea41fcafd466ba15d8ccb |
+| octoii-ai | [crates.io/octoii-ai](https://crates.io/crates/octoii-ai/0.0.2), public MIT package | Cargo version 0.0.2; resolved source and checksum in Cargo.lock |
 
-The Git index pins commits, not branch tips. Cargo still uses the existing paths. Product code owns
-libs/octoii, apps and extensions; AI and Siphon each own a standalone Cargo workspace and lockfile.
-Siphon has no AI/product dependency. Repository separation does not finish the controlled-storage,
-machine/sandbox and authorization execution boundaries. Existing source licenses and third-party
-notices are retained; earlier public Git history is not removed or rewritten.
+AI source and independent CI live in [octoii-works/octoii-ai](https://github.com/octoii-works/octoii-ai).
+Its 0.0.2 tag names release commit 9b3bcec729b83609a1783c381bf2c269b239a65b. The original 0.0.1 tag is unchanged.
+There is no AI source directory or AI submodule in this product checkout. AI's public Rust import is octoii_ai.
+
+Product code owns libs/octoii, apps and extensions. Siphon has no AI/product dependency. Repository separation
+still leaves controlled storage, machine/sandbox and authorization execution to converge. Existing source
+licenses and third-party notices are retained; earlier public Git history is not rewritten.
 
 ## Clone and build
 
-Rust builds require access to the private Siphon repository. Authenticate HTTPS Git access with an
-account that can read it (for GitHub CLI users: gh auth login, then gh auth setup-git).
+Rust builds currently require read access to private Siphon. Authenticate HTTPS Git access with an account
+that can read it (for GitHub CLI users: gh auth login, then gh auth setup-git).
 
 ```sh
 git clone --branch codex/mvp --recurse-submodules https://github.com/octoii-works/octoii.git
 cd octoii
-# After switching to a revision containing these submodules:
 git submodule update --init --recursive
 cargo build --locked -p octoii-node --bin octoii
 ```
 
-The initial integration is on codex/mvp; use that branch until merged into main. Existing checkouts
-should update submodules after switching revisions. Do not use --remote for normal builds: it selects
-branch tips rather than the product's tested commits. The bundled Beak artifact currently supports
-aarch64-apple-darwin; source separation does not introduce additional binary targets.
+The integration remains on codex/mvp until merged into main. Submodule updates use the recorded commit,
+not --remote branch tips. Cargo downloads octoii-ai from crates.io without GitHub credentials.
+The bundled Beak artifact currently supports aarch64-apple-darwin.
 
-Validate all three workspaces:
+Validate the two local workspaces:
 
 ```sh
 python3 tools/check-rust-layers.py
 cargo test --locked --workspace
-cargo test --locked --manifest-path libs/octoii-ai/Cargo.toml --workspace
 cargo test --locked --manifest-path siphon/Cargo.toml --workspace
 ```
 
-Run fmt and Clippy with the same three manifests. Product --workspace no longer runs AI's own tests.
-Live-model tests remain opt-in; normal tests do not require model credentials.
+Run fmt and Clippy with those same manifests. AI's own tests run in its separate public repository;
+product tests exercise the published library through Octoii and its extensions.
 
-## Update a dependency
+## Update dependencies
 
-Commit and push dependency changes in its owning repository first. Then check out that exact commit
-in the corresponding product submodule, validate the product, and commit the gitlink update in Octoii.
-If dependencies changed, update the relevant lockfiles as well. Never commit a product gitlink that
-points to a dependency commit unavailable from its remote.
+For AI, publish the tested version from its repository first, then update the product Cargo dependency
+and lockfile and validate the product. Do not introduce a local path or Git override for release builds.
+For Siphon, push its commit first, check out that exact commit in the submodule, validate the product,
+and commit the gitlink update. Never pin a commit unavailable from the remote.
 
 ## CI access
 
-The product Rust job reads both pins from Git, then checks out each repository at that exact SHA.
-Public AI needs no additional credential. Private Siphon uses SIPHON_DEPLOY_KEY in the product's
-Actions secrets, paired with a read-only deploy key on devxiyang/octoii-siphon. The key grants no push
-access. Checkout disables credential persistence. No key material is committed; the temporary local
-copy used for setup is removed after testing access.
+The product Rust job reads the Siphon pin from Git and checks it out with SIPHON_DEPLOY_KEY, an Actions
+secret paired with a read-only deploy key on devxiyang/octoii-siphon. Checkout disables credential
+persistence. The temporary local key was removed after testing access. No key material is committed.
+AI is resolved normally by Cargo; the product no longer checks out or runs a third AI workspace.
 
-Fork pull requests do not run the product Rust job because they cannot access the private dependency;
-frontend jobs remain independent. Each extracted repository also has its own check workflow. The
-product build still requires private source access; binary-only distribution is a separate task.
+Fork pull requests cannot run the product Rust job because they lack the private dependency;
+frontend jobs remain independent. Each dependency repository maintains its own CI. Revoking the
+GitHub CLI authorization used to create the deployment key may remove that key; rotate it together
+with the Actions secret when necessary.
 
-The deployment key was added using the current GitHub CLI authorization. If that authorization is
-revoked, GitHub may remove its associated deploy key; rotate the key and Actions secret together.
+## Next distribution boundary
+
+The agreed target is a public octoii-works/octoii-siphon-lib repository and published library named
+octoii-siphon-lib, containing the safe Rust interface wrapper, ABI declarations, documentation and
+versioned platform binaries accessible without private repository credentials. The private repository would retain
+implementation source. This is not implemented yet: a real binary-boundary execution/recovery test
+and convergence of the current Beak/runtime access are prerequisites. The product still requires
+private Siphon source today. Final acceptance requires building and running Octoii without private
+source access; Octoii must no longer directly depend on Beak, siphon-runtime or the Siphon source submodule.
+
+macOS, Windows and Linux binary support is a required release goal, not an optional later claim.
+The implementation plan must explicitly define CPU architectures, Linux libc/ABI baselines and supported
+OS versions, with artifacts and real execution, persistence/recovery, cancellation and permission tests
+for each supported target. The existing Beak distribution contains only aarch64-apple-darwin; additional
+underlying artifacts and platform implementations must be established before declaring those targets supported.
+
+## Public AI package validation
+
+For 0.0.2, standalone AI tests (39 passed / 1 existing ignored), Clippy and cargo publish --dry-run
+passed before publication. The published package was downloaded from crates.io and Cargo metadata
+confirmed the registry source. Product checks, Clippy, 223 tests (2 existing ignored) and Node build
+passed with no local AI checkout. Cargo.lock adds the registry source and checksum without changing
+other dependency versions. The independent AI CI passed for release commit 9b3bcec.
 
 ## Extraction validation
 

@@ -1,11 +1,11 @@
 [workspace]
 resolver = "3"
 members = ["libs/*", "apps/node", "extensions/*"]
-exclude = ["siphon", "libs/octoii-ai"]
+exclude = ["siphon"]
 
 [workspace.dependencies]
 beak = { path = "siphon/vendor/beak/crates/beak" }
-octoii-ai = { path = "libs/octoii-ai" }
+octoii-ai = "0.0.2"
 octoii = { path = "libs/octoii" }
 siphon-script = { path = "siphon/crates/siphon-script" }
 siphon-shell = { path = "siphon/crates/siphon-shell" }

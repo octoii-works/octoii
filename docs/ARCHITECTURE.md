@@ -1,13 +1,14 @@
 # Package boundaries
 
-Three Cargo workspaces separate the product, public AI library and private Siphon repository. The root owns apps, extensions
-and libs/octoii; libs/octoii-ai/ and siphon/ are pinned submodules with independent workspaces. Runtime behavior remains unchanged.
+Two local Cargo workspaces separate the product and private Siphon. The root owns apps, extensions and
+libs/octoii; siphon/ is a pinned submodule. octoii-ai 0.0.2 is a crates.io dependency, with its source
+and independent workspace in its own public repository. Runtime behavior remains unchanged.
 
 | Location | Responsibility |
 | --- | --- |
 | `siphon/vendor/beak/` | Beak's Rust bindings, C header and prebuilt kernel distribution |
 | `siphon/crates/siphon-runtime/` | Durable execution, requests and recovery on Beak; no AI dependency |
-| `libs/octoii-ai/` | Model vocabulary, providers and transports |
+| crates.io `octoii-ai` | Model vocabulary, providers and transports; no local source directory |
 | `siphon/crates/siphon-{script,shell,text,image}/` | Foundational processing libraries |
 | `libs/octoii/` | Agent, threads, basic tools, permissions, protocol and public extension interface |
 | `extensions/` | Built-in backend capabilities and integrations; shared extension helpers |
@@ -38,7 +39,7 @@ composition root and still has lower-layer dependencies for initialization, file
 [SIPHON_BOUNDARIES.md](SIPHON_BOUNDARIES.md), not permission to expand access.
 
 Run `python3 tools/check-rust-layers.py` to validate these rules. CI runs it before Rust compilation. The check uses
-`cargo metadata --no-deps --locked --offline`, combines members from all three workspaces, reads actual local dependency identities rather than aliases or manifest
+`cargo metadata --no-deps --locked --offline`, combines members from both local workspaces, reads actual local dependency identities rather than aliases or manifest
 text, and includes normal, build, dev, optional and platform-specific dependencies. New core packages require an
 explicit classification. Cargo enforces dependency resolution and cycles; this check additionally enforces direction.
 
@@ -55,15 +56,15 @@ not introduce a dynamic plugin loader or change execution behavior.
 
 The proposed closed Siphon implementation and public Octoii/extension boundary, including current coupling and
 binary distribution prerequisites, is documented in [SIPHON_DISTRIBUTION.md](SIPHON_DISTRIBUTION.md).
-Remote extraction is implemented with pinned submodules; interface convergence remains separate work.
+Siphon uses a pinned submodule and AI uses a public registry package; interface convergence remains separate work.
 Moved kernel files retain the existing core-stability review intent; moving directories is not permission to change
 runtime behavior without the separately scoped confirmation. AGENTS.md is unchanged.
 
 ## Validation
 
-Run cargo fmt, clippy and test for the root manifest, `siphon/Cargo.toml` and `libs/octoii-ai/Cargo.toml`;
-root --workspace selects neither Siphon nor AI tests. CI checks all three. `cargo build -p octoii-node --bin octoii --locked` remains the product build command.
-Siphon has its own toolchain/format/lint configuration and target directory. All three workspaces currently pin Rust 1.100.0.
+Run cargo fmt, clippy and test for the root manifest and `siphon/Cargo.toml`;
+root --workspace does not select Siphon tests. AI's independent tests run in its own repository. `cargo build -p octoii-node --bin octoii --locked` remains the product build command.
+Siphon has its own toolchain/format/lint configuration and target directory. Both local workspaces currently pin Rust 1.100.0.
 
 Local extraction validation (2026-11-17): Cargo resolves 16 product members and 8 Siphon members; both locked
 workspaces pass all-target checks, formatting and Clippy. Siphon tests: 153 passed / 1 existing ignored;

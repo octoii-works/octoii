@@ -1,5 +1,8 @@
 # 最小 Siphon 与公开 Octoii：拆分实施计划
 
+2026-11-18 更新：AI 已发布为 crates.io 的 octoii-ai 0.0.2；主仓库移除 AI submodule，改为公开包依赖。
+Siphon 仍以私有源码 submodule 接入，公开二进制接口仓库属于后续阶段。现状见 [SOURCE_REPOSITORIES.md](SOURCE_REPOSITORIES.md)。
+
 2026-11-17。状态：用户已明确批准 A1 核心范围；代码迁移已实施，两个 workspace 的检查与回归测试已通过。本文替代
 SIPHON_DISTRIBUTION.md 中“先完成 S1–S5，再分离 Octoii”的实施顺序；旧边界盘点仍是证据。
 

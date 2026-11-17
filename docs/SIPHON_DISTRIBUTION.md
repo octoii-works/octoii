@@ -1,5 +1,8 @@
 # Siphon 闭源边界与分发方案
 
+2026-11-18 更新：AI 已发布为 crates.io 的 octoii-ai 0.0.2；主仓库移除 AI submodule，改为公开包依赖。
+Siphon 仍以私有源码 submodule 接入，公开二进制接口仓库属于后续阶段。现状见 [SOURCE_REPOSITORIES.md](SOURCE_REPOSITORIES.md)。
+
 2026-11-17。用户已同意“执行与持久化内核闭源，Octoii、产品扩展与界面保持开放”的方向。
 本文是基于当前代码的边界盘点与实施提案，不表示迁仓库、改许可证、拆包或发布已获确认或已完成。
 
