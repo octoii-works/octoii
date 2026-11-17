@@ -88,6 +88,12 @@ impl Home {
         self.root.join("var/lib")
     }
 
+    /// Managed task worktrees, outside private node state.
+    #[must_use]
+    pub fn worktrees(&self) -> PathBuf {
+        self.root.join("worktrees")
+    }
+
     /// The volume Siphon keeps.
     #[must_use]
     pub fn volume(&self) -> PathBuf {

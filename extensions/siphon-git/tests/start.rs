@@ -36,7 +36,9 @@ fn node(beak: &Beak) -> Siphon {
     Siphon::builder(beak, testing::setup(siphon::machine::Host::default()))
         .unwrap()
         .extension(siphon_base::BaseExtension::default())
-        .extension(siphon_git::GitExtension)
+        .extension(siphon_git::GitExtension {
+            worktrees: std::env::temp_dir().join("octoii-test-worktrees"),
+        })
         .start()
         .unwrap()
 }
@@ -175,7 +177,9 @@ async fn reopening_keeps_the_request_and_retry_requires_the_saved_token() {
         Siphon::builder(&beak, setup)
             .unwrap()
             .extension(siphon_base::BaseExtension::default())
-            .extension(siphon_git::GitExtension)
+            .extension(siphon_git::GitExtension {
+                worktrees: std::env::temp_dir().join("octoii-test-worktrees"),
+            })
             .start()
             .unwrap()
     };

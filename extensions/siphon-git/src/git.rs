@@ -40,6 +40,17 @@ pub struct Repository {
     pub base: Option<String>,
 }
 
+/// A literal branch reference and its current commit. Remote HEAD aliases are omitted.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct Branch {
+    pub reference: String,
+    pub commit: String,
+}
+
+pub(crate) fn is_commit_id(value: &str) -> bool {
+    matches!(value.len(), 40 | 64) && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
 /// A new linked worktree: its absolute path, its own new branch, and the commit it was created from.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
 pub struct Worktree {
@@ -203,6 +214,70 @@ impl Git<'_> {
             }
         }
         Ok(entries)
+    }
+
+    /// Read local and fetched remote branch refs, excluding symbolic aliases.
+    ///
+    /// # Errors
+    /// The folder is not a repository or Git cannot read its refs.
+    pub async fn branches(&self, folder: &Path) -> Result<Vec<Branch>, GitError> {
+        let output = self
+            .output(
+                folder,
+                &[
+                    "for-each-ref",
+                    "--sort=refname",
+                    "--format=%(refname)%00%(objectname)%00%(symref)",
+                    "refs/heads/",
+                    "refs/remotes/",
+                ],
+            )
+            .await?;
+        let mut branches = Vec::new();
+        for line in output.split(|byte| *byte == b'\n').filter(|line| !line.is_empty()) {
+            let fields: Vec<_> = line.split(|byte| *byte == 0).collect();
+            let [reference, commit, symbolic] = fields.as_slice() else {
+                return Err(GitError::Refused {
+                    command: "for-each-ref".into(),
+                    said: "invalid branch record".into(),
+                });
+            };
+            if symbolic.is_empty() {
+                branches.push(Branch {
+                    reference: text(reference),
+                    commit: text(commit),
+                });
+            }
+        }
+        Ok(branches)
+    }
+
+    /// Verify a fixed commit without re-resolving a branch or changing the checkout.
+    ///
+    /// # Errors
+    /// The ID is not a full commit ID or the object is not a commit in this repository.
+    pub async fn verify_commit(&self, folder: &Path, commit: &str) -> Result<String, GitError> {
+        let refused = || GitError::Refused {
+            command: "rev-parse".into(),
+            said: "a full commit ID is required".into(),
+        };
+        if !is_commit_id(commit) {
+            return Err(refused());
+        }
+        let resolved = text(
+            &self
+                .output(
+                    folder,
+                    &["rev-parse", "--verify", "--end-of-options", &format!("{commit}^{{commit}}")],
+                )
+                .await?,
+        )
+        .trim()
+        .to_owned();
+        if !resolved.eq_ignore_ascii_case(commit) {
+            return Err(refused());
+        }
+        Ok(resolved)
     }
 
     /// Remove a clean linked worktree. Keep its branch and never force removal.

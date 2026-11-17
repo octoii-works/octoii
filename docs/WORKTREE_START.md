@@ -299,3 +299,18 @@ threads.operate 时展示。通过只读 repository 查询获取 HEAD，勾选�
 
 下一步：在隔离节点和临时 Git 仓库中完成“带附件新建 → 检查现场 → 准备 → Octoii 首轮”的真实流程，
 再验证页面刷新、接收响应丢失、准备失败/取消及节点重启。通过后再将 R1a 标为完成。
+
+## t3code 流程第一切片：自动参数与基准分支
+
+新增只读 git.branches 与 git.worktree-plan。前者返回当前仓库及本地/已获取的远程分支和 commit，
+过滤远程 HEAD 等符号别名；后者只接受固定 commit 和任务 UUID，返回现有 CreateWorktree 参数。
+节点注入 `<Home>/worktrees`，新目录取 UUID，新分支取 `octoii/<UUID>`；不写入私有 state 或凭据目录。
+解析阶段不创建分支/目录，也不探测后换名，已保存参数在后续首次接收前固定。占用冲突由真实创建明确拒绝。
+
+按 [git-for-each-ref](https://git-scm.com/docs/git-for-each-ref) 的 ref/object/symref 字段读取分支，
+按 [git-rev-parse](https://git-scm.com/docs/git-rev-parse) 的 `--verify --end-of-options` 和 `^{commit}`
+确认对象；不解析面向人的 git branch 输出，不 fetch、checkout 或复制未提交内容。
+
+15 项 Git 测试与 7 项节点测试通过，覆盖空仓库、detached HEAD、远程分支和符号别名、移动 HEAD 后
+固定参数、非法 key/ref、只读权限、实际按自动目录创建且保留源 checkout，以及既有接收/权限回归。
+Clippy、格式、客户端类型及 Rust 分层检查通过。无 core 修改，无新依赖；新界面与自动发送尚待下一切片。

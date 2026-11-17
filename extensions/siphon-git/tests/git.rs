@@ -32,6 +32,12 @@ fn git(root: &Path, arguments: &[&str]) {
     );
 }
 
+fn git_extension() -> siphon_git::GitExtension {
+    siphon_git::GitExtension {
+        worktrees: std::env::temp_dir().join("octoii-test-worktrees"),
+    }
+}
+
 async fn asked(client: &mut Client, method: &str, params: Value) -> Value {
     let id = client.call(method, params).await;
     let answer = client.answer(&id).await;
@@ -55,7 +61,7 @@ async fn git_tells_a_repository_s_changes_patches_versions_and_commits() {
     std::fs::write(root.join("new.txt"), "fresh\n").expect("written");
     let beak = Beak::new().expect("Beak");
     let siphon = Siphon::builder(&beak, testing::setup(siphon::machine::Host::default()))
-        .map(|building| building.extension(siphon_git::GitExtension))
+        .map(|building| building.extension(git_extension()))
         .expect("built")
         .extension(siphon_base::BaseExtension::default())
         .start()
@@ -173,7 +179,9 @@ async fn worktree_rpc_requires_git_permission_and_checks_out_the_requested_base(
     let siphon = Siphon::builder(&beak, testing::setup(siphon::machine::Host::default()))
         .unwrap()
         .extension(siphon_base::BaseExtension::default())
-        .extension(siphon_git::GitExtension)
+        .extension(siphon_git::GitExtension {
+            worktrees: std::env::temp_dir().join("octoii-test-worktrees"),
+        })
         .start()
         .unwrap();
     let mut reader = Client::connect(&siphon, vec![Scope::FilesRead], 64);
@@ -213,4 +221,91 @@ async fn worktree_rpc_requires_git_permission_and_checks_out_the_requested_base(
     assert!(!writer.answer(&id).await["error"].is_null());
     assert_eq!(std::fs::read_to_string(destination.join("keep.txt")).unwrap(), "keep me\n");
     siphon.runtime.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn worktree_bases_and_plans_are_read_only_and_keep_fixed_commits() {
+    let folder = tempfile::tempdir().unwrap();
+    let root = folder.path().canonicalize().unwrap();
+    let managed = root.join("managed");
+    git(&root, &["init"]);
+    let beak = Beak::new().unwrap();
+    let node = Siphon::builder(&beak, testing::setup(siphon::machine::Host::default()))
+        .unwrap()
+        .extension(siphon_base::BaseExtension::default())
+        .extension(siphon_git::GitExtension {
+            worktrees: managed.clone(),
+        })
+        .start()
+        .unwrap();
+    let mut client = Client::connect(&node, vec![Scope::FilesRead], 64);
+    client.message().await;
+    let empty = asked(&mut client, "git.branches", json!({"path":root})).await;
+    assert!(empty["repository"]["head"].is_null());
+    assert_eq!(empty["branches"], json!([]));
+    std::fs::write(root.join("tracked"), "original").unwrap();
+    git(&root, &["add", "tracked"]);
+    git(&root, &["commit", "-m", "base"]);
+    git(&root, &["update-ref", "refs/remotes/origin/main", "HEAD"]);
+    git(&root, &["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"]);
+    let bases = asked(&mut client, "git.branches", json!({"path":root})).await;
+    let commit = bases["repository"]["head"].as_str().unwrap().to_owned();
+    assert_eq!(
+        bases["branches"],
+        json!([
+            {"reference":"refs/heads/main", "commit":commit},
+            {"reference":"refs/remotes/origin/main", "commit":commit}
+        ])
+    );
+    let key = "12345678-1234-1234-1234-123456789abc";
+    let request = json!({"path":root,"key":key,"base":commit});
+    let plan = asked(&mut client, "git.worktree-plan", request.clone()).await;
+    assert_eq!(
+        plan,
+        json!({"path":root,"destination":managed.join(key),"branch":format!("octoii/{key}"),"base":commit})
+    );
+    assert!(!managed.exists());
+    std::fs::write(root.join("tracked"), "later").unwrap();
+    git(&root, &["commit", "-am", "later"]);
+    assert_eq!(asked(&mut client, "git.worktree-plan", request.clone()).await, plan);
+    git(&root, &["checkout", "--detach", &commit]);
+    let detached = asked(&mut client, "git.branches", json!({"path":root})).await;
+    assert!(detached["repository"]["branch"].is_null());
+    assert_eq!(detached["repository"]["head"], commit);
+    assert_eq!(asked(&mut client, "git.worktree-plan", request.clone()).await, plan);
+    for base in ["HEAD", "refs/heads/main", "--help", "0000000000000000000000000000000000000000"] {
+        let id = client.call("git.worktree-plan", json!({"path":root,"key":key,"base":base})).await;
+        assert!(!client.answer(&id).await["error"].is_null());
+    }
+    for key in ["../escape", "/absolute", "bad", "12345678-1234-1234-1234-123456789ab/"] {
+        let id = client.call("git.worktree-plan", json!({"path":root,"key":key,"base":commit})).await;
+        assert!(!client.answer(&id).await["error"].is_null());
+    }
+    assert!(!managed.exists());
+    let after = asked(&mut client, "git.branches", json!({"path":root})).await;
+    assert_eq!(after["branches"].as_array().unwrap().len(), 2);
+    let mut denied = Client::connect(&node, vec![Scope::ThreadsRead], 64);
+    denied.message().await;
+    for method in ["git.branches", "git.worktree-plan"] {
+        let id = denied
+            .call(
+                method,
+                if method == "git.branches" {
+                    json!({"path":root})
+                } else {
+                    request.clone()
+                },
+            )
+            .await;
+        assert!(!denied.answer(&id).await["error"].is_null());
+    }
+    let mut writer = Client::connect(&node, vec![Scope::GitOperate], 64);
+    writer.message().await;
+    let made = asked(&mut writer, "git.create-worktree", plan).await;
+    assert_eq!(made["base_commit"], commit);
+    assert_eq!(std::fs::read_to_string(managed.join(key).join("tracked")).unwrap(), "original");
+    let source = asked(&mut client, "git.repository", json!({"path":root})).await;
+    assert_eq!(source["repository"]["head"], commit);
+    assert!(source["repository"]["branch"].is_null());
+    node.runtime.close().await;
 }

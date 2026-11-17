@@ -6,9 +6,13 @@ use siphon::protocol::Scope;
 use siphon::protocol::siphon::InFolder;
 use ts_rs::TS;
 
-use crate::git::{ChangedFile, Changes, ChangesScope, Commit, Comparison, Repository, Worktree, WorktreeEntry};
+use crate::git::{Branch, ChangedFile, Changes, ChangesScope, Commit, Comparison, Repository, Worktree, WorktreeEntry};
 
 siphon::methods! {
+    /// Read local and already-fetched remote branches without changing the checkout.
+    "git.branches" GitBranches(InFolder) -> Branches, Some(Scope::FilesRead);
+    /// Resolve stable task parameters on this node without creating a branch or directory.
+    "git.worktree-plan" GitWorktreePlan(WorktreePlan) -> CreateWorktree, Some(Scope::FilesRead);
     /// Accept, explicitly prepare, retry or inspect a worktree-backed Thread; also requires threads.operate.
     "git.start" GitStart(crate::start::StartAction) -> crate::start::ThreadStart, Some(Scope::GitOperate);
     /// List the repository's registered worktrees.
@@ -108,5 +112,21 @@ pub struct CreateWorktree {
     pub path: String,
     pub destination: String,
     pub branch: String,
+    pub base: String,
+}
+
+/// The available bases and current checkout; branch commit IDs are fixed at query time.
+#[derive(Debug, Serialize, Deserialize, TS)]
+pub struct Branches {
+    pub repository: Repository,
+    pub branches: Vec<Branch>,
+}
+
+/// A task identifier and an already selected full commit ID, never a moving branch name.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct WorktreePlan {
+    pub path: String,
+    pub key: String,
     pub base: String,
 }

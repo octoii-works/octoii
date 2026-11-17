@@ -164,7 +164,7 @@ pub async fn accept(
     anyhow::ensure!(Path::new(&worktree.path).is_absolute(), "source must be absolute");
     anyhow::ensure!(Path::new(&worktree.destination).is_absolute(), "destination must be absolute");
     anyhow::ensure!(
-        matches!(worktree.base.len(), 40 | 64) && worktree.base.bytes().all(|byte| byte.is_ascii_hexdigit()),
+        crate::git::is_commit_id(&worktree.base),
         "preparation requires a full commit ID, not a moving revision"
     );
     anyhow::ensure!(config.workspace.is_none(), "the workspace is supplied by worktree preparation");

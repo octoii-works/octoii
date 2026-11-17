@@ -34,6 +34,16 @@ export type AnswerThread = { thread: string, key: string, answer: JsonValue, };
 export type Ask = { process: string, key: string, name: string, payload: JsonValue, answer_schema: JsonValue, };
 
 /**
+ * A literal branch reference and its current commit. Remote HEAD aliases are omitted.
+ */
+export type Branch = { reference: string, commit: string, };
+
+/**
+ * The available bases and current checkout; branch commit IDs are fixed at query time.
+ */
+export type Branches = { repository: Repository, branches: Array<Branch>, };
+
+/**
  * An event of a subscription to the browser's: a thread's pages as they changed; or a frame of a page, the newest the
  * browser painted — its number among the page's, its size in device pixels — sent as a binary frame whose bytes after
  * this event are the frame's JPEG.
@@ -1122,6 +1132,11 @@ export type Worktree = { path: string, branch: string, base_commit: string, };
 export type WorktreeEntry = { path: string, head: string | null, branch: string | null, bare: boolean, detached: boolean, locked: string | null, prunable: string | null, };
 
 /**
+ * A task identifier and an already selected full commit ID, never a moving branch name.
+ */
+export type WorktreePlan = { path: string, key: string, base: string, };
+
+/**
  * The worktrees registered with the repository.
  */
 export type Worktrees = { worktrees: Array<WorktreeEntry>, };
@@ -1186,6 +1201,8 @@ export type Methods = {
   'terminals.text': { params: OfTerminal; result: TerminalText };
   'memory.list': { params: InFolder; result: MemoryListed };
   'memory.delete': { params: DeleteMemory; result: Nothing };
+  'git.branches': { params: InFolder; result: Branches };
+  'git.worktree-plan': { params: WorktreePlan; result: CreateWorktree };
   'git.start': { params: StartAction; result: ThreadStart };
   'git.worktrees': { params: InFolder; result: Worktrees };
   'git.create-worktree': { params: CreateWorktree; result: Worktree };

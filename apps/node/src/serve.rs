@@ -143,7 +143,9 @@ pub fn building(home: &Home, sign_in: SignInSetup) -> anyhow::Result<siphon::Bui
         .extension(ThreadExtension)
         .extension(FilesExtension)
         .extension(MemoryExtension)
-        .extension(GitExtension)
+        .extension(GitExtension {
+            worktrees: std::path::absolute(home.worktrees())?,
+        })
         .extension(WebSearchExtension)
         .extension(SkillsExtension {
             config: Some(home.config()),
