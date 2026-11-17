@@ -8,6 +8,8 @@
 
 上层使用 Siphon 公共接口；具体扩展不依赖彼此的工具实现。共享产品实现放 `extensions/common/`，各自保留独立 Cargo 包，不建立万能 common crate。首个迁移对象是 siphon-html，尚未迁移。UI 留在 apps/web，不独立拆包。
 
+提示词的归属、精简清单与待确认范围见 [PROMPTS.md](PROMPTS.md)。
+
 ## 工具入口
 
 一个产品对象尽量对应一个 Agent 工具，通过必需的 action 区分操作。每个 action 使用独立参数类型，拒绝不属于该操作的字段；不使用大参数对象隐含选择行为。
