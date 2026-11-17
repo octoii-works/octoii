@@ -15,16 +15,16 @@ pub enum Action {
     Status,
     /// Registered worktrees, including lock and pruning information.
     ListWorktrees,
-    /// Create a new linked worktree and branch from a committed revision. Does not switch the thread.
+    /// Create a linked worktree on a new branch.
     CreateWorktree {
-        /// New directory; relative to the workspace, absolute, or starting with ~/. Git creates missing parent directories and accepts an existing empty directory.
+        /// Destination: relative to the workspace, absolute, or starting with ~/.
         path: String,
         /// New literal branch name.
         branch: String,
         /// Commit, branch or tag to start from; HEAD if omitted.
         base: Option<String>,
     },
-    /// Remove a clean, unlocked linked worktree, retaining its branch. Never forces removal.
+    /// Remove a linked worktree without force; keep its branch.
     RemoveWorktree { path: String },
 }
 
@@ -43,7 +43,7 @@ pub struct GitTool;
 
 impl Tool for GitTool {
     const NAME: &'static str = "git";
-    const DESCRIPTION: &'static str = "Inspect the workspace repository and manage linked worktrees. status returns the repository and uncommitted changes; list_worktrees lists registered paths, branches and locks. create_worktree creates a new directory and branch from a committed base (HEAD by default); uncommitted work stays in its original directory. remove_worktree removes only a clean, unlocked linked worktree and keeps its branch. Neither operation switches this thread's workspace or context. Use shell for commit, push, merge and other Git commands. Creation failures may leave a directory or branch: inspect before retrying; nothing is automatically deleted.";
+    const DESCRIPTION: &'static str = "Inspect the workspace repository and manage linked worktrees. Does not switch this thread's workspace. Use shell for other Git operations.";
     type Args = Action;
 
     fn output_schema() -> Option<serde_json::Value> {
