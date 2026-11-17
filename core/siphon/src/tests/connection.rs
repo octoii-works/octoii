@@ -14,6 +14,7 @@ fn siphon(beak: &Beak) -> Siphon {
     let setup = testing::setup(crate::machine::Host::default());
     Siphon::builder(beak, setup)
         .expect("built")
+        .extension(TestBase)
         .extension(Echo)
         .start()
         .expect("started")
@@ -105,7 +106,10 @@ fn welcome_of(siphon: &crate::Siphon, scopes: &[&str]) -> serde_json::Value {
             "scratchpads": siphon.machine.scratchpads,
             "memory": siphon.machine.memory,
         },
-        "extensions": [{ "name": "echo", "title": "Echo", "description": "Says back what it is told." }],
+        "extensions": [
+            { "name": "base", "title": "Test base", "description": "Connection test fixture" },
+            { "name": "echo", "title": "Echo", "description": "Says back what it is told." }
+        ],
     })
 }
 
@@ -423,4 +427,18 @@ async fn a_thread_goes_on_at_a_time_as_its_status_tells_and_its_window_is_told_p
     assert!(parts.contains(&"messages"), "{composition}");
     assert!(composition["tokens"].as_u64().is_some_and(|tokens| tokens > 0), "{composition}");
     siphon.runtime.close().await;
+}
+
+struct TestBase;
+impl crate::Extension for TestBase {
+    fn name(&self) -> &'static str {
+        "base"
+    }
+    fn title(&self) -> &'static str {
+        "Test base"
+    }
+    fn description(&self) -> &'static str {
+        "Connection test fixture"
+    }
+    fn build(self: Box<Self>, _: &mut crate::Registrar<'_>) {}
 }

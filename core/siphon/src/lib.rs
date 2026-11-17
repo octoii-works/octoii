@@ -274,8 +274,21 @@ impl Building {
     /// Siphon, started on the current Tokio runtime.
     ///
     /// # Errors
-    /// The volume's failure.
+    /// The volume's failure, or a missing or duplicate base extension.
     pub fn start(self) -> beak::Result<Siphon> {
+        let base_count = self
+            .builder
+            .registry
+            .extensions
+            .iter()
+            .filter(|extension| extension.name == "base")
+            .count();
+        if base_count != 1 {
+            return Err(beak::Error {
+                status: beak::Status::Invalid,
+                reason: format!("exactly one base extension is required; found {base_count}"),
+            });
+        }
         let Building {
             mut builder,
             config,
@@ -394,4 +407,40 @@ fn programs(
         .ask_person::<Asks>()
         .program(trust::TrustProgram)
         .ask_person::<trust::Trust>()
+}
+
+#[cfg(test)]
+mod base_tests {
+    use super::*;
+
+    struct Base;
+    impl Extension for Base {
+        fn name(&self) -> &'static str {
+            "base"
+        }
+        fn title(&self) -> &'static str {
+            "Base"
+        }
+        fn description(&self) -> &'static str {
+            "Test fixture"
+        }
+        fn build(self: Box<Self>, _: &mut Registrar<'_>) {}
+    }
+
+    #[tokio::test]
+    async fn starting_requires_exactly_one_base_extension() {
+        let beak = Beak::new().unwrap();
+        let missing = Siphon::builder(&beak, testing::setup(Host::default()))
+            .unwrap()
+            .start()
+            .unwrap_err();
+        assert!(missing.reason.contains("found 0"));
+        let duplicate = Siphon::builder(&beak, testing::setup(Host::default()))
+            .unwrap()
+            .extension(Base)
+            .extension(Base)
+            .start()
+            .unwrap_err();
+        assert!(duplicate.reason.contains("found 2"));
+    }
 }

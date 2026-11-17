@@ -43,7 +43,7 @@ pub struct GitTool;
 
 impl Tool for GitTool {
     const NAME: &'static str = "git";
-    const DESCRIPTION: &'static str = "Inspect the workspace repository and manage linked worktrees. Does not switch this thread's workspace. Use shell for other Git operations.";
+    const DESCRIPTION: &'static str = "Inspect the workspace repository and manage linked worktrees. Use shell for other Git operations.";
     type Args = Action;
 
     fn output_schema() -> Option<serde_json::Value> {

@@ -3924,6 +3924,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.1",
  "siphon",
+ "siphon-base",
  "siphon-browser",
  "siphon-claude-code",
  "siphon-delegate",
@@ -5583,6 +5584,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "siphon-base"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "siphon",
+]
+
+[[package]]
 name = "siphon-browser"
 version = "0.0.1"
 dependencies = [
@@ -5596,6 +5605,7 @@ dependencies = [
  "serde",
  "serde_json",
  "siphon",
+ "siphon-base",
  "siphon-html",
  "tempfile",
  "thiserror 2.0.21",
@@ -5651,6 +5661,7 @@ dependencies = [
 name = "siphon-git"
 version = "0.0.1"
 dependencies = [
+ "anyhow",
  "bytes",
  "jsonschema",
  "octoii-ai",
@@ -5658,6 +5669,7 @@ dependencies = [
  "serde",
  "serde_json",
  "siphon",
+ "siphon-base",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -5701,6 +5713,7 @@ dependencies = [
  "serde",
  "serde_json",
  "siphon",
+ "siphon-base",
  "tempfile",
  "tokio",
  "tokio-util",
@@ -5787,6 +5800,7 @@ dependencies = [
  "serde",
  "serde_json",
  "siphon",
+ "siphon-base",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",

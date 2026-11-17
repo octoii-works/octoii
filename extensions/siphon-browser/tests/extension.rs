@@ -39,6 +39,7 @@ async fn a_page_is_opened_listed_painted_and_worked_by_the_person() {
     };
     let siphon = Siphon::builder(&beak, testing::setup(machine))
         .expect("built")
+        .extension(siphon_base::BaseExtension)
         .extension(extension)
         .start()
         .expect("started");

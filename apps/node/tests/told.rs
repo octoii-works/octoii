@@ -87,6 +87,8 @@ async fn what_the_model_is_told() {
     let key = siphon.runtime.new_id().expect("an id");
     let id = siphon.threads.create(&new, &key).await.expect("a thread");
     let told = siphon.told(&id).await.expect("told");
+    assert_eq!(told.sections.first().map(|(name, _)| name.as_str()), Some("base"));
+    assert_eq!(told.sections.iter().filter(|(name, _)| name == "base").count(), 1);
     let temporary = home.temporary().expect("the Home's temporary folder");
     insta::assert_snapshot!(steady(&shown(&told), &id, folder.path(), &temporary));
 }

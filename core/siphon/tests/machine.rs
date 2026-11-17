@@ -24,6 +24,7 @@ async fn the_person_browses_the_machine_s_files_as_git_sees_them() {
     let beak = Beak::new().expect("Beak");
     let siphon = Siphon::builder(&beak, testing::setup(siphon::machine::Host::default()))
         .expect("built")
+        .extension(TestBase)
         .start()
         .expect("started");
     let root = root.to_string_lossy().into_owned();
@@ -90,4 +91,18 @@ async fn the_person_browses_the_machine_s_files_as_git_sees_them() {
     let id = reader.call("files.list", json!({ "path": root, "limit": 10 })).await;
     assert_eq!(reader.answer(&id).await["error"]["code"], "forbidden");
     siphon.runtime.close().await;
+}
+
+struct TestBase;
+impl siphon::Extension for TestBase {
+    fn name(&self) -> &'static str {
+        "base"
+    }
+    fn title(&self) -> &'static str {
+        "Test base"
+    }
+    fn description(&self) -> &'static str {
+        "Connection test fixture"
+    }
+    fn build(self: Box<Self>, _: &mut siphon::Registrar<'_>) {}
 }

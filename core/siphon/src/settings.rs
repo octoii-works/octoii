@@ -82,6 +82,8 @@ pub struct SettingsChange {
 /// Why settings were not set.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("the base extension cannot be disabled")]
+    RequiredExtension,
     #[error("a device's settings are an object")]
     NotAnObject,
     #[error("a device's settings hold at most {DEVICE_BYTES_MAX} bytes")]
@@ -117,7 +119,11 @@ pub fn environment(snapshot: &Snapshot) -> Result<Environment, Error> {
         favorite_models: annotation(&directory, FAVORITE_MODELS)?.unwrap_or_default(),
         review_model: annotation(&directory, REVIEW_MODEL)?.flatten(),
         history_retention_days: annotation(&directory, HISTORY_RETENTION)?.unwrap_or(defaults.history_retention_days),
-        disabled_extensions: annotation(&directory, DISABLED_EXTENSIONS)?.unwrap_or_default(),
+        disabled_extensions: annotation::<Vec<String>>(&directory, DISABLED_EXTENSIONS)?
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|name| name != "base")
+            .collect(),
     })
 }
 
@@ -125,7 +131,7 @@ pub fn environment(snapshot: &Snapshot) -> Result<Environment, Error> {
 /// Siphon's own, `core`, always is.
 #[must_use]
 pub(crate) fn switched_on(snapshot: &Snapshot, extension: &str) -> bool {
-    extension == crate::agent::CORE
+    (extension == crate::agent::CORE || extension == "base")
         || environment(snapshot).is_ok_and(|settings| !settings.disabled_extensions.iter().any(|off| off == extension))
 }
 
@@ -177,6 +183,9 @@ fn annotations(change: &EnvironmentChange) -> Result<Vec<Named>, Error> {
         out.push(named(HISTORY_RETENTION, json(days)?));
     }
     if let Some(extensions) = &change.disabled_extensions {
+        if extensions.iter().any(|name| name == "base") {
+            return Err(Error::RequiredExtension);
+        }
         out.push(named(DISABLED_EXTENSIONS, json(extensions)?));
     }
     Ok(out)
@@ -229,4 +238,39 @@ pub fn forget(snapshot: &Snapshot, changes: &mut Changes, session: &str) -> Resu
         changes.delete(file);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod base_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn base_cannot_be_disabled_even_by_an_old_stored_setting() {
+        let beak = beak::Beak::new().unwrap();
+        let runtime = Runtime::builder().start(&beak, siphon_runtime::Options::default()).unwrap();
+        let change = SettingsChange {
+            environment: Some(EnvironmentChange {
+                disabled_extensions: Some(vec!["base".into()]),
+                ..EnvironmentChange::default()
+            }),
+            device: None,
+        };
+        assert!(matches!(set(&runtime, "test", &change).await, Err(Error::RequiredExtension)));
+        let mut changes = Changes::new();
+        changes.mkdir(Bytes::from_static(DIRECTORY.as_bytes()));
+        changes.meta(
+            Bytes::from_static(DIRECTORY.as_bytes()),
+            Vec::new(),
+            vec![(
+                Bytes::from_static(DISABLED_EXTENSIONS.as_bytes()),
+                Some(Bytes::from_static(br#"["base","git"]"#)),
+            )],
+        );
+        runtime.commit(changes).await.unwrap();
+        let snapshot = runtime.snapshot().unwrap();
+        assert_eq!(environment(&snapshot).unwrap().disabled_extensions, vec!["git"]);
+        assert!(switched_on(&snapshot, "base"));
+        assert!(!switched_on(&snapshot, "git"));
+        runtime.close().await;
+    }
 }

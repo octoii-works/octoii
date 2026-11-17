@@ -1,6 +1,7 @@
 //! Git as an extension of Siphon's: the repository a folder of the machine's is in, as git tells of it — its changes, a
 //! file's patch and its two versions, a branch's commits — each run of git recorded while it runs, for the Diff view.
 
+mod context;
 pub mod git;
 pub mod protocol;
 pub mod tool;
@@ -35,6 +36,7 @@ impl Extension for GitExtension {
 
     fn build(self: Box<Self>, registrar: &mut Registrar<'_>) {
         registrar.tool(tool::GitTool);
+        registrar.teller(siphon::agent::Shared::Machine, std::sync::Arc::new(context::GitContext));
         registrar.methods(protocol::set(), Method::read, |caller: Caller, method| async move {
             answered(&caller, method).await
         });

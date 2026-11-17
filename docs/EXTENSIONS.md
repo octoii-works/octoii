@@ -24,6 +24,7 @@
 
 | 扩展 | Agent 接口与边界 |
 | --- | --- |
+| base | 必需扩展，无工具；基础提示词通过 Teller 注入，始终最先且不可关闭 |
 | browser | 一个 browser 工具；type 在光标处输入，fill 替换指定文本元素内容，press 负责按键；拒绝旧 clear/submit 参数 |
 | terminals | terminal 的 open/read/write/close；与一次性 shell 分工 |
 | thread | thread 的查询、历史、通信与整理 action；不承载 Git |

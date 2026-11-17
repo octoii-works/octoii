@@ -47,6 +47,7 @@ impl Fixture {
         let beak = Beak::new().expect("Beak");
         let siphon = Siphon::builder(&beak, testing::setup(machine))
             .expect("built")
+            .extension(siphon_base::BaseExtension)
             .extension(BrowserExtension {
                 profile: Some(kept.join("browser/profile")),
                 ..BrowserExtension::default()

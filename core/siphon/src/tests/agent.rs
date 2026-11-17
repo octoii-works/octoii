@@ -485,8 +485,8 @@ async fn a_turn_takes_on_the_calls_its_replies_make_and_asks_again_till_one_call
         .collect();
     assert_eq!(names, ["delegate", "execute", "read", "shell", "thread", "write"]);
     assert!(
-        matches!(&asked[0].input[0], Item::Message(Message::Developer { content }) if content.len() == 2),
-        "the base and the environment"
+        matches!(&asked[0].input[0], Item::Message(Message::Developer { content }) if content.len() == 1),
+        "the environment alone; base instructions are supplied by an extension"
     );
     assert!(
         matches!(asked[1].input.last(), Some(Item::FunctionCallOutput(output)) if output.call_id == "c1" && !output.is_error),

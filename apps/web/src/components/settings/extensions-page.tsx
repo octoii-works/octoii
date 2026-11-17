@@ -29,7 +29,11 @@ export function ExtensionsPage(): ReactNode {
 					.toSorted((a, b) => a.title.localeCompare(b.title))
 					.map((extension) => (
 						<Row key={extension.name} title={extension.title} description={extension.description}>
-							<Switch checked={!disabled.includes(extension.name)} onCheckedChange={(on) => turn(extension.name, on)} aria-label={`${extension.title} on`} />
+							{extension.name === "base" ? (
+								<span>Always enabled</span>
+							) : (
+								<Switch checked={!disabled.includes(extension.name)} onCheckedChange={(on) => turn(extension.name, on)} aria-label={`${extension.title} on`} />
+							)}
 						</Row>
 					))}
 			</Section>

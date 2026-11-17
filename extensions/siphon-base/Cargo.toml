@@ -1,0 +1,15 @@
+[package]
+name = "siphon-base"
+description = "Octoii's required base instructions, supplied through Siphon's extension interface"
+version = "0.0.1"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = "1.0.104"
+siphon.workspace = true

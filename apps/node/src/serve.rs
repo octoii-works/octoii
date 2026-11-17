@@ -14,6 +14,7 @@ use octoii_ai::models::Provider;
 use siphon::protocol::Machine;
 use siphon::providers::SignInSetup;
 use siphon::{Setup, Siphon};
+use siphon_base::BaseExtension;
 use siphon_browser::BrowserExtension;
 use siphon_claude_code::ClaudeCodeExtension;
 use siphon_delegate::DelegateExtension;
@@ -133,6 +134,7 @@ pub fn building(home: &Home, sign_in: SignInSetup) -> anyhow::Result<siphon::Bui
         folder: home.state().join("claude-code"),
     };
     Ok(built
+        .extension(BaseExtension)
         .extension(browser)
         .extension(TerminalsExtension)
         .extension(QuestionExtension)

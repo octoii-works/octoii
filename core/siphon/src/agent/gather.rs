@@ -21,6 +21,9 @@ use crate::agent::told::Told;
 /// The name Siphon's own tools and tellers go by, which no setting switches off.
 pub const CORE: &str = "core";
 
+/// The required, always-enabled base extension.
+pub(crate) const BASE: &str = "base";
+
 /// What a gather request asks: what the model of the thread `thread`, by its id, is told now.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Gather {
@@ -98,7 +101,14 @@ impl Sources {
     /// `tellers` in the order told.
     #[must_use]
     pub fn ordered(mut tellers: Vec<OwnedTeller>) -> Vec<OwnedTeller> {
-        tellers.sort_by(|a, b| (a.shared, a.extension != CORE, &a.extension).cmp(&(b.shared, b.extension != CORE, &b.extension)));
+        tellers.sort_by(|a, b| {
+            (a.extension != BASE, a.shared, a.extension != CORE, &a.extension).cmp(&(
+                b.extension != BASE,
+                b.shared,
+                b.extension != CORE,
+                &b.extension,
+            ))
+        });
         tellers
     }
 }
@@ -140,7 +150,7 @@ pub async fn gathered(sources: &Sources, runtime: &Runtime, id: &str) -> anyhow:
     let config = Config::of(&directory)?;
     let kind = Parent::of(&directory)?.map(|parent| parent.kind);
     let disabled = crate::settings::environment(&snapshot)?.disabled_extensions;
-    let on = |extension: &str| extension == CORE || !disabled.iter().any(|off| off == extension);
+    let on = |extension: &str| (extension == CORE || extension == BASE) || !disabled.iter().any(|off| off == extension);
     let place = config
         .workspace
         .as_deref()
@@ -175,4 +185,47 @@ pub async fn gathered(sources: &Sources, runtime: &Runtime, id: &str) -> anyhow:
         }
     }
     Ok(told)
+}
+
+#[cfg(test)]
+mod base_tests {
+    use super::*;
+    struct Empty;
+    impl Teller for Empty {
+        fn tell<'a>(
+            &'a self,
+            _: &'a crate::volume::Volume,
+            _: &'a str,
+            _: Option<&'a Place>,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<Telling>> + Send + 'a>> {
+            Box::pin(std::future::ready(Ok(Telling::default())))
+        }
+    }
+    #[test]
+    fn every_base_teller_precedes_other_extensions_regardless_of_scope() {
+        let tellers = [
+            ("aaa", Shared::Machine),
+            (CORE, Shared::Project),
+            (BASE, Shared::Thread),
+            (BASE, Shared::Machine),
+        ]
+        .into_iter()
+        .map(|(extension, shared)| OwnedTeller {
+            extension: extension.into(),
+            shared,
+            teller: Arc::new(Empty),
+        })
+        .collect();
+        let ordered = Sources::ordered(tellers);
+        let actual: Vec<_> = ordered.iter().map(|entry| (entry.extension.as_str(), entry.shared)).collect();
+        assert_eq!(
+            actual,
+            vec![
+                (BASE, Shared::Machine),
+                (BASE, Shared::Thread),
+                ("aaa", Shared::Machine),
+                (CORE, Shared::Project)
+            ]
+        );
+    }
 }

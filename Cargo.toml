@@ -11,6 +11,7 @@ siphon-runtime = { path = "core/siphon-runtime" }
 siphon-script = { path = "core/siphon-script" }
 siphon-shell = { path = "core/siphon-shell" }
 siphon-text = { path = "core/siphon-text" }
+siphon-base = { path = "extensions/siphon-base" }
 siphon-browser = { path = "extensions/siphon-browser" }
 siphon-claude-code = { path = "extensions/siphon-claude-code" }
 siphon-delegate = { path = "extensions/siphon-delegate" }
