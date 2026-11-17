@@ -8,6 +8,8 @@
 //! any other, which the person follows and steers; it delegates no further, its work on a task stops as the call that
 //! waits on it does, and it goes with its thread.
 
+mod context;
+
 use std::future::Future;
 
 use octoii_ai::vocabulary::InputContent;
@@ -38,6 +40,7 @@ impl Extension for DelegateExtension {
     }
 
     fn build(self: Box<Self>, registrar: &mut Registrar<'_>) {
+        registrar.teller(siphon::agent::Shared::Machine, std::sync::Arc::new(crate::context::Context));
         registrar.tool(DelegateTool);
     }
 }
@@ -107,7 +110,7 @@ pub struct DelegateTool;
 impl Tool for DelegateTool {
     const NAME: &'static str = "delegate";
     const REACHES_THREADS: bool = true;
-    const DESCRIPTION: &'static str = "Run a task in a sub-thread working in this folder. Use action=start to create one, or action=send with thread to continue one. Use it only when the person asks you to delegate, to use sub-agents, or to work on several things at once; never on your own initiative, and not for a new thread the person asks for.\n- A new `general_purpose` sub-thread inherits your tools and mode. An `explorer` can only read with read, glob, grep and execute; its scripts have the same restriction. Neither kind delegates or reaches other threads.\n- The sub-thread does not see this conversation: put everything it needs in `task`.\n- The call waits and returns the sub-thread's final answer; several calls in one reply run at once. With `background`, it returns at once and you get a message when the sub-thread finishes.\n- Every result names the sub-thread; to give it more work, use action=send with its id in `thread`. It keeps its original kind; you cannot change it by continuing.\n- Its answer is not proof: check what it changed before you report the work done.\n- The person sees every sub-thread and can steer it.";
+    const DESCRIPTION: &'static str = "Start a sub-thread task or send more work to one of your existing sub-threads. By default, wait for its final answer; background returns its id immediately and reports completion later. Its kind cannot change.";
     type Args = DelegateArgs;
 
     fn output_schema() -> Option<serde_json::Value> {

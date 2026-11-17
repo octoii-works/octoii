@@ -1,6 +1,6 @@
 # 提示词职责与精简方案
 
-2026-11-17。状态：方案已收敛为必需的 siphon-base 扩展；P1、P2、P3 已完成；其他功能扩展文案由 P4 继续整理。
+2026-11-17。状态：方案已收敛为必需的 siphon-base 扩展；P1–P4 已完成。
 
 ## 边界
 
@@ -23,19 +23,19 @@ base 扩展的所有 Teller 固定最先，内部及其余扩展按 Shared 稳�
 
 | 部分 | 当前情况 | 目标 |
 | --- | --- | --- |
-| base | 已由 siphon-base 注入；简洁的 Context/Work/Replies，Git 已迁出 | 后续迁出产品卡片协议，保留通用规则 |
+| base | 已由 siphon-base 注入；简洁的 Context/Work/Replies，Git 已迁出 | 通用卡片语法只保留一份，各功能扩展声明 kind |
 | instructions | 已由基础扩展收集用户指令和逐层 AGENTS.md | 复用公开的 Instructions 标记格式，保持来源与范围规则 |
 | environment | 已由基础扩展主动读取运行事实并组织文本 | 不自行推导权限；目录由同一注册集合提供，仓库信息由 Git 扩展注入 |
 | Git | 已有独立 Teller，注入 Git 政策和 worktree 约定 | P2 核对仓库事实的归属；工具描述只保留职责 |
-| Browser | 工具描述复述大量 action，含 page 卡片协议 | Teller 放当前页模型、引用/页面卡片约定；动作参数留 schema，删除重复动作目录 |
-| Terminal | 工具描述混合生命周期、通知、卡片及 action 说明 | Teller 放长任务与 shell 分工、完成通知和卡片约定；schema 负责操作参数 |
-| Thread | 已有线程历史目录 Teller，工具描述仍很长 | 整合历史访问、线程间通信与 thread 卡片约定到同一扩展；删除重复 action 清单 |
-| Delegate | 工具描述含委派授权、隔离上下文、种类、等待通知 | Teller 放委派政策和上下文隔离；schema 放 start/send、kind、background 参数；保留必要的动态结果提醒 |
-| Files/HTML | present_file 描述包含完整 HTML 生成规范 | Files Teller 提供呈现/生成约定；工具描述仅留文件保存与呈现契约；主题、字号、资源加载约定保留，避免重复维护 |
+| Browser | 已迁到 browser Teller，schema 保留动作参数 | Teller 放当前页模型、引用/页面卡片约定；动作参数留 schema，删除重复动作目录 |
+| Terminal | 已迁到 terminals Teller，描述保留返回语义 | Teller 放长任务与 shell 分工、完成通知和卡片约定；schema 负责操作参数 |
+| Thread | thread 静态规则和 threads 动态目录分开注入 | 整合历史访问、线程间通信与 thread 卡片约定到同一扩展；删除重复 action 清单 |
+| Delegate | delegate Teller 负责授权与隔离，schema 保留任务参数 | Teller 放委派政策和上下文隔离；schema 放 start/send、kind、background 参数；保留必要的动态结果提醒 |
+| Files/HTML | HTML 规范已迁到 Files Teller，文件契约留工具描述 | Files Teller 提供呈现/生成约定；工具描述仅留文件保存与呈现契约；主题、字号、资源加载约定保留，避免重复维护 |
 | Memory | 已有项目 Teller，注入规则、路径和索引 | 保留所属关系，精简重复写作建议，不把记忆正文全部注入 |
 | Skills | 已有项目 Teller，提供技能目录和读取规则 | 保留；技能内容仍按需读取 |
 | MCP | 已有项目 Teller 和外部工具目录 | 保留外部 schema，不重写第三方工具提示词 |
-| Question | 目前只用工具描述 | 功能交互约定交给 Teller，选项和回答参数由 schema 表达；不新增空泛的提问教程 |
+| Question | question Teller 负责提问政策 | 功能交互约定交给 Teller，选项和回答参数由 schema 表达；不新增空泛的提问教程 |
 | Web search / Claude provider | Provider 原生能力或接入层 | 无产品专属规则时不新增 Teller |
 
 产品卡片的通用语法应只维护一份，按实际展示协议归属确定共享文本的位置，各扩展仅声明自己提供的 kind。暂不为了提示词迁移新增 UI 包或修改 core 的运行机制。
@@ -44,7 +44,7 @@ base 扩展的所有 Teller 固定最先，内部及其余扩展按 Shared 稳�
 
 当前实际文本见 [base.md](../extensions/siphon-base/prompts/base.md)。它解释上下文与授权边界、路径和调用顺序、工作范围及准确汇报。Git 约定见 [git.md](../extensions/siphon-git/src/git.md)。
 
-精简不改变权限执行规则。当前仍保留文件链接和资源卡片语法，待功能扩展接管时再迁出，避免展示协议丢失。
+精简不改变权限执行规则。文件链接语法归 Files；通用资源卡片语法由 base 维护一份，Browser、Terminal、Thread 仅声明自己的 kind 与标识含义。暂不为这一行共享语法新增 UI 扩展包。
 
 ## 验收
 
@@ -87,3 +87,13 @@ P2 验证：工作区 287 项通过、3 项忽略；Clippy、格式和分层检�
 核心测试显式提供测试提示词，不依赖产品扩展。回归覆盖缺失、重复、非 base 注册和各字段空白的启动拒绝，并通过现有标题、压缩和审核流程验证提示词传递。
 
 P3 验证：工作区 288 项通过、3 项忽略；siphon/siphon-base 全目标 Clippy、格式和 24 包分层检查通过。三份生产提示词与迁移前文本逐字一致。
+
+## P4 实际边界
+
+Browser、Terminal、Thread、Delegate、Files、Question 各自提供 Machine 级静态 Teller。工具描述不再复述 action 目录；参数语义仍由原 schema 提供。Thread 的历史目录保持 Thread 级动态 section，且没有宿主历史目录时静态使用规则仍会注入。HTML 布局、主题变量、字号和资源加载规范原样保留。
+
+Memory、Skills 已通过项目 Teller 注入，保留现有按需读取结构；MCP 保留第三方 schema，Provider 不增加无实际用途的 Teller。没有新增提示词框架、共享扩展包或 core 改动。
+
+Teller 按扩展启用状态过滤，不按子任务工具集合过滤，因此静态规则明确以工具可用为前提；它们不授予权限。节点集成测试核对子任务实际工具集合，并验证禁用扩展时工具、静态规则与动态目录一并消失。快照记录模型实际收到的完整上下文。
+
+P4 验证：工作区 289 项通过、3 项忽略；节点及六个扩展全目标 Clippy、格式与分层检查通过。HTML 生成规范与迁移前逐字一致。

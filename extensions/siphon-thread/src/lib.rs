@@ -3,6 +3,8 @@
 //! machine's, which the model reads with the file tools for what the tool leaves out — each thread's log, outputs and
 //! files — told it where the host lays them out.
 
+mod context;
+
 mod conversation;
 mod reading;
 mod result;
@@ -40,6 +42,7 @@ impl Extension for ThreadExtension {
     }
 
     fn build(self: Box<Self>, registrar: &mut Registrar<'_>) {
+        registrar.teller(siphon::agent::Shared::Machine, std::sync::Arc::new(crate::context::Context));
         registrar.tool(ThreadTool);
         if let Some(folder) = registrar.machine().threads.clone() {
             registrar.teller(Shared::Thread, Arc::new(Folder(folder)));
@@ -71,7 +74,7 @@ impl Teller for Folder {
 fn threads_told(folder: &Path, id: &str) -> String {
     format!(
         "<threads>
-This thread is {id}. When the person asks about other threads or earlier work, find what was said with `thread`'s search and read the conversation around it with `thread`'s read. Every thread also has a read-only folder in {}, named by its id, for what read leaves out — reach it with read, glob and grep, or with tools.* in execute; the shell does not see it:
+This thread is {id}. Every thread also has a read-only folder in {}, named by its id, for what read leaves out — reach it with read, glob and grep, or with tools.* in execute; the shell does not see it:
 - log/: every entry of the conversation as JSON Lines, the model's reasoning and each call's whole result among them.
 - outputs/: the whole output of calls too long to return whole.
 - files/: the images and files of the conversation, named by their SHA-256.

@@ -122,7 +122,11 @@ async fn an_extension_switched_off_tells_the_model_nothing() {
     assert!(before.iter().any(|name| name == "browser") && before.iter().any(|name| name == "terminal"));
     let change = siphon::settings::SettingsChange {
         environment: Some(siphon::settings::EnvironmentChange {
-            disabled_extensions: Some(vec!["browser".into(), "memory".into()]),
+            disabled_extensions: Some(
+                ["browser", "terminals", "files", "thread", "delegate", "question", "memory"]
+                    .map(str::to_owned)
+                    .to_vec(),
+            ),
             ..siphon::settings::EnvironmentChange::default()
         }),
         device: None,
@@ -141,5 +145,56 @@ async fn an_extension_switched_off_tells_the_model_nothing() {
         !after.iter().any(|name| name == "browser"),
         "the browser is told no more: {after:?}"
     );
-    assert!(after.iter().any(|name| name == "terminal") && after.iter().any(|name| name == "read"));
+    for section in ["browser", "terminals", "files", "thread", "threads", "delegate", "question"] {
+        assert!(!told.sections.iter().any(|(name, _)| name == section), "disabled section {section}");
+    }
+    for tool in ["browser", "terminal", "present_file", "thread", "delegate", "question"] {
+        assert!(!after.iter().any(|name| name == tool), "disabled tool {tool}");
+    }
+    assert!(after.iter().any(|name| name == "read"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn product_context_does_not_grant_subthread_tools() {
+    let folder = tempfile::tempdir().unwrap();
+    let home = Home::at(folder.path().join("home"));
+    home.prepare().unwrap();
+    let siphon = octoii::serve::siphon(&home, siphon::providers::SignInSetup::default()).unwrap();
+    let key = siphon.runtime.new_id().unwrap();
+    let parent = siphon.threads.create(&NewThread::default(), &key).await.unwrap();
+    for kind in [
+        siphon::threads::SubThreadKind::Explorer,
+        siphon::threads::SubThreadKind::GeneralPurpose,
+    ] {
+        let key = siphon.runtime.new_id().unwrap();
+        let child = siphon
+            .threads
+            .create(
+                &NewThread {
+                    parent: Some(siphon::threads::Parent {
+                        thread: parent.clone(),
+                        call: key.clone(),
+                        kind,
+                    }),
+                    ..NewThread::default()
+                },
+                &key,
+            )
+            .await
+            .unwrap();
+        let told = siphon.told(&child).await.unwrap();
+        let names: Vec<_> = told
+            .tools
+            .iter()
+            .filter_map(|tool| match tool {
+                Tool::Function { name, .. } => Some(name.as_str()),
+                Tool::WebSearch => None,
+            })
+            .collect();
+        assert!(!names.contains(&"thread") && !names.contains(&"delegate"));
+        if kind == siphon::threads::SubThreadKind::Explorer {
+            assert!(names.contains(&"read") && names.contains(&"execute"));
+            assert!(names.iter().all(|name| ["read", "glob", "grep", "execute"].contains(name)));
+        }
+    }
 }

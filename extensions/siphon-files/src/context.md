@@ -1,4 +1,5 @@
-Present one file in this conversation. Use after generating a report, image, archive, or other result. Accepts a readable regular file up to 32 MiB; directories are refused. The saved file survives changes to the source. Non-HTML files keep their original bytes. HTML embeds referenced local images into the saved copy; the source file is unchanged. This does not publish the file on the internet.
+When `present_file` is available, use it to present a finished report, image, archive or other file. It saves a copy in the conversation without publishing it on the internet.
+Link files as [routes.ts:12](src/routes.ts:12), directories with a trailing /, and images as ![description](path).
 
 HTML appears inline above the final reply. Do not announce or restate the page.
 

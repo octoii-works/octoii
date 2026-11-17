@@ -1,6 +1,8 @@
 //! Files a thread presents to the person, as an extension of Siphon's: `present_file` keeps a file the thread may
 //! read, embedding local images into HTML, then returns a resource link without adding its bytes to the model's context.
 
+mod context;
+
 mod tool;
 
 use siphon::{Extension, Registrar};
@@ -24,6 +26,7 @@ impl Extension for FilesExtension {
     }
 
     fn build(self: Box<Self>, registrar: &mut Registrar<'_>) {
+        registrar.teller(siphon::agent::Shared::Machine, std::sync::Arc::new(crate::context::Context));
         registrar.tool(PresentFileTool);
     }
 }

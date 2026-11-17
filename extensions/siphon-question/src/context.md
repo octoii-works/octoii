@@ -1,0 +1,1 @@
+When `question` is available, ask only for information you cannot find yourself and that changes what you do. Put the recommended option first and append "(recommended)" to its label. The person may answer freely, skip questions or dismiss them; missing answers are not consent.

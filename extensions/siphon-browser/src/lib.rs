@@ -4,6 +4,8 @@
 //! `Refusal` in words the model reads; the same action a tool's call or a script's. The person sees the pages painted,
 //! by their frames and the events that tell of them.
 
+mod context;
+
 mod action;
 mod browser;
 mod cdp;

@@ -224,7 +224,7 @@ Git 与 thread 创建不构成一个原子事务。准备失败须报告目标�
 
 ## HTML 视觉回复（2026-11-16）
 
-沿用“生成文件 → browser.preview 自检 → present_file 交付”，不新增 HTML 专用工具。生成指导放在 `extensions/siphon-files/src/present_file.md`，作为 `present_file` 的工具描述，在生成前可见。
+沿用“生成文件 → browser.preview 自检 → present_file 交付”，不新增 HTML 专用工具。生成指导放在 `extensions/siphon-files/src/context.md`，由 Files 的 Teller 注入，在生成前可见；`present_file` 描述只保留文件保存与返回契约。
 
 - HTML 与回复正文同宽、同起点，不使用工具缩进，也不叠加外层卡片边框。具体报告内部可有自己的分区。
 - 对话内高度跟随内容增长和收缩，随对话滚动；80px 是最小展示高度，20,000px 仅为异常防护上限。展开到独立对话框后使用视口内滚动。

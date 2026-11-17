@@ -33,6 +33,7 @@ impl Extension for BrowserExtension {
     }
 
     fn build(self: Box<Self>, registrar: &mut Registrar<'_>) {
+        registrar.teller(siphon::agent::Shared::Machine, std::sync::Arc::new(crate::context::Context));
         let browser = Browser::start(BrowserHost {
             commands: registrar.commands(),
             machine: registrar.machine().clone(),

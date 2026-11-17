@@ -11,6 +11,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+anyhow = "1.0.104"
 octoii-ai.workspace = true
 schemars = "1.2.3"
 serde = { version = "1.0.229", features = ["derive"] }

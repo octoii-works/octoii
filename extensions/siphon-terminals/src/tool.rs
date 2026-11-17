@@ -101,7 +101,7 @@ pub struct TerminalTool {
 
 impl Tool for TerminalTool {
     const NAME: &'static str = "terminal";
-    const DESCRIPTION: &'static str = "Work the thread's terminals, which the person sees beside the chat.\n- open: run a command that does not exit by itself (a server, a watcher) in a new terminal in the workspace, sandboxed as shell commands are. Returns the terminal's number and its screen after a moment. When the command exits you get a message with how it ended and its last screen; do not poll for it.\n- read: return what a terminal shows, the person's terminals included.\n- write: type into a terminal you opened (`\\u0003` for Ctrl-C, `\\r` for Enter); returns the screen after.\n- close: close a terminal you opened, ending its command.\nFor a command that exits by itself, use shell. Link a terminal in your reply as :terminal{id=<number>}, or as ::terminal{id=<number>} on its own line to show its card with its last lines.";
+    const DESCRIPTION: &'static str = "Open, read, write or close the thread's terminals. Open and write return the screen after a brief settle; screens are not complete command logs.";
     type Args = Action;
 
     fn output_schema() -> Option<serde_json::Value> {

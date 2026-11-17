@@ -6,6 +6,8 @@
 //! the order asked, telling whoever listens as a thread's terminals come, take titles and go, as each writes, and as a
 //! command line the model ran ends of itself, with what its screen showed.
 
+mod context;
+
 mod extension;
 pub mod protocol;
 mod tool;

@@ -23,7 +23,7 @@ pub struct PresentFileTool;
 
 impl Tool for PresentFileTool {
     const NAME: &'static str = "present_file";
-    const DESCRIPTION: &'static str = include_str!("present_file.md");
+    const DESCRIPTION: &'static str = "Save a readable regular file of at most 32 MiB in the conversation and return its resource link. Directories are refused. The saved copy survives source changes; non-HTML bytes are unchanged, while HTML embeds local images without modifying the source.";
     type Args = PresentFileArgs;
 
     fn effect(&self, _: &PresentFileArgs, _: &Base) -> Effect {

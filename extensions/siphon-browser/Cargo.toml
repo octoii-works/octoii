@@ -11,6 +11,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+anyhow = "1.0.104"
 base64 = "0.23.1"
 bytes = "1.12.1"
 chromiumoxide_cdp = "0.9.1"

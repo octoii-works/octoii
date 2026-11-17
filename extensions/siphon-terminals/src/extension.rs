@@ -28,6 +28,7 @@ impl Extension for TerminalsExtension {
     }
 
     fn build(self: Box<Self>, registrar: &mut Registrar<'_>) {
+        registrar.teller(siphon::agent::Shared::Machine, std::sync::Arc::new(crate::context::Context));
         let terminals = Terminals::start(registrar.commands(), registrar.machine().clone());
         let closing = terminals.clone();
         registrar.on_thread_deleted(move |thread| closing.close_thread(thread));

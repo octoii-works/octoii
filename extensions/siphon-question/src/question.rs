@@ -70,7 +70,7 @@ pub struct QuestionTool;
 
 impl Tool for QuestionTool {
     const NAME: &'static str = "question";
-    const DESCRIPTION: &'static str = "Ask the person one to eight questions at once. A question can offer options to choose one of, or several with `multiple`, or no options for a free-text answer. The person may answer in their own words, skip questions, or dismiss them all. Put your recommended option first and add \"(recommended)\" to its label. Ask only what you cannot find out yourself and what changes what you do.";
+    const DESCRIPTION: &'static str = "Ask one to eight questions, with single-choice or multiple-choice options, or free-text answers. Returns the person's answers, skipped questions or dismissal.";
     type Args = QuestionArgs;
 
     fn output_schema() -> Option<Value> {
