@@ -75,4 +75,8 @@ The extracted sources were compared against the product revision: 76 existing Si
 47 existing AI files are byte-identical; changes are standalone configuration and documentation.
 AI's initial GitHub CI passed. Siphon's initial GitHub CI passed compilation and Clippy but exposed
 an existing memory-limit test assumption: the exhausted engine reported Thrown instead of InternalError.
-A separately scoped test correction was requested; production code was not changed to mask it.
+The separately approved correction in Siphon commit 03602727d30826ca3f4ea41fcafd466ba15d8ccb uses
+one finite allocation workload: it must fail at a 4 MiB limit and return the full count at 64 MiB.
+The product now pins this follow-up commit. All 9 script tests and targeted Clippy passed locally;
+production code is unchanged. The full standalone GitHub CI passed on this follow-up commit
+([run 44114764949](https://github.com/devxiyang/octoii-siphon/actions/runs/44114764949)).
