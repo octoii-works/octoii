@@ -4,6 +4,7 @@
 mod context;
 pub mod git;
 pub mod protocol;
+pub mod start;
 pub mod tool;
 
 use std::path::Path;
@@ -39,8 +40,17 @@ impl Extension for GitExtension {
         registrar.tool(tool::GitTool);
         registrar.teller(siphon::agent::Shared::Machine, std::sync::Arc::new(context::GitContext));
         registrar.teller(siphon::agent::Shared::Project, std::sync::Arc::new(context::RepositoryContext));
-        registrar.methods(protocol::set(), Method::read, |caller: Caller, method| async move {
-            answered(&caller, method).await
+        let preparations = std::sync::Arc::new(tokio::sync::Mutex::new(()));
+        registrar.methods(protocol::set(), Method::read, move |caller: Caller, method| {
+            let preparations = preparations.clone();
+            async move {
+                if let Method::GitStart(action) = method {
+                    start::authorize(&caller)?;
+                    let _preparing = preparations.lock().await;
+                    return json(&start::answer(&caller, action).await.map_err(failed)?);
+                }
+                answered(&caller, method).await
+            }
         });
     }
 }
@@ -98,6 +108,7 @@ fn json(value: &impl Serialize) -> Result<serde_json::Value, Error> {
 
 async fn told_by(git: &Git<'_>, method: Method) -> Result<serde_json::Value, Error> {
     match method {
+        Method::GitStart(_) => unreachable!("startup methods are handled before ordinary Git queries"),
         Method::GitWorktrees(asked) => json(&Worktrees {
             worktrees: git.worktrees(Path::new(&asked.path)).await.map_err(|error| told(&error))?,
         }),

@@ -11,6 +11,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+tokio = { version = "1.54.1", features = ["sync"] }
 anyhow = "1.0.104"
 schemars = "1.2.3"
 octoii-ai.workspace = true

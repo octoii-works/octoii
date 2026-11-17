@@ -915,6 +915,11 @@ export type Standing = { account?: string, plan?: string, limits: Array<Limit>, 
 export type Start = { request: StartRequest, token: string, previous: string | null, state: StartState, };
 
 /**
+ * Accept saves input without executing Git or the Agent. Prepare and retry are explicit writes.
+ */
+export type StartAction = { "action": "accept", key: string, config: Config, content: Array<InputContent>, worktree: CreateWorktree, } | { "action": "prepare", thread: string, token: string, } | { "action": "retry", thread: string, token: string, } | { "action": "inspect", thread: string, };
+
+/**
  * An extension's accepted preparation request. Siphon does not interpret its payload.
  */
 export type StartRequest = { owner: string, payload: JsonValue, };
@@ -1008,6 +1013,8 @@ export type TerminalsTopic = { "type": "terminals", thread: string, } | { "type"
  * what a subscription to the thread goes on from, none for a log not begun.
  */
 export type ThreadRead = { entries: Array<Entry>, complete: boolean, end?: Cursor, };
+
+export type ThreadStart = { thread: string, start: Start, worktrees?: Array<WorktreeEntry>, };
 
 /**
  * What a thread's model requests used, as Beak counts it on its main process for every process under it, as cgroup v2
@@ -1179,6 +1186,7 @@ export type Methods = {
   'terminals.text': { params: OfTerminal; result: TerminalText };
   'memory.list': { params: InFolder; result: MemoryListed };
   'memory.delete': { params: DeleteMemory; result: Nothing };
+  'git.start': { params: StartAction; result: ThreadStart };
   'git.worktrees': { params: InFolder; result: Worktrees };
   'git.create-worktree': { params: CreateWorktree; result: Worktree };
   'git.repository': { params: InFolder; result: InRepository };

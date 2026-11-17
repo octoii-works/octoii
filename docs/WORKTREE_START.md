@@ -89,3 +89,47 @@ Chrome 原生 IndexedDB + Web Locks 验证：保存文本与附件 Blob → 刷�
 
 此切片尚未把 Git 创建、节点恢复调度与客户端串起来；R1a 仍未完成。下一步是 Git 扩展准备服务，
 继续使用 Siphon 公共接口，不直接访问 Beak 或 runtime。
+
+## 第五切片：Git 扩展的显式准备入口
+
+新增 `git.start`，通过 `action` 表达四种操作。所有操作同时要求 `git.operate` 与
+`threads.operate`，既有 session 权限不自动扩大。复用已有 Git 创建逻辑、Siphon 启动门和 Commands；
+本批不修改 core。
+
+| action | 输入 | 行为 |
+| --- | --- | --- |
+| accept | key、config、content、worktree | 原子保存 Thread、输入和准备请求；不运行 Git 或 Agent |
+| prepare | thread、token | 执行已保存请求；成功绑定目录并放行，Git 失败保存失败状态 |
+| retry | thread、token | 从失败状态换取新 token，再执行同一个已保存请求 |
+| inspect | thread | 返回当前启动状态及源仓库的注册 worktrees；不修改状态或采用已有目录 |
+
+结果为 `thread`、`start`，检查现场时另含 `worktrees`。普通 `threads.list` 已可查询状态；
+停止与删除仍用现有 Thread 方法。失败后的 prepare 只返回失败状态，必须明确 retry 才开始新尝试。
+已 ready 的 prepare 返回现状，不再次运行 Git；旧 token 被拒绝。
+
+准备请求沿用 `CreateWorktree` 的字段，额外要求 source/destination 为绝对路径、base 为完整的
+40/64 位十六进制 commit ID。不能传 HEAD、分支或标签等移动引用；调用方先取得所选 commit，
+这样重启或重试也不会改变基准。config.workspace 留空，最终 workspace 只从 Git 成功回执绑定。
+普通 Git 工具和 `git.create-worktree` 仍保留原有 revision 与 tracking 语义。
+
+同一节点的这些准备操作通过扩展实例持有的锁串行处理，普通 Git 查询、Thread 查询和停止不受此锁阻塞。
+它只避免活跃节点内重复执行，不能代替持久状态或跨机器调度。
+
+### 故障和恢复边界
+
+- accept 与 prepare 分开，客户端收到 Thread ID 后才能请求准备；响应丢失可用同一个 key 重放 accept。
+- 节点重启不会自动执行 pending 请求。恢复入口应先 inspect 展示状态，再由用户明确选择继续或取消。
+- Git 成功但放行回执不确定时，先查 start；若已 ready，直接打开原 Thread。
+- 若仍 pending/failed，即使 path、branch、HEAD 完全匹配，也不自动认领或放行。再次显式准备时，
+  现有分支/目录仍由 Git 拒绝，输入继续保留；现场由用户处理，不自动删除或强制覆盖。
+- 准备中停止/删除会阻止放行，但不会撤销已发生的 Git 写入；本切片不承诺停止会立即终止 Git 进程。
+- 当前没有后台 worker、自动恢复扫描或新任务 UI。附件仍需在调用 accept 前上传完成。
+
+### 验证
+
+Git 扩展全量 14 项测试通过，包括新增的重复准备、固定基准、已有 worktree 不被接管、输入保留、
+停止后不执行、双权限检查、节点重启与失败后显式重试。Clippy 全目标、协议生成、客户端类型与依赖分层检查通过。
+本批未改 UI，未进行浏览器验收。
+
+下一步接客户端新任务入口和恢复交互，调用这一个扩展接口；再按实际需要评估节点后台调度。
+不要同时引入另一套任务记录或自动采用已有 worktree 的捷径。

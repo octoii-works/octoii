@@ -9,6 +9,8 @@ use ts_rs::TS;
 use crate::git::{ChangedFile, Changes, ChangesScope, Commit, Comparison, Repository, Worktree, WorktreeEntry};
 
 siphon::methods! {
+    /// Accept, explicitly prepare, retry or inspect a worktree-backed Thread; also requires threads.operate.
+    "git.start" GitStart(crate::start::StartAction) -> crate::start::ThreadStart, Some(Scope::GitOperate);
     /// List the repository's registered worktrees.
     "git.worktrees" GitWorktrees(InFolder) -> Worktrees, Some(Scope::FilesRead);
     /// Create a linked worktree on a new branch from an explicit base; does not start or move a thread.
