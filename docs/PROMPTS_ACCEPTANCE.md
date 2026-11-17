@@ -23,4 +23,20 @@
 - 页面刷新后，原交付正常加载，按钮状态重置为待计算。工作区文件仍在，本轮没有额外验证删除源文件后的恢复。
 - 截图保存在 /private/tmp/octoii-prompts-live/report-light.png 与 report-dark.png，已发送用户。
 
-Thread/Delegate 验收继续进行，尚不作为已通过项目。
+## Thread 与 Delegate
+
+- 明确授权后台创建 explorer（只读审阅两个文件）与 general_purpose（仅新建 acceptance-note.md）；分别进入两条子会话，界面均确认 GPT-6.1 Sol / Max。
+- Explorer：01a1e803-2b00-7dac-ae47-c2c6dc3e349c；General purpose：01a1e803-4d6b-7613-8283-cb55dd98e079。
+- 两个子任务完成后消息自动送回父会话，父会话恢复执行；无需轮询。父会话先报告中间状态，第二个完成后读取文件并复跑测试，最终汇总。
+- Thread search/read 在当前会话内完成，最终会话引用渲染为可点击链接。独立读取 acceptance-note.md，内容符合任务；独立 node --test 再次 5/5 通过。
+- 完成后工具过程默认折叠，子任务结果卡片和父会话引用可见；截图 subtasks.png 已发送用户。
+
+## 发现与修正
+
+Files 提示词把文件呈现范围写得过宽。父会话完成检查后额外请求 present_file(acceptance-note.md)，触发不必要的审批。浏览器自动审批拒绝该交付，理由为本轮只明确授权创建和核查笔记、未授权资源交付。随后主动 Deny；模型没有重试，保留本地文件并准确说明。
+
+收紧 Files Teller：standalone deliverables 使用 present_file；项目文件和内部笔记默认链接路径，只有明确要求作为文件接收时才呈现。创建/修改文件本身不等于交付请求。没有改变执行权限、core 或工具 schema。节点上下文 3 项测试通过，快照已更新。
+
+修正后的节点再次在同一隔离 Home 启动。新建独立会话 01a1e807-3481-7e16-9bb2-94026dd3914c，要求新增三行项目内部笔记，没有显式提示模型避免 present_file。真实 GPT-6.1 Sol 完成后只链接 internal-check.md；工具历史为读取、搜索和写入，没有呈现调用或审批，未修改已有文件。这是单次实测结果，不代表模型行为的确定性保证。
+
+本轮未发现需要修改 core 的问题。未 push；保留临时项目、会话和截图供复查，隔离节点保持运行。浏览器交付页面标记被自动审批拒绝，已跳过，不影响本地会话数据。

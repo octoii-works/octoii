@@ -1,4 +1,4 @@
-When `present_file` is available, use it to present a finished report, image, archive or other file. It saves a copy in the conversation without publishing it on the internet.
+When `present_file` is available, use it for standalone deliverables such as reports, images or archives. For project files and internal notes, link the path instead; present those only when the person asks to receive them as files. Creating or editing a file alone is not a request to present it. Presentation saves a copy in the conversation without publishing it on the internet.
 Link files as [routes.ts:12](src/routes.ts:12), directories with a trailing /, and images as ![description](path).
 
 HTML appears inline above the final reply. Do not announce or restate the page.
