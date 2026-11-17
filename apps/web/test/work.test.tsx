@@ -6,6 +6,7 @@ import { Window } from "happy-dom";
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { type Reach, ReachContext } from "../src/components/state/reach.ts";
+import { DetailList } from "../src/components/thread/details.tsx";
 import { Calls } from "../src/components/thread/calls.tsx";
 import { TurnWork } from "../src/components/thread/turn.tsx";
 import type { WorkGroup } from "../src/core/rows.ts";
@@ -199,6 +200,26 @@ describe("expanded tool details", () => {
 			expect(button("Source code").getAttribute("aria-expanded")).toBe("false");
 			expect(button("custom.report").getAttribute("aria-expanded")).toBe("true");
 			expect(element.textContent).toContain(nestedOutput);
+		});
+	});
+});
+
+describe("thread details lists", () => {
+	it("keeps extra tasks collapsed, reveals them, and folds them again", async () => {
+		await withView(async (view) => {
+			const rows = ["Explorer", "Tests", "Review", "Build", "Docs"].map((name) => <button key={name}>{name}</button>);
+			await view.draw(<DetailList label="tasks">{rows}</DetailList>);
+			expect(view.element.textContent).not.toContain("Build");
+			expect(view.button("Show 2 more tasks").getAttribute("aria-expanded")).toBe("false");
+			await view.click(view.button("Show 2 more tasks"));
+			expect(view.element.textContent).toContain("Build");
+			expect(view.element.textContent).toContain("Docs");
+			expect(view.button("Show less").getAttribute("aria-expanded")).toBe("true");
+			await view.click(view.button("Show less"));
+			expect(view.element.textContent).not.toContain("Build");
+			await view.draw(<DetailList label="tasks">{rows.slice(0, 2)}</DetailList>);
+			expect(view.element.textContent).not.toContain("Show");
+			expect(view.element.querySelectorAll("button").length).toBe(2);
 		});
 	});
 });

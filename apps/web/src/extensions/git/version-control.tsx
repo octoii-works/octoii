@@ -19,7 +19,7 @@ export function VersionControl(props: { readonly thread: string; readonly folder
 			{outcome === undefined ? (
 				<DetailRow icon={<LoaderCircle className="animate-spin" />} label="Loading repository…" />
 			) : "failure" in outcome ? (
-				<DetailRow icon={<RefreshCw />} label="Retry repository" title={outcome.failure} onOpen={() => setRetry(retry + 1)} />
+				<ReadFailure label="Retry repository" reason={outcome.failure} retry={() => setRetry(retry + 1)} />
 			) : outcome.result.repository === undefined ? (
 				<DetailRow icon={<GitBranch />} label="Not a Git repository" />
 			) : (
@@ -77,7 +77,7 @@ function Changes(props: { readonly thread: string; readonly folder: string; read
 	const scopeLabel =
 		scope.type === "branch" ? `vs ${props.repository.base ?? "base"}` : scope.type === "uncommitted" ? "Uncommitted" : scope.commit.slice(0, 7);
 	if (outcome !== undefined && "failure" in outcome) {
-		return <DetailRow icon={<RefreshCw />} label="Retry changes" title={outcome.failure} onOpen={() => setRetry(retry + 1)} />;
+		return <ReadFailure label="Retry changes" reason={outcome.failure} retry={() => setRetry(retry + 1)} />;
 	}
 	const totals = outcome === undefined ? undefined : totalsOf(outcome.result.files);
 	return (
@@ -101,5 +101,17 @@ function Changes(props: { readonly thread: string; readonly folder: string; read
 				)
 			}
 		/>
+	);
+}
+
+/** Failure reasons remain readable on touch screens, alongside the retry action. */
+function ReadFailure(props: { readonly label: string; readonly reason: string; readonly retry: () => void }): ReactNode {
+	return (
+		<div>
+			<p role="status" className="px-2 py-1 text-xs text-muted-foreground break-words">
+				{props.reason}
+			</p>
+			<DetailRow icon={<RefreshCw />} label={props.label} onOpen={props.retry} />
+		</div>
 	);
 }
