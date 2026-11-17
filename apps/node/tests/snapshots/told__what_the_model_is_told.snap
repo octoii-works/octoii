@@ -85,7 +85,8 @@ This thread is <thread>. When the person asks about other threads or earlier wor
 Control the thread's browser, which the person sees beside the chat. One action per call, on the current page; switch changes the current page.
 - Pages: open, preview, tabs, switch, close, navigate, back, forward, reload. Preview opens a local HTML file in isolation: inline scripts work, HTTP/HTTPS resources and fetch requests are allowed, and referenced local images are embedded. Use look, console and coordinate clicks to check it.
 - Seeing: read returns the page's accessibility tree, each element with a ref such as e12, refs new since the last read marked *; look returns a screenshot; info returns the URL, title, size and scroll.
-- Acting on an element, by ref, CSS selector or point: click, hover, type, press, select, scroll, drag, upload, dialog.
+- Acting on an element, by ref, CSS selector or point: click, hover, type, fill, press, select, scroll, drag, upload, dialog.
+- Text: type inserts at the caret; fill replaces an editable target's text (empty text clears it); press sends keys, including Enter to submit.
 - Other: evaluate runs JavaScript in the page or a frame; wait waits for text, a URL, an element or an idle network; console and downloads return the page's logs and downloads; cdp sends a raw Chrome DevTools Protocol command when no other action can.
 An action that changes the page waits for it to settle, then says whether it navigated, changed the page or changed nothing. Link a page in your reply as :page{id=<id>}, or as ::page{id=<id>} on its own line to show its card.
 --- parameters
@@ -151,6 +152,7 @@ An action that changes the page waits for it to settle, then says whether it nav
   },
   "oneOf": [
     {
+      "additionalProperties": false,
       "description": "Open a page at `url`, or a blank page, and make it current.",
       "properties": {
         "action": {
@@ -171,6 +173,7 @@ An action that changes the page waits for it to settle, then says whether it nav
       "type": "object"
     },
     {
+      "additionalProperties": false,
       "description": "Open a local HTML file in an isolated preview and make it current. Inline scripts run, HTTP/HTTPS resources and fetch\nrequests are allowed, and local image references are embedded. Popups and parent-page access remain blocked. Inspect it with look, console and clicks.",
       "properties": {
         "action": {
@@ -189,6 +192,7 @@ An action that changes the page waits for it to settle, then says whether it nav
       "type": "object"
     },
     {
+      "additionalProperties": false,
       "description": "List the thread's pages.",
       "properties": {
         "action": {
@@ -202,6 +206,7 @@ An action that changes the page waits for it to settle, then says whether it nav
       "type": "object"
     },
     {
+      "additionalProperties": false,
       "description": "Make page `page` current.",
       "properties": {
         "action": {
@@ -220,6 +225,7 @@ An action that changes the page waits for it to settle, then says whether it nav
       "type": "object"
     },
     {
+      "additionalProperties": false,
       "description": "Close page `page`, or the current page.",
       "properties": {
         "action": {
@@ -240,6 +246,7 @@ An action that changes the page waits for it to settle, then says whether it nav
       "type": "object"
     },
     {
+      "additionalProperties": false,
       "description": "Go to `url` in the current page.",
       "properties": {
         "action": {
@@ -258,6 +265,7 @@ An action that changes the page waits for it to settle, then says whether it nav
       "type": "object"
     },
     {
+      "additionalProperties": false,
       "description": "Go back in the page's history.",
       "properties": {
         "action": {
@@ -271,6 +279,7 @@ An action that changes the page waits for it to settle, then says whether it nav
       "type": "object"
     },
     {
+      "additionalProperties": false,
       "description": "Go forward in the page's history.",
       "properties": {
         "action": {
@@ -284,6 +293,7 @@ An action that changes the page waits for it to settle, then says whether it nav
       "type": "object"
     },
     {
+      "additionalProperties": false,
       "description": "Reload the page.",
       "properties": {
         "action": {
@@ -297,6 +307,7 @@ An action that changes the page waits for it to settle, then says whether it nav
       "type": "object"
     },
     {
+      "additionalProperties": false,
       "description": "Return the page's accessibility tree: one nested line per element, with its ref; refs new since the last read\nare marked `*`.",
       "properties": {
         "action": {
@@ -310,6 +321,7 @@ An action that changes the page waits for it to settle, then says whether it nav
       "type": "object"
     },
     {
+      "additionalProperties": false,
       "description": "Return a screenshot of the page.",
       "properties": {
         "action": {
@@ -323,6 +335,7 @@ An action that changes the page waits for it to settle, then says whether it nav
       "type": "object"
     },
     {
+      "additionalProperties": false,
       "description": "Return the page's URL, title, viewport, scroll and size, or the dialog blocking it.",
       "properties": {
         "action": {
@@ -336,6 +349,7 @@ An action that changes the page waits for it to settle, then says whether it nav
       "type": "object"
     },
     {
+      "additionalProperties": false,
       "description": "Click `target`, scrolling it into view first.",
       "properties": {
         "action": {
@@ -368,6 +382,7 @@ An action that changes the page waits for it to settle, then says whether it nav
       "type": "object"
     },
     {
+      "additionalProperties": false,
       "description": "Move the mouse over `target`.",
       "properties": {
         "action": {
@@ -386,21 +401,12 @@ An action that changes the page waits for it to settle, then says whether it nav
       "type": "object"
     },
     {
-      "description": "Type `text` into `target`, focusing it first, or into the focused element; `clear` replaces the existing text,\n`submit` presses Enter after.",
+      "additionalProperties": false,
+      "description": "Insert text at the caret, focusing `target` first if supplied. Does not clear or submit.",
       "properties": {
         "action": {
           "const": "type",
           "type": "string"
-        },
-        "clear": {
-          "default": false,
-          "description": "Replace the existing text.",
-          "type": "boolean"
-        },
-        "submit": {
-          "default": false,
-          "description": "Press Enter after typing.",
-          "type": "boolean"
         },
         "target": {
           "anyOf": [
@@ -414,7 +420,6 @@ An action that changes the page waits for it to settle, then says whether it nav
           "description": "Where to type; the focused element if omitted."
         },
         "text": {
-          "description": "Text to type.",
           "type": "string"
         }
       },
@@ -425,6 +430,29 @@ An action that changes the page waits for it to settle, then says whether it nav
       "type": "object"
     },
     {
+      "additionalProperties": false,
+      "description": "Replace all text in an editable element. An empty string clears it; use press with Enter to submit.",
+      "properties": {
+        "action": {
+          "const": "fill",
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/Place"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "target",
+        "text"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
       "description": "Press a key by its DOM name (`Enter`, `Tab`, `ArrowDown`, `a`), with optional modifiers: Alt, Control, Meta,\nShift.",
       "properties": {
         "action": {
@@ -451,6 +479,7 @@ An action that changes the page waits for it to settle, then says whether it nav
       "type": "object"
     },
     {
+      "additionalProperties": false,
       "description": "Choose options of a `<select>`, by value or label.",
       "properties": {
         "action": {
@@ -477,6 +506,7 @@ An action that changes the page waits for it to settle, then says whether it nav
       "type": "object"
     },
     {
+      "additionalProperties": false,
       "description": "Scroll by pixels over `target`, or over the middle of the page.",
       "properties": {
         "action": {
@@ -513,6 +543,7 @@ An action that changes the page waits for it to settle, then says whether it nav
       "type": "object"
     },
     {
+      "additionalProperties": false,
       "description": "Drag from `from` to `to` with the left button.",
       "properties": {
         "action": {
@@ -536,6 +567,7 @@ An action that changes the page waits for it to settle, then says whether it nav
       "type": "object"
     },
     {
+      "additionalProperties": false,
       "description": "Set files on a file input, by absolute paths.",
       "properties": {
         "action": {
@@ -562,6 +594,7 @@ An action that changes the page waits for it to settle, then says whether it nav
       "type": "object"
     },
     {
+      "additionalProperties": false,
       "description": "Answer the dialog blocking the page; `text` answers a prompt.",
       "properties": {
         "accept": {
@@ -587,6 +620,7 @@ An action that changes the page waits for it to settle, then says whether it nav
       "type": "object"
     },
     {
+      "additionalProperties": false,
       "description": "Evaluate a JavaScript expression in the page, or in the frame whose URL contains `frame`, awaiting a returned\npromise. Returns the value as JSON, or the error thrown.",
       "properties": {
         "action": {
@@ -612,6 +646,7 @@ An action that changes the page waits for it to settle, then says whether it nav
       "type": "object"
     },
     {
+      "additionalProperties": false,
       "description": "Wait until each given condition holds: the page shows `text`, no longer shows `gone`, is at a URL containing\n`url`, has an element matching `selector` (visible, with `visible`), and its network has been idle for\n`network_idle_ms`. Text matching is case-sensitive. Gives up after `timeout_ms`, 10 s by default.",
       "properties": {
         "action": {
@@ -676,6 +711,7 @@ An action that changes the page waits for it to settle, then says whether it nav
       "type": "object"
     },
     {
+      "additionalProperties": false,
       "description": "Return the console messages and uncaught errors, numbered, after `since`.",
       "properties": {
         "action": {
@@ -698,6 +734,7 @@ An action that changes the page waits for it to settle, then says whether it nav
       "type": "object"
     },
     {
+      "additionalProperties": false,
       "description": "Return the page's finished and running downloads.",
       "properties": {
         "action": {
@@ -711,6 +748,7 @@ An action that changes the page waits for it to settle, then says whether it nav
       "type": "object"
     },
     {
+      "additionalProperties": false,
       "description": "Send a raw Chrome DevTools Protocol command to the page, or to the frame whose URL contains `frame`, when no\nother action can.",
       "properties": {
         "action": {

@@ -36,6 +36,7 @@ describe("what the page knows of each tool", () => {
 		expect(callWords(called("delegate", { action: "send", task: "Check tests" }, "running"))).toBe("Messaging a sub-thread Check tests");
 		expect(callWords(called("browser", { action: "open", url: "https://example.com" }))).toBe("Opened https://example.com");
 		expect(callWords(called("browser", { action: "click" }, "running"))).toBe("Clicking on the page");
+		expect(callWords(called("browser", { action: "fill", text: "Name" }, "running"))).toBe("Filling a field Name");
 		expect(callWords(called("browser", { action: "drag" }))).toBe("Acted on the page");
 		expect(callWords(called("github.create_issue", { title: "x" }))).toBe("github.create_issue");
 		expect(verbOf({ tool: "github.create_issue", state: "done" })).toBeUndefined();

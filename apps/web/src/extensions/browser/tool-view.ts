@@ -20,6 +20,7 @@ const ACTIONS: Readonly<Record<string, { readonly verbs: Verbs; readonly subject
 	reload: { verbs: ["Reload the page", "Reloading the page", "Reloaded the page"] },
 	click: { verbs: ["Click on the page", "Clicking on the page", "Clicked on the page"] },
 	type: { verbs: ["Type on the page", "Typing on the page", "Typed on the page"], subject: (given) => given.text },
+	fill: { verbs: ["Fill a field", "Filling a field", "Filled a field"], subject: (given) => given.text },
 	press: { verbs: ["Press a key", "Pressing a key", "Pressed a key"] },
 	scroll: { verbs: ["Scroll the page", "Scrolling the page", "Scrolled the page"] },
 };

@@ -180,6 +180,81 @@ fn ref_in(reading: &str, role: &str, name: &str) -> String {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn text_actions_replace_insert_clear_and_press_without_implicit_submission() {
+    let beak = Beak::new().expect("Beak");
+    let (profile, downloads) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let machine = machine(&beak, profile.path());
+    let Some(browser) = browser(&beak, profile.path(), downloads.path()) else {
+        return;
+    };
+    act(&browser, &machine, json!({"action": "open", "url": serve().await}))
+        .await
+        .unwrap();
+    act(&browser, &machine, json!({"action": "evaluate", "expression": "document.body.innerHTML = `<form onsubmit='event.preventDefault(); window.submitted = true'><input id=field value=old><textarea id=area>old</textarea><div id=editable contenteditable>old</div><input id=locked readonly value=keep><button>Submit</button></form>`"})).await.unwrap();
+    for selector in ["#field", "#area", "#editable"] {
+        act(
+            &browser,
+            &machine,
+            json!({"action": "fill", "target": {"selector": selector}, "text": "new"}),
+        )
+        .await
+        .unwrap();
+        act(&browser, &machine, json!({"action": "type", "text": "!"})).await.unwrap();
+        let expression = format!("(() => {{ const e = document.querySelector('{selector}'); return e.value ?? e.textContent; }})()");
+        let value = act(&browser, &machine, json!({"action": "evaluate", "expression": expression}))
+            .await
+            .unwrap();
+        assert_eq!(value.value, Some(json!("new!")), "{selector}");
+        act(
+            &browser,
+            &machine,
+            json!({"action": "fill", "target": {"selector": selector}, "text": ""}),
+        )
+        .await
+        .unwrap();
+        let value = act(&browser, &machine, json!({"action": "evaluate", "expression": expression}))
+            .await
+            .unwrap();
+        assert_eq!(value.value, Some(json!("")), "{selector}");
+    }
+    for selector in ["#locked", "button"] {
+        assert!(
+            act(
+                &browser,
+                &machine,
+                json!({"action": "fill", "target": {"selector": selector}, "text": "bad"})
+            )
+            .await
+            .is_err()
+        );
+    }
+    act(
+        &browser,
+        &machine,
+        json!({"action": "type", "target": {"selector": "#field"}, "text": "ready"}),
+    )
+    .await
+    .unwrap();
+    let submitted = act(
+        &browser,
+        &machine,
+        json!({"action": "evaluate", "expression": "Boolean(window.submitted)"}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(submitted.value, Some(json!(false)));
+    act(&browser, &machine, json!({"action": "press", "key": "Enter"})).await.unwrap();
+    let submitted = act(
+        &browser,
+        &machine,
+        json!({"action": "evaluate", "expression": "Boolean(window.submitted)"}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(submitted.value, Some(json!(true)));
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn the_agent_opens_reads_fills_and_submits_a_form_and_the_person_sees_it_painted() {
     let beak = Beak::new().expect("Beak");
     let (profile, downloads) = (tempfile::tempdir().expect("a folder"), tempfile::tempdir().expect("a folder"));
@@ -202,7 +277,7 @@ async fn the_agent_opens_reads_fills_and_submits_a_form_and_the_person_sees_it_p
     let typed = act(
         &browser,
         &machine,
-        json!({ "action": "type", "target": { "ref": field }, "text": "Ada", "clear": true }),
+        json!({ "action": "fill", "target": { "ref": field }, "text": "Ada" }),
     )
     .await
     .expect("typed");

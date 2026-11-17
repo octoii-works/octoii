@@ -40,13 +40,15 @@ pub enum Input {
     Hover {
         target: Target,
     },
-    /// Text typed at the caret of the element given, focused first, or of what has the focus; what is there replaced
-    /// where `clear`, and Enter pressed after where `submit`.
+    /// Text inserted at the caret, focusing the given element first if supplied.
     Type {
         node: Option<i64>,
         text: String,
-        clear: bool,
-        submit: bool,
+    },
+    /// Replace the text of an editable element, or clear it with empty text.
+    Fill {
+        node: i64,
+        text: String,
     },
     /// A key pressed, as the DOM names it, with modifiers, to what has the focus.
     Press {
@@ -116,7 +118,17 @@ const POINT: &str = r"function() {
 
 const CENTER: &str = "function() { const e = this.nodeType === 1 ? this : this.parentElement; e.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' }); }";
 
-const CLEAR: &str = "function() { const e = this.nodeType === 1 ? this : this.parentElement; if ('value' in e) { e.select ? e.select() : null; } else if (e.isContentEditable) { const s = getSelection(); s.selectAllChildren(e); } }";
+const CLEAR: &str = r"function() {
+  const e = this.nodeType === 1 ? this : this.parentElement;
+  if (e.matches(':disabled') || e.readOnly || e.closest('[inert]')) throw Error('the element is not editable');
+  if (e instanceof HTMLTextAreaElement || (e instanceof HTMLInputElement && ['text', 'search', 'url', 'tel', 'password', 'email'].includes(e.type))) {
+    e.select();
+  } else if (e.isContentEditable) {
+    getSelection().selectAllChildren(e);
+  } else {
+    throw Error('fill requires a text input, textarea or contenteditable element');
+  }
+}";
 
 const SELECT: &str = r"function(wanted) {
   const norm = (s) => String(s).replace(/\s+/g, ' ').trim().toLowerCase();
@@ -132,6 +144,16 @@ const SELECT: &str = r"function(wanted) {
   this.dispatchEvent(new Event('change', { bubbles: true }));
   return chosen.map((o) => o.label);
 }";
+
+/// Focus the element before inserting text or replacing its contents.
+async fn focus(attached: &Attached, node: i64) -> Result<(), InputError> {
+    attached
+        .cdp
+        .call(Some(&attached.session), "DOM.focus", json!({ "backendNodeId": node }))
+        .await
+        .map_err(|_| InputError::Refused(format!("e{node} takes no focus")))?;
+    Ok(())
+}
 
 /// Calls `function` on the element of `node`, with `arguments`: what it gives, or the words it threw.
 async fn on_node(attached: &Attached, node: i64, function: &str, arguments: &[Value]) -> Result<Value, InputError> {
@@ -300,22 +322,18 @@ impl Page {
                 mouse(attached, "mouseMoved", at, "none", 0, json!({})).await?;
                 Ok(String::new())
             }
-            Input::Type { node, text, clear, submit } => {
+            Input::Type { node, text } => {
                 if let Some(node) = node {
-                    attached
-                        .cdp
-                        .call(session, "DOM.focus", json!({ "backendNodeId": node }))
-                        .await
-                        .map_err(|_| InputError::Refused(format!("e{node} takes no focus")))?;
-                    if *clear {
-                        on_node(attached, *node, CLEAR, &[]).await?;
-                        press(attached, "Backspace", &[]).await?;
-                    }
+                    focus(attached, *node).await?;
                 }
                 send(attached, "Input.insertText", json!({ "text": text })).await?;
-                if *submit {
-                    press(attached, "Enter", &[]).await?;
-                }
+                Ok(String::new())
+            }
+            Input::Fill { node, text } => {
+                focus(attached, *node).await?;
+                on_node(attached, *node, CLEAR, &[]).await?;
+                press(attached, "Backspace", &[]).await?;
+                send(attached, "Input.insertText", json!({ "text": text })).await?;
                 Ok(String::new())
             }
             Input::Press { key, modifiers } => {

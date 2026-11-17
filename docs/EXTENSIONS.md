@@ -21,7 +21,7 @@
 
 | 扩展 | Agent 接口与边界 |
 | --- | --- |
-| browser | 一个 browser 工具；已有 action。后续整理 type/fill/press，避免 clear/submit 混合动作，尚未迁移 |
+| browser | 一个 browser 工具；type 在光标处输入，fill 替换指定文本元素内容，press 负责按键；拒绝旧 clear/submit 参数 |
 | terminals | terminal 的 open/read/write/close；与一次性 shell 分工 |
 | thread | thread 的查询、历史、通信与整理 action；不承载 Git |
 | delegate | start 创建、send 继续；两者保留等待/后台通知，send 不接受类型或标题 |
@@ -43,6 +43,6 @@ Git 创建 worktree 不等于切换 Thread。目录切换、项目归属、上�
 2. Browser 参数整理：保留页面操作能力，迁移调用方和测试；不同时改生命周期。
 3. Git/worktree：先确认目录切换边界，再实现实际需要的 action，UI 只显示环境与操作结果。
 
-Delegate 已完成显式 action 迁移，包含参数校验、真实调用测试、模型提示词快照和 UI 摘要；等待与后台通知沿用原实现。Browser 和 Git 尚待实施。
+Delegate 已完成显式 action 迁移，包含参数校验、真实调用测试、模型提示词快照和 UI 摘要；等待与后台通知沿用原实现。Browser 已完成 type/fill/press 拆分，真实 Chromium 验证覆盖输入、替换、清空、只读拒绝和显式提交。Git 尚待实施。
 
 移除扩展开关和 common 目录迁移分别提交，不混入工具参数变更。冻结的 core 中自包含执行测试夹具不是扩展真实契约的替代；真实扩展 schema、权限和调用行为在扩展自身测试中验证。

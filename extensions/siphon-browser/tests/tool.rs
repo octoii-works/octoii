@@ -37,3 +37,26 @@ async fn the_browser_tool_reads_a_page_at_once_and_works_one_after_what_came_bef
     let schema = &tools.declared()[0].parameters;
     assert!(schema.to_string().contains("\"navigate\""), "its actions told");
 }
+
+#[test]
+fn text_actions_reject_mixed_and_missing_parameters() {
+    let schema = schemars::schema_for!(siphon_browser::Action).to_value();
+    let validator = jsonschema::validator_for(&schema).unwrap();
+    for value in [
+        json!({"action": "type", "text": "hello"}),
+        json!({"action": "fill", "target": {"selector": "input"}, "text": ""}),
+        json!({"action": "press", "key": "Enter"}),
+    ] {
+        assert!(validator.is_valid(&value), "{value}");
+        assert!(serde_json::from_value::<siphon_browser::Action>(value).is_ok());
+    }
+    for value in [
+        json!({"action": "type", "text": "hello", "clear": true}),
+        json!({"action": "type", "text": "hello", "submit": false}),
+        json!({"action": "fill", "text": "hello"}),
+        json!({"action": "press", "key": "Enter", "text": "hello"}),
+    ] {
+        assert!(!validator.is_valid(&value), "{value}");
+        assert!(serde_json::from_value::<siphon_browser::Action>(value).is_err());
+    }
+}

@@ -5590,6 +5590,7 @@ dependencies = [
  "bytes",
  "chromiumoxide_cdp",
  "chromiumoxide_types",
+ "jsonschema",
  "octoii-ai",
  "schemars 1.2.3",
  "serde",

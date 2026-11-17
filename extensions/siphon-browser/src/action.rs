@@ -60,7 +60,7 @@ pub enum MouseButton {
 
 /// What the model does in the browser, on the thread's current page.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(tag = "action", rename_all = "snake_case")]
+#[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Action {
     /// Open a page at `url`, or a blank page, and make it current.
     Open {
@@ -118,20 +118,14 @@ pub enum Action {
         /// Element to hover over.
         target: Place,
     },
-    /// Type `text` into `target`, focusing it first, or into the focused element; `clear` replaces the existing text,
-    /// `submit` presses Enter after.
+    /// Insert text at the caret, focusing `target` first if supplied. Does not clear or submit.
     Type {
         /// Where to type; the focused element if omitted.
         target: Option<Place>,
-        /// Text to type.
         text: String,
-        /// Replace the existing text.
-        #[serde(default)]
-        clear: bool,
-        /// Press Enter after typing.
-        #[serde(default)]
-        submit: bool,
     },
+    /// Replace all text in an editable element. An empty string clears it; use press with Enter to submit.
+    Fill { target: Place, text: String },
     /// Press a key by its DOM name (`Enter`, `Tab`, `ArrowDown`, `a`), with optional modifiers: Alt, Control, Meta,
     /// Shift.
     Press {
@@ -597,19 +591,16 @@ async fn input_of(page: &Page, action: Action) -> Result<Input, Refusal> {
         Action::Hover { target } => Input::Hover {
             target: target_of(page, &target).await?,
         },
-        Action::Type {
-            target,
-            text,
-            clear,
-            submit,
-        } => Input::Type {
+        Action::Type { target, text } => Input::Type {
             node: match &target {
                 Some(place) => Some(node_at(page, place).await?),
                 None => None,
             },
             text,
-            clear,
-            submit,
+        },
+        Action::Fill { target, text } => Input::Fill {
+            node: node_at(page, &target).await?,
+            text,
         },
         Action::Press { key, modifiers } => Input::Press { key, modifiers },
         Action::Select { target, values } => Input::Select {
