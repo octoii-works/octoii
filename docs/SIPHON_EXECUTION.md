@@ -82,6 +82,8 @@ also passed against the pinned wrapper. No binary or Cargo release was published
 
 - **[B2.2b — Host Requests](SIPHON_REQUESTS.md).** Register a host handler, submit and await its result through
   the existing mailbox, and verify cancellation, partial answers and reopen without redelivery.
+- **[Lifecycle repairs](SIPHON_LIFECYCLE.md).** Resolve Beak's delivery and phase completion gaps before adding
+  more public execution capabilities.
 - **B2.2c — Streaming and person.** Expose the existing stream and person interfaces required by Octoii. Verify
   stream ordering and human answers through the binary. Machine and processing work follows in B3, then artifact
   validation on macOS, Windows and Linux and the product switch in B4.
