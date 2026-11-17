@@ -35,9 +35,13 @@ export async function acceptWorktree(send: SendRequest, submission: WorktreeSubm
 	form.append("manifest", JSON.stringify({ key, config: unbound, worktree, parts }));
 	files.forEach((bytes, index) => form.append(`file-${String(index)}`, bytes));
 	// Serialize once so both fetch and the byte-oriented tunnel carry the browser-generated boundary.
-	const body = await new Response(form).blob();
+	const response = new Response(form);
+	const contentType = response.headers.get("content-type");
+	if (contentType === null) throw new Error("The browser did not encode the attachment boundary.");
+	// Blob.type lowercases MIME parameters, but multipart boundaries are case-sensitive.
+	const body = await response.blob();
 	if (body.size > 64 * 1024 * 1024) throw new Error("The task and its attachments exceed the 64 MiB upload limit.");
-	const answer = await send({ method: "POST", path: "/git/threads", contentType: body.type, body });
+	const answer = await send({ method: "POST", path: "/git/threads", contentType, body });
 	const accepted = jsonOf(answer);
 	if (succeeded(answer) && matches(Accepted, accepted)) return accepted.thread;
 	throw new Error(wordsOf(answer) || `The node did not accept the task (${String(answer.status)}).`);

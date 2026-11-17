@@ -2,7 +2,7 @@
  * The extensions of the machine the page reached, as its welcome lists them, and which the person switched off, as the
  * environment's settings say: what an extension brings is shown only while it is there and on.
  */
-import type { ExtensionListed } from "@octoii-works/octoii-client";
+import type { ExtensionListed, Scope } from "@octoii-works/octoii-client";
 import { useConnection, useSettings } from "@octoii-works/octoii-client/react";
 
 /** The machine's extensions, and the names of those switched off. */
@@ -24,4 +24,11 @@ export function useExtension(name: string): boolean {
 /** Whether the extension `name` is among `extensions` and on. */
 export function isOn(extensions: Extensions, name: string): boolean {
 	return extensions.listed.some((each) => each.name === name) && !extensions.disabled.includes(name);
+}
+
+/** Product controls require both the installed extension and the session's RPC permission. */
+export function useExtensionAccess(name: string, scope: Scope): boolean {
+	const enabled = useExtension(name);
+	const connection = useConnection();
+	return enabled && connection.status === "open" && connection.scopes.includes(scope);
 }

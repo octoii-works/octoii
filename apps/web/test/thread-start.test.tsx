@@ -36,10 +36,10 @@ test("held input is not shown as Agent work, and pending preparation does not au
 	expect(statusOf({ ...row, status: { ...row.status, start: { ...start, state: { state: "cancelled" } } } })).toBe("ready");
 });
 
-test("recovery requires inspection, preserves the saved input and allows cancellation while preparing", () => {
+test("recovery offers one action, preserves the saved input and allows cancellation while preparing", () => {
 	const waiting = renderToStaticMarkup(<PreparationCard {...card} />);
 	expect(waiting).toContain("Saved task");
-	expect(waiting).toMatch(/<button[^>]*disabled=""[^>]*>Continue preparation/);
+	expect(waiting).toMatch(/<button(?![^>]* disabled=)[^>]*>Continue preparation/);
 	const busy = renderToStaticMarkup(<PreparationCard {...card} busy worktrees={[]} />);
 	expect(busy).toMatch(/<button(?![^>]* disabled=)[^>]*>Cancel task/);
 	const inspected = renderToStaticMarkup(<PreparationCard {...card} worktrees={[]} />);

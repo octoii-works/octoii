@@ -1,79 +1,93 @@
-/** A task may request a new worktree; preparation belongs to its accepted thread. */
-import type { ReactNode } from "react";
-import type { CreateWorktree } from "@octoii-works/octoii-client";
-import { useConnection } from "@octoii-works/octoii-client/react";
-import { useExtension } from "../../components/state/extensions.ts";
-import { useOutcome } from "../../components/effects/read.ts";
+/** Shared workspace controls for the draft's context row and details. Selection never checks out a branch. */
+import { useState, type ReactNode } from "react";
+import type { Branches } from "@octoii-works/octoii-client";
+import { ChevronDown, Folder, GitBranch } from "lucide-react";
+import { Menu, MenuTrigger, MenuPopup, MenuRadioGroup, MenuRadioItem } from "../../components/ui/menu.tsx";
+import { Popover, PopoverTrigger, PopoverPopup } from "../../components/ui/popover.tsx";
+import { Command, CommandSearch, CommandList, CommandGroup, CommandItem } from "../../components/ui/command.tsx";
 
-export function NewWorktree(props: {
-	readonly folder: string | undefined;
-	readonly value: CreateWorktree | undefined;
-	readonly onChange: (value: CreateWorktree | undefined) => void;
+import type { WorktreeBase } from "../../core/new-thread.ts";
+const CONTROL =
+	"inline-flex h-control-sm min-w-0 max-w-full items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50";
+
+export function WorkspaceChoice(props: {
+	readonly folder: string;
+	readonly branches: Branches;
+	readonly value: WorktreeBase | undefined;
+	readonly onChange: (value: WorktreeBase | undefined) => void;
 }): ReactNode {
-	const connection = useConnection();
-	const git = useExtension("git");
-	const allowed =
-		git &&
-		connection.status === "open" &&
-		["files.read", "git.operate", "threads.operate"].every((scope) => connection.scopes.some((given) => given === scope));
-	const outcome = useOutcome("git.repository", allowed && props.folder !== undefined ? { path: props.folder } : undefined);
-	if (!allowed || props.folder === undefined) return null;
-	const head = outcome !== undefined && "result" in outcome ? outcome.result.repository?.head : undefined;
+	const repository = props.branches.repository;
 	return (
-		<div className="mt-3 text-xs text-muted-foreground">
-			<label className="inline-flex items-center gap-2">
-				<input
-					type="checkbox"
-					checked={props.value !== undefined}
-					disabled={head === undefined && props.value === undefined}
-					onChange={(event) => {
-						if (!event.target.checked) {
-							props.onChange(undefined);
-							return;
-						}
-						if (head !== undefined && props.folder !== undefined) props.onChange({ path: props.folder, destination: "", branch: "", base: head });
+		<Menu>
+			<MenuTrigger aria-label="Workspace" className={CONTROL}>
+				<Folder className="size-3.5 shrink-0" />
+				<span className="truncate">{props.value === undefined ? "Current checkout" : "New worktree"}</span>
+				<ChevronDown className="size-3 shrink-0" />
+			</MenuTrigger>
+			<MenuPopup>
+				<MenuRadioGroup
+					value={props.value === undefined ? "current" : "new"}
+					onValueChange={(value: string) => {
+						if (value === "current") props.onChange(undefined);
+						else if (repository.head !== undefined)
+							props.onChange({ path: props.folder, base: repository.head, label: repository.branch ?? repository.head.slice(0, 7) });
 					}}
-				/>
-				Use a new worktree
-			</label>
-			{outcome === undefined ? (
-				<p className="mt-2">Reading repository…</p>
-			) : "failure" in outcome ? (
-				<p role="alert" className="mt-2">
-					{outcome.failure}
-				</p>
-			) : head === undefined ? (
-				<p className="mt-2">Requires a Git repository with an existing commit.</p>
-			) : null}
-			{props.value === undefined ? null : <WorktreeFields value={props.value} onChange={props.onChange} />}
-		</div>
+				>
+					<MenuRadioItem value="current">Current checkout</MenuRadioItem>
+					<MenuRadioItem value="new" disabled={repository.head === undefined}>
+						New worktree
+					</MenuRadioItem>
+				</MenuRadioGroup>
+			</MenuPopup>
+		</Menu>
 	);
 }
 
-function WorktreeFields({ value, onChange }: { readonly value: CreateWorktree; readonly onChange: (value: CreateWorktree) => void }): ReactNode {
+export function BaseBranchChoice(props: {
+	readonly folder: string;
+	readonly branches: Branches;
+	readonly value: WorktreeBase | undefined;
+	readonly onChange: (value: WorktreeBase) => void;
+}): ReactNode {
+	const [open, setOpen] = useState(false);
+	const repository = props.branches.repository;
+	const label = props.value?.label ?? repository.branch ?? repository.head?.slice(0, 7) ?? "No commits";
+	const items = props.branches.branches.map((branch) => ({ ...branch, label: branch.reference.replace(/^refs\/(heads|remotes)\//, "") }));
 	return (
-		<div className="mt-3 space-y-2 rounded-lg border border-border p-3">
-			<label className="block">
-				New branch
-				<input
-					aria-label="New branch"
-					className="mt-1 block w-full rounded-md border border-border bg-background px-2 py-1.5 text-foreground"
-					value={value.branch}
-					onChange={(event) => onChange({ ...value, branch: event.target.value })}
-					placeholder="task/my-change"
-				/>
-			</label>
-			<label className="block">
-				New directory
-				<input
-					aria-label="New directory"
-					className="mt-1 block w-full rounded-md border border-border bg-background px-2 py-1.5 text-foreground"
-					value={value.destination}
-					onChange={(event) => onChange({ ...value, destination: event.target.value })}
-					placeholder="Absolute path on this computer"
-				/>
-			</label>
-			<p>From commit {value.base.slice(0, 12)}. After sending, review and start preparation in the thread.</p>
-		</div>
+		<Popover open={open} onOpenChange={setOpen}>
+			<PopoverTrigger
+				aria-label={props.value === undefined ? "Current branch" : "Base branch"}
+				title={props.value === undefined ? "Select New worktree to choose a base branch" : "Base branch for the new worktree"}
+				disabled={props.value === undefined}
+				className={CONTROL}
+			>
+				<GitBranch className="size-3.5 shrink-0" />
+				<span className="truncate">{label}</span>
+				<ChevronDown className="size-3 shrink-0" />
+			</PopoverTrigger>
+			<PopoverPopup className="w-72 max-w-[calc(100vw-2rem)]">
+				<Command items={[{ items }]} itemToStringValue={(item: { label: string }) => item.label}>
+					<CommandSearch placeholder="Search branches…" aria-label="Search branches" />
+					<CommandList empty="No matching branches">
+						<CommandGroup title="Base branch" items={items}>
+							{(branch) => (
+								<CommandItem
+									key={branch.reference}
+									value={branch}
+									className="h-control"
+									onClick={() => {
+										props.onChange({ path: props.folder, base: branch.commit, label: branch.label });
+										setOpen(false);
+									}}
+								>
+									<GitBranch className="size-3.5 shrink-0" />
+									<span className="truncate">{branch.label}</span>
+								</CommandItem>
+							)}
+						</CommandGroup>
+					</CommandList>
+				</Command>
+			</PopoverPopup>
+		</Popover>
 	);
 }

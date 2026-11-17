@@ -1,5 +1,5 @@
 import { capturedElement } from "./fixtures.ts";
-import { expect, it, mock } from "bun:test";
+import { expect, it, mock, spyOn } from "bun:test";
 import { acceptWorktree } from "../src/extensions/git/submit.ts";
 import type { WorktreeSubmission } from "../src/core/new-thread.ts";
 import type { SendRequest } from "../src/components/state/reach.ts";
@@ -68,11 +68,29 @@ it("copies browser evidence from its source thread in message order", async () =
 	expect(send.mock.calls[0]?.[0].path).toContain(`/threads/${feedback.thread}/files/`);
 	const body = send.mock.calls[1]?.[0].body;
 	if (!(body instanceof Blob)) throw new Error("Missing multipart");
-	const form = await new Response(body).formData();
+	const form = await new Response(body, { headers: { "content-type": send.mock.calls[1]?.[0].contentType ?? "" } }).formData();
 	const manifest = String(form.get("manifest"));
 	expect(manifest.indexOf("notes.txt")).toBeLessThan(manifest.indexOf("Historical browser context"));
 	expect(manifest.indexOf("Historical browser context")).toBeLessThan(manifest.indexOf("selection.png"));
 	const screenshot = form.get("file-1");
 	if (!(screenshot instanceof Blob)) throw new Error("Missing screenshot");
 	expect(await screenshot.text()).toBe("screenshot");
+});
+
+it("preserves the response content type when the Blob MIME type changes", async () => {
+	const original = Response.prototype.blob;
+	const blob = spyOn(Response.prototype, "blob").mockImplementation(async function (this: Response) {
+		return new Blob([await original.call(this)], { type: "application/octet-stream" });
+	});
+	try {
+		const send = mock<SendRequest>(async (request) => {
+			expect(request.contentType).toStartWith("multipart/form-data; boundary=");
+			const form = await new Response(request.body, { headers: { "content-type": request.contentType ?? "" } }).formData();
+			expect(form.get("manifest")).toContain('"key":"fixed"');
+			return { status: 200, contentType: "application/json", bytes: new TextEncoder().encode('{"thread":"accepted"}') };
+		});
+		expect(await acceptWorktree(send, submission)).toBe("accepted");
+	} finally {
+		blob.mockRestore();
+	}
 });

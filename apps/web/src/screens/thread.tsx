@@ -25,7 +25,7 @@ import { type DetailParts, DetailsButtons, type DetailsProps, InlineDetails } fr
 import { Timeline, type TimelineHandle } from "../components/thread/timeline.tsx";
 import { RightPanel } from "../components/panel/right-panel.tsx";
 import { MessageThreadContext } from "../components/thread/message-thread.ts";
-import { useExtension } from "../components/state/extensions.ts";
+import { useExtension, useExtensionAccess } from "../components/state/extensions.ts";
 import { thingsOf } from "../core/mentions.ts";
 import type { Thing } from "../core/things.ts";
 import { failed } from "../components/state/notices.ts";
@@ -55,8 +55,8 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 	const conversation = useConversation(thread);
 	const rows = useThreads() ?? [];
 	const row = rows.find((each) => each.id === thread);
-	const terminalsOn = useExtension("terminals");
-	const browserOn = useExtension("browser");
+	const terminalsOn = useExtensionAccess("terminals", "terminals.operate");
+	const browserOn = useExtensionAccess("browser", "browser.operate");
 	const terminals = useTerminals(terminalsOn ? thread : undefined) ?? [];
 	const pages = usePages(browserOn ? thread : undefined) ?? [];
 	const terminalsPanel = useTerminalsPanel(thread, terminals, terminalsOn);
@@ -86,10 +86,10 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 	const said = firstSaid(items);
 	// Where the thread's turns stand, which its repository and its changes are read again at.
 	const revision = `${conversation.status?.turn ?? ""} ${String(conversation.status?.ended_at ?? "")}`;
-	const gitOn = useExtension("git");
+	const gitOn = useExtensionAccess("git", "files.read");
 	const git = useGitPanel(thread, workspace, revision, gitOn);
 	const parts: DetailParts = {
-		folder: useExtension("memory") && workspace !== undefined ? <MemoryRow folder={workspace} revision={revision} /> : null,
+		folder: useExtensionAccess("memory", "files.read") && workspace !== undefined ? <MemoryRow folder={workspace} revision={revision} /> : null,
 		sections: (
 			<>
 				{gitOn && workspace !== undefined ? <VersionControl thread={thread} folder={workspace} revision={revision} /> : null}
@@ -117,18 +117,20 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 					<div className="flex min-h-0 min-w-0 flex-1 flex-col">
 						<div className="relative flex min-h-0 flex-1 flex-col">
 							<MessageThreadContext value={{ thread, workspace, pages, terminals }}>
-								<Timeline
-									ref={timeline}
-									thread={thread}
-									parent={row?.parent?.thread}
-									items={items}
-									read={conversation.read}
-									complete={conversation.complete}
-									working={conversation.status?.turn === "running"}
-									waiting={conversation.asks.length}
-									sent={sent}
-									onEarlier={() => void client.readOlder(thread).catch((error: unknown) => failed("Earlier messages could not be read", error))}
-								/>
+								<ThreadConversation thread={thread} row={row}>
+									<Timeline
+										ref={timeline}
+										thread={thread}
+										parent={row?.parent?.thread}
+										items={items}
+										read={conversation.read}
+										complete={conversation.complete}
+										working={conversation.status?.turn === "running"}
+										waiting={conversation.asks.length}
+										sent={sent}
+										onEarlier={() => void client.readOlder(thread).catch((error: unknown) => failed("Earlier messages could not be read", error))}
+									/>
+								</ThreadConversation>
 							</MessageThreadContext>
 						</div>
 						<Dock
@@ -183,16 +185,7 @@ function Dock(props: {
 	const working = conversation.status?.turn === "running" || conversation.inbox.length > 0;
 	// A call's permission, the oldest of what waits, is answered in the composer; anything else waits docked in its place.
 	const approval = useApproval(thread, conversation.asks.toSorted((a, b) => (a.key < b.key ? -1 : 1))[0]);
-	if (row?.status.start?.request.owner === "git.worktree" && row.status.start.state.state !== "ready") {
-		return (
-			<WorktreeStart
-				key={`${thread}:${row.status.start.token}:${row.status.start.state.state}`}
-				thread={thread}
-				start={row.status.start}
-				inbox={row.status.inbox}
-			/>
-		);
-	}
+	if (awaitingWorkspace(row)) return null;
 
 	return (
 		<div className="relative shrink-0 bg-background pb-[max(--spacing(4),env(safe-area-inset-bottom))]">
@@ -233,4 +226,24 @@ function Dock(props: {
 			</div>
 		</div>
 	);
+}
+
+function ThreadConversation({ thread, row, children }: { readonly thread: string; readonly row: Listed | undefined; readonly children: ReactNode }): ReactNode {
+	return (
+		<>
+			{row?.status.start?.request.owner === "git.worktree" ? (
+				<WorktreeStart
+					key={`${thread}:${row.status.start.token}:${row.status.start.state.state}`}
+					thread={thread}
+					start={row.status.start}
+					inbox={row.status.inbox}
+				/>
+			) : null}
+			<div className={awaitingWorkspace(row) ? "hidden" : "contents"}>{children}</div>
+		</>
+	);
+}
+
+function awaitingWorkspace(row: Listed | undefined): boolean {
+	return row?.status.start?.request.owner === "git.worktree" && row.status.start.state.state !== "ready";
 }

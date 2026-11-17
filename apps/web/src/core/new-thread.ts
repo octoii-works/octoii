@@ -2,6 +2,8 @@ import type { Client, Config, CreateWorktree, InputContent } from "@octoii-works
 import { contentOf } from "./attachments.ts";
 import type { Draft } from "./drafts.ts";
 
+export type WorktreeBase = { readonly path: string; readonly base: string; readonly label: string };
+
 export type WorktreeSubmission = { readonly key: string; readonly config: Config; readonly draft: Draft; readonly worktree: CreateWorktree };
 export type AcceptWorktree = (submission: WorktreeSubmission) => Promise<string>;
 
@@ -49,8 +51,8 @@ export class NewThread {
 		return this.#run(() => this.#store.begin({ key: crypto.randomUUID(), savedAt: Date.now(), config, draft }));
 	}
 
-	sendWorktree(config: Config, draft: Draft, worktree: CreateWorktree): Promise<string> {
-		return this.#run(() => this.#store.begin({ key: crypto.randomUUID(), savedAt: Date.now(), config, draft, worktree }));
+	sendWorktree(config: Config, draft: Draft, worktree: CreateWorktree, prepare: (thread: string) => Promise<void>): Promise<string> {
+		return this.#run(() => this.#store.begin({ key: crypto.randomUUID(), savedAt: Date.now(), config, draft, worktree }), prepare);
 	}
 
 	resume(): Promise<string> {
@@ -74,12 +76,12 @@ export class NewThread {
 		});
 	}
 
-	#run(read: () => Promise<PendingThread>): Promise<string> {
+	#run(read: () => Promise<PendingThread>, prepare?: (thread: string) => Promise<void>): Promise<string> {
 		if (this.#sending !== undefined) return this.#sending;
 		this.#sending = this.#store
 			.exclusive(async () => {
 				const pending = await read();
-				const thread = await this.#submit(pending);
+				const thread = await this.#submit(pending, prepare);
 				this.#completed = pending.key;
 				return thread;
 			})
@@ -89,11 +91,12 @@ export class NewThread {
 		return this.#sending;
 	}
 
-	async #submit(saved: PendingThread): Promise<string> {
+	async #submit(saved: PendingThread, prepare?: (thread: string) => Promise<void>): Promise<string> {
 		if (saved.worktree !== undefined) {
 			if (saved.thread !== undefined) return saved.thread;
 			const thread = await this.#acceptWorktree({ ...saved, worktree: saved.worktree });
 			await this.#store.write({ ...saved, thread });
+			await prepare?.(thread);
 			return thread;
 		}
 		let pending = saved;

@@ -2,11 +2,14 @@
 import { type ReactNode, useState } from "react";
 import type { Listed, Start, ThreadStart, WorktreeEntry } from "@octoii-works/octoii-client";
 import { useClient, useConnection } from "@octoii-works/octoii-client/react";
+import { useWorktreePreparing } from "../../components/state/worktree-preparation.ts";
+import { LoaderCircle } from "lucide-react";
 import { failureOf } from "../../components/effects/read.ts";
 
 export function WorktreeStart(props: { readonly thread: string; readonly start: Start; readonly inbox: Listed["status"]["inbox"] }): ReactNode {
 	const client = useClient();
 	const connection = useConnection();
+	const preparing = useWorktreePreparing(client, props.thread);
 	const [result, setResult] = useState<ThreadStart | undefined>(undefined);
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | undefined>(undefined);
@@ -17,7 +20,16 @@ export function WorktreeStart(props: { readonly thread: string; readonly start: 
 		setBusy(true);
 		setError(undefined);
 		try {
-			setResult(await client.call("git.start", action === "inspect" ? { action, thread: props.thread } : { action, thread: props.thread, token: start.token }));
+			const inspected = await client.call("git.start", { action: "inspect", thread: props.thread });
+			setResult(inspected);
+			if (action !== "inspect" && (inspected.start.state.state === "pending" || inspected.start.state.state === "failed"))
+				setResult(
+					await client.call("git.start", {
+						action: inspected.start.state.state === "failed" ? "retry" : "prepare",
+						thread: props.thread,
+						token: inspected.start.token,
+					}),
+				);
 		} catch (failure) {
 			setError(failureOf(failure));
 			setResult(undefined); // An uncertain write must be inspected again before another attempt.
@@ -25,16 +37,28 @@ export function WorktreeStart(props: { readonly thread: string; readonly start: 
 			setBusy(false);
 		}
 	};
+	if (preparing && start.state.state === "pending")
+		return (
+			<section aria-label="Worktree preparation" className="chat-column py-4">
+				<div className="mb-4 whitespace-pre-wrap text-body">{savedInputs(props.inbox).join("\n\n")}</div>
+				<div className="flex items-center gap-2 text-ui text-muted-foreground">
+					<LoaderCircle className="size-4 animate-spin" />
+					<span className="flex-1">Preparing worktree…</span>
+					<button type="button" disabled={!allowed} onClick={() => void client.stop(props.thread).catch((failure: unknown) => setError(failureOf(failure)))}>
+						Cancel task
+					</button>
+				</div>
+				{error === undefined ? null : (
+					<p role="alert" className="mt-2 text-xs text-error-foreground">
+						{error}
+					</p>
+				)}
+			</section>
+		);
 	return (
 		<PreparationCard
 			start={start}
-			inputs={props.inbox.flatMap(([, input]) =>
-				input.type === "input"
-					? input.content.flatMap((part) =>
-							part.type === "input_text" ? [part.text] : part.type === "input_file" || part.type === "input_image" ? [part.file.filename ?? "Attachment"] : [],
-						)
-					: [],
-			)}
+			inputs={savedInputs(props.inbox)}
 			worktrees={result?.worktrees}
 			busy={busy}
 			allowed={allowed}
@@ -67,6 +91,13 @@ export function PreparationCard(props: {
 	const payload = props.start.request.payload;
 	const request = payload !== null && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
 
+	if (ready)
+		return (
+			<details className="chat-column py-2 text-xs text-muted-foreground">
+				<summary className="cursor-pointer">Workspace ready</summary>
+				<p className="mt-2 break-all">{String(request["destination"] ?? "")}</p>
+			</details>
+		);
 	return (
 		<section aria-label="Worktree preparation" className="chat-column py-4">
 			<div className="rounded-lg border border-border bg-background p-4 text-body">
@@ -91,7 +122,7 @@ export function PreparationCard(props: {
 						? "The saved task can now run in its workspace."
 						: cancelled
 							? "This task will not run. Existing files have been left in place."
-							: "Your message is saved. Check the worktrees before continuing; the Agent has not started."}
+							: "Your message is saved. Continue preparation to check the workspace and resume this task."}
 				</p>
 				{state.state === "failed" ? <p className="mt-3 break-words text-error-foreground">{state.reason}</p> : null}
 				{props.error === undefined ? null : (
@@ -126,7 +157,7 @@ export function PreparationCard(props: {
 						</button>
 						<button
 							type="button"
-							disabled={props.busy || !props.allowed || props.worktrees === undefined}
+							disabled={props.busy || !props.allowed}
 							onClick={props.onContinue}
 							className="rounded-md bg-primary px-3 py-2 text-primary-foreground disabled:opacity-50"
 						>
@@ -142,5 +173,15 @@ export function PreparationCard(props: {
 				) : null}
 			</div>
 		</section>
+	);
+}
+
+function savedInputs(inbox: Listed["status"]["inbox"]): string[] {
+	return inbox.flatMap(([, input]) =>
+		input.type === "input"
+			? input.content.flatMap((part) =>
+					part.type === "input_text" ? [part.text] : part.type === "input_file" || part.type === "input_image" ? [part.file.filename ?? "Attachment"] : [],
+				)
+			: [],
 	);
 }

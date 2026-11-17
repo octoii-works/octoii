@@ -42,6 +42,15 @@ export type DetailParts = { readonly folder: ReactNode; readonly sections: React
  * The header toggles the inline column where it fits, or opens details on demand where it does not.
  */
 export function DetailsButtons(props: DetailsProps): ReactNode {
+	return (
+		<DetailsToggle>
+			<DetailsCard {...props} />
+		</DetailsToggle>
+	);
+}
+
+/** Shared header control for draft and accepted thread details. */
+export function DetailsToggle({ children }: { readonly children: ReactNode }): ReactNode {
 	const shown = useDetailsShown();
 	return (
 		<>
@@ -53,7 +62,7 @@ export function DetailsButtons(props: DetailsProps): ReactNode {
 					<SquareMenu className="size-4" />
 				</PopoverTrigger>
 				<PopoverPopup side="bottom" align="end" className="w-(--details-width) max-w-[calc(100vw-1rem)]">
-					<DetailsCard {...props} />
+					{children}
 				</PopoverPopup>
 			</Popover>
 		</>
@@ -64,13 +73,22 @@ export function DetailsButtons(props: DetailsProps): ReactNode {
  * The floating card keeps its natural height while reserving space beside the timeline and composer. Narrow panes hide it without changing the user's preference.
  */
 export function InlineDetails(props: DetailsProps): ReactNode {
+	return (
+		<DetailsFloat>
+			<DetailsCard {...props} />
+		</DetailsFloat>
+	);
+}
+
+/** Same floating layout and responsive behavior for every thread stage. */
+export function DetailsFloat({ children }: { readonly children: ReactNode }): ReactNode {
 	if (!useDetailsShown()) return null;
 	return (
 		<aside
 			aria-label="Thread details"
 			className="floating mx-4 my-3 hidden max-h-[calc(100%-1.5rem)] w-(--details-width) shrink-0 self-start overflow-y-auto rounded-md details-inline:block"
 		>
-			<DetailsCard {...props} />
+			{children}
 		</aside>
 	);
 }

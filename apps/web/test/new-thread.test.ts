@@ -162,7 +162,9 @@ it("retries the immutable worktree submission after losing its answer, without c
 	const kept = store();
 	const accept = mock(async () => "accepted-thread");
 	accept.mockRejectedValueOnce(new Error("lost answer"));
-	await expect(new NewThread(calls, kept, accept).sendWorktree({ workspace: "/project" }, draft, worktree)).rejects.toThrow("lost answer");
+	await expect(new NewThread(calls, kept, accept).sendWorktree({ workspace: "/project" }, draft, worktree, async () => undefined)).rejects.toThrow(
+		"lost answer",
+	);
 	const saved = await kept.read();
 	expect(saved?.worktree).toEqual(worktree);
 	const restored = new NewThread(calls, kept, accept);
@@ -190,8 +192,22 @@ it("replays acceptance if persisting its acknowledgement fails", async () => {
 	write.mockRejectedValueOnce(new Error("disk full"));
 	const accept = mock(async () => "accepted-thread");
 	const starting = new NewThread(client(), { ...kept, write }, accept);
-	await expect(starting.sendWorktree({}, draft, worktree)).rejects.toThrow("disk full");
+	await expect(starting.sendWorktree({}, draft, worktree, async () => undefined)).rejects.toThrow("disk full");
 	expect((await kept.read())?.thread).toBeUndefined();
 	expect(await starting.resume()).toBe("accepted-thread");
 	expect(accept.mock.calls[0]).toEqual(accept.mock.calls[1]);
+});
+
+it("persists the receipt before preparation and never repeats preparation during recovery", async () => {
+	const kept = store();
+	const accept = mock(async () => "accepted-thread");
+	const prepare = mock(async (thread: string) => {
+		expect((await kept.read())?.thread).toBe(thread);
+		throw new Error("preparation disconnected");
+	});
+	const starting = new NewThread(client(), kept, accept);
+	await expect(starting.sendWorktree({}, draft, worktree, prepare)).rejects.toThrow("preparation disconnected");
+	expect(await new NewThread(client(), kept, accept).resume()).toBe("accepted-thread");
+	expect(accept).toHaveBeenCalledTimes(1);
+	expect(prepare).toHaveBeenCalledTimes(1);
 });

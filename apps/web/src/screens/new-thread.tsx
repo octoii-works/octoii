@@ -1,192 +1,155 @@
-/**
- * A new thread: "What should we build in <project>?" over the composer, in the middle of the page, and under the
- * composer, joined to it, the folder the thread will work in — none, or the project the page was opened for, till the
- * person chooses from a menu, opening upward, of the folders threads work in, none, or another chosen as a file manager
- * chooses one — and on its right the MCP servers a thread there would use.
- * Sending makes the thread there, with the model chosen — the one the newest thread chose where none is — the mode
- * chosen, else the one the environment's settings name, and the message's first line as its title, delivers the
- * message, and goes to the thread.
- */
+/** A local draft: project headline, centered composer, shared context controls and floating details. */
 import { type ReactNode, useMemo, useState } from "react";
-import type { ReasoningEffort as Effort, Mode, CreateWorktree } from "@octoii-works/octoii-client";
-import { useClient, useSettings, useThreads } from "@octoii-works/octoii-client/react";
-import { ChevronDown, FolderOpen, FolderPlus, FolderX } from "lucide-react";
+import { useClient, useConnection, useSettings, useThreads } from "@octoii-works/octoii-client/react";
+import { Folder, Laptop } from "lucide-react";
 import type { Device } from "../core/device.ts";
 import { recentModelsOf } from "../core/models.ts";
-import type { NewThread, PendingThread } from "../core/new-thread.ts";
+import type { AcceptWorktree, NewThread, PendingThread } from "../core/new-thread.ts";
 import { usePendingThread } from "../components/effects/pending-thread.ts";
+import { useOutcome } from "../components/effects/read.ts";
 import { failed } from "../components/state/notices.ts";
 import { clearPendingDraft } from "../components/state/draft.ts";
 import { thingsOf } from "../core/mentions.ts";
 import { useExtension } from "../components/state/extensions.ts";
-import { folderName, type Project, projectsOf } from "../core/threads.ts";
+import { folderName, projectsOf } from "../core/threads.ts";
 import { Composer } from "../components/composer/composer.tsx";
+import { ModeControl } from "../components/composer/mode-picker.tsx";
 import { FolderChooser } from "../components/files/folder-chooser.tsx";
 import { Pane } from "../components/frame/frame.tsx";
 import { go } from "../components/state/navigation.ts";
 import { ChatHeader } from "../components/thread/header.tsx";
-import { Menu, MenuItem, MenuItemLabel, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuTrigger } from "../components/ui/menu.tsx";
-import { ProjectMark } from "../components/files/project-mark.tsx";
+import { DraftProject } from "../components/thread/draft-project.tsx";
+import { DetailsToggle, DetailsFloat, DetailRow } from "../components/thread/details.tsx";
+import { useNewThreadOptions } from "../components/state/new-thread-options.ts";
 import { useReach } from "../components/state/reach.ts";
+import { prepareWorktree } from "../extensions/git/prepare.ts";
 import { acceptWorktree } from "../extensions/git/submit.ts";
-import type { AcceptWorktree } from "../core/new-thread.ts";
-import { NewWorktree } from "../extensions/git/new-worktree.tsx";
+import { WorkspaceChoice, BaseBranchChoice } from "../extensions/git/new-worktree.tsx";
 import { ServersMenu } from "../extensions/mcp/servers-menu.tsx";
+import type { Draft } from "../core/drafts.ts";
 
-/** What the new thread's page is given: the project's folder asked for, and the device's settings. */
-export type NewThreadScreenProps = {
-	readonly project: string | undefined;
-	readonly device: Device;
-};
+export type NewThreadScreenProps = { readonly project: string | undefined; readonly device: Device };
 
-/** The folder the person chose to work in, or that they chose none. */
-type Chosen = { readonly folder: string | undefined };
-
-/** The new thread's page. */
 export function NewThreadScreen(props: NewThreadScreenProps): ReactNode {
 	const client = useClient();
+	const connection = useConnection();
 	const { send } = useReach();
 	const accept = useMemo<AcceptWorktree>(() => (submission) => acceptWorktree(send, submission), [send]);
-	const { starting, pending, loaded, setPending, error, retry } = usePendingThread(client, props.project, accept);
+	const saved = usePendingThread(client, props.project, accept);
+	const { value: options, change } = useNewThreadOptions(connection.status === "open" ? connection.session : undefined, props.project);
+	const [choosing, setChoosing] = useState(false);
+	const [sending, setSending] = useState(false);
 	const rows = useThreads() ?? [];
 	const reachesThreads = useExtension("thread");
-	const projects = projectsOf(rows);
-	const [chosen, setChosen] = useState<Chosen | undefined>(undefined);
-	const [worktree, setWorktree] = useState<CreateWorktree | undefined>(undefined);
-	const [choosing, setChoosing] = useState(false);
-	const [model, setModel] = useState<string | undefined>(undefined);
-	const [chosenMode, setMode] = useState<Mode | undefined>(undefined);
-	const [effort, setEffort] = useState<Effort | undefined>(undefined);
+	const mcp = useExtension("mcp");
 	const settings = useSettings();
-	const mode = chosenMode ?? settings?.environment.thread_mode;
-	// None till the person chooses one, unless the page was opened for a project: a thread of no folder is no project's.
-	const folder = chosen === undefined ? props.project : chosen.folder;
-	const running = model ?? recentModelsOf(rows)[0];
+	const folder = options.chosen === undefined ? props.project : options.chosen.folder;
+	const model = options.model ?? recentModelsOf(rows)[0];
+	const mode = options.mode ?? settings?.environment.thread_mode;
+	const projects = projectsOf(rows);
+	const branches = useDraftBranches(folder);
 	const choose = (next: string | undefined): void => {
-		setChosen({ folder: next });
-		setWorktree(undefined);
+		change({ chosen: { folder: next }, worktree: undefined });
 		setChoosing(false);
 	};
+	const projectPicker = <DraftProject folder={folder} projects={projects} onChoose={choose} onAnother={() => setChoosing(true)} />;
+	const workspace =
+		branches !== undefined && "result" in branches && folder !== undefined ? (
+			<WorkspaceChoice folder={folder} branches={branches.result} value={options.worktree} onChange={(worktree) => change({ worktree })} />
+		) : null;
+	const branch =
+		branches !== undefined && "result" in branches && folder !== undefined ? (
+			<BaseBranchChoice folder={folder} branches={branches.result} value={options.worktree} onChange={(worktree) => change({ worktree })} />
+		) : null;
+	const details = (
+		<DraftDetails
+			machine={connection.status === "open" ? connection.machine.name : "This machine"}
+			project={projectPicker}
+			workspace={workspace}
+			branch={branch}
+			servers={mcp ? <ServersMenu folder={folder} /> : null}
+		/>
+	);
+	const submit = useDraftSubmit(saved, folder, model, options, setSending);
 	return (
 		<Pane>
-			<ChatHeader title="New thread" {...(folder === undefined ? {} : { project: { folder, name: folderName(folder) } })} />
-			<div className="flex flex-1 items-center justify-center px-4 pb-[12vh]">
-				<div className="w-full max-w-[var(--chat-width)]">
-					<h1 className="mb-6 text-center text-title font-normal tracking-tight">
-						{folder === undefined ? "What should we work on?" : `What should we build in ${folderName(folder)}?`}
-					</h1>
-					{/* The composer stands over the folder's strip, which shows from under its foot. */}
-					<div className="relative z-10">
-						{!loaded ? (
-							<p className="p-4 text-body text-muted-foreground">
-								{error === undefined ? (
-									"Loading saved task…"
-								) : (
-									<>
-										Saved tasks could not be read: {error}.{" "}
-										<button type="button" className="underline" onClick={retry}>
-											Retry
-										</button>
-									</>
-								)}
-							</p>
-						) : pending !== undefined ? (
-							<PendingTask pending={pending} starting={starting} onForgotten={() => setPending(undefined)} />
+			<ChatHeader
+				title="New thread"
+				{...(folder === undefined ? {} : { project: { folder, name: folderName(folder) } })}
+				actions={
+					<DetailsToggle>
+						<fieldset disabled={sending || saved.pending !== undefined}>{details}</fieldset>
+					</DetailsToggle>
+				}
+			/>
+			<div className="flex min-h-0 flex-1">
+				<div className="flex min-w-0 flex-1 items-center justify-center overflow-y-auto px-4 py-8">
+					<div className="w-full max-w-(--chat-width)">
+						<fieldset disabled={sending || saved.pending !== undefined} className="min-w-0 border-0 p-0">
+							<DraftHeadline folder={folder} project={projectPicker} onNone={() => choose(undefined)} />
+						</fieldset>
+						{!saved.loaded ? (
+							<LoadingDraft error={saved.error} retry={saved.retry} />
+						) : saved.pending !== undefined ? (
+							<PendingTask pending={saved.pending} starting={saved.starting} onForgotten={() => saved.setPending(undefined)} />
 						) : (
-							<Composer
-								model={running}
-								onModel={setModel}
-								mode={mode}
-								onMode={setMode}
-								effort={effort}
-								onEffort={setEffort}
-								working={false}
-								sendShortcut={props.device.send_shortcut}
-								draft={{ project: folder }}
-								folder={folder}
-								things={thingsOf(reachesThreads ? rows : [], [], [], undefined)}
-								onSend={async (draft) => {
-									if (starting === undefined) throw new Error("Wait for the node connection.");
-									try {
-										const config = {
-											...(folder === undefined ? {} : { workspace: folder }),
-											...(running === undefined ? {} : { model: running }),
-											...(chosenMode === undefined ? {} : { mode: chosenMode }),
-											...(effort === undefined ? {} : { effort }),
-										};
-										if (worktree !== undefined && (!worktree.base || worktree.path !== folder || !worktree.branch.trim() || !worktree.destination.trim()))
-											throw new Error("Enter a new branch and an absolute directory for the worktree.");
-										const thread = worktree === undefined ? await starting.send(config, draft) : await starting.sendWorktree(config, draft, worktree);
-										go({ place: "thread", thread });
-										await starting.acknowledge();
-									} catch (error) {
-										setPending(await starting.read());
-										throw error;
-									}
-								}}
-								onStop={() => undefined}
-							/>
+							<>
+								<Composer
+									model={model}
+									onModel={(model) => change({ model })}
+									mode={undefined}
+									onMode={(mode) => change({ mode })}
+									effort={options.effort}
+									onEffort={(effort) => change({ effort })}
+									working={false}
+									sendShortcut={props.device.send_shortcut}
+									draft={{ project: folder }}
+									folder={folder}
+									things={thingsOf(reachesThreads ? rows : [], [], [], undefined)}
+									onSend={submit}
+									onStop={() => undefined}
+								/>
+								<fieldset disabled={sending} className="mt-1 flex min-w-0 flex-wrap items-center justify-between gap-1 border-0 p-0">
+									<div className="min-w-0">{workspace}</div>
+									<div className="flex min-w-0 max-w-full items-center gap-1">
+										{branch}
+										{mode === undefined ? null : <ModeControl mode={mode} onChoose={(mode) => change({ mode })} />}
+									</div>
+								</fieldset>
+								{branches !== undefined && "failure" in branches ? (
+									<p role="alert" className="mt-2 text-xs text-muted-foreground">
+										{branches.failure}
+									</p>
+								) : null}
+							</>
 						)}
 					</div>
-					<FolderStrip folder={folder} projects={projects} onChoose={choose} onAnother={() => setChoosing(true)} />
-					{pending === undefined ? (
-						<NewWorktree key={folder} folder={folder} value={worktree?.path === folder ? worktree : undefined} onChange={setWorktree} />
-					) : null}
-					<FolderChooser open={choosing} onOpenChange={setChoosing} start={folder} projects={projects} onChoose={choose} />
 				</div>
+				<fieldset disabled={sending || saved.pending !== undefined} className="contents">
+					<DetailsFloat>{details}</DetailsFloat>
+				</fieldset>
 			</div>
+			<FolderChooser open={choosing} onOpenChange={setChoosing} start={folder} projects={projects} onChoose={choose} />
 		</Pane>
 	);
 }
 
-/**
- * Under the composer, joined to it: the folder the thread will work in, by its name, and a menu of the folders threads
- * work in to choose instead — the one chosen checked — none, and another folder; on its right, the servers. Both open
- * upward, as what stands under the composer has the page's room above it.
- */
-function FolderStrip(props: {
-	readonly folder: string | undefined;
-	readonly projects: readonly Project[];
-	readonly onChoose: (folder: string | undefined) => void;
-	readonly onAnother: () => void;
-}): ReactNode {
-	const mcp = useExtension("mcp");
+function LoadingDraft({ error, retry }: { readonly error: string | undefined; readonly retry: () => void }): ReactNode {
 	return (
-		<div className="-mt-5 flex items-center justify-between gap-2 rounded-b-lg border border-t-0 border-border bg-muted px-2 pt-6 pb-1.5">
-			<Menu>
-				<MenuTrigger
-					title={props.folder}
-					className="inline-flex h-control-sm max-w-full items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-accent data-popup-open:text-foreground"
-				>
-					<FolderOpen className="size-3.5 shrink-0" />
-					<span className="truncate">{props.folder === undefined ? "No project" : folderName(props.folder)}</span>
-					<ChevronDown className="size-3.5 shrink-0 opacity-70" />
-				</MenuTrigger>
-				<MenuPopup side="top" align="start" sideOffset={8} className="w-64">
-					<MenuRadioGroup value={props.folder ?? ""} onValueChange={(folder: string) => props.onChoose(folder === "" ? undefined : folder)}>
-						{props.projects.map((project) => (
-							<MenuRadioItem key={project.folder} value={project.folder}>
-								<ProjectMark project={project} />
-								<MenuItemLabel title={project.folder}>{project.name}</MenuItemLabel>
-							</MenuRadioItem>
-						))}
-						<MenuRadioItem value="">
-							<FolderX />
-							<MenuItemLabel>No project</MenuItemLabel>
-						</MenuRadioItem>
-					</MenuRadioGroup>
-					<MenuSeparator />
-					<MenuItem onClick={props.onAnother}>
-						<FolderPlus />
-						<MenuItemLabel>Choose a folder…</MenuItemLabel>
-					</MenuItem>
-				</MenuPopup>
-			</Menu>
-			{mcp ? <ServersMenu folder={props.folder} /> : null}
-		</div>
+		<p className="p-4 text-body text-muted-foreground">
+			{error === undefined ? (
+				"Loading saved task…"
+			) : (
+				<>
+					Saved tasks could not be read: {error}.{" "}
+					<button type="button" className="underline" onClick={retry}>
+						Retry
+					</button>
+				</>
+			)}
+		</p>
 	);
 }
-
 function PendingTask({
 	pending,
 	starting,
@@ -258,4 +221,134 @@ function PendingTask({
 			</button>
 		</div>
 	);
+}
+
+function DraftDetails({
+	machine,
+	project,
+	workspace,
+	branch,
+	servers,
+}: {
+	readonly machine: string;
+	readonly project: ReactNode;
+	readonly workspace: ReactNode;
+	readonly branch: ReactNode;
+	readonly servers: ReactNode;
+}): ReactNode {
+	return (
+		<div className="divide-y divide-border text-ui">
+			<section className="p-1.5">
+				<DetailRow icon={<Laptop />} label={machine} />
+				<div className="flex min-w-0 items-center gap-2 px-2 py-2">
+					<Folder className="size-4 shrink-0 text-muted-foreground" />
+					{project}
+				</div>
+				{workspace}
+			</section>
+			<section className="flex flex-col items-start gap-1 p-1.5">
+				{branch}
+				{servers}
+			</section>
+		</div>
+	);
+}
+
+function DraftHeadline({
+	folder,
+	project,
+	onNone,
+}: {
+	readonly folder: string | undefined;
+	readonly project: ReactNode;
+	readonly onNone: () => void;
+}): ReactNode {
+	return (
+		<div className="mb-6 text-center">
+			<h1 className="flex flex-wrap items-baseline justify-center gap-x-2 text-title font-normal tracking-tight">
+				{folder === undefined ? (
+					<span>What should we work on?</span>
+				) : (
+					<>
+						<span>What should we build in</span>
+						<span className="max-w-full">{project}</span>
+						<span>?</span>
+					</>
+				)}
+			</h1>
+			{folder === undefined ? (
+				<div className="mt-2 text-xs text-muted-foreground">{project}</div>
+			) : (
+				<button type="button" className="mt-2 text-xs text-muted-foreground hover:text-foreground" onClick={onNone}>
+					or start without a project
+				</button>
+			)}
+		</div>
+	);
+}
+function draftConfig(
+	folder: string | undefined,
+	model: string | undefined,
+	options: {
+		readonly mode?: import("@octoii-works/octoii-client").Mode | undefined;
+		readonly effort?: import("@octoii-works/octoii-client").ReasoningEffort | undefined;
+	},
+): import("@octoii-works/octoii-client").Config {
+	return {
+		...(folder === undefined ? {} : { workspace: folder }),
+		...(model === undefined ? {} : { model }),
+		...(options.mode === undefined ? {} : { mode: options.mode }),
+		...(options.effort === undefined ? {} : { effort: options.effort }),
+	};
+}
+
+function useDraftBranches(folder: string | undefined) {
+	const git = useExtension("git");
+	const connection = useConnection();
+	const allowed =
+		git &&
+		connection.status === "open" &&
+		["files.read", "git.operate", "threads.operate"].every((scope) => connection.scopes.some((value) => value === scope));
+	const repository = useOutcome("git.repository", allowed && folder !== undefined ? { path: folder } : undefined);
+	const branches = useOutcome(
+		"git.branches",
+		repository !== undefined && "result" in repository && repository.result.repository !== undefined && folder !== undefined ? { path: folder } : undefined,
+	);
+	return branches;
+}
+
+function useDraftSubmit(
+	saved: ReturnType<typeof usePendingThread>,
+	folder: string | undefined,
+	model: string | undefined,
+	options: ReturnType<typeof useNewThreadOptions>["value"],
+	setSending: (sending: boolean) => void,
+) {
+	const client = useClient();
+	return async (draft: Draft): Promise<void> => {
+		const starting = saved.starting;
+		if (starting === undefined) throw new Error("Wait for the node connection.");
+		setSending(true);
+		try {
+			const config = draftConfig(folder, model, options);
+			const selected = options.worktree;
+			if (selected !== undefined && selected.path !== folder) throw new Error("Choose a base branch for this project.");
+			const thread =
+				selected === undefined
+					? await starting.send(config, draft)
+					: await starting.sendWorktree(
+							config,
+							draft,
+							await client.call("git.worktree-plan", { path: selected.path, base: selected.base, key: crypto.randomUUID() }),
+							(thread) => prepareWorktree(client, thread, () => go({ place: "thread", thread })),
+						);
+			if (selected === undefined) go({ place: "thread", thread });
+			await starting.acknowledge();
+		} catch (error) {
+			saved.setPending(await starting.read());
+			throw error;
+		} finally {
+			setSending(false);
+		}
+	};
 }
