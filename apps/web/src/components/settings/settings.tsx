@@ -1,20 +1,14 @@
-/**
- * Settings: a page of the frame, the route naming its section, so closing them goes back to the place the route holds
- * under them. In the sidebar's place, a search, `/` its key, and the sections, each with its icon; while the search
- * holds words, the settings it finds instead, each under its section's name, which bring their row into view. The open
- * section's page fills the page's column under a bar that holds the frame's button that shows the sidebar, where it is
- * not beside the page, and the one that closes settings.
- */
+/** Route-backed settings in a modal; the underlying conversation remains mounted. */
 import { type ReactNode, useRef, useState } from "react";
 import { Keyboard, MessagesSquare, Palette, Puzzle, Search, SlidersHorizontal, Sparkles, X } from "lucide-react";
 import { SETTINGS_SECTIONS, type SettingsSection } from "../../core/route.ts";
 import { type SettingsItem, settingsFound } from "../../core/settings-search.ts";
 import { useIntoView } from "../effects/into-view.ts";
 import { useShortcut } from "../effects/shortcut.ts";
-import { HideSidebar, Pane, ShowSidebar } from "../frame/frame.tsx";
 import { useDevice } from "../state/device.ts";
 import { IconButton } from "../ui/button.tsx";
 import { Input } from "../ui/input.tsx";
+import { Dialog, DialogClose, DialogPopup, DialogTitle } from "../ui/dialog.tsx";
 import { Kbd } from "../ui/kbd.tsx";
 import { ExtensionsPage } from "./extensions-page.tsx";
 import { GeneralPage } from "./general-page.tsx";
@@ -45,33 +39,29 @@ export type SettingsProps = {
 const LINE =
 	"group/line flex h-control-sm w-full items-center gap-2 rounded-md px-2 text-left text-ui text-muted-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring aria-[current=page]:bg-selected aria-[current=page]:text-foreground";
 
-/** The sections, in the sidebar's place: under its header the search, then the sections — or, while the search holds words, the settings it finds. */
-export function SettingsNav(props: SettingsProps): ReactNode {
+/** The modal's navigation: search and sections, stacked above content on narrow screens. */
+function SettingsNav(props: SettingsProps): ReactNode {
 	const [search, setSearch] = useState("");
 	const box = useRef<HTMLInputElement>(null);
 	useShortcut("/", () => box.current?.focus());
 	const searching = search.trim() !== "";
 	return (
-		<>
-			<div className="window-toolbar flex h-[var(--topbar-height)] shrink-0 items-center gap-1.5 px-2">
-				<span className="min-w-0 flex-1 ps-2 text-ui font-semibold tracking-tight">Settings</span>
-				<HideSidebar />
-			</div>
-			<nav aria-label="Settings" className="flex min-h-0 flex-1 flex-col gap-px overflow-y-auto px-2 pb-2 scrollbar-none">
-				<label className="mb-1 flex h-control shrink-0 items-center gap-2 rounded-md px-2 focus-within:ring-1 focus-within:ring-ring hover:bg-accent">
-					<Search className="size-4 shrink-0 text-muted-foreground" />
-					<Input
-						ref={box}
-						type="search"
-						variant="bare"
-						aria-label="Search settings"
-						placeholder="Search settings"
-						value={search}
-						onValueChange={setSearch}
-						className="font-medium placeholder:text-muted-foreground"
-					/>
-					{searching ? null : <Kbd className="pointer-coarse:hidden">/</Kbd>}
-				</label>
+		<aside className="flex min-h-0 shrink-0 flex-col border-b border-border bg-sidebar p-2 sm:w-52 sm:border-r sm:border-b-0">
+			<label className="mb-1 flex h-control shrink-0 items-center gap-2 rounded-md px-2 focus-within:ring-1 focus-within:ring-ring hover:bg-accent">
+				<Search className="size-4 shrink-0 text-muted-foreground" />
+				<Input
+					ref={box}
+					type="search"
+					variant="bare"
+					aria-label="Search settings"
+					placeholder="Search settings"
+					value={search}
+					onValueChange={setSearch}
+					className="font-medium placeholder:text-muted-foreground"
+				/>
+				{searching ? null : <Kbd className="pointer-coarse:hidden">/</Kbd>}
+			</label>
+			<nav aria-label="Settings" className="flex gap-1 overflow-auto sm:flex-col max-sm:max-h-40">
 				{searching ? (
 					<Found items={settingsFound(search)} onSection={props.onSection} />
 				) : (
@@ -83,7 +73,7 @@ export function SettingsNav(props: SettingsProps): ReactNode {
 								type="button"
 								aria-current={section.key === props.section ? "page" : undefined}
 								onClick={() => props.onSection(section.key)}
-								className={LINE}
+								className={LINE + " shrink-0 max-sm:w-auto"}
 							>
 								<Icon className="size-4 text-muted-foreground group-aria-[current=page]/line:text-foreground" />
 								{section.label}
@@ -92,7 +82,7 @@ export function SettingsNav(props: SettingsProps): ReactNode {
 					})
 				)}
 			</nav>
-		</>
+		</aside>
 	);
 }
 
@@ -112,25 +102,41 @@ function Found(props: { readonly items: readonly SettingsItem[]; readonly onSect
 	));
 }
 
-/**
- * The open section's page, in the page's column, under the bar that holds the frame's button that shows the sidebar and
- * the one that closes settings; the setting the place names brought into view.
- */
-export function SettingsPage(props: SettingsProps): ReactNode {
+/** Closing commits focused fields before returning to the underlying route. */
+export function SettingsDialog(props: SettingsProps): ReactNode {
+	const surface = useRef<HTMLDivElement>(null);
 	useIntoView(props.at);
 	return (
-		<Pane>
-			<header className="window-toolbar flex h-[var(--topbar-height)] shrink-0 items-center gap-2 bg-background px-3 @xl/pane:px-5">
-				<ShowSidebar className="-ml-1" />
-				<span className="flex-1" />
-				<IconButton label="Close settings" onClick={() => props.onSection(undefined)} className="-mr-1">
-					<X className="size-4" />
-				</IconButton>
-			</header>
-			<div className="min-h-0 flex-1 overflow-y-auto scrollbar-even">
-				<SectionPage section={props.section} />
-			</div>
-		</Pane>
+		<Dialog
+			open
+			onOpenChange={(open) => {
+				if (open) return;
+				const focused = document.activeElement;
+				if (focused instanceof HTMLElement && surface.current?.contains(focused)) focused.blur();
+				props.onSection(undefined);
+			}}
+		>
+			<DialogPopup
+				ref={surface}
+				initialFocus={surface}
+				className="h-[min(48rem,calc(100dvh-4rem))] w-[72rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg"
+			>
+				<DialogTitle className="sr-only">Settings</DialogTitle>
+				<header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
+					<span className="text-ui text-muted-foreground">Settings /</span>
+					<span className="flex-1 text-ui font-medium">{SETTINGS_SECTIONS.find((section) => section.key === props.section)?.label}</span>
+					<DialogClose render={<IconButton label="Close settings" />}>
+						<X className="size-4" />
+					</DialogClose>
+				</header>
+				<div className="flex min-h-0 flex-1 flex-col sm:flex-row">
+					<SettingsNav {...props} />
+					<div className="@container/pane min-h-0 min-w-0 flex-1 overflow-y-auto bg-background py-5 scrollbar-even">
+						<SectionPage section={props.section} />
+					</div>
+				</div>
+			</DialogPopup>
+		</Dialog>
 	);
 }
 

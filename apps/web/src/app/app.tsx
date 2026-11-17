@@ -1,17 +1,17 @@
 /**
  * The app: the page's frame — the sidebar, the page and its panel — holding a thread or a new one, at home, or, where
- * the route opens them, settings, their sections in the sidebar's place; the command palette, ⌘K; and the notices of
+ * the route opens them, settings in a modal over the current thread; the command palette, ⌘K; and the notices of
  * what failed, over everything. The device's theme applies throughout; where the node knows this browser by no session,
  * the pairing page.
  */
 import { type ReactNode, useState } from "react";
 import { useConnection } from "@octoii-works/octoii-client/react";
 import { routeAddress, type SettingsSection, settingsOf, withOverlay } from "../core/route.ts";
-import { useShortcut } from "../components/effects/shortcut.ts";
+import { ShortcutScope, useShortcut } from "../components/effects/shortcut.ts";
 import { useAppearance } from "../components/effects/theme.ts";
 import { Frame } from "../components/frame/frame.tsx";
 import { Palette } from "../components/palette/palette.tsx";
-import { SettingsNav, SettingsPage } from "../components/settings/settings.tsx";
+import { SettingsDialog } from "../components/settings/settings.tsx";
 import { Sidebar } from "../components/sidebar/sidebar.tsx";
 import { useDevice } from "../components/state/device.ts";
 import { go, useRoute } from "../components/state/navigation.ts";
@@ -41,25 +41,20 @@ export function App(): ReactNode {
 	return (
 		<NoticesProvider>
 			<TooltipProvider>
-				<Frame
-					at={routeAddress(route)}
-					banner={<ConnectionLine connection={connection} />}
-					sidebar={
-						settings === undefined ? (
-							<Sidebar route={route} onOverlay={(over) => go(withOverlay(route, over))} />
+				<ShortcutScope value={settings === undefined}>
+					<Frame
+						at={routeAddress(route)}
+						banner={<ConnectionLine connection={connection} />}
+						sidebar={<Sidebar route={route} onOverlay={(over) => go(withOverlay(route, over))} />}
+					>
+						{route.place === "thread" ? (
+							<ThreadScreen key={route.thread} thread={route.thread} device={device} />
 						) : (
-							<SettingsNav section={settings} at={route.over?.at} onSection={onSection} />
-						)
-					}
-				>
-					{settings !== undefined ? (
-						<SettingsPage section={settings} at={route.over?.at} onSection={onSection} />
-					) : route.place === "thread" ? (
-						<ThreadScreen key={route.thread} thread={route.thread} device={device} />
-					) : (
-						<NewThreadScreen key={route.project ?? ""} project={route.project} device={device} />
-					)}
-				</Frame>
+							<NewThreadScreen key={route.project ?? ""} project={route.project} device={device} />
+						)}
+					</Frame>
+				</ShortcutScope>
+				{settings === undefined ? null : <SettingsDialog section={settings} at={route.over?.at} onSection={onSection} />}
 				<Palette route={route} isOpen={paletteOpen} onClose={() => setPaletteOpen(false)} onGo={go} />
 			</TooltipProvider>
 		</NoticesProvider>

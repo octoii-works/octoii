@@ -4,8 +4,11 @@
  * and one a text field keeps as its own, as ⌘Z its undo, only while none has the focus. The latest of what they do is
  * done, the window listening once.
  */
-import { useEffect, useEffectEvent } from "react";
+import { createContext, useContext, useEffect, useEffectEvent } from "react";
 import { pressed, shortcutOf } from "../../core/shortcuts.ts";
+
+/** A covered surface keeps its state but stops answering global shortcuts. */
+export const ShortcutScope = createContext(true);
 
 /** Whether the person types in `element`: a text field, a box or what is edited in place. */
 export function isTypedIn(element: EventTarget | null): boolean {
@@ -24,10 +27,12 @@ export function useShortcutOutsideText(spec: string, act: () => void): void {
 
 /** Answers each shortcut of `specs` with `act` where `answers` says so, told whether it is held with Cmd or Ctrl and whether a text field has the focus. */
 function useKeys(specs: readonly string[], act: (spec: string) => void, answers: (mod: boolean, typedIn: boolean) => boolean): void {
+	const enabled = useContext(ShortcutScope);
 	const answer = useEffectEvent(act);
 	const asked = JSON.stringify(specs);
 	const answered = useEffectEvent(answers);
 	useEffect(() => {
+		if (!enabled) return;
 		// SAFETY: `asked` is the JSON of the specs the caller gave, so it parses back to them.
 		const shortcuts = (JSON.parse(asked) as readonly string[]).map((spec) => ({ spec, shortcut: shortcutOf(spec) }));
 		const down = (event: KeyboardEvent): void => {
@@ -39,7 +44,7 @@ function useKeys(specs: readonly string[], act: (spec: string) => void, answers:
 		};
 		document.addEventListener("keydown", down);
 		return () => document.removeEventListener("keydown", down);
-	}, [asked]);
+	}, [asked, enabled]);
 }
 
 /** Answers the shortcut `spec` with `act`. */
