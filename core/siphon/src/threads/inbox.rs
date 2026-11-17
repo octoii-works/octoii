@@ -222,6 +222,9 @@ fn take_of(run: &mut Run<'_>, id: &str, writer: &mut Writer, waiting: Vec<Waitin
         .stat(&thread::path(id))?
         .and_then(|entry| entry.directory)
         .unwrap_or_default();
+    if super::Start::of(&directory)?.is_some_and(|start| start.blocks_execution()) {
+        return Ok(Vec::new());
+    }
     let mut config = Config::of(&directory)?;
     let mut taken = Vec::new();
     for each in waiting {

@@ -1301,3 +1301,81 @@ impl crate::tools::Tool for ThreadTool {
         })())
     }
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn startup_gate_holds_all_input_until_the_final_workspace_is_bound() {
+    use crate::threads::{StartRequest, StartWorkspace};
+    let beak = Beak::new().unwrap();
+    let script = Arc::new(Script::default());
+    script.replies.lock().unwrap().push_back(Ok(vec![says("done")]));
+    let runtime = runtime(&beak, &script);
+    let volume = crate::volume::Volume { runtime: runtime.clone() };
+    let threads = Threads::<ThreadProgram>::new(runtime.clone());
+    let folder = tempfile::tempdir().unwrap();
+    let workspace = folder.path().canonicalize().unwrap().to_string_lossy().into_owned();
+    let new = NewThread {
+        actor: "person".into(),
+        config: Config {
+            model: Some("test/m".into()),
+            title: Some("prepared".into()),
+            ..Config::default()
+        },
+        ..NewThread::default()
+    };
+    let (id, start) = volume
+        .prepare_thread(
+            &new,
+            vec![InputContent::text("first")],
+            StartRequest {
+                owner: "test".into(),
+                payload: serde_json::json!({}),
+            },
+            "agent-startup",
+        )
+        .await
+        .unwrap();
+    threads
+        .deliver(&id, "person", vec![InputContent::text("second")], "extra-input")
+        .await
+        .unwrap();
+    threads
+        .queue(&id, "person", vec![InputContent::text("third")], "queued-input")
+        .await
+        .unwrap();
+    assert!(
+        threads
+            .configure(
+                &id,
+                "person",
+                crate::threads::ConfigChange {
+                    workspace: Some(Some("/wrong".into())),
+                    ..Default::default()
+                }
+            )
+            .await
+            .is_err()
+    );
+    // A committed failure and retry are barriers proving the main process has run without gathering or calling a model.
+    volume.fail_thread_start(&id, &start.token, "not ready".into()).await.unwrap();
+    assert!(script.asked.lock().unwrap().is_empty());
+    assert_eq!(threads.listed(&id).unwrap().status.inbox.len(), 3);
+    assert!(
+        !entries(&threads, &id)
+            .iter()
+            .any(|entry| matches!(entry, Entry::System { .. } | Entry::Input { .. }))
+    );
+    let retried = volume.retry_thread_start(&id, &start.token).await.unwrap();
+    assert!(script.asked.lock().unwrap().is_empty());
+    let directory = StartWorkspace {
+        workspace: workspace.clone(),
+        project: Some(workspace.clone()),
+    };
+    volume.finish_thread_start(&id, &retried.token, directory.clone()).await.unwrap();
+    until(&threads, &id, Turn::Replied).await;
+    assert_eq!(threads.listed(&id).unwrap().config.workspace.as_deref(), Some(workspace.as_str()));
+    assert_eq!(threads.listed(&id).unwrap().project.as_deref(), Some(workspace.as_str()));
+    assert_eq!(script.asked.lock().unwrap().len(), 1);
+    volume.finish_thread_start(&id, &retried.token, directory).await.unwrap();
+    assert_eq!(script.asked.lock().unwrap().len(), 1);
+    runtime.close().await;
+}

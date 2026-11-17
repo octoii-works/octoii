@@ -910,9 +910,33 @@ export type SiphonTopic = { "type": "thread", thread: string, from?: Cursor, } |
 export type Standing = { account?: string, plan?: string, limits: Array<Limit>, guidance?: Guidance, };
 
 /**
+ * Durable startup state. Tokens fence results from an older preparation attempt; they are not authorization.
+ */
+export type Start = { request: StartRequest, token: string, previous: string | null, state: StartState, };
+
+/**
+ * An extension's accepted preparation request. Siphon does not interpret its payload.
+ */
+export type StartRequest = { owner: string, payload: JsonValue, };
+
+/**
+ * Preparation never runs the agent until it becomes ready.
+ */
+export type StartState = { "state": "pending" } | { "state": "failed", reason: string, } | { "state": "cancelled" } | { "state": "ready", directory: StartWorkspace, };
+
+/**
+ * The final directory and project identity, resolved by the preparing extension.
+ */
+export type StartWorkspace = { workspace: string, project: string | null, };
+
+/**
  * How a thread stands.
  */
-export type Status = { turn: Turn, began_at?: number | null, ended_at?: number | null, usage?: ThreadUsage | null, 
+export type Status = { 
+/**
+ * Preparation state, absent for a normally created thread.
+ */
+start?: Start, turn: Turn, began_at?: number | null, ended_at?: number | null, usage?: ThreadUsage | null, 
 /**
  * What waits in its inbox, by its id, in the order it came.
  */

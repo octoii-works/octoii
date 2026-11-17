@@ -1,6 +1,7 @@
 //! The operations on threads, each checked against the volume as it stands and committed as one, durable as it
 //! returns; one that makes or adds to a thread done once for its idempotency key.
 
+use sha2::{Digest, Sha256};
 use std::marker::PhantomData;
 
 use beak::{Query, Range, layout};
@@ -41,6 +42,8 @@ pub struct NewThread {
 pub enum Error {
     #[error("no such thread")]
     NoSuchThread,
+    #[error("{0}")]
+    Start(String),
     #[error(transparent)]
     Idempotency(#[from] idempotency::Error),
     #[error(transparent)]
@@ -96,6 +99,112 @@ impl<M: Program<Input = MainInput>> Threads<M> {
         idempotency::record(&mut changes, key, &done, self.runtime.now_ms())?;
         self.runtime.commit(changes).await?;
         Ok(id)
+    }
+
+    /// Atomically accepts a thread and its first input, without permitting execution.
+    /// The immutable claim has no time-based expiry; deleting its thread never recreates it on replay.
+    ///
+    /// # Errors
+    /// A reused key with different input, a missing deleted thread, or a storage failure.
+    pub async fn prepare(
+        &self,
+        new: &NewThread,
+        content: Vec<InputContent>,
+        request: super::StartRequest,
+        key: &str,
+    ) -> Result<(String, super::Start), Error> {
+        idempotency::done_before(&self.runtime.snapshot()?, key, "threads.prepare", None)?;
+        if request.owner.trim().is_empty() || content.is_empty() {
+            return Err(Error::Start("preparation requires an owner and initial input".into()));
+        }
+        let path: Bytes = [b"siphon.start/", key.as_bytes()].concat().into();
+        let claim = StartClaim {
+            fingerprint: Sha256::digest(serde_json::to_vec(&(new, &content, &request))?).into(),
+            thread: self.runtime.new_id()?,
+        };
+        if let Some(bytes) = self.runtime.snapshot()?.read(&path, 0, u64::MAX)? {
+            return self.claimed(&bytes, &claim);
+        }
+        let start = super::Start {
+            request,
+            token: self.runtime.new_id()?,
+            previous: None,
+            state: super::StartState::Pending,
+        };
+        let mut changes = Changes::new();
+        Self::made(&mut changes, &claim.thread, &self.runtime.new_id()?, new)?;
+        super::start::made(&mut changes, &claim.thread, &start)?;
+        inbox::put(
+            &mut changes,
+            &claim.thread,
+            &self.runtime.new_id()?,
+            &Inbound::Input {
+                actor: new.actor.clone(),
+                content,
+                reply_to: None,
+                joins: Joins::Step,
+            },
+        )?;
+        changes
+            .mkdir(Bytes::from_static(b"siphon.start"))
+            .write(path.clone(), serde_json::to_vec(&claim)?)
+            .seal(path.clone());
+        if let Err(error) = self.runtime.commit(changes).await {
+            if let Some(bytes) = self.runtime.snapshot()?.read(&path, 0, u64::MAX)? {
+                return self.claimed(&bytes, &claim);
+            }
+            return Err(error.into());
+        }
+        Ok((claim.thread, start))
+    }
+
+    fn claimed(&self, bytes: &[u8], asked: &StartClaim) -> Result<(String, super::Start), Error> {
+        let kept: StartClaim = serde_json::from_slice(bytes)?;
+        if kept.fingerprint != asked.fingerprint {
+            return Err(Error::Start("startup key was used with different input".into()));
+        }
+        let start = self
+            .start_state(&kept.thread)?
+            .ok_or_else(|| Error::Start("missing startup state".into()))?;
+        Ok((kept.thread, start))
+    }
+
+    /// Reads startup state without exposing its storage paths.
+    ///
+    /// # Errors
+    /// A missing thread or invalid stored state.
+    pub fn start_state(&self, id: &str) -> Result<Option<super::Start>, Error> {
+        Ok(super::Start::of(&self.directory(id)?)?)
+    }
+
+    pub(crate) async fn start_command(&self, id: &str, token: &str, action: super::start::Action) -> Result<super::Start, Error> {
+        self.start_state(id)?
+            .ok_or_else(|| Error::Start("thread has no startup gate".into()))?;
+        let key = self.runtime.new_id()?;
+        let command = super::start::Command {
+            token: token.into(),
+            action,
+        };
+        let mut changes = Changes::new();
+        changes.write(super::start::command_path(id, &key), serde_json::to_vec(&command)?);
+        Self::revive(&self.runtime.snapshot()?, &mut changes, id)?;
+        let mut committed = self.runtime.committed();
+        self.runtime.commit(changes).await?;
+        loop {
+            let snapshot = self.runtime.snapshot()?;
+            if let Some(bytes) = snapshot.read(&super::start::result_path(id, &key), 0, u64::MAX)? {
+                let result: Result<super::Start, String> = serde_json::from_slice(&bytes)?;
+                return result.map_err(Error::Start);
+            }
+            self.directory(id)?;
+            if snapshot.record(&thread::main(id))?.is_some_and(|record| record.outcome.is_some()) {
+                return Err(Error::Start("thread process ended before startup completed".into()));
+            }
+            committed
+                .changed()
+                .await
+                .map_err(|_| Error::Start("runtime closed before startup completed".into()))?;
+        }
     }
 
     /// Adds to `changes` what makes the thread `id` as `new` says: its directory, labelled and annotated, its inbox, its
@@ -233,6 +342,9 @@ impl<M: Program<Input = MainInput>> Threads<M> {
     /// # Errors
     /// `NoSuchThread`; the commit's failure.
     pub async fn configure(&self, id: &str, actor: &str, change: ConfigChange) -> Result<String, Error> {
+        if change.workspace.is_some() && self.start_state(id)?.is_some_and(|start| start.blocks_execution()) {
+            return Err(Error::Start("workspace is bound when preparation completes".into()));
+        }
         self.directory(id)?;
         let mut changes = Changes::new();
         let inbound = Inbound::Config {
@@ -283,11 +395,19 @@ impl<M: Program<Input = MainInput>> Threads<M> {
     }
 
     /// Stops the thread `id` for `actor`: the inputs of theirs that wait withdrawn, and its turn asked to stop — none of
-    /// what runs beside it, as an interrupt reaches the foreground alone — in one commit.
+    /// what runs beside it, as an interrupt reaches the foreground alone — in one commit. Pending preparation is
+    /// cancelled and acknowledged first, so a delayed preparation result cannot release its input.
     ///
     /// # Errors
     /// `NoSuchThread`; the commit's failure.
     pub async fn stop(&self, id: &str, actor: &str) -> Result<(), Error> {
+        if let Some(start) = self.start_state(id)?
+            && start.blocks_execution()
+            && let Err(error) = self.start_command(id, &start.token, super::start::Action::Cancel).await
+            && self.start_state(id)?.is_some_and(|current| current.blocks_execution())
+        {
+            return Err(error);
+        }
         self.directory(id)?;
         let snapshot = self.runtime.snapshot()?;
         let mut changes = Changes::new();
@@ -411,4 +531,10 @@ fn listed_all(runtime: &Runtime) -> Result<Vec<Listed>, Error> {
 /// Whether `directory` is being removed, to go once the processes under it end.
 pub(crate) fn removing(directory: &beak::Directory) -> bool {
     directory.label(layout::REMOVING_LABEL).is_some_and(|value| value == "true")
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct StartClaim {
+    fingerprint: [u8; 32],
+    thread: String,
 }

@@ -28,6 +28,81 @@ impl Volume {
         self.runtime.snapshot()
     }
 
+    /// Accepts a thread and its initial input behind a durable startup gate.
+    ///
+    /// # Errors
+    /// Invalid/reused input, a deleted thread, or a storage failure.
+    pub async fn prepare_thread(
+        &self,
+        new: &crate::threads::NewThread,
+        content: Vec<octoii_ai::vocabulary::InputContent>,
+        request: crate::threads::StartRequest,
+        key: &str,
+    ) -> anyhow::Result<(String, crate::threads::Start)> {
+        Ok(self.starting_threads().prepare(new, content, request, key).await?)
+    }
+
+    /// Reads the startup state; none for a normally created thread.
+    ///
+    /// # Errors
+    /// Missing thread or unreadable state.
+    pub fn thread_start(&self, id: &str) -> anyhow::Result<Option<crate::threads::Start>> {
+        Ok(self.starting_threads().start_state(id)?)
+    }
+
+    /// Binds the final directory and releases the accepted input, once for this attempt.
+    ///
+    /// # Errors
+    /// Stale token, invalid transition/directory, missing thread or storage failure.
+    pub async fn finish_thread_start(
+        &self,
+        id: &str,
+        token: &str,
+        directory: crate::threads::StartWorkspace,
+    ) -> anyhow::Result<crate::threads::Start> {
+        Ok(self
+            .starting_threads()
+            .start_command(id, token, crate::threads::start::Action::Ready(directory))
+            .await?)
+    }
+
+    /// Records a failed preparation without dropping its input or opening its gate.
+    ///
+    /// # Errors
+    /// Stale token, invalid transition, missing thread or storage failure.
+    pub async fn fail_thread_start(&self, id: &str, token: &str, reason: String) -> anyhow::Result<crate::threads::Start> {
+        Ok(self
+            .starting_threads()
+            .start_command(id, token, crate::threads::start::Action::Fail(reason))
+            .await?)
+    }
+
+    /// Starts another preparation attempt from a failure; a replay returns the same pending token.
+    ///
+    /// # Errors
+    /// Stale token, invalid transition, missing thread or storage failure.
+    pub async fn retry_thread_start(&self, id: &str, token: &str) -> anyhow::Result<crate::threads::Start> {
+        Ok(self
+            .starting_threads()
+            .start_command(id, token, crate::threads::start::Action::Retry { next: self.new_id()? })
+            .await?)
+    }
+
+    /// Cancels preparation; no later result for it can release the input.
+    ///
+    /// # Errors
+    /// Stale token, invalid transition, missing thread or storage failure.
+    pub async fn cancel_thread_start(&self, id: &str, token: &str) -> anyhow::Result<crate::threads::Start> {
+        Ok(self
+            .starting_threads()
+            .start_command(id, token, crate::threads::start::Action::Cancel)
+            .await?)
+    }
+
+    fn starting_threads(&self) -> crate::threads::Threads<crate::agent::ThreadProgram> {
+        crate::threads::Threads::new(self.runtime.clone())
+    }
+
     /// The current configuration of one thread; none if the thread does not exist.
     ///
     /// # Errors

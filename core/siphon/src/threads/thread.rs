@@ -73,11 +73,23 @@ pub(crate) fn flag(on: bool) -> Bytes {
     if on { Bytes::from_static(b"true") } else { Bytes::new() }
 }
 
-/// Adds to `changes` the turn of the thread `id` asked to stop, where one runs — none of what runs beside it.
+/// Adds to `changes` a cancellation of pending preparation and asks the turn of `id` to stop, where one runs —
+/// none of what runs beside it.
 ///
 /// # Errors
-/// The volume's failure.
-pub fn stop_turn(snapshot: &beak::Snapshot, changes: &mut siphon_runtime::Changes, id: &str) -> beak::Result<()> {
+/// The volume's failure or unreadable startup state.
+pub fn stop_turn(snapshot: &beak::Snapshot, changes: &mut siphon_runtime::Changes, id: &str) -> Result<(), super::operations::Error> {
+    if let Some(directory) = snapshot.stat(&path(id))?.and_then(|entry| entry.directory)
+        && let Some(start) = super::Start::of(&directory)?
+        && matches!(start.state, super::StartState::Pending | super::StartState::Failed { .. })
+    {
+        // Sort before UUID-keyed completions so a queued stop wins before preparation is released.
+        let command = super::start::Command {
+            token: start.token,
+            action: super::start::Action::Cancel,
+        };
+        changes.write(super::start::command_path(id, "0-stop"), serde_json::to_vec(&command)?);
+    }
     let main = main(id);
     let under = beak::Range {
         prefix: layout::PROCESS_KIND,

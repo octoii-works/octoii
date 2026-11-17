@@ -11,6 +11,7 @@ pub(crate) mod inbox;
 pub(crate) mod log;
 pub(crate) mod marks;
 pub(crate) mod operations;
+pub(crate) mod start;
 pub(crate) mod status;
 pub(crate) mod thread;
 pub(crate) mod window;
@@ -29,3 +30,5 @@ pub use log::{CallStatus, Entry, Outcome, time_of};
 pub use marks::{Marks, MarksChange};
 pub use operations::{NewThread, list};
 pub use status::{Ask, Listed, Parent, Status, SubThreadKind, ThreadUsage, Turn};
+
+pub use start::{Start, StartRequest, StartState, StartWorkspace};

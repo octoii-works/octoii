@@ -128,6 +128,10 @@ pub struct Ask {
 /// How a thread stands.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
 pub struct Status {
+    /// Preparation state, absent for a normally created thread.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub start: Option<super::Start>,
     pub turn: Turn,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub began_at: Option<i64>,
@@ -242,6 +246,7 @@ fn status(runtime: &Runtime, snapshot: &Snapshot, id: &str, directory: &Director
         Ok(record.filter(|record| record.outcome.is_none()))
     };
     Ok(Status {
+        start: super::Start::of(directory)?,
         turn,
         began_at: time(directory, BEGAN_AT_ANNOTATION),
         ended_at: time(directory, ENDED_AT_ANNOTATION),

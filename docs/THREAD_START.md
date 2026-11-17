@@ -1,6 +1,6 @@
 # Thread 启动门：第一阶段设计
 
-2026-11-17。实现前提案，待用户单独确认 core 文件范围。当前并未实现以下 API。
+2026-11-17。第一阶段内核实现，core 文件范围及补充的停止入口均已获用户单独确认。
 对应 WORKTREE_START.md 的后端启动衔接，兼顾 SIPHON_DISTRIBUTION.md 的执行与产品边界。
 
 ## 已有机制与实际缺口
@@ -54,14 +54,15 @@
 “收到 Git 创建成功回执”与“节点重启后发现目录存在”不是同一件事。第一阶段不宣称 Git 创建具备事务性。
 后续扩展在结果不确定时核查现场，不能仅凭 path/branch/HEAD 匹配就自动放行，不自动清理其他任务的目录。
 
-## 拟申请的 core 文件范围
+## 已确认的 core 文件范围
 
 | 文件 | 修改职责 |
 | --- | --- |
 | core/siphon/src/threads/start.rs（新增） | 启动状态与描述、token、内部状态转换与存储规则 |
 | core/siphon/src/threads.rs | 导出启动公共类型，装配新模块 |
 | core/siphon/src/threads/operations.rs | 原子接受、启动操作、与 stop/delete/configure 的协调 |
-| core/siphon/src/threads/inbox.rs | 如采用主进程串行转换，在现有 inbox 中增加启动控制消息，保持普通输入语义 |
+| core/siphon/src/threads/inbox.rs | 启动门关闭时不消费普通输入，控制消息由主进程独立处理 |
+| core/siphon/src/threads/thread.rs | 共用 stop_turn 为待准备 Thread 排入取消消息，覆盖 Agent 工具停止入口 |
 | core/siphon/src/threads/status.rs | 查询返回启动状态，明确待准备/失败不能显示为正在执行 |
 | core/siphon/src/agent/thread.rs | 在 gather/开始 turn 前守住启动门，处理受控放行 |
 | core/siphon/src/volume.rs | 面向扩展的上述受控接口 |
@@ -82,3 +83,32 @@
 
 第一阶段只实现并验证内核原语，不同时迁仓库、做 FFI、改造所有 Agent 或上线 worktree UI。
 随后再接 Git 扩展的准备流程和恢复入口，每阶段独立提交。
+
+## 第一阶段实现记录
+
+公共入口为 `Volume::prepare_thread / thread_start / finish_thread_start / fail_thread_start /
+retry_thread_start / cancel_thread_start`；查询的 `Status.start` 对普通 Thread 为空。
+
+- 接受提交同时写入 Thread、首条输入、启动状态和密封幂等记录。记录保留请求摘要与 Thread ID，
+  不额外保留原始输入；没有 24 小时过期窗口，删除 Thread 后重放也不能重新创建。
+- 主进程串行处理持久控制消息，状态转换、最终目录配置、配置日志与操作回执在同一提交生效。
+  消费控制消息后等待目录版本变化，再从已提交状态继续；不新增 runtime 程序或 checkpoint 状态。
+- token 只防旧尝试的迟到结果，不代表权限。重复完成必须带相同目录；并发重试共享同一新 token。
+- 普通输入、排队输入继续保留；准备期间拒绝修改 workspace，避免覆盖完成准备所绑定的目录。
+- 客户端 stop 等待取消回执；Agent 的共用 stop_turn 持久排入取消控制，尚未消费的完成消息不能抢先放行。
+  已 ready 的 Thread 沿用原有停止语义；删除后迟到回调不能创建 Thread。
+
+边界：本阶段没有 Git 准备 worker、客户端启动 RPC 或 UI。调用完成/失败/重试的方法需运行节点的
+Thread 主进程处理回执；节点退出时调用方仍需中止请求，重启后读取状态并重试。
+控制回执随 Thread 保存和删除，尚未增加后台回执清理机制。
+
+后续顺序：先由 Git 扩展通过这些公开原语实现准备与现场核查，再接 Node 恢复调度，最后接客户端
+新任务入口并验收响应丢失、节点重启和部分失败。不要仅凭目录存在自动放行。
+
+### 本批验证
+
+- Siphon：106 项通过、1 项忽略，含并发接受、失败后重启恢复、并发重试、重复放行、旧 token、
+  无效目录、客户端/工具停止、删除与真实 Agent 执行回归。
+- 节点权限与协议：3 项通过；生成 TypeScript 保持与节点输出一致。
+- Clippy 全目标、Rust 格式、客户端类型检查、24 个包的 Rust 依赖边界检查通过。
+- 本批未改产品 UI，未进行浏览器验收。

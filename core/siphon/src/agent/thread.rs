@@ -53,11 +53,24 @@ impl Program for ThreadProgram {
 
     fn run(&self, run: &mut Run<'_>, input: MainInput, state: Option<MainState>) -> anyhow::Result<Ending<MainState, ()>> {
         let id = &input.thread;
-        match state.unwrap_or(MainState::Rest) {
+        let state = state.unwrap_or(MainState::Rest);
+        match crate::threads::start::advance(run, id)? {
+            crate::threads::start::Gate::Changed | crate::threads::start::Gate::Blocked => {
+                // Consuming controls changes this directory in our commit. Waiting on its snapshot version
+                // resumes from the committed gate without going Next to an unchanged checkpoint.
+                return Ok(Ending::Wait(state, Wait::new().change(crate::threads::start::commands(id))));
+            }
+            crate::threads::start::Gate::Open => {}
+        }
+        let ending = match state {
             MainState::Rest => rest(run, id),
             MainState::Gathering { key } => gathered(run, id, &key),
             MainState::Running { turn } => running(run, id, &turn),
-        }
+        }?;
+        Ok(match ending {
+            Ending::Wait(state, wait) => Ending::Wait(state, wait.change(crate::threads::start::commands(id))),
+            other => other,
+        })
     }
 }
 
