@@ -27,7 +27,29 @@ it needs.
 
 ## Local verification cleanup
 
-Use a temporary `CARGO_TARGET_DIR` for each local Rust build or verification run. Keep native link outputs and
-disposable test data in the same temporary directory. When the run finishes, even if it fails, stop the processes it
-started and remove that directory. If a command used a workspace's default `target/`, clean that workspace too.
-Keep tracked files, Cargo's dependency cache, and existing app data and services untouched.
+Reuse Cargo's intermediate build cache. For an isolated verification run, keep `CARGO_BUILD_BUILD_DIR` stable
+for each workspace and put `CARGO_TARGET_DIR`, test data and native link outputs in a temporary directory.
+From the Octoii checkout root, for example:
+
+```sh
+(
+  run_dir="$(mktemp -d)" || exit 1
+  trap 'rm -rf -- "$run_dir"' EXIT
+  export CARGO_BUILD_BUILD_DIR="$PWD/target/local-cache/{workspace-path-hash}"
+  export CARGO_TARGET_DIR="$run_dir/target"
+  export TMPDIR="$run_dir"
+  cargo test --locked --manifest-path siphon/Cargo.toml -p siphon-runtime
+)
+```
+
+Stop processes started for verification and remove only the run's temporary outputs, even on failure.
+Keep the reuse directory and Cargo's dependency cache. Normal development builds may keep their default
+`target/`; do not run `cargo clean` as routine teardown. If space is scarce, inspect
+`du -sh target/local-cache/*` and prune unused workspace caches with no build running.
+
+[Cargo 1.100](https://blog.rust-lang.org/2026/11/12/Rust-1.100.0/#reducing-cargo-cache-collisions)
+improves cache isolation; it does not provide automatic cross-workspace deduplication or eviction of build
+outputs. For frequently rebuilt worktrees, an opt-in [sccache](https://doc.rust-lang.org/stable/cargo/reference/build-cache.html#shared-cache)
+can share eligible compiler results across workspaces. Its local cache has a
+[configurable size limit](https://github.com/mozilla/sccache/blob/main/docs/Local.md); it complements rather
+than replaces the Cargo build directory.
