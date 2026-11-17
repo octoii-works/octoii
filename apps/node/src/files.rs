@@ -11,10 +11,10 @@ use axum::body::Bytes;
 use axum::extract::{Extension, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
+use octoii::protocol::Scope;
+use octoii::threads::files;
 use octoii_tunnel::Remote;
 use serde::Deserialize;
-use siphon::protocol::Scope;
-use siphon::threads::files;
 use siphon_runtime::Changes;
 
 use crate::http::{Denied, Node, session};
@@ -105,7 +105,7 @@ pub(crate) async fn kept(
     let bytes = files::read(&snapshot, &thread, &format!("sha256:{hash}"))
         .map_err(|error| Denied(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?
         .ok_or_else(|| Denied(StatusCode::NOT_FOUND, "no such file".into()))?;
-    let media_type = siphon::machine::media_type(&bytes).unwrap_or("application/octet-stream");
+    let media_type = octoii::machine::media_type(&bytes).unwrap_or("application/octet-stream");
     let picture = asked.width_max.zip(asked.height_max);
     // What a reference names never changes.
     pictured(media_type, &bytes, picture, "private, max-age=31536000, immutable")
@@ -155,14 +155,14 @@ pub(crate) async fn machined(
         .siphon
         .person_machine()
         .map_err(|error| Denied(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
-    let options = siphon::machine::ReadOptions {
+    let options = octoii::machine::ReadOptions {
         media_bytes_max: files::BYTES_MAX as u64,
-        ..siphon::machine::ReadOptions::default()
+        ..octoii::machine::ReadOptions::default()
     };
     let read = machine.read(&machine.path(&asked.path), &options);
     let (media_type, bytes) = match read {
-        Ok(siphon::machine::Read::Media { media_type, bytes, .. }) => (media_type, bytes),
-        Ok(siphon::machine::Read::TooLarge { limit, .. }) => {
+        Ok(octoii::machine::Read::Media { media_type, bytes, .. }) => (media_type, bytes),
+        Ok(octoii::machine::Read::TooLarge { limit, .. }) => {
             return Err(Denied(StatusCode::PAYLOAD_TOO_LARGE, format!("past {limit} bytes")));
         }
         Ok(_) => {
@@ -171,7 +171,7 @@ pub(crate) async fn machined(
                 "no image or PDF; read it as text".into(),
             ));
         }
-        Err(siphon::machine::Error::NotFound) => return Err(Denied(StatusCode::NOT_FOUND, "no such file".into())),
+        Err(octoii::machine::Error::NotFound) => return Err(Denied(StatusCode::NOT_FOUND, "no such file".into())),
         Err(error) => return Err(Denied(StatusCode::INTERNAL_SERVER_ERROR, error.to_string())),
     };
     pictured(media_type, &bytes, asked.width_max.zip(asked.height_max), "private, no-cache")

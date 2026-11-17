@@ -9,9 +9,9 @@ use std::time::Duration;
 use base64::Engine as _;
 use beak::{Range, Snapshot};
 use bytes::Bytes;
+use octoii::protocol::Scope;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use siphon::protocol::Scope;
 use siphon_runtime::{Changes, Runtime};
 
 /// The kinds of the directories of sessions and of links.
@@ -98,7 +98,7 @@ pub enum Refused {
     Json(#[from] serde_json::Error),
 }
 
-/// The access, on Siphon's runtime.
+/// The access, on Octoii's runtime.
 #[derive(Debug, Clone)]
 pub struct Access {
     runtime: Runtime,

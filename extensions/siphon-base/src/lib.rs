@@ -1,4 +1,4 @@
-//! Octoii's base instructions, supplied by the application rather than embedded in Siphon.
+//! Octoii's base instructions, supplied by the application rather than embedded in Octoii.
 
 mod environment;
 mod instructions;
@@ -8,10 +8,10 @@ use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use siphon::agent::{Shared, Teller, Telling};
-use siphon::tools::Place;
-use siphon::volume::Volume;
-use siphon::{Extension, Registrar};
+use octoii::agent::{Shared, Teller, Telling};
+use octoii::tools::Place;
+use octoii::volume::Volume;
+use octoii::{Extension, Registrar};
 
 #[derive(Debug, Clone, Default)]
 pub struct BaseExtension {
@@ -32,7 +32,7 @@ impl Extension for BaseExtension {
     }
 
     fn build(self: Box<Self>, registrar: &mut Registrar<'_>) {
-        registrar.prompts(siphon::agent::Prompts {
+        registrar.prompts(octoii::agent::Prompts {
             title: include_str!("../prompts/title.md").trim(),
             recap: include_str!("../prompts/recap.md").trim(),
             review: include_str!("../prompts/review.md").trim(),

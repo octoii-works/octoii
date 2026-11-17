@@ -5,8 +5,8 @@
 //! message made, as results; what it has not seen — turns another model answered — as history between
 //! `<conversation-checkpoint>` tags, calls and results written out; then the person's latest words as they are.
 
+use octoii::tools::sha256_hex;
 use serde_json::{Value, json};
-use siphon::tools::sha256_hex;
 
 /// The hash a conversation under `system` begins from, before its first message.
 #[must_use]

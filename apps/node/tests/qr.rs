@@ -2,7 +2,7 @@
 
 #[test]
 fn a_link_is_drawn_two_rows_to_a_line_black_on_white_with_its_quiet_zone() {
-    let drawn = octoii::qr::drawn("https://app.octoii.com/pair#key=k&relay=https://r.example&link=a.b").expect("a code");
+    let drawn = octoii_node::qr::drawn("https://app.octoii.com/pair#key=k&relay=https://r.example&link=a.b").expect("a code");
     let lines: Vec<&str> = drawn.lines().collect();
     let width = lines[0]
         .trim_start_matches("\x1b[30;107m")
@@ -17,5 +17,5 @@ fn a_link_is_drawn_two_rows_to_a_line_black_on_white_with_its_quiet_zone() {
             .all(|line| line.starts_with("\x1b[30;107m") && line.ends_with("\x1b[0m"))
     );
     assert!(lines[0].trim_start_matches("\x1b[30;107m").starts_with("    "), "light around it");
-    assert!(octoii::qr::drawn(&"x".repeat(8000)).is_none(), "too long for a code");
+    assert!(octoii_node::qr::drawn(&"x".repeat(8000)).is_none(), "too long for a code");
 }

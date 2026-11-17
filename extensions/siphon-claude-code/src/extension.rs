@@ -1,12 +1,12 @@
-//! Claude Code as an extension of Siphon's: its provider, through the person's own `claude` — found on the machine where
+//! Claude Code as an extension of Octoii's: its provider, through the person's own `claude` — found on the machine where
 //! the host names none — each account's files in the folder the host gives; and what a conversation held let go of as
 //! its thread is deleted.
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use octoii::{Extension, Registrar};
 use octoii_ai::models::Provider;
-use siphon::{Extension, Registrar};
 
 use crate::account::{self, Place};
 use crate::driver::ClaudeCode;

@@ -7,12 +7,12 @@ use std::io::Cursor;
 use bytes::Bytes;
 use http_body_util::{BodyExt as _, Full};
 use hyper::Method;
-use octoii::access::Access;
-use octoii::home::Home;
-use octoii::http::{self, Node};
+use octoii::protocol::{Machine, Scope};
+use octoii::threads::NewThread;
+use octoii_node::access::Access;
+use octoii_node::home::Home;
+use octoii_node::http::{self, Node};
 use serde_json::Value;
-use siphon::protocol::{Machine, Scope};
-use siphon::threads::NewThread;
 
 /// A PNG of `width` by `height`.
 fn png(width: u32, height: u32) -> Vec<u8> {
@@ -41,7 +41,7 @@ async fn request(address: &str, method: Method, path: &str, headers: &[(&str, &s
 }
 
 /// The node's HTTP of `siphon` and `access`, served on a loopback port: its address.
-async fn served(siphon: &siphon::Siphon, access: &Access) -> String {
+async fn served(siphon: &octoii::Octoii, access: &Access) -> String {
     let node = Node {
         siphon: siphon.clone(),
         access: access.clone(),
@@ -61,7 +61,7 @@ async fn a_thread_s_files_are_sent_kept_and_given_back_to_a_session_that_may() {
     let folder = tempfile::tempdir().expect("a folder");
     let home = Home::at(folder.path());
     home.prepare().expect("a Home");
-    let siphon = octoii::serve::siphon(&home, siphon::providers::SignInSetup::default()).expect("Siphon");
+    let siphon = octoii_node::serve::siphon(&home, octoii::providers::SignInSetup::default()).expect("Octoii");
     let access = Access::new(siphon.runtime.clone());
     let thread = siphon.threads.create(&NewThread::default(), "k1").await.expect("a thread");
     let other = siphon.threads.create(&NewThread::default(), "k2").await.expect("a thread");

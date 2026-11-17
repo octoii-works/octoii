@@ -12,20 +12,20 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use base64::Engine as _;
+use octoii::machine::Base;
+use octoii::machine::{Host, Variables, Writes};
+use octoii::volume::Snapshot;
+use octoii::volume::Volume;
+use octoii::{Ends, Kept};
 use octoii_ai::vocabulary::InputContent;
 use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, ResourceContents};
 use rmcp::service::{Peer, RoleClient, RunningService, ServiceExt};
 use rmcp::transport::{StreamableHttpClientTransport, streamable_http_client::StreamableHttpClientTransportConfig};
-use siphon::machine::Base;
-use siphon::machine::{Host, Variables, Writes};
-use siphon::volume::Snapshot;
-use siphon::volume::Volume;
-use siphon::{Ends, Kept};
 
 use crate::config::{Configured, Launch, OWN_FILE, PROJECT_FILE, Server, parse};
-use siphon::tools::Place;
-use siphon::tools::{Context, Declared, Refusal, Told};
-use siphon::trust::{self, ShownServer, Trust};
+use octoii::tools::Place;
+use octoii::tools::{Context, Declared, Refusal, Told};
+use octoii::trust::{self, ShownServer, Trust};
 
 /// How long a server nothing uses keeps running before it is stopped.
 pub const IDLE: Duration = Duration::from_secs(600);
@@ -82,7 +82,7 @@ impl Servers {
         snapshot: &Snapshot,
         place: &Place,
         variables: &dyn Fn(&str) -> Option<String>,
-    ) -> siphon::volume::Result<Found> {
+    ) -> octoii::volume::Result<Found> {
         let mut found = Found::default();
         if let Some(path) = &self.own
             && let Some(text) = read(path, &mut found.configured.problems)
@@ -136,7 +136,7 @@ impl Servers {
     ///
     /// # Errors
     /// The volume's failure.
-    pub async fn catalog(&self, volume: &Volume, place: &Place) -> siphon::volume::Result<Catalog> {
+    pub async fn catalog(&self, volume: &Volume, place: &Place) -> octoii::volume::Result<Catalog> {
         let found = self.configured(&volume.snapshot()?, place, &host_variable)?;
         let listing = found.configured.servers.iter().map(|server| async move {
             let peer = self.peer(server, volume).await?;
@@ -211,7 +211,7 @@ impl Servers {
 
     /// What the project at `place` names in its configuration, with the person's decision on it as it is; none where
     /// it names no server.
-    fn project(snapshot: &Snapshot, place: &Place) -> siphon::volume::Result<Option<ProjectServers>> {
+    fn project(snapshot: &Snapshot, place: &Place) -> octoii::volume::Result<Option<ProjectServers>> {
         let path = place.project.join(PROJECT_FILE);
         let Some(text) = read(&path, &mut Vec::new()) else {
             return Ok(None);
@@ -246,7 +246,7 @@ impl Servers {
     ///
     /// # Errors
     /// The volume's failure.
-    pub async fn listed(&self, volume: &Volume, place: Option<&Place>) -> siphon::volume::Result<ServersListed> {
+    pub async fn listed(&self, volume: &Volume, place: Option<&Place>) -> octoii::volume::Result<ServersListed> {
         let snapshot = volume.snapshot()?;
         let found = match place {
             Some(place) => self.configured(&snapshot, place, &host_variable)?,
@@ -419,7 +419,7 @@ async fn given(context: &Context, result: CallToolResult) -> Result<Told, Refusa
     let mut images = Vec::new();
     for block in result.content {
         match block {
-            ContentBlock::Text(text) => texts.push(siphon::reminder::escaped(&text.text).into_owned()),
+            ContentBlock::Text(text) => texts.push(octoii::reminder::escaped(&text.text).into_owned()),
             ContentBlock::Image(image) => match base64::engine::general_purpose::STANDARD.decode(&image.data) {
                 Ok(bytes) => images.push(bytes),
                 Err(error) => texts.push(format!(
@@ -435,7 +435,7 @@ async fn given(context: &Context, result: CallToolResult) -> Result<Told, Refusa
                 ResourceContents::TextResourceContents { uri, text, .. } => {
                     texts.push(format!(
                         "<system-reminder>{uri}</system-reminder>\n{}",
-                        siphon::reminder::escaped(&text)
+                        octoii::reminder::escaped(&text)
                     ));
                 }
                 ResourceContents::BlobResourceContents { uri, mime_type, blob, .. } => {

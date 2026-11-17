@@ -6,11 +6,11 @@
 
 use std::time::Duration;
 
+use octoii::machine::Base;
+use octoii::tools::{Context, Effect, Refusal, Told, Tool};
 use octoii_ai::vocabulary::InputContent;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use siphon::machine::Base;
-use siphon::tools::{Context, Effect, Refusal, Told, Tool};
 use tokio::sync::broadcast;
 
 use crate::{Error, Event, Running, Shown, Size, TerminalReference, Terminals};
@@ -284,15 +284,15 @@ struct Ended {
     thread: String,
     terminal: TerminalReference,
     line: String,
-    exit: siphon::machine::Exit,
+    exit: octoii::machine::Exit,
     screen: String,
 }
 
 impl Ended {
     fn into_result(self) -> TerminalResult {
         let ended = match self.exit {
-            siphon::machine::Exit::Code(code) => TerminalEnd::Exited { code },
-            siphon::machine::Exit::Signal(signal) => TerminalEnd::Signalled { signal },
+            octoii::machine::Exit::Code(code) => TerminalEnd::Exited { code },
+            octoii::machine::Exit::Signal(signal) => TerminalEnd::Signalled { signal },
         };
         TerminalResult::Ended {
             terminal: self.terminal,
@@ -346,15 +346,15 @@ async fn end_of(events: &mut broadcast::Receiver<Event>, id: &str) -> Option<Com
 }
 
 /// Tells the thread that a command line it ran ended, in its inbox.
-async fn tell(volume: &siphon::volume::Volume, ended: &Ended) -> anyhow::Result<()> {
-    siphon::agent::deliver(volume, &ended.thread, ACTOR, vec![InputContent::text(ended_words(ended))]).await
+async fn tell(volume: &octoii::volume::Volume, ended: &Ended) -> anyhow::Result<()> {
+    octoii::agent::deliver(volume, &ended.thread, ACTOR, vec![InputContent::text(ended_words(ended))]).await
 }
 
 /// A command line's end as the model is told it: the note, then its last screen.
 fn ended_words(ended: &Ended) -> String {
     let how = match ended.exit {
-        siphon::machine::Exit::Code(code) => format!("exit {code}"),
-        siphon::machine::Exit::Signal(signal) => format!("ended by signal {signal}"),
+        octoii::machine::Exit::Code(code) => format!("exit {code}"),
+        octoii::machine::Exit::Signal(signal) => format!("ended by signal {signal}"),
     };
     format!(
         "<system-reminder>terminal {}, which ran `{}`, ended: {how}</system-reminder>\n{}",
@@ -375,5 +375,5 @@ fn what(shown: &Shown) -> String {
 
 /// A screen's text without the blank lines at its end.
 fn screen(text: &str) -> std::borrow::Cow<'_, str> {
-    siphon::reminder::escaped(text.trim_end())
+    octoii::reminder::escaped(text.trim_end())
 }

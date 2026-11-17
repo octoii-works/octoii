@@ -1,8 +1,8 @@
-//! The web search as an extension of Siphon's: the search a thread's model's provider runs, given where its model's
+//! The web search as an extension of Octoii's: the search a thread's model's provider runs, given where its model's
 //! facts say the provider runs it.
 
+use octoii::{Extension, Registrar};
 use octoii_ai::vocabulary::Tool;
-use siphon::{Extension, Registrar};
 
 /// The web search, as a host adds it.
 #[derive(Debug, Clone, Copy, Default)]

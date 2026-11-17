@@ -18,9 +18,9 @@ pub use tool::{ACTOR, Action, TerminalEnd, TerminalResult, TerminalTool};
 use std::path::{Path, PathBuf};
 
 use bytes::Bytes;
-use siphon::machine::Base;
-use siphon::machine::{Command, CommandEvent, Exec, Spec, Stdio};
-use siphon::machine::{Commands, Host, Machine, Writes};
+use octoii::machine::Base;
+use octoii::machine::{Command, CommandEvent, Exec, Spec, Stdio};
+use octoii::machine::{Commands, Host, Machine, Writes};
 use tokio::sync::{broadcast, mpsc, oneshot};
 
 /// How many lines of what scrolls off a terminal's screen it keeps, drawn again with it.
@@ -82,7 +82,7 @@ pub enum Event {
         thread: String,
         number: u32,
         line: String,
-        exit: siphon::machine::Exit,
+        exit: octoii::machine::Exit,
         screen: String,
     },
 }
@@ -99,7 +99,7 @@ pub enum Error {
     #[error("the terminals are gone")]
     Gone,
     #[error(transparent)]
-    Beak(#[from] siphon::volume::Error),
+    Beak(#[from] octoii::volume::Error),
 }
 
 type Reply<T> = oneshot::Sender<Result<T, Error>>;
@@ -125,7 +125,7 @@ enum Message {
     },
     Screen {
         id: String,
-        reply: Reply<siphon::machine::Screen>,
+        reply: Reply<octoii::machine::Screen>,
     },
     Text {
         id: String,
@@ -134,7 +134,7 @@ enum Message {
     ReadAt {
         id: String,
         offset: u64,
-        reply: Reply<siphon::machine::Chunk>,
+        reply: Reply<octoii::machine::Chunk>,
     },
     List {
         thread: String,
@@ -228,7 +228,7 @@ impl Terminals {
     ///
     /// # Errors
     /// `NoSuchTerminal`; Beak's failure.
-    pub async fn screen(&self, id: &str) -> Result<siphon::machine::Screen, Error> {
+    pub async fn screen(&self, id: &str) -> Result<octoii::machine::Screen, Error> {
         let id = id.to_owned();
         self.ask(|reply| Message::Screen { id, reply }).await
     }
@@ -246,7 +246,7 @@ impl Terminals {
     ///
     /// # Errors
     /// `NoSuchTerminal`; Beak's failure.
-    pub async fn read_at(&self, id: &str, offset: u64) -> Result<siphon::machine::Chunk, Error> {
+    pub async fn read_at(&self, id: &str, offset: u64) -> Result<octoii::machine::Chunk, Error> {
         let id = id.to_owned();
         self.ask(|reply| Message::ReadAt { id, offset, reply }).await
     }

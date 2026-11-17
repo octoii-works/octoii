@@ -1,11 +1,11 @@
 //! Picking evidence through the person's protocol: no click sent to Chromium, finite main-document descriptions,
 //! access and ownership checked before capture, and a screenshot kept after its page is closed.
 
+use octoii::Octoii;
+use octoii::protocol::Scope;
+use octoii::testing::{self, Beak, Client};
+use octoii::threads::files;
 use serde_json::{Value, json};
-use siphon::Siphon;
-use siphon::protocol::Scope;
-use siphon::testing::{self, Beak, Client};
-use siphon::threads::files;
 use siphon_browser::BrowserExtension;
 use siphon_browser::protocol::{ElementFeedback, PickElement, View};
 
@@ -15,7 +15,7 @@ const HEIGHT: u32 = 300;
 struct Fixture {
     _folder: tempfile::TempDir,
     _beak: Beak,
-    siphon: Siphon,
+    siphon: Octoii,
     client: Client,
     thread: String,
     page: String,
@@ -39,13 +39,13 @@ impl Fixture {
         let kept = folder.path().canonicalize().expect("its real path");
         let workspace = kept.join("workspace");
         std::fs::create_dir(&workspace).expect("a workspace");
-        let machine = siphon::machine::Host {
+        let machine = octoii::machine::Host {
             home: std::env::var_os("HOME").map(Into::into),
             hidden: vec![kept.clone()],
-            ..siphon::machine::Host::default()
+            ..octoii::machine::Host::default()
         };
         let beak = Beak::new().expect("Beak");
-        let siphon = Siphon::builder(&beak, testing::setup(machine))
+        let siphon = Octoii::builder(&beak, testing::setup(machine))
             .expect("built")
             .extension(siphon_base::BaseExtension::default())
             .extension(BrowserExtension {

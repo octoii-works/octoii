@@ -3,16 +3,16 @@
 
 use std::path::PathBuf;
 
+use octoii::machine::Base;
+use octoii::machine::Host;
+use octoii::testing::Beak;
+use octoii::tools::{Effect, Tools};
 use serde_json::json;
-use siphon::machine::Base;
-use siphon::machine::Host;
-use siphon::testing::Beak;
-use siphon::tools::{Effect, Tools};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn the_browser_tool_reads_a_page_at_once_and_works_one_after_what_came_before() {
     let beak = Beak::new().expect("Beak");
-    let commands = siphon::testing::commands(&beak);
+    let commands = octoii::testing::commands(&beak);
     let browser = siphon_browser::Browser::start(siphon_browser::BrowserHost {
         commands,
         machine: Host::default(),

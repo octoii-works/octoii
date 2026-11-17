@@ -3,8 +3,8 @@
 //! changed and a summary of what came before — the model's reasoning and what it was told left out; and what of a
 //! text holds the keywords asked for, every one or any, whatever their case.
 
+use octoii::threads::{Entry, Outcome};
 use octoii_ai::vocabulary::{FileRef, InputContent, Item, Message, OutputContent};
-use siphon::threads::{Entry, Outcome};
 
 use crate::result::{ContentFile, ContentPart, ConversationContent, ConversationEntry, ModelContent, ReplyItem, ResultStatus, TurnOutcome};
 
@@ -60,7 +60,7 @@ pub fn entry(entry: &Entry) -> Option<ConversationEntry> {
     };
     Some(ConversationEntry {
         id: entry.id().to_owned(),
-        at: siphon::threads::time_of(entry.id()),
+        at: octoii::threads::time_of(entry.id()),
         content,
     })
 }

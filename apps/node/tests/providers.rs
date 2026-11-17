@@ -1,11 +1,11 @@
-//! The providers as the person manages them, through a connection to the node's Siphon: each listed with how it is
+//! The providers as the person manages them, through a connection to the node's Octoii: each listed with how it is
 //! connected and the kind of credential kept, a key set and forgotten, an account added — a provider beside the host's
 //! — renamed and removed, the models listed, a sign-in refused of a provider reached by a key.
 
-use octoii::home::Home;
+use octoii::protocol::Scope;
+use octoii::testing::Client;
+use octoii_node::home::Home;
 use serde_json::{Value, json};
-use siphon::protocol::Scope;
-use siphon::testing::Client;
 
 async fn asked(client: &mut Client, method: &str, params: Value) -> Value {
     let id = client.call(method, params).await;
@@ -24,7 +24,7 @@ async fn the_person_manages_providers_keys_and_accounts() {
     let folder = tempfile::tempdir().expect("a folder");
     let home = Home::at(folder.path());
     home.prepare().expect("a Home");
-    let siphon = octoii::serve::siphon(&home, siphon::providers::SignInSetup::default()).expect("Siphon");
+    let siphon = octoii_node::serve::siphon(&home, octoii::providers::SignInSetup::default()).expect("Octoii");
     let mut client = Client::connect(&siphon, vec![Scope::ThreadsRead, Scope::ProvidersManage], 64);
     client.message().await;
 

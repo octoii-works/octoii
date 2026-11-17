@@ -1,13 +1,13 @@
 //! The MCP servers' methods, as their extension adds them to the protocol: the servers a thread working in a folder
 //! would use, each as it stands.
 
+use octoii::protocol::Scope;
 use serde::{Deserialize, Serialize};
-use siphon::protocol::Scope;
 use ts_rs::TS;
 
 use crate::ServersListed;
 
-siphon::methods! {
+octoii::methods! {
     /// The servers a thread working in a folder would use — the person's own alone, where none is named.
     "servers.list" ListServers(ListServers) -> ServersListed, Some(Scope::ThreadsRead);
 }

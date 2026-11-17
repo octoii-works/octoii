@@ -1,7 +1,7 @@
 //! Base reads final runtime configuration even when it is registered before product extensions.
-use siphon::testing::{self, Beak};
-use siphon::threads::{Config, Mode, NewThread};
-use siphon::{Extension, Registrar, Siphon};
+use octoii::testing::{self, Beak};
+use octoii::threads::{Config, Mode, NewThread};
+use octoii::{Extension, Octoii, Registrar};
 use siphon_base::BaseExtension;
 use std::path::PathBuf;
 
@@ -30,7 +30,7 @@ async fn base_reads_late_registered_folders_and_tracks_extension_settings() {
     std::fs::write(user.join("AGENTS.md"), "USER_INSTRUCTION").unwrap();
     std::fs::write(workspace.join("AGENTS.md"), "PROJECT_INSTRUCTION").unwrap();
     let beak = Beak::new().unwrap();
-    let siphon = Siphon::builder(&beak, testing::setup(siphon::machine::Host::default()))
+    let siphon = Octoii::builder(&beak, testing::setup(octoii::machine::Host::default()))
         .unwrap()
         .extension(BaseExtension { config: Some(user) })
         .extension(WorkspaceNotes(workspace.join("notes")))
@@ -65,14 +65,14 @@ async fn base_reads_late_registered_folders_and_tracks_extension_settings() {
     assert!(environment.contains("notes folder:"));
     assert!(environment.contains("permissions: full-access"));
     assert!(!environment.contains("git:"));
-    let change = siphon::settings::SettingsChange {
-        environment: Some(siphon::settings::EnvironmentChange {
+    let change = octoii::settings::SettingsChange {
+        environment: Some(octoii::settings::EnvironmentChange {
             disabled_extensions: Some(vec!["notes".into()]),
             ..Default::default()
         }),
         device: None,
     };
-    siphon::settings::set(&siphon.runtime, "test", &change).await.unwrap();
+    octoii::settings::set(&siphon.runtime, "test", &change).await.unwrap();
     let told = siphon.told(&id).await.unwrap();
     assert!(!told.sections[2].1.contains("notes folder:"));
     siphon.runtime.close().await;

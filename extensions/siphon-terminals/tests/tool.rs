@@ -4,15 +4,15 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use octoii::machine::Host;
+use octoii::testing::{Beak, Called, Calling};
+use octoii::tools::{CallStatus, Tool, Tools};
 use serde_json::{Value, json};
-use siphon::machine::Host;
-use siphon::testing::{Beak, Called, Calling};
-use siphon::tools::{CallStatus, Tool, Tools};
 use siphon_terminals::{ACTOR, Event, Running, Size, TerminalTool, Terminals};
 
 fn terminals(beak: &Beak) -> Terminals {
     Terminals::start(
-        siphon::testing::commands(beak),
+        octoii::testing::commands(beak),
         Host {
             shell: Some(PathBuf::from("/bin/sh")),
             ..Host::default()
@@ -48,7 +48,7 @@ async fn scripts_read_real_terminal_references_and_screens_and_closing_returns_t
     let tool = TerminalTool {
         terminals: terminals.clone(),
     };
-    let declared = siphon::tools::declarations(&Tools::new().with(tool.clone()).declared());
+    let declared = octoii::tools::declarations(&Tools::new().with(tool.clone()).declared());
     for typed in [
         "status: \"running\"",
         "status: \"ended\"",
@@ -231,7 +231,7 @@ async fn a_write_that_ends_its_command_returns_the_ending_without_consuming_its_
     );
     let notice = tokio::time::timeout(Duration::from_secs(5), async {
         loop {
-            let threads = siphon::threads::list(&calling.volume()).expect("the threads");
+            let threads = octoii::threads::list(&calling.volume()).expect("the threads");
             let thread = threads.into_iter().find(|thread| thread.id == "t1").expect("its thread");
             for (_, inbound) in thread.status.inbox {
                 let inbound = serde_json::to_value(inbound).expect("the input");

@@ -1,10 +1,10 @@
-//! The browser as an extension of Siphon's: started on the machine's commands as the host gives its program and folders,
+//! The browser as an extension of Octoii's: started on the machine's commands as the host gives its program and folders,
 //! the `browser` tool its model calls, and its methods and topics — a page opened, moved, answered and closed, the
 //! person's mouse, keys and text on it, a thread's pages as they change and a page as it is painted.
 
+use octoii::protocol::{Error, Nothing, Scope};
+use octoii::{Caller, Extension, Lagged, Registrar, Subscription};
 use serde_json::{Value, json};
-use siphon::protocol::{Error, Nothing, Scope};
-use siphon::{Caller, Extension, Lagged, Registrar, Subscription};
 use tokio::sync::broadcast::error::RecvError;
 
 use crate::protocol::{self, BrowserEvent, BrowserTopic, Method, PageDialog, PageKey, PageListed, PageMouse, View};
@@ -33,7 +33,7 @@ impl Extension for BrowserExtension {
     }
 
     fn build(self: Box<Self>, registrar: &mut Registrar<'_>) {
-        registrar.teller(siphon::agent::Shared::Machine, std::sync::Arc::new(crate::context::Context));
+        registrar.teller(octoii::agent::Shared::Machine, std::sync::Arc::new(crate::context::Context));
         let browser = Browser::start(BrowserHost {
             commands: registrar.commands(),
             machine: registrar.machine().clone(),

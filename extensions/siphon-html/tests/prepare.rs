@@ -1,8 +1,8 @@
 //! HTML preparation preserves source files and makes local images durable through the machine's namespace and bounds.
 
 use base64::Engine as _;
-use siphon::machine::{Base, Host, Writes};
-use siphon::testing::Beak;
+use octoii::machine::{Base, Host, Writes};
+use octoii::testing::Beak;
 use siphon_html::{Error, prepare};
 
 #[tokio::test(flavor = "multi_thread")]
@@ -10,7 +10,7 @@ async fn html_text_is_returned_unchanged_and_other_formats_are_refused() {
     let folder = tempfile::tempdir().expect("a folder");
     let root = folder.path().canonicalize().expect("its real path");
     let beak = Beak::new().expect("Beak");
-    let machine = siphon::testing::commands(&beak)
+    let machine = octoii::testing::commands(&beak)
         .open(
             &Host::default(),
             Base {
@@ -49,10 +49,10 @@ async fn missing_directories_hidden_files_and_oversized_files_remain_unreadable(
     std::fs::write(hidden.join("secret.html"), "<p>private</p>").expect("written");
     std::fs::File::create(root.join("large.html"))
         .expect("a file")
-        .set_len(siphon::threads::files::BYTES_MAX as u64 + 1)
+        .set_len(octoii::threads::files::BYTES_MAX as u64 + 1)
         .expect("past the limit");
     let beak = Beak::new().expect("Beak");
-    let machine = siphon::testing::commands(&beak)
+    let machine = octoii::testing::commands(&beak)
         .open(
             &Host {
                 hidden: vec![hidden],
@@ -70,7 +70,7 @@ async fn missing_directories_hidden_files_and_oversized_files_remain_unreadable(
     }
     assert!(matches!(
         prepare(&machine, "large.html"),
-        Err(Error::Read(siphon::machine::Error::TooLarge { .. }))
+        Err(Error::Read(octoii::machine::Error::TooLarge { .. }))
     ));
 }
 
@@ -94,7 +94,7 @@ async fn quoted_images_and_css_urls_are_embedded_relative_to_the_source_with_the
     );
     std::fs::write(root.join("reports/report.html"), &source).expect("HTML source");
     let beak = Beak::new().expect("Beak");
-    let machine = siphon::testing::commands(&beak)
+    let machine = octoii::testing::commands(&beak)
         .open(
             &Host::default(),
             Base {
@@ -134,7 +134,7 @@ async fn missing_hidden_and_renamed_secret_images_are_refused() {
     )
     .expect("a fake root inside a doctype comment");
     let beak = Beak::new().expect("Beak");
-    let machine = siphon::testing::commands(&beak)
+    let machine = octoii::testing::commands(&beak)
         .open(
             &Host {
                 hidden: vec![root.join("private")],
@@ -175,7 +175,7 @@ async fn the_size_limit_counts_base64_expansion_and_every_repeated_image() {
     std::fs::write(root.join("large.png"), &png).expect("an image below the raw file limit");
     std::fs::write(root.join("report.html"), "<img src='large.png'><img src='large.png'>").expect("HTML");
     let beak = Beak::new().expect("Beak");
-    let machine = siphon::testing::commands(&beak)
+    let machine = octoii::testing::commands(&beak)
         .open(
             &Host::default(),
             Base {

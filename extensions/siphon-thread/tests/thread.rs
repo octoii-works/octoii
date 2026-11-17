@@ -4,9 +4,9 @@
 //! conversation read back, about an entry found too. Arguments that do not fit are told by the field of the action they
 //! name.
 
+use octoii::testing::{Beak, Called, Calling};
+use octoii::tools::{CallStatus, Tool};
 use serde_json::json;
-use siphon::testing::{Beak, Called, Calling};
-use siphon::tools::{CallStatus, Tool};
 use siphon_thread::{ConversationContent, ThreadResult, ThreadStatus, ThreadSummary, ThreadTool};
 
 /// Successful calls carry business data fitting the schema that the tool declares.
@@ -130,7 +130,7 @@ async fn renaming_oneself_returns_a_title_only_request_and_refuses_empty_titles(
         panic!("a rename request")
     };
     assert_eq!((thread.as_str(), title.as_str()), ("t1", "New title"));
-    let own = siphon::threads::list(&turn.calling.volume())
+    let own = octoii::threads::list(&turn.calling.volume())
         .unwrap()
         .into_iter()
         .find(|row| row.id == "t1")
@@ -475,16 +475,16 @@ async fn messages_and_stop_requests_identify_the_thread_and_delivery_without_rea
 /// Cancels the call before handing it to the real history tool.
 #[derive(Debug)]
 struct CancelledHistory;
-impl siphon::tools::Tool for CancelledHistory {
+impl octoii::tools::Tool for CancelledHistory {
     const NAME: &'static str = "cancelled_history";
     const DESCRIPTION: &'static str = "A cancelled history read";
     type Args = siphon_thread::ThreadAction;
 
-    fn effect(&self, _: &Self::Args, _: &siphon::machine::Base) -> siphon::tools::Effect {
-        siphon::tools::Effect::Reads
+    fn effect(&self, _: &Self::Args, _: &octoii::machine::Base) -> octoii::tools::Effect {
+        octoii::tools::Effect::Reads
     }
 
-    async fn exec(&self, context: &siphon::tools::Context, action: Self::Args) -> Result<siphon::tools::Told, siphon::tools::Refusal> {
+    async fn exec(&self, context: &octoii::tools::Context, action: Self::Args) -> Result<octoii::tools::Told, octoii::tools::Refusal> {
         let mut context = context.clone();
         context.cancelled = context.cancelled.child_token();
         context.cancelled.cancel();

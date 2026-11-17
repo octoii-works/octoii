@@ -6,8 +6,8 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 use hyper::Method;
+use octoii::protocol::Scope;
 use serde_json::{Value, json};
-use siphon::protocol::Scope;
 
 use crate::control::{self, Asked};
 use crate::home::Home;
@@ -28,7 +28,7 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Runs the node: Siphon on this computer, served on the loopback address.
+    /// Runs the node: Octoii on this computer, served on the loopback address.
     Serve {
         /// The loopback port.
         #[arg(long, default_value_t = 7600)]

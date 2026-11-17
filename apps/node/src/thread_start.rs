@@ -1,14 +1,14 @@
-//! Bounded multipart input. Authentication precedes body parsing; Git validates tasks and Siphon commits them.
+//! Bounded multipart input. Authentication precedes body parsing; Git validates tasks and Octoii commits them.
 use std::collections::HashMap;
 
 use axum::extract::{Extension, FromRequest, Multipart, Request, State};
 use axum::http::{HeaderMap, StatusCode};
 use bytes::{Bytes, BytesMut};
+use octoii::protocol::Scope;
+use octoii::threads::{Config, InputPart};
 use octoii_ai::vocabulary::InputContent;
 use octoii_tunnel::Remote;
 use serde::Deserialize;
-use siphon::protocol::Scope;
-use siphon::threads::{Config, InputPart};
 use siphon_git::protocol::CreateWorktree;
 
 use crate::http::{Denied, Node, session};
@@ -90,7 +90,7 @@ async fn read(mut multipart: Multipart) -> Result<(Manifest, HashMap<usize, Byte
         if name != format!("file-{index}") || !expected.remove(&index) {
             return Err(invalid("unexpected or duplicate attachment"));
         }
-        files.insert(index, bytes(field, siphon::threads::files::BYTES_MAX).await?);
+        files.insert(index, bytes(field, octoii::threads::files::BYTES_MAX).await?);
     }
     if !expected.is_empty() {
         return Err(invalid("missing attachment"));
@@ -113,7 +113,7 @@ pub(crate) async fn accepted(
     }
     let volume = node.siphon.volume();
     let internal = |error: String| Denied(StatusCode::INTERNAL_SERVER_ERROR, error);
-    let settings = siphon::settings::environment(&volume.snapshot().map_err(|error| internal(error.to_string()))?)
+    let settings = octoii::settings::environment(&volume.snapshot().map_err(|error| internal(error.to_string()))?)
         .map_err(|error| internal(error.to_string()))?;
     if settings.disabled_extensions.iter().any(|name| name == "git")
         || !node

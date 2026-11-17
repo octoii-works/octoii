@@ -56,7 +56,7 @@ export type BrowserEvent = { "event": "pages", subscription: string, pages: Arra
 export type BrowserTopic = { "type": "pages", thread: string, } | { "type": "page", page: string, };
 
 /**
- * A call a reply made, by the model's id of it and Siphon's key of it — the key it is run, asked of and answered by,
+ * A call a reply made, by the model's id of it and Octoii's key of it — the key it is run, asked of and answered by,
  * minted as the reply is written; the model's id is its data.
  */
 export type CallKey = { call_id: string, key: string, };
@@ -711,7 +711,7 @@ export type PagePoint = { x: number, y: number, };
 export type PairWith = { label?: string, scopes?: Array<Scope>, };
 
 /**
- * Where a sub-thread came from: the thread that delegated it, and its call that did, by Siphon's key of it.
+ * Where a sub-thread came from: the thread that delegated it, and its call that did, by Octoii's key of it.
  */
 export type Parent = { thread: string, call: string, kind: SubThreadKind, };
 
@@ -930,7 +930,7 @@ export type Start = { request: StartRequest, token: string, previous: string | n
 export type StartAction = { "action": "accept", key: string, config: Config, content: Array<InputContent>, worktree: CreateWorktree, } | { "action": "prepare", thread: string, token: string, } | { "action": "retry", thread: string, token: string, } | { "action": "inspect", thread: string, };
 
 /**
- * An extension's accepted preparation request. Siphon does not interpret its payload.
+ * An extension's accepted preparation request. Octoii does not interpret its payload.
  */
 export type StartRequest = { owner: string, payload: JsonValue, };
 
@@ -972,7 +972,7 @@ resuming_at?: number | null, };
 export type Streamed = { "type": "began", index: number, item: Item, } | { "type": "delta", index: number, part: Part, text: string, } | { "type": "ended", index: number, item: Item, };
 
 /**
- * What a call of one of Siphon's own tools did, as a client reads it: a command that ran, and how it ended; a file a
+ * What a call of one of Octoii's own tools did, as a client reads it: a command that ran, and how it ended; a file a
  * write or an edit changed, whether it made it, and the lines added and taken out; the lines of a file a read holds,
  * and how many it has where the read reached its end.
  */

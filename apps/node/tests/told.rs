@@ -3,12 +3,12 @@
 
 use std::fmt::Write as _;
 
-use octoii::home::Home;
+use octoii::threads::{Config, NewThread};
 use octoii_ai::vocabulary::Tool;
-use siphon::threads::{Config, NewThread};
+use octoii_node::home::Home;
 
 /// `told` as one text: each section under its name, then each tool, its parameters as their JSON Schema.
-fn shown(told: &siphon::agent::Told) -> String {
+fn shown(told: &octoii::agent::Told) -> String {
     let mut out = String::new();
     for (name, text) in &told.sections {
         let _ = write!(out, "=== section {name}\n{text}\n\n");
@@ -75,7 +75,7 @@ async fn what_the_model_is_told() {
     let memory = home.memory().join(workspace.display().to_string().replace(['/', '\\', ':'], "-"));
     std::fs::create_dir_all(&memory).expect("the project's memory");
     std::fs::write(memory.join("MEMORY.md"), "- [Tests](tests.md) — the suite runs with `cargo test`\n").expect("its index");
-    let siphon = octoii::serve::siphon(&home, siphon::providers::SignInSetup::default()).expect("Siphon");
+    let siphon = octoii_node::serve::siphon(&home, octoii::providers::SignInSetup::default()).expect("Octoii");
     let new = NewThread {
         actor: "person".into(),
         config: Config {
@@ -98,7 +98,7 @@ async fn an_extension_switched_off_tells_the_model_nothing() {
     let folder = tempfile::tempdir().expect("a folder");
     let home = Home::at(folder.path().join("home"));
     home.prepare().expect("a Home");
-    let siphon = octoii::serve::siphon(&home, siphon::providers::SignInSetup::default()).expect("Siphon");
+    let siphon = octoii_node::serve::siphon(&home, octoii::providers::SignInSetup::default()).expect("Octoii");
     let new = NewThread {
         actor: "person".into(),
         config: Config {
@@ -109,7 +109,7 @@ async fn an_extension_switched_off_tells_the_model_nothing() {
     };
     let key = siphon.runtime.new_id().expect("an id");
     let id = siphon.threads.create(&new, &key).await.expect("a thread");
-    let names = |told: &siphon::agent::Told| -> Vec<String> {
+    let names = |told: &octoii::agent::Told| -> Vec<String> {
         told.tools
             .iter()
             .filter_map(|tool| match tool {
@@ -120,18 +120,18 @@ async fn an_extension_switched_off_tells_the_model_nothing() {
     };
     let before = names(&siphon.told(&id).await.expect("told"));
     assert!(before.iter().any(|name| name == "browser") && before.iter().any(|name| name == "terminal"));
-    let change = siphon::settings::SettingsChange {
-        environment: Some(siphon::settings::EnvironmentChange {
+    let change = octoii::settings::SettingsChange {
+        environment: Some(octoii::settings::EnvironmentChange {
             disabled_extensions: Some(
                 ["browser", "terminals", "files", "thread", "delegate", "question", "memory"]
                     .map(str::to_owned)
                     .to_vec(),
             ),
-            ..siphon::settings::EnvironmentChange::default()
+            ..octoii::settings::EnvironmentChange::default()
         }),
         device: None,
     };
-    siphon::settings::set(&siphon.runtime, "a-session", &change).await.expect("set");
+    octoii::settings::set(&siphon.runtime, "a-session", &change).await.expect("set");
     let told = siphon.told(&id).await.expect("told");
     let environment = told
         .sections
@@ -159,19 +159,19 @@ async fn product_context_does_not_grant_subthread_tools() {
     let folder = tempfile::tempdir().unwrap();
     let home = Home::at(folder.path().join("home"));
     home.prepare().unwrap();
-    let siphon = octoii::serve::siphon(&home, siphon::providers::SignInSetup::default()).unwrap();
+    let siphon = octoii_node::serve::siphon(&home, octoii::providers::SignInSetup::default()).unwrap();
     let key = siphon.runtime.new_id().unwrap();
     let parent = siphon.threads.create(&NewThread::default(), &key).await.unwrap();
     for kind in [
-        siphon::threads::SubThreadKind::Explorer,
-        siphon::threads::SubThreadKind::GeneralPurpose,
+        octoii::threads::SubThreadKind::Explorer,
+        octoii::threads::SubThreadKind::GeneralPurpose,
     ] {
         let key = siphon.runtime.new_id().unwrap();
         let child = siphon
             .threads
             .create(
                 &NewThread {
-                    parent: Some(siphon::threads::Parent {
+                    parent: Some(octoii::threads::Parent {
                         thread: parent.clone(),
                         call: key.clone(),
                         kind,
@@ -192,7 +192,7 @@ async fn product_context_does_not_grant_subthread_tools() {
             })
             .collect();
         assert!(!names.contains(&"thread") && !names.contains(&"delegate"));
-        if kind == siphon::threads::SubThreadKind::Explorer {
+        if kind == octoii::threads::SubThreadKind::Explorer {
             assert!(names.contains(&"read") && names.contains(&"execute"));
             assert!(names.iter().all(|name| ["read", "glob", "grep", "execute"].contains(name)));
         }

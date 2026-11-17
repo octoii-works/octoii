@@ -13,10 +13,10 @@ use std::time::Instant;
 use base64::Engine as _;
 use bytes::Bytes;
 use chromiumoxide_cdp::cdp::{CdpEvent, CdpEventMessage};
+use octoii::machine::Base;
+use octoii::machine::{Commands, Host, Machine, Writes};
+use octoii::machine::{Exec, Spec, Stdio};
 use serde_json::{Value, json};
-use siphon::machine::Base;
-use siphon::machine::{Commands, Host, Machine, Writes};
-use siphon::machine::{Exec, Spec, Stdio};
 use tokio::sync::{broadcast, mpsc, oneshot};
 
 use crate::cdp::{Cdp, CdpError, connect};
@@ -145,7 +145,7 @@ pub enum BrowserError {
     #[error(transparent)]
     Cdp(#[from] CdpError),
     #[error(transparent)]
-    Beak(#[from] siphon::volume::Error),
+    Beak(#[from] octoii::volume::Error),
     #[error("the browser's own folders: {0}")]
     Folders(String),
 }

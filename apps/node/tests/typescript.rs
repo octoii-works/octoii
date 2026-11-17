@@ -1,8 +1,8 @@
-//! The client's TypeScript of the protocol is what the node's Siphon and its extensions make of it: written anew where
+//! The client's TypeScript of the protocol is what the node's Octoii and its extensions make of it: written anew where
 //! `UPDATE_EXPECT` is set, as expect-test's snapshots are, and compared otherwise, so a change of a type the client was
 //! not given fails.
 
-use octoii::home::Home;
+use octoii_node::home::Home;
 
 const MODULE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packages/client/src/generated/protocol.ts");
 
@@ -15,13 +15,13 @@ async fn the_client_s_typescript_is_what_the_node_s_siphon_and_extensions_make()
         .bind()
         .await
         .expect("a tunnel");
-    let links = octoii::pairing::Links {
+    let links = octoii_node::pairing::Links {
         loopback: "http://127.0.0.1:7600".into(),
         tunnel,
     };
-    let building = octoii::serve::building(&home, siphon::providers::SignInSetup::default()).expect("Siphon");
-    let siphon = octoii::pairing::with_access(building, links).start().expect("started");
-    let made = siphon::protocol::typescript(siphon.sets());
+    let building = octoii_node::serve::building(&home, octoii::providers::SignInSetup::default()).expect("Octoii");
+    let siphon = octoii_node::pairing::with_access(building, links).start().expect("started");
+    let made = octoii::protocol::typescript(siphon.sets());
     siphon.runtime.close().await;
     if std::env::var_os("UPDATE_EXPECT").is_some() {
         std::fs::write(MODULE, &made).expect("written");

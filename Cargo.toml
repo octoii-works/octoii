@@ -6,7 +6,10 @@ exclude = ["siphon"]
 [workspace.dependencies]
 beak = { path = "siphon/vendor/beak/crates/beak" }
 octoii-ai = { path = "libs/octoii-ai" }
-siphon = { path = "siphon/crates/siphon" }
+octoii = { path = "libs/octoii" }
+siphon-script = { path = "siphon/crates/siphon-script" }
+siphon-shell = { path = "siphon/crates/siphon-shell" }
+siphon-text = { path = "siphon/crates/siphon-text" }
 siphon-image = { path = "siphon/crates/siphon-image" }
 siphon-runtime = { path = "siphon/crates/siphon-runtime" }
 siphon-base = { path = "extensions/siphon-base" }

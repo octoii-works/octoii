@@ -31,14 +31,14 @@ def allowed(source, target):
     if source_layer == "kernel":
         return target_layer == "kernel"
     if source_layer == "extensions":
-        return target_layer == "extensions" or dependency in {"siphon", "octoii-ai"}
+        return target_layer == "extensions" or dependency in {"octoii", "octoii-ai"}
     if name == "octoii-ai":
         return dependency == "octoii-ai"
     if name in FOUNDATION:
-        return dependency in FOUNDATION
+        return dependency in FOUNDATION - {"octoii-ai"}
     if name == "siphon-runtime":
         return target_layer == "kernel"
-    if name == "siphon":
+    if name == "octoii":
         return target_layer in {"core", "kernel"}
     raise ValueError(f"Core package needs a dependency rule: {name}")
 
@@ -60,7 +60,7 @@ def main():
     for package in packages:
         path = Path(package["manifest_path"]).resolve().parent
         identity = (package["name"], layer(path))
-        if identity[1] == "core" and identity[0] not in FOUNDATION | {"siphon", "siphon-runtime"}:
+        if identity[1] == "core" and identity[0] not in FOUNDATION | {"octoii", "siphon-runtime"}:
             raise ValueError(f"Core package needs a dependency rule: {identity[0]}")
         identities[path] = identity
     violations = []
@@ -72,7 +72,9 @@ def main():
                 continue
             path = Path(dependency["path"]).resolve()
             target = identities.get(path)
-            if target is None or not allowed(source, target):
+            private_source = Path(package["manifest_path"]).resolve().is_relative_to(ROOT / "siphon")
+            escapes_private = private_source and not path.is_relative_to(ROOT / "siphon")
+            if target is None or escapes_private or not allowed(source, target):
                 target_name = target[0] if target else str(path)
                 kind = dependency["kind"] or "normal"
                 condition = dependency["target"] or "all targets"

@@ -1,7 +1,7 @@
 # Package boundaries
 
 Two Cargo workspaces separate the product from the future private Siphon repository. The root owns apps, extensions
-and libs/octoii-ai; siphon/ owns its internal crates and vendors. Package names and behavior remain unchanged.
+and libs/octoii and libs/octoii-ai; siphon/ owns its internal crates and vendors. Runtime behavior remains unchanged.
 
 | Location | Responsibility |
 | --- | --- |
@@ -9,31 +9,31 @@ and libs/octoii-ai; siphon/ owns its internal crates and vendors. Package names 
 | `siphon/crates/siphon-runtime/` | Durable execution, requests and recovery on Beak; no AI dependency |
 | `libs/octoii-ai/` | Model vocabulary, providers and transports |
 | `siphon/crates/siphon-{script,shell,text,image}/` | Foundational processing libraries |
-| `siphon/crates/siphon/` | Agent, threads, basic tools, permissions, protocol and public extension interface |
+| `libs/octoii/` | Agent, threads, basic tools, permissions, protocol and public extension interface |
 | `extensions/` | Built-in backend capabilities and integrations; shared extension helpers |
-| `apps/node/` | The `octoii` Cargo package: node, CLI, authentication, pairing and extension assembly |
+| `apps/node/` | The `octoii-node` Cargo package (binary `octoii`): node, CLI, authentication, pairing and extension assembly |
 | `packages/` | TypeScript client and reusable frontend packages |
 | `apps/web/`, `apps/desktop/` | Product interface and Electron host |
 
 ## Rust dependencies
 
 Each workspace declares its own package defaults, lints, profiles and dependencies, and keeps its own Cargo.lock.
-The product uses path dependencies into siphon/; Siphon temporarily uses ../libs/octoii-ai. Beak and QuickJS
+The product uses path dependencies into siphon/; Siphon has no dependency on AI or the product. Beak and QuickJS
 distribution files live inside siphon/vendor. AI has no dependency on Siphon or the product.
 
-This is a local extraction, not an independently distributable private repository yet: octoii-ai must acquire an
-independently obtainable source before moving Siphon remotely. No licensing or repository visibility changed.
+This is a local extraction. The mixed Agent host is now public, but controlled storage, machine and authorization
+mechanisms still need boundary convergence before remote extraction. No licensing or repository visibility changed.
 
 - Kernel packages depend only on other kernel packages within this workspace.
-- AI must not depend on private implementation packages. Foundational processing libraries may depend on AI and one another, never on runtime, Siphon, extensions or apps.
+- AI must not depend on private implementation packages. Foundational processing libraries may depend on one another, never on AI, runtime, Octoii, extensions or apps.
 - `siphon-runtime` may depend on the kernel, never on AI or the product.
-- `siphon` may depend on core libraries and the kernel, never on concrete extensions or apps.
-- Extensions may depend on Siphon's public interface, `octoii-ai`, and other extension packages. Cargo rejects cycles.
+- `octoii` may depend on core libraries and the kernel, never on concrete extensions or apps.
+- Extensions may depend on Octoii's public host interface, `octoii-ai`, and other extension packages. Cargo rejects cycles.
   They must not depend directly on Beak, `siphon-runtime`, or other core implementation libraries. Shared helpers such
   as `siphon-html` are libraries, not necessarily independently enabled extensions.
 - Apps assemble core and extensions. Libraries never depend on an app; apps do not depend on other apps.
 
-An extension reaches the volume and execution machinery through Siphon's public primitives. The node is the trusted
+An extension reaches the volume and execution machinery through the existing public primitives, now hosted in Octoii. The node is the trusted
 composition root and still has lower-layer dependencies for initialization, files and access records; these are tracked in
 [SIPHON_BOUNDARIES.md](SIPHON_BOUNDARIES.md), not permission to expand access.
 
@@ -62,7 +62,7 @@ runtime behavior without the separately scoped confirmation. AGENTS.md is unchan
 ## Validation
 
 Run cargo fmt, clippy and test for both the root manifest and `siphon/Cargo.toml`; root --workspace no longer
-selects internal Siphon tests. CI checks both. `cargo build -p octoii --locked` remains the product build command.
+selects internal Siphon tests. CI checks both. `cargo build -p octoii-node --bin octoii --locked` remains the product build command.
 Siphon has its own toolchain/format/lint configuration and target directory. Both workspaces currently pin Rust 1.100.0.
 
 Local extraction validation (2026-11-17): Cargo resolves 16 product members and 8 Siphon members; both locked
@@ -70,3 +70,11 @@ workspaces pass all-target checks, formatting and Clippy. Siphon tests: 153 pass
 product tests: 154 passed / 2 existing ignored. Migration preserved 188 implementation/header/binary files byte
 for byte and introduced no dependency-version changes. Two existing Node tests assumed eight access scopes;
 the current nine-scope policy is unchanged, and the tests now compare the complete declared scope set.
+
+A1 migration: `Octoii` is the public Agent host type. The runtime remains `siphon-runtime`; no empty
+Siphon facade is introduced. Existing low-level access moved with the host is tracked debt, not new access
+authorization. See [SIPHON_EXTRACTION.md](SIPHON_EXTRACTION.md) for scope and follow-up gates.
+
+A1 validation (2026-11-17): 17 product members and 7 private-workspace members; checks and Clippy pass.
+Product tests: 262 passed / 3 existing ignored; private tests: 45 passed. Generated protocol declarations
+are unchanged (four documentation comments rename the host). No new third-party dependency versions.

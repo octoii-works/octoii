@@ -1,4 +1,4 @@
-//! Skills as an extension of Siphon's: what a thread's model may follow for a kind of task — each a folder with a
+//! Skills as an extension of Octoii's: what a thread's model may follow for a kind of task — each a folder with a
 //! `SKILL.md`, found in the person's own folder of skills and in each project folder's `.agents/skills`, from its root
 //! down to the workspace — told by name, a line of what it is for, and where its file is.
 
@@ -9,9 +9,9 @@ use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use siphon::agent::{Shared, Teller, Telling};
-use siphon::tools::Place;
-use siphon::{Extension, Registrar};
+use octoii::agent::{Shared, Teller, Telling};
+use octoii::tools::Place;
+use octoii::{Extension, Registrar};
 
 /// Skills, as a host adds them: the person's own found in the folder of their configuration `config`.
 #[derive(Debug, Clone, Default)]
@@ -46,7 +46,7 @@ struct Told {
 impl Teller for Told {
     fn tell<'a>(
         &'a self,
-        _: &'a siphon::volume::Volume,
+        _: &'a octoii::volume::Volume,
         _: &'a str,
         place: Option<&'a Place>,
     ) -> Pin<Box<dyn Future<Output = anyhow::Result<Telling>> + Send + 'a>> {

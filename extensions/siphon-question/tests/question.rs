@@ -1,8 +1,8 @@
 //! What the person may answer a question with, and what the model is told of their answer.
 
+use octoii::tools::Tool;
 use octoii_ai::vocabulary::InputContent;
 use serde_json::json;
-use siphon::tools::Tool;
 use siphon_question::{QuestionArgs, QuestionTool};
 
 fn questions() -> QuestionArgs {

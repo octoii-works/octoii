@@ -4,9 +4,9 @@
 //! each with its thread, its id and the words around the match; a read gives a page of one conversation — the
 //! newest, the one before or after an entry, or the one about an entry a search found.
 
+use octoii::threads::{Entry, History, Listed};
+use octoii::tools::{Context, Refusal, Told};
 use octoii_ai::vocabulary::InputContent;
-use siphon::threads::{Entry, History, Listed};
-use siphon::tools::{Context, Refusal, Told};
 
 use crate::conversation::{self, Keywords};
 use crate::result::{ConversationEntry, SearchHit, ThreadResult, ThreadSummary};
@@ -115,7 +115,7 @@ pub(crate) fn check_cancelled(context: &Context) -> Result<(), Refusal> {
 
 /// A reverse scan holds one decoded entry and a bounded byte buffer for each conversation.
 struct Scan {
-    entries: siphon::threads::Entries,
+    entries: octoii::threads::Entries,
     next: Option<Entry>,
 }
 
@@ -140,7 +140,7 @@ pub fn search(context: &Context, keywords: &Keywords, thread: Option<&str>, arch
     if keywords.are_none() {
         return Err(Refusal("give keywords to search for".to_owned()));
     }
-    let mut rows = siphon::threads::list(&context.volume()).map_err(|error| Refusal(error.to_string()))?;
+    let mut rows = octoii::threads::list(&context.volume()).map_err(|error| Refusal(error.to_string()))?;
     match thread {
         Some(thread) => rows.retain(|row| row.id == thread),
         None => rows.retain(|row| (archived || !row.marks.archived) && row.id != context.thread),
@@ -205,7 +205,7 @@ pub fn search(context: &Context, keywords: &Keywords, thread: Option<&str>, arch
             .into_iter()
             .map(|hit| SearchHit {
                 thread: ThreadSummary::of(hit.row, &context.thread),
-                at: siphon::threads::time_of(&hit.entry),
+                at: octoii::threads::time_of(&hit.entry),
                 entry: hit.entry,
                 excerpt: hit.words,
             })
@@ -220,7 +220,7 @@ pub fn search(context: &Context, keywords: &Keywords, thread: Option<&str>, arch
 /// `hit` as a search tells it, `own` the thread that asks: when its entry was made, its thread's id and title marked as
 /// the list marks them, then its entry's id and the words around the match.
 fn hit_told(hit: &Hit<'_>, own: &str) -> String {
-    let when = siphon::threads::time_of(&hit.entry).map_or_else(|| "-".to_owned(), time);
+    let when = octoii::threads::time_of(&hit.entry).map_or_else(|| "-".to_owned(), time);
     let title = hit.row.config.title.as_deref().unwrap_or("untitled");
     format!(
         "{when}  {}  {title}{}\n  entry {}: {}",
@@ -231,7 +231,7 @@ fn hit_told(hit: &Hit<'_>, own: &str) -> String {
     )
 }
 
-/// Open a stable view of a conversation through Siphon's public interface.
+/// Open a stable view of a conversation through Octoii's public interface.
 fn history_of(context: &Context, thread: &str) -> Result<History, Refusal> {
     check_cancelled(context)?;
     History::open(&context.volume(), thread)

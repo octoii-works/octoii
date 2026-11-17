@@ -1,10 +1,10 @@
-//! Git preparation uses Siphon's public startup gate and never adopts an uncertain existing worktree.
-use serde_json::{Value, json};
-use siphon::{
-    Siphon,
+//! Git preparation uses Octoii's public startup gate and never adopts an uncertain existing worktree.
+use octoii::{
+    Octoii,
     protocol::Scope,
     testing::{self, Beak, Client},
 };
+use serde_json::{Value, json};
 use std::path::Path;
 
 fn git(root: &Path, args: &[&str]) -> String {
@@ -32,8 +32,8 @@ fn repository(root: &Path) {
     git(root, &["commit", "-m", "base"]);
 }
 
-fn node(beak: &Beak) -> Siphon {
-    Siphon::builder(beak, testing::setup(siphon::machine::Host::default()))
+fn node(beak: &Beak) -> Octoii {
+    Octoii::builder(beak, testing::setup(octoii::machine::Host::default()))
         .unwrap()
         .extension(siphon_base::BaseExtension::default())
         .extension(siphon_git::GitExtension {
@@ -43,7 +43,7 @@ fn node(beak: &Beak) -> Siphon {
         .unwrap()
 }
 
-async fn client(node: &Siphon, scopes: Vec<Scope>) -> Client {
+async fn client(node: &Octoii, scopes: Vec<Scope>) -> Client {
     let mut client = Client::connect(node, scopes, 64);
     client.message().await;
     client
@@ -172,9 +172,9 @@ async fn reopening_keeps_the_request_and_retry_requires_the_saved_token() {
     let storage = tempfile::tempdir().unwrap();
     let beak = Beak::new().unwrap();
     let open = || {
-        let mut setup = testing::setup(siphon::machine::Host::default());
+        let mut setup = testing::setup(octoii::machine::Host::default());
         setup.options.directory = Some(storage.path().to_owned());
-        Siphon::builder(&beak, setup)
+        Octoii::builder(&beak, setup)
             .unwrap()
             .extension(siphon_base::BaseExtension::default())
             .extension(siphon_git::GitExtension {

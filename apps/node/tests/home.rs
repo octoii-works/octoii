@@ -1,6 +1,6 @@
 //! A Home's control socket: one Home names one, whether or not its folder was made yet, and however its path is spelled.
 
-use octoii::home::Home;
+use octoii_node::home::Home;
 
 #[cfg(unix)]
 #[test]

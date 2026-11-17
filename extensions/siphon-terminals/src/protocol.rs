@@ -2,11 +2,11 @@
 //! opened, typed to, sized and closed; the terminals of a thread as they change, and a terminal as it writes — its
 //! screen drawn first, then each piece it writes, from where the client stood.
 
+use octoii::protocol::{Nothing, Scope};
 use serde::{Deserialize, Serialize};
-use siphon::protocol::{Nothing, Scope};
 use ts_rs::TS;
 
-siphon::methods! {
+octoii::methods! {
     events: TerminalsEvent, topics: TerminalsTopic;
     /// A terminal opened for a thread, the person's login shell in its workspace, sized as the person's view of it is:
     /// its id.

@@ -1,12 +1,12 @@
 //! Memory's methods, as its extension adds them to the protocol: the memory of the project a folder is in, listed; and a
 //! memory of it deleted.
 
+use octoii::protocol::siphon::InFolder;
+use octoii::protocol::{Nothing, Scope};
 use serde::{Deserialize, Serialize};
-use siphon::protocol::siphon::InFolder;
-use siphon::protocol::{Nothing, Scope};
 use ts_rs::TS;
 
-siphon::methods! {
+octoii::methods! {
     /// The memory of the project a folder is in: where it is kept, and each memory.
     "memory.list" ListMemory(InFolder) -> MemoryListed, Some(Scope::ThreadsRead);
     /// A memory of the project a folder is in deleted: its file, and its line of the index.

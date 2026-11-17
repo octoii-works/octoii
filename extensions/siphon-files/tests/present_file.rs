@@ -1,12 +1,12 @@
 //! Files presented as real model calls: a saved resource link, a separate display title, result replay after the
 //! source disappears, and failed calls that never return a resource.
 
+use octoii::machine::Base;
+use octoii::testing::{Beak, Called, Calling};
+use octoii::threads::files;
+use octoii::tools::{CallStatus, Effect, Tool, Tools};
 use octoii_ai::vocabulary::InputContent;
 use serde_json::json;
-use siphon::machine::Base;
-use siphon::testing::{Beak, Called, Calling};
-use siphon::threads::files;
-use siphon::tools::{CallStatus, Effect, Tool, Tools};
 use siphon_files::{PresentFileArgs, PresentFileTool};
 
 async fn called(calling: &Calling, key: &str, workspace: &std::path::Path, arguments: Vec<serde_json::Value>) -> Vec<Called> {

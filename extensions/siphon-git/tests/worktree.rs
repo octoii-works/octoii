@@ -3,8 +3,8 @@
 use std::path::Path;
 use std::process::Command;
 
-use siphon::machine::{Base, Host, Machine, Writes};
-use siphon::testing::{Beak, Calling};
+use octoii::machine::{Base, Host, Machine, Writes};
+use octoii::testing::{Beak, Calling};
 use siphon_git::git::{Git, GitError, Worktree};
 use tokio_util::sync::CancellationToken;
 
@@ -296,8 +296,8 @@ async fn preparation_does_not_expand_the_callers_write_permissions() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn agent_worktree_actions_keep_the_workspace_and_protect_uncommitted_work() {
+    use octoii::tools::{CallStatus, Tool};
     use serde_json::{Value, json};
-    use siphon::tools::{CallStatus, Tool};
     use siphon_git::tool::GitTool;
 
     let folder = tempfile::tempdir().unwrap();

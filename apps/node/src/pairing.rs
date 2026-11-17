@@ -1,12 +1,12 @@
 //! Pairing, and the access the node's clients hold, as the node's own methods of the protocol — the node a host that
-//! adds what is its own to Siphon as any extension does: the sessions and the links not yet used; a link made to pair a
+//! adds what is its own to Octoii as any extension does: the sessions and the links not yet used; a link made to pair a
 //! client, its addresses — on this computer, at the loopback; on another device, at the web app, where the node has a
 //! home relay, with the node's key and relay by which the page dials it — made in one place for the protocol and the
 //! node's commands alike; a session or a link revoked.
 
+use octoii::protocol::{Error, Nothing, Scope};
+use octoii::{Building, HostCaller};
 use serde::{Deserialize, Serialize};
-use siphon::protocol::{Error, Nothing, Scope};
-use siphon::{Building, HostCaller};
 use ts_rs::TS;
 
 use crate::access::{self, Access, AccessEntry, Refused};
@@ -56,7 +56,7 @@ impl Links {
     }
 }
 
-siphon::methods! {
+octoii::methods! {
     /// The sessions the node's clients hold and the links not yet used.
     "access.list" ListAccess(Nothing) -> AccessListed, Some(Scope::AccessRead);
     /// A link that pairs one client, once, while it lasts.
@@ -94,8 +94,8 @@ pub struct Revoked {
     pub revoked: String,
 }
 
-/// Siphon as `building` builds it, with the node's access methods, its links made as `links` makes them: the node's
-/// own, as Siphon's are Siphon's, which no setting switches off.
+/// Octoii as `building` builds it, with the node's access methods, its links made as `links` makes them: the node's
+/// own, as Octoii's are Octoii's, which no setting switches off.
 #[must_use]
 pub fn with_access(building: Building, links: Links) -> Building {
     building.methods(set(), Method::read, move |caller: HostCaller, method| {

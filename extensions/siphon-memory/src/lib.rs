@@ -1,4 +1,4 @@
-//! Memory as an extension of Siphon's: what a project's threads keep across threads, which their model is told how to
+//! Memory as an extension of Octoii's: what a project's threads keep across threads, which their model is told how to
 //! keep and given the index of, and which the person lists and deletes from.
 
 pub mod memory;
@@ -9,12 +9,12 @@ use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
 
+use octoii::agent::{Shared, Teller, Telling};
+use octoii::machine::Host;
+use octoii::protocol::{Error, Nothing};
+use octoii::tools::Place;
+use octoii::{Caller, Extension, Registrar};
 use serde_json::json;
-use siphon::agent::{Shared, Teller, Telling};
-use siphon::machine::Host;
-use siphon::protocol::{Error, Nothing};
-use siphon::tools::Place;
-use siphon::{Caller, Extension, Registrar};
 
 use crate::protocol::{MemoryListed, Method};
 
@@ -57,7 +57,7 @@ struct Told {
 impl Teller for Told {
     fn tell<'a>(
         &'a self,
-        _: &'a siphon::volume::Volume,
+        _: &'a octoii::volume::Volume,
         _: &'a str,
         place: Option<&'a Place>,
     ) -> Pin<Box<dyn Future<Output = anyhow::Result<Telling>> + Send + 'a>> {

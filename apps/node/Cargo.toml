@@ -1,6 +1,6 @@
 [package]
-name = "octoii"
-description = "Octoii's node, the `octoii` program: Siphon and its core extensions on this computer, served to the person's clients on the loopback and through the tunnel, its Home kept"
+name = "octoii-node"
+description = "Octoii's node, the `octoii` program: Octoii and its built-in extensions on this computer, served to the person's clients on the loopback and through the tunnel, its Home kept"
 version = "0.0.1"
 edition.workspace = true
 rust-version.workspace = true
@@ -34,7 +34,7 @@ rustix = { version = "1.1.6", features = ["process"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 sha2 = "0.11.1"
-siphon.workspace = true
+octoii.workspace = true
 siphon-base.workspace = true
 siphon-browser.workspace = true
 siphon-image.workspace = true

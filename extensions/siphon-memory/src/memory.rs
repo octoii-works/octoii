@@ -88,7 +88,7 @@ fn memory(path: &Path, file: &str) -> Option<Memory> {
         description: String::new(),
         r#type: String::new(),
     };
-    for (key, value) in siphon::agent::front_matter::of(&text) {
+    for (key, value) in octoii::agent::front_matter::of(&text) {
         match key {
             "name" if !value.is_empty() => value.clone_into(&mut memory.name),
             "description" => value.clone_into(&mut memory.description),

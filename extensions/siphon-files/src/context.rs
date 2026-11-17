@@ -1,7 +1,7 @@
 //! Product instructions owned by this extension.
-use siphon::agent::{Teller, Telling};
-use siphon::tools::Place;
-use siphon::volume::Volume;
+use octoii::agent::{Teller, Telling};
+use octoii::tools::Place;
+use octoii::volume::Volume;
 use std::future::Future;
 use std::pin::Pin;
 

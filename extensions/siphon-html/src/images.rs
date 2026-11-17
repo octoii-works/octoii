@@ -6,9 +6,9 @@ use std::sync::LazyLock;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
+use octoii::machine::Machine;
+use octoii::threads::files;
 use regex::Regex;
-use siphon::machine::Machine;
-use siphon::threads::files;
 
 use crate::Error;
 
@@ -92,7 +92,7 @@ fn local_image(reference: &str) -> Option<(&str, &str)> {
 
 // Never trust an extension: a renamed credential file must not become a data URI. The MIME also follows the bytes.
 fn image_type(bytes: &[u8]) -> Option<&'static str> {
-    if let Some(kind) = siphon::machine::media_type(bytes).filter(|kind| kind.starts_with("image/")) {
+    if let Some(kind) = octoii::machine::media_type(bytes).filter(|kind| kind.starts_with("image/")) {
         Some(kind)
     } else if bytes.starts_with(b"\0\0\x01\0") {
         Some("image/x-icon")

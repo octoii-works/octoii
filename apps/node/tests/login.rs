@@ -10,8 +10,8 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{Json, Router};
 use base64::Engine as _;
-use octoii::home::Home;
-use octoii::login::{self, Confirm, LoginError, PROOF_CONTEXT};
+use octoii_node::home::Home;
+use octoii_node::login::{self, Confirm, LoginError, PROOF_CONTEXT};
 use octoii_tunnel::{PublicKey, SecretKey};
 use serde_json::json;
 

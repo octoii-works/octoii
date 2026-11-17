@@ -1,12 +1,12 @@
 //! Explicit worktree preparation for an accepted Thread. Inspection never adopts an existing directory.
 use std::path::Path;
 
+use octoii::Caller;
+use octoii::machine::{Base, Writes};
+use octoii::protocol::Scope;
+use octoii::threads::{Config, NewThread, Start, StartRequest, StartState, StartWorkspace};
 use octoii_ai::vocabulary::InputContent;
 use serde::{Deserialize, Serialize};
-use siphon::Caller;
-use siphon::machine::{Base, Writes};
-use siphon::protocol::Scope;
-use siphon::threads::{Config, NewThread, Start, StartRequest, StartState, StartWorkspace};
 use ts_rs::TS;
 
 use crate::git::{Git, WorktreeEntry};
@@ -144,7 +144,7 @@ pub(crate) async fn answer(caller: &Caller, action: StartAction) -> anyhow::Resu
         .await?
 }
 
-pub(crate) fn authorize(caller: &Caller) -> Result<(), siphon::protocol::Error> {
+pub(crate) fn authorize(caller: &Caller) -> Result<(), octoii::protocol::Error> {
     caller.require_scope(Scope::GitOperate)?;
     caller.require_scope(Scope::ThreadsOperate)
 }
@@ -155,10 +155,10 @@ pub(crate) fn authorize(caller: &Caller) -> Result<(), siphon::protocol::Error> 
 /// # Errors
 /// Invalid task parameters, conflicting idempotency key, attachment processing or storage failure.
 pub async fn accept(
-    volume: &siphon::volume::Volume,
+    volume: &octoii::volume::Volume,
     key: &str,
     config: Config,
-    content: Vec<siphon::threads::InputPart>,
+    content: Vec<octoii::threads::InputPart>,
     worktree: CreateWorktree,
 ) -> anyhow::Result<ThreadStart> {
     anyhow::ensure!(Path::new(&worktree.path).is_absolute(), "source must be absolute");

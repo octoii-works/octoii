@@ -1,7 +1,7 @@
 //! User and project instructions, collected by the base extension.
-use siphon::agent::{Teller, Telling};
-use siphon::tools::{INSTRUCTIONS_FILE, Instructions as InstructionsFile, Place};
-use siphon::volume::Volume;
+use octoii::agent::{Teller, Telling};
+use octoii::tools::{INSTRUCTIONS_FILE, Instructions as InstructionsFile, Place};
+use octoii::volume::Volume;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;

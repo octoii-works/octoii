@@ -2,11 +2,11 @@
 
 use std::collections::BTreeMap;
 
+use octoii::threads::{Listed, Turn};
+use octoii::tools::Told;
 use octoii_ai::vocabulary::InputContent;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use siphon::threads::{Listed, Turn};
-use siphon::tools::Told;
 
 /// What a successful `thread` call returned or requested.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -258,15 +258,15 @@ pub enum ResultStatus {
     Interrupted,
 }
 
-impl From<siphon::threads::CallStatus> for ResultStatus {
-    fn from(status: siphon::threads::CallStatus) -> Self {
+impl From<octoii::threads::CallStatus> for ResultStatus {
+    fn from(status: octoii::threads::CallStatus) -> Self {
         match status {
-            siphon::threads::CallStatus::Ok => Self::Ok,
-            siphon::threads::CallStatus::Unavailable => Self::Unavailable,
-            siphon::threads::CallStatus::InvalidArguments => Self::InvalidArguments,
-            siphon::threads::CallStatus::ToolError => Self::ToolError,
-            siphon::threads::CallStatus::Rejected => Self::Rejected,
-            siphon::threads::CallStatus::Interrupted => Self::Interrupted,
+            octoii::threads::CallStatus::Ok => Self::Ok,
+            octoii::threads::CallStatus::Unavailable => Self::Unavailable,
+            octoii::threads::CallStatus::InvalidArguments => Self::InvalidArguments,
+            octoii::threads::CallStatus::ToolError => Self::ToolError,
+            octoii::threads::CallStatus::Rejected => Self::Rejected,
+            octoii::threads::CallStatus::Interrupted => Self::Interrupted,
         }
     }
 }

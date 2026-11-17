@@ -1,12 +1,12 @@
-//! The browser as Siphon's extension, through a client's connection: a page of a thread's opened, its thread's pages told,
+//! The browser as Octoii's extension, through a client's connection: a page of a thread's opened, its thread's pages told,
 //! the page painted as a binary frame of JPEG, taken to an address and typed into by the person — where the machine
 //! has a browser.
 
+use octoii::Octoii;
+use octoii::protocol::Scope;
+use octoii::testing::Beak;
+use octoii::testing::{self, Client};
 use serde_json::json;
-use siphon::Siphon;
-use siphon::protocol::Scope;
-use siphon::testing::Beak;
-use siphon::testing::{self, Client};
 use siphon_browser::BrowserExtension;
 
 const PAGE: &str = "data:text/html,<title>Hello</title><input id=box autofocus>";
@@ -28,16 +28,16 @@ async fn a_page_is_opened_listed_painted_and_worked_by_the_person() {
     // The profile within what the host keeps hidden, as a node keeps it in its Home.
     let folder = tempfile::tempdir().expect("the host's own folder");
     let kept = std::fs::canonicalize(folder.path()).expect("its real path");
-    let machine = siphon::machine::Host {
+    let machine = octoii::machine::Host {
         home: std::env::var_os("HOME").map(Into::into),
         hidden: vec![kept.clone()],
-        ..siphon::machine::Host::default()
+        ..octoii::machine::Host::default()
     };
     let extension = BrowserExtension {
         profile: Some(kept.join("browser/profile")),
         ..BrowserExtension::default()
     };
-    let siphon = Siphon::builder(&beak, testing::setup(machine))
+    let siphon = Octoii::builder(&beak, testing::setup(machine))
         .expect("built")
         .extension(siphon_base::BaseExtension::default())
         .extension(extension)

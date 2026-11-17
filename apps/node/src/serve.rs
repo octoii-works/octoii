@@ -1,19 +1,19 @@
-//! `octoii serve`: Siphon and its core extensions on this computer — the volume in the Home, the providers' keys from the
+//! `octoii serve`: Octoii and its core extensions on this computer — the volume in the Home, the providers' keys from the
 //! credstore and the login environment, the machine as the person's own with what the node keeps for itself hidden
 //! from it — served to clients on the loopback address and to the devices that reach the node by its key through the
 //! tunnel, at home on its relays, and its control socket opened to the node's commands, till it is asked to stop:
-//! then every listener closes, the tunnel's sessions with them, and Siphon last.
+//! then every listener closes, the tunnel's sessions with them, and Octoii last.
 
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::Context as _;
+use octoii::protocol::Machine;
+use octoii::providers::SignInSetup;
+use octoii::{Octoii, Setup};
 use octoii_ai::drivers;
 use octoii_ai::models::Provider;
-use siphon::protocol::Machine;
-use siphon::providers::SignInSetup;
-use siphon::{Setup, Siphon};
 use siphon_base::BaseExtension;
 use siphon_browser::BrowserExtension;
 use siphon_claude_code::ClaudeCodeExtension;
@@ -73,11 +73,11 @@ fn sign_in_host_id(public_key: &str) -> String {
 
 /// The machine as the person's own: their home folder and shell, the system's temporary folder, the threads shown at
 /// the Home's `threads/`, what the node keeps for itself — its credentials and its state — hidden from what reaches the
-/// machine through Siphon, `~/octoii`, where a thread of no folder works, the person's memory in the Home, and the
+/// machine through Octoii, `~/octoii`, where a thread of no folder works, the person's memory in the Home, and the
 /// threads' scratchpads in the Home's `temporary` folder.
-fn machine(home: &Home, temporary: &Path) -> siphon::machine::Host {
+fn machine(home: &Home, temporary: &Path) -> octoii::machine::Host {
     let person = std::env::home_dir();
-    siphon::machine::Host {
+    octoii::machine::Host {
         workspace: person.as_ref().map(|person| person.join("octoii")),
         home: person,
         shell: std::env::var_os("SHELL").map(PathBuf::from),
@@ -90,20 +90,20 @@ fn machine(home: &Home, temporary: &Path) -> siphon::machine::Host {
     }
 }
 
-/// Siphon on this computer, started with its core extensions: a provider's sign-in in a browser come back to `sign_in`.
+/// Octoii on this computer, started with its core extensions: a provider's sign-in in a browser come back to `sign_in`.
 ///
 /// # Errors
 /// Where Beak or the volume cannot be opened.
-pub fn siphon(home: &Home, sign_in: SignInSetup) -> anyhow::Result<Siphon> {
-    building(home, sign_in)?.start().context("Siphon")
+pub fn siphon(home: &Home, sign_in: SignInSetup) -> anyhow::Result<Octoii> {
+    building(home, sign_in)?.start().context("Octoii")
 }
 
-/// Siphon on this computer being built, its core extensions added — the browser, the terminals, the MCP servers, Claude
+/// Octoii on this computer being built, its core extensions added — the browser, the terminals, the MCP servers, Claude
 /// Code — for the node to add its own and start it.
 ///
 /// # Errors
 /// Where Beak or the volume cannot be opened.
-pub fn building(home: &Home, sign_in: SignInSetup) -> anyhow::Result<siphon::Building> {
+pub fn building(home: &Home, sign_in: SignInSetup) -> anyhow::Result<octoii::Building> {
     let beak = beak::Beak::new().context("Beak")?;
     let providers = providers();
     let temporary = home.temporary().context("the Home's temporary folder")?;
@@ -124,7 +124,7 @@ pub fn building(home: &Home, sign_in: SignInSetup) -> anyhow::Result<siphon::Bui
         profile: Some(home.browser().join("profile")),
         downloads: Some(temporary.join("downloads")),
     };
-    let built = Siphon::builder(&beak, setup).context("the volume")?;
+    let built = Octoii::builder(&beak, setup).context("the volume")?;
     let config = McpExtension {
         config: Some(home.config()),
     };
@@ -197,7 +197,7 @@ pub async fn serve_until(served: Served, stop: impl Future<Output = ()> + Send +
         loopback: loopback.clone(),
         tunnel: tunnel.clone(),
     };
-    let siphon = with_access(building(&home, sign_in)?, links.clone()).start().context("Siphon")?;
+    let siphon = with_access(building(&home, sign_in)?, links.clone()).start().context("Octoii")?;
     // The models of each provider that lists its own — Claude Code's — asked for as the node starts, as a thread finds
     // its model, and the person picks one, in the directory alone.
     let models = std::sync::Arc::clone(&siphon.models);

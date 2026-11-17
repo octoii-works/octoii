@@ -2,9 +2,9 @@
 //! current page unless it names one. What reads a page goes ahead at once; what changes one goes after what came
 //! before it, as every call that acts does.
 
+use octoii::machine::Base;
+use octoii::tools::{Context, Effect, Refusal, Told, Tool};
 use octoii_ai::vocabulary::InputContent;
-use siphon::machine::Base;
-use siphon::tools::{Context, Effect, Refusal, Told, Tool};
 
 use crate::{Action, Browser};
 
@@ -48,7 +48,7 @@ impl Tool for BrowserTool {
 
 /// Preserve the browser's values before formatting its model-facing description.
 fn told(outcome: &crate::Outcome, images: Vec<InputContent>) -> Told {
-    let mut text = siphon::reminder::escaped(&outcome.text).into_owned();
+    let mut text = octoii::reminder::escaped(&outcome.text).into_owned();
     if let Some(page) = &outcome.page {
         text = format!(
             "{text}\n<system-reminder>page {}: {} {}</system-reminder>",

@@ -9,10 +9,10 @@ use std::fmt::Write as _;
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
+use octoii::machine::Machine;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use siphon::machine::Machine;
 
 use crate::browser::{Browser, BrowserError, Size};
 use crate::input::{Button, Input, InputError, Target};

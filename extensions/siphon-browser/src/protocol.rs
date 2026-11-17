@@ -2,12 +2,12 @@
 //! moved, answered and closed, and the person's own mouse, keys and text on it; the pages of a thread as they change,
 //! and a page painted, each frame the newest the browser painted of it.
 
+use octoii::protocol::{Nothing, Scope};
 use octoii_ai::vocabulary::FileRef;
 use serde::{Deserialize, Serialize};
-use siphon::protocol::{Nothing, Scope};
 use ts_rs::TS;
 
-siphon::methods! {
+octoii::methods! {
     events: BrowserEvent, topics: BrowserTopic;
     /// A page opened in a thread's browser, at an address or blank, sized as the person's view of it is: its id.
     "browser.open" Open(OpenPage) -> PageOpened, Some(Scope::BrowserOperate);

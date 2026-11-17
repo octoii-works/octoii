@@ -5,11 +5,11 @@
 use std::path::Path;
 use std::process::Command;
 
+use octoii::Octoii;
+use octoii::protocol::Scope;
+use octoii::testing::Beak;
+use octoii::testing::{self, Client};
 use serde_json::{Value, json};
-use siphon::Siphon;
-use siphon::protocol::Scope;
-use siphon::testing::Beak;
-use siphon::testing::{self, Client};
 
 fn git(root: &Path, arguments: &[&str]) {
     let status = Command::new("git")
@@ -60,7 +60,7 @@ async fn git_tells_a_repository_s_changes_patches_versions_and_commits() {
     std::fs::write(root.join("a.txt"), "one\nTWO\nthree\n").expect("written");
     std::fs::write(root.join("new.txt"), "fresh\n").expect("written");
     let beak = Beak::new().expect("Beak");
-    let siphon = Siphon::builder(&beak, testing::setup(siphon::machine::Host::default()))
+    let siphon = Octoii::builder(&beak, testing::setup(octoii::machine::Host::default()))
         .map(|building| building.extension(git_extension()))
         .expect("built")
         .extension(siphon_base::BaseExtension::default())
@@ -176,7 +176,7 @@ async fn worktree_rpc_requires_git_permission_and_checks_out_the_requested_base(
     std::fs::write(source.join("untracked.txt"), "keep here\n").unwrap();
 
     let beak = Beak::new().unwrap();
-    let siphon = Siphon::builder(&beak, testing::setup(siphon::machine::Host::default()))
+    let siphon = Octoii::builder(&beak, testing::setup(octoii::machine::Host::default()))
         .unwrap()
         .extension(siphon_base::BaseExtension::default())
         .extension(siphon_git::GitExtension {
@@ -230,7 +230,7 @@ async fn worktree_bases_and_plans_are_read_only_and_keep_fixed_commits() {
     let managed = root.join("managed");
     git(&root, &["init"]);
     let beak = Beak::new().unwrap();
-    let node = Siphon::builder(&beak, testing::setup(siphon::machine::Host::default()))
+    let node = Octoii::builder(&beak, testing::setup(octoii::machine::Host::default()))
         .unwrap()
         .extension(siphon_base::BaseExtension::default())
         .extension(siphon_git::GitExtension {

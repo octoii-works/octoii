@@ -16,11 +16,11 @@ use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{MethodFilter, get, on, post};
 use futures_util::{Sink, SinkExt as _, Stream, StreamExt as _};
+use octoii::Octoii;
+use octoii::connection::{Access as Client, OUTGOING_AHEAD, Outgoing, serve};
+use octoii::protocol::{Machine, SUBPROTOCOL};
 use octoii_tunnel::{OnConnect, Remote};
 use serde::Deserialize;
-use siphon::Siphon;
-use siphon::connection::{Access as Client, OUTGOING_AHEAD, Outgoing, serve};
-use siphon::protocol::{Machine, SUBPROTOCOL};
 use tokio::sync::mpsc;
 use tower_http::services::{ServeDir, ServeFile};
 
@@ -33,11 +33,11 @@ pub fn cookie_of(port: u16) -> String {
     format!("octoii_session_{port}")
 }
 
-/// What the node's HTTP serves with: Siphon, the access, the machine's name, the origins its own pages come from, the
+/// What the node's HTTP serves with: Octoii, the access, the machine's name, the origins its own pages come from, the
 /// cookie its browsers hold their sessions in, and the web app's folder, where it has one.
 #[derive(Debug, Clone)]
 pub struct Node {
-    pub siphon: Siphon,
+    pub siphon: Octoii,
     pub access: Access,
     pub machine: Machine,
     pub origins: Vec<String>,
@@ -62,7 +62,7 @@ pub fn router(node: Node) -> Router {
         .route("/pair", pairing)
         .route(
             "/threads/{thread}/files",
-            post(crate::files::sent).layer(axum::extract::DefaultBodyLimit::max(siphon::threads::files::BYTES_MAX)),
+            post(crate::files::sent).layer(axum::extract::DefaultBodyLimit::max(octoii::threads::files::BYTES_MAX)),
         )
         .route("/threads/{thread}/files/{hash}", get(crate::files::kept))
         .route(
@@ -180,7 +180,7 @@ async fn tunnel_socket(
 
 /// A WebSocket's message, as the protocol reads and writes it, whichever WebSocket carries it.
 trait Frame: Send + 'static {
-    /// A message of what Siphon sends.
+    /// A message of what Octoii sends.
     fn of(outgoing: Outgoing) -> Self;
     /// What the message says: a call's text; that the socket closes; or nothing the protocol reads.
     fn read(self) -> Read;
@@ -227,7 +227,7 @@ impl Frame for octoii_tunnel::Message {
     }
 }
 
-/// Carries the protocol over `socket` for the client of `session`: what it sends taken as calls, what Siphon sends it
+/// Carries the protocol over `socket` for the client of `session`: what it sends taken as calls, what Octoii sends it
 /// written as text and binary frames, till either side closes.
 async fn carried<S, F, E>(node: Node, session: AccessEntry, socket: S)
 where
@@ -277,7 +277,7 @@ async fn signed_in(
         Some(query) => format!("{redirect}?{query}"),
         None => redirect.clone(),
     };
-    let finished = siphon::providers::finish_returned_sign_in(&node.siphon.models, &node.siphon.sign_ins, &returned.state, &redirect).await;
+    let finished = octoii::providers::finish_returned_sign_in(&node.siphon.models, &node.siphon.sign_ins, &returned.state, &redirect).await;
     let said = match finished {
         Ok(()) => "Signed in. You may close this page.".to_owned(),
         Err(error) => format!("Not signed in: {error}"),

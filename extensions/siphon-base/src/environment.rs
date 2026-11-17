@@ -1,9 +1,9 @@
-//! Runtime facts read through Siphon's public interfaces and described to the model.
-use siphon::agent::{Teller, Telling, Writable, WritableFolders};
-use siphon::machine::Host;
-use siphon::threads::Mode;
-use siphon::tools::Place;
-use siphon::volume::Volume;
+//! Runtime facts read through Octoii's public interfaces and described to the model.
+use octoii::agent::{Teller, Telling, Writable, WritableFolders};
+use octoii::machine::Host;
+use octoii::threads::Mode;
+use octoii::tools::Place;
+use octoii::volume::Volume;
 use std::fmt::Write as _;
 use std::future::Future;
 use std::path::PathBuf;
@@ -33,7 +33,7 @@ impl Teller for Environment {
             Ok(Telling {
                 sections: vec![(
                     "environment".into(),
-                    environment(place, &places, mode, siphon::machine::confines(), volume.now_ms()),
+                    environment(place, &places, mode, octoii::machine::confines(), volume.now_ms()),
                 )],
                 tools: Vec::new(),
             })

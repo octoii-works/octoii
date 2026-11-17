@@ -12,7 +12,7 @@ workspace = true
 
 [dependencies]
 anyhow = "1.0.104"
-siphon.workspace = true
+octoii.workspace = true
 
 [dev-dependencies]
 tempfile = "3.27.0"

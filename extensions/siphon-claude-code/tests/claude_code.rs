@@ -48,12 +48,12 @@ fn call() -> Call {
 }
 
 /// Claude Code running its commands by `commands`, with its files under `state`, its `claude` the tests' own, which logs each start there.
-fn claude_code(commands: &siphon::machine::Commands, state: &Path, program: Option<PathBuf>) -> ClaudeCode {
+fn claude_code(commands: &octoii::machine::Commands, state: &Path, program: Option<PathBuf>) -> ClaudeCode {
     let place = Place {
         commands: commands.clone(),
-        machine: siphon::machine::Host {
+        machine: octoii::machine::Host {
             home: Some(state.join("home")),
-            ..siphon::machine::Host::default()
+            ..octoii::machine::Host::default()
         },
         program,
         folder: state.to_owned(),
@@ -171,8 +171,8 @@ async fn a_conversation_is_answered_in_a_live_session_resumed_in_place_forked_be
     let folder = tempfile::tempdir().expect("a folder");
     let state = folder.path().canonicalize().expect("its real path");
     let log = state.join("starts.jsonl");
-    let beak = siphon::testing::Beak::new().expect("Beak");
-    let commands = siphon::testing::commands(&beak);
+    let beak = octoii::testing::Beak::new().expect("Beak");
+    let commands = octoii::testing::commands(&beak);
     let claude = claude_code(&commands, &state, Some(fake()));
 
     let listed = claude.list(&call()).await.expect("listed").expect("a listing");
@@ -246,8 +246,8 @@ async fn a_conversation_is_answered_in_a_live_session_resumed_in_place_forked_be
 async fn an_account_stands_as_its_claude_code_tells_and_goes_signed_out_with_its_files() {
     let folder = tempfile::tempdir().expect("a folder");
     let state = folder.path().canonicalize().expect("its real path");
-    let beak = siphon::testing::Beak::new().expect("Beak");
-    let commands = siphon::testing::commands(&beak);
+    let beak = octoii::testing::Beak::new().expect("Beak");
+    let commands = octoii::testing::commands(&beak);
     let claude = claude_code(&commands, &state, Some(fake()));
     let standing = claude.status(&call()).await.expect("told").expect("a standing");
     assert_eq!(
@@ -274,8 +274,8 @@ async fn an_account_stands_as_its_claude_code_tells_and_goes_signed_out_with_its
 #[tokio::test(flavor = "multi_thread")]
 async fn a_computer_without_claude_is_told_how_to_install_it_and_sign_in() {
     let folder = tempfile::tempdir().expect("a folder");
-    let beak = siphon::testing::Beak::new().expect("Beak");
-    let commands = siphon::testing::commands(&beak);
+    let beak = octoii::testing::Beak::new().expect("Beak");
+    let commands = octoii::testing::commands(&beak);
     let claude = claude_code(&commands, folder.path(), None);
     let guidance = claude.status(&call()).await.expect("told").and_then(|standing| standing.guidance);
     let commands = guidance.map_or_default(|guidance| guidance.commands);

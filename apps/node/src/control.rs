@@ -12,9 +12,9 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post};
 use bytes::Bytes;
 use http_body_util::{BodyExt as _, Full};
+use octoii::protocol::Scope;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use siphon::protocol::Scope;
 
 use crate::access::{self, Refused};
 use crate::http::Node;

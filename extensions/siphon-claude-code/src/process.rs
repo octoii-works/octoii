@@ -7,9 +7,9 @@
 
 use std::collections::HashMap;
 
+use octoii::machine::{Coprocess, Machine, Stderr, Variables};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use siphon::machine::{Coprocess, Machine, Stderr, Variables};
 use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader, Lines};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::{CancellationToken, DropGuard};
@@ -151,7 +151,7 @@ impl Process {
         let Coprocess { stdin, stdout, stderr } = machine
             .coprocess(time, b"", argv, &launch.cwd, Variables::Only(launch.variables))
             .map_err(|error| match error {
-                siphon::machine::RunError::MissingProgram(_) => Started::Missing,
+                octoii::machine::RunError::MissingProgram(_) => Started::Missing,
                 other => Started::Failed(other.to_string()),
             })?;
         let (orders, taken) = mpsc::unbounded_channel();
@@ -225,7 +225,7 @@ const ENDED: &str = "Claude Code ended";
 /// The task that owns a `claude`: its input, the tools its MCP server offers, its requests waiting for their answers,
 /// its calls held by the model's call each is of, and results given before their calls were made.
 struct Owner {
-    stdin: siphon::machine::Stdin,
+    stdin: octoii::machine::Stdin,
     tools: Vec<Value>,
     pending: HashMap<String, oneshot::Sender<Result<Value, String>>>,
     /// Each call held: the control request it came in, and its JSON-RPC id.
@@ -238,7 +238,7 @@ struct Owner {
 impl Owner {
     async fn run(
         mut self,
-        mut stdout: Lines<BufReader<siphon::machine::Stdout>>,
+        mut stdout: Lines<BufReader<octoii::machine::Stdout>>,
         mut orders: mpsc::UnboundedReceiver<Order>,
         stop: CancellationToken,
     ) {

@@ -1,10 +1,10 @@
 //! Repository and worktree operations on the calling thread's machine.
 
+use octoii::machine::Base;
+use octoii::tools::{Context, Effect, Refusal, Told, Tool};
 use octoii_ai::vocabulary::InputContent;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use siphon::machine::Base;
-use siphon::tools::{Context, Effect, Refusal, Told, Tool};
 
 use crate::git::{Changes, ChangesScope, Git, Repository, Worktree, WorktreeEntry};
 
@@ -98,7 +98,7 @@ impl Tool for GitTool {
         };
         let data = serde_json::to_value(result).map_err(refused)?;
         Ok(Told {
-            content: vec![InputContent::text(siphon::reminder::escaped(&data.to_string()).into_owned())],
+            content: vec![InputContent::text(octoii::reminder::escaped(&data.to_string()).into_owned())],
             structured_content: Some(data),
             ..Told::default()
         })

@@ -28,14 +28,14 @@ impl Credentials for Nothing {
 #[ignore = "reaches the person's own Claude Code"]
 async fn the_persons_own_claude_code_tells_how_it_stands_and_what_it_offers() {
     let folder = tempfile::tempdir().expect("a folder");
-    let beak = siphon::testing::Beak::new().expect("Beak");
-    let commands = siphon::testing::commands(&beak);
+    let beak = octoii::testing::Beak::new().expect("Beak");
+    let commands = octoii::testing::commands(&beak);
     let home = std::env::home_dir();
     let place = Place {
         commands,
-        machine: siphon::machine::Host {
+        machine: octoii::machine::Host {
             home: home.clone(),
-            ..siphon::machine::Host::default()
+            ..octoii::machine::Host::default()
         },
         program: siphon_claude_code::found(home.as_deref()),
         folder: folder.path().canonicalize().expect("its real path"),

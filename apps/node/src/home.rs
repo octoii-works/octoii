@@ -94,7 +94,7 @@ impl Home {
         self.root.join("worktrees")
     }
 
-    /// The volume Siphon keeps.
+    /// The volume Octoii keeps.
     #[must_use]
     pub fn volume(&self) -> PathBuf {
         self.state().join("volume")

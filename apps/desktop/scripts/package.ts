@@ -11,7 +11,7 @@ const desktop = fileURLToPath(new URL("../", import.meta.url));
 const repository = fileURLToPath(new URL("../../../", import.meta.url));
 const web = Bun.spawn(["bun", "scripts/build.ts"], { cwd: desktop, stdout: "inherit", stderr: "inherit" });
 if ((await web.exited) !== 0) throw new Error("Desktop build failed");
-const cargo = Bun.spawn(["cargo", "build", "--locked", "-p", "octoii", "--bin", "octoii", "--message-format=json-render-diagnostics"], {
+const cargo = Bun.spawn(["cargo", "build", "--locked", "-p", "octoii-node", "--bin", "octoii", "--message-format=json-render-diagnostics"], {
 	cwd: repository,
 	stdout: "pipe",
 	stderr: "inherit",

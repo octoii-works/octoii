@@ -10,16 +10,16 @@
 
 use std::fmt::Write as _;
 
+use octoii::machine::Base;
+use octoii::threads::{Joins, Listed, MarksChange};
 use octoii_ai::vocabulary::InputContent;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use siphon::machine::Base;
-use siphon::threads::{Joins, Listed, MarksChange};
 
 use crate::conversation::{Keywords, Matching};
 use crate::reading;
 use crate::result::{ThreadResult, ThreadStatus, ThreadSummary};
-use siphon::tools::{Context, Effect, Plan, Refusal, Report, Spawned, Told, Tool};
+use octoii::tools::{Context, Effect, Plan, Refusal, Report, Spawned, Told, Tool};
 
 /// What the model does with the person's other threads.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -145,7 +145,7 @@ const PAGE: usize = 50;
 /// The page of the person's threads from `offset` on, the most recently active first — those archived among them where
 /// `archived` — each a line: its id, how it stands, when it was last active, its project and its title.
 fn listed(context: &Context, archived: bool, offset: usize) -> Result<Told, Refusal> {
-    let mut rows = siphon::threads::list(&context.volume()).map_err(|error| Refusal(error.to_string()))?;
+    let mut rows = octoii::threads::list(&context.volume()).map_err(|error| Refusal(error.to_string()))?;
     rows.retain(|row| archived || !row.marks.archived);
     rows.sort_by_key(|row| std::cmp::Reverse(active_at(row)));
     let all = rows.len();
@@ -177,7 +177,7 @@ pub(crate) fn active_at(row: &Listed) -> i64 {
     row.status
         .ended_at
         .max(row.status.began_at)
-        .or_else(|| siphon::threads::time_of(&row.id))
+        .or_else(|| octoii::threads::time_of(&row.id))
         .unwrap_or(0)
 }
 
@@ -389,7 +389,7 @@ fn snoozed_until(until: &str, now: i64) -> Result<i64, Refusal> {
 fn from(own: &str, message: &str) -> Vec<InputContent> {
     vec![
         InputContent::text(format!("<system-reminder>message from thread {own}</system-reminder>")),
-        InputContent::text(siphon::reminder::escaped(message)),
+        InputContent::text(octoii::reminder::escaped(message)),
     ]
 }
 

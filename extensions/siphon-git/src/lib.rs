@@ -1,4 +1,4 @@
-//! Git as an extension of Siphon's: the repository a folder of the machine's is in, as git tells of it — its changes, a
+//! Git as an extension of Octoii's: the repository a folder of the machine's is in, as git tells of it — its changes, a
 //! file's patch and its two versions, a branch's commits — each run of git recorded while it runs, for the Diff view.
 
 mod context;
@@ -10,11 +10,11 @@ mod worktree;
 
 use std::path::{Path, PathBuf};
 
+use octoii::connection::refusal;
+use octoii::machine::{Base, Writes};
+use octoii::protocol::Error;
+use octoii::{Caller, Extension, Registrar};
 use serde::Serialize;
-use siphon::connection::refusal;
-use siphon::machine::{Base, Writes};
-use siphon::protocol::Error;
-use siphon::{Caller, Extension, Registrar};
 use tokio_util::sync::CancellationToken;
 
 use crate::git::{Git, GitError};
@@ -42,8 +42,8 @@ impl Extension for GitExtension {
 
     fn build(self: Box<Self>, registrar: &mut Registrar<'_>) {
         registrar.tool(tool::GitTool);
-        registrar.teller(siphon::agent::Shared::Machine, std::sync::Arc::new(context::GitContext));
-        registrar.teller(siphon::agent::Shared::Project, std::sync::Arc::new(context::RepositoryContext));
+        registrar.teller(octoii::agent::Shared::Machine, std::sync::Arc::new(context::GitContext));
+        registrar.teller(octoii::agent::Shared::Project, std::sync::Arc::new(context::RepositoryContext));
         let worktrees = std::sync::Arc::new(self.worktrees);
         let preparations = std::sync::Arc::new(tokio::sync::Mutex::new(()));
         registrar.methods(protocol::set(), Method::read, move |caller: Caller, method| {
@@ -80,7 +80,7 @@ async fn answered(caller: &Caller, method: Method, worktrees: &Path) -> Result<s
     let volume = caller.volume();
     let machine = match &method {
         Method::GitCreateWorktree(_) => {
-            caller.require_scope(siphon::protocol::Scope::GitOperate)?;
+            caller.require_scope(octoii::protocol::Scope::GitOperate)?;
             volume.commands().open(
                 caller.host(),
                 Base {

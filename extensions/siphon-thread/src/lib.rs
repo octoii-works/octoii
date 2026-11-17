@@ -1,4 +1,4 @@
-//! Threads as an extension of Siphon's: the `thread` tool, by which a thread's model lists, searches, reads, starts,
+//! Threads as an extension of Octoii's: the `thread` tool, by which a thread's model lists, searches, reads, starts,
 //! messages and stops the person's other threads where the person asks it to; and the threads as a folder of the
 //! machine's, which the model reads with the file tools for what the tool leaves out — each thread's log, outputs and
 //! files — told it where the host lays them out.
@@ -15,13 +15,13 @@ use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
 
+use octoii::agent::{Shared, Teller, Telling};
+use octoii::tools::Place;
+use octoii::{Extension, Registrar};
 pub use result::{
     ContentFile, ContentPart, ConversationContent, ConversationEntry, ModelContent, ReplyItem, ResultStatus, SearchHit, SettingChange,
     ThreadResult, ThreadStatus, ThreadSummary, TurnOutcome,
 };
-use siphon::agent::{Shared, Teller, Telling};
-use siphon::tools::Place;
-use siphon::{Extension, Registrar};
 pub use tool::{ThreadAction, ThreadTool};
 
 /// Threads, as a host adds them.
@@ -42,7 +42,7 @@ impl Extension for ThreadExtension {
     }
 
     fn build(self: Box<Self>, registrar: &mut Registrar<'_>) {
-        registrar.teller(siphon::agent::Shared::Machine, std::sync::Arc::new(crate::context::Context));
+        registrar.teller(octoii::agent::Shared::Machine, std::sync::Arc::new(crate::context::Context));
         registrar.tool(ThreadTool);
         if let Some(folder) = registrar.machine().threads.clone() {
             registrar.teller(Shared::Thread, Arc::new(Folder(folder)));
@@ -56,7 +56,7 @@ struct Folder(PathBuf);
 impl Teller for Folder {
     fn tell<'a>(
         &'a self,
-        _: &'a siphon::volume::Volume,
+        _: &'a octoii::volume::Volume,
         thread: &'a str,
         _: Option<&'a Place>,
     ) -> Pin<Box<dyn Future<Output = anyhow::Result<Telling>> + Send + 'a>> {

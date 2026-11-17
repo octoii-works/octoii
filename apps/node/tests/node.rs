@@ -9,9 +9,9 @@ use bytes::Bytes;
 use futures_util::{SinkExt as _, StreamExt as _};
 use http_body_util::{BodyExt as _, Full};
 use hyper::Method;
-use octoii::control;
-use octoii::home::Home;
-use octoii::serve::{Served, serve_until};
+use octoii_node::control;
+use octoii_node::home::Home;
+use octoii_node::serve::{Served, serve_until};
 use serde_json::{Value, json};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest as _;
 use tokio_tungstenite::tungstenite::{Error as SocketError, Message};
@@ -95,7 +95,7 @@ async fn a_browser_and_a_program_reach_the_node_by_the_sessions_its_commands_mak
     assert!(cookie.contains("HttpOnly") && cookie.contains("SameSite=Strict"), "{cookie}");
     let port: u16 = address.rsplit(':').next().and_then(|port| port.parse().ok()).expect("its port");
     assert!(
-        cookie.starts_with(&format!("{}=", octoii::http::cookie_of(port))),
+        cookie.starts_with(&format!("{}=", octoii_node::http::cookie_of(port))),
         "named by its own port, as another node's on the machine is by its: {cookie}"
     );
     let (again, _, _) = request(&address, Method::POST, "/pair", &own, json!({ "credential": credential })).await;
@@ -111,7 +111,7 @@ async fn a_browser_and_a_program_reach_the_node_by_the_sessions_its_commands_mak
     assert_eq!(welcome["event"], "welcome");
     assert_eq!(
         welcome["scopes"],
-        json!(octoii::access::ALL),
+        json!(octoii_node::access::ALL),
         "a link made by the person grants everything"
     );
 

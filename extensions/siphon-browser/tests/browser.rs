@@ -4,9 +4,9 @@
 
 use std::time::Duration;
 
+use octoii::machine::{Base, Host, Machine, Writes};
+use octoii::testing::Beak;
 use serde_json::json;
-use siphon::machine::{Base, Host, Machine, Writes};
-use siphon::testing::Beak;
 use siphon_browser::{Action, Browser, BrowserHost, Change, Outcome, Place, Refusal, Size};
 
 /// A form: a field, a button that greets what was typed, a choice, a button a box covers, one that raises a dialog,
@@ -138,7 +138,7 @@ fn browser(beak: &Beak, profile: &std::path::Path, downloads: &std::path::Path) 
         eprintln!("no browser on this machine");
         return None;
     }
-    let commands = siphon::testing::commands(beak);
+    let commands = octoii::testing::commands(beak);
     Some(Browser::start(BrowserHost {
         commands,
         machine: Host {
@@ -152,7 +152,7 @@ fn browser(beak: &Beak, profile: &std::path::Path, downloads: &std::path::Path) 
 }
 
 fn machine(beak: &Beak, workspace: &std::path::Path) -> Machine {
-    siphon::testing::commands(beak)
+    octoii::testing::commands(beak)
         .open(
             &Host::default(),
             Base {

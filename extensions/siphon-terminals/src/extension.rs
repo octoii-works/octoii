@@ -1,10 +1,10 @@
-//! The terminals as an extension of Siphon's: owned by a task started on the machine's commands, and their methods and
+//! The terminals as an extension of Octoii's: owned by a task started on the machine's commands, and their methods and
 //! topics — a terminal opened in its thread's workspace, typed to, sized and closed; a thread's terminals as they
 //! change, and a terminal as it writes, each piece once.
 
+use octoii::protocol::{Error, Nothing, Scope};
+use octoii::{Caller, Extension, Full, Lagged, Registrar, Subscription};
 use serde_json::{Value, json};
-use siphon::protocol::{Error, Nothing, Scope};
-use siphon::{Caller, Extension, Full, Lagged, Registrar, Subscription};
 use tokio::sync::broadcast::error::RecvError;
 
 use crate::protocol::{self, Cells, Method, TerminalListed, TerminalsEvent, TerminalsTopic};
@@ -28,7 +28,7 @@ impl Extension for TerminalsExtension {
     }
 
     fn build(self: Box<Self>, registrar: &mut Registrar<'_>) {
-        registrar.teller(siphon::agent::Shared::Machine, std::sync::Arc::new(crate::context::Context));
+        registrar.teller(octoii::agent::Shared::Machine, std::sync::Arc::new(crate::context::Context));
         let terminals = Terminals::start(registrar.commands(), registrar.machine().clone());
         let closing = terminals.clone();
         registrar.on_thread_deleted(move |thread| closing.close_thread(thread));

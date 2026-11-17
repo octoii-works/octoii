@@ -4,11 +4,11 @@
 
 use std::path::{Path, PathBuf};
 
+use octoii::machine::Host;
+use octoii::testing::{Beak, Called, Calling};
+use octoii::tools::CallStatus;
+use octoii::tools::Place;
 use serde_json::json;
-use siphon::machine::Host;
-use siphon::testing::{Beak, Called, Calling};
-use siphon::tools::CallStatus;
-use siphon::tools::Place;
 use siphon_mcp::{Launch, Servers, parse};
 
 fn fixture() -> String {
@@ -36,7 +36,7 @@ fn home() -> (tempfile::TempDir, PathBuf) {
     (kept, home)
 }
 
-/// Calls run by Siphon's own tools and the servers' `servers`.
+/// Calls run by Octoii's own tools and the servers' `servers`.
 fn calling(beak: &Beak, servers: &Servers) -> Calling {
     let servers = servers.clone();
     Calling::start(beak, move |tools| tools.with_toolset(std::sync::Arc::new(servers)))
@@ -131,7 +131,7 @@ async fn the_person_s_servers_tools_are_listed_and_called_as_the_model_s_own() {
     assert_eq!(catalog.problems, Vec::<String>::new());
     let names: Vec<&str> = catalog.tools.iter().map(|tool| tool.name.as_str()).collect();
     assert_eq!(names, ["test.say", "test.fail", "test.where", "test.picture"]);
-    let told = siphon::tools::declarations(&catalog.tools);
+    let told = octoii::tools::declarations(&catalog.tools);
     assert!(told.starts_with("interface Tools {\n  test: {\n"), "{told}");
     assert!(told.contains("    /**\n     * Says the words back.\n     */\n    say(args: {\n      /**\n       * What to say.\n       */\n      words: string;\n    }): Promise<"), "{told}");
     let catalog: Vec<String> = names.iter().map(|name| (*name).to_owned()).collect();

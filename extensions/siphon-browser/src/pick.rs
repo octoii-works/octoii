@@ -3,10 +3,10 @@
 //! handle: a locator describes the captured document, not a future page.
 
 use bytes::Bytes;
+use octoii::Caller;
+use octoii::protocol::{Error, Scope};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use siphon::Caller;
-use siphon::protocol::{Error, Scope};
 
 use crate::browser::Attached;
 use crate::extension::failed;
@@ -209,7 +209,7 @@ pub(crate) async fn pick(browser: &Browser, caller: &Caller, request: PickElemen
         .keep_image(&request.thread, &captured.image, Some("browser-feedback.jpg"))
         .await
         .map_err(|error| match error {
-            siphon::threads::files::Refused::NoSuchThread => refused("no_such_thread", "the thread is gone"),
+            octoii::threads::files::Refused::NoSuchThread => refused("no_such_thread", "the thread is gone"),
             other => refused("failed", &other.to_string()),
         })?;
     Ok(ElementFeedback {

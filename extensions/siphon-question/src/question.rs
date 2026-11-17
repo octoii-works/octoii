@@ -4,13 +4,13 @@
 
 use std::fmt::Write as _;
 
+use octoii::machine::Base;
 use octoii_ai::vocabulary::InputContent;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use siphon::machine::Base;
 
-use siphon::tools::{Context, Effect, Refusal, Told, Tool};
+use octoii::tools::{Context, Effect, Refusal, Told, Tool};
 
 /// An option.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]

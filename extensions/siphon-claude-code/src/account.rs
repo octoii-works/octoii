@@ -10,10 +10,10 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use octoii::machine::Base;
+use octoii::machine::{Machine, Writes};
 use octoii_ai::vocabulary::{Failure, FailureKind, ReasoningEffort};
 use serde_json::{Value, json};
-use siphon::machine::Base;
-use siphon::machine::{Machine, Writes};
 use tokio::sync::watch;
 
 use crate::process::{Launch, PREFIX, Process, SERVER, Started};
@@ -73,8 +73,8 @@ const PROJECT_NAME_MAX: usize = 200;
 /// of the person's, and each account's files.
 #[derive(Debug, Clone)]
 pub struct Place {
-    pub commands: siphon::machine::Commands,
-    pub machine: siphon::machine::Host,
+    pub commands: octoii::machine::Commands,
+    pub machine: octoii::machine::Host,
     pub program: Option<PathBuf>,
     pub folder: PathBuf,
 }
@@ -266,17 +266,17 @@ impl Account {
             return Ok(());
         };
         let argv = vec![program.to_string_lossy().into_owned(), "auth".into(), "logout".into()];
-        let signing_out = siphon::machine::Program {
+        let signing_out = octoii::machine::Program {
             set: vec![("CLAUDE_CONFIG_DIR".into(), config.to_string_lossy().into_owned())],
             timeout: SIGN_OUT,
-            ..siphon::machine::Program::new(argv, self.place.work())
+            ..octoii::machine::Program::new(argv, self.place.work())
         };
         let ran = self
             .machine()?
             .run(time, b"", &signing_out, &tokio_util::sync::CancellationToken::new())
             .await
             .map_err(|error| Failure::new(FailureKind::Server, format!("`claude auth logout` failed: {error}")))?;
-        if ran.exit != siphon::machine::Exit::Code(0) {
+        if ran.exit != octoii::machine::Exit::Code(0) {
             let errors = String::from_utf8_lossy(&ran.errors);
             return Err(Failure::new(
                 FailureKind::Server,

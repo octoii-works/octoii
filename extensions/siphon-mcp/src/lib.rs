@@ -1,4 +1,4 @@
-//! MCP servers as Siphon's extension, whose tools a thread's model calls as its own: configured by the person in the
+//! MCP servers as Octoii's extension, whose tools a thread's model calls as its own: configured by the person in the
 //! Octoii Home's `mcp.json`, and by a project in its `.mcp.json`, which runs once the person trusts it; each a command
 //! the machine runs or a URL reached over streamable HTTP, connected as first needed and shared; their catalog told the
 //! model before each turn, the person asked first where a project's configuration is not yet decided on.

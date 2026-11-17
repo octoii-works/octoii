@@ -3916,6 +3916,67 @@ name = "octoii"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "beak",
+ "bytes",
+ "futures",
+ "globset",
+ "grep-matcher",
+ "grep-regex",
+ "grep-searcher",
+ "ignore",
+ "image",
+ "json-patch",
+ "jsonschema",
+ "nucleo-matcher",
+ "octoii-ai",
+ "rayon",
+ "schemars 1.2.3",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "sha2 0.11.1",
+ "siphon-image",
+ "siphon-runtime",
+ "siphon-script",
+ "siphon-shell",
+ "siphon-text",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
+ "ts-rs",
+]
+
+[[package]]
+name = "octoii-ai"
+version = "0.0.1"
+dependencies = [
+ "async-stream",
+ "base64 0.23.1",
+ "bytes",
+ "eventsource-stream",
+ "futures",
+ "http",
+ "httpdate",
+ "insta",
+ "jsonwebtoken",
+ "parking_lot 0.13.0",
+ "rand 0.10.3",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "thiserror 2.0.21",
+ "tokio",
+ "ts-rs",
+ "url",
+]
+
+[[package]]
+name = "octoii-node"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
  "axum",
  "base64 0.23.1",
  "beak",
@@ -3932,6 +3993,7 @@ dependencies = [
  "insta",
  "iroh",
  "oauth2",
+ "octoii",
  "octoii-ai",
  "octoii-tunnel",
  "qrcode",
@@ -3940,7 +4002,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.1",
- "siphon",
  "siphon-base",
  "siphon-browser",
  "siphon-claude-code",
@@ -3968,31 +4029,6 @@ dependencies = [
  "ts-rs",
  "uuid",
  "webbrowser",
-]
-
-[[package]]
-name = "octoii-ai"
-version = "0.0.1"
-dependencies = [
- "async-stream",
- "base64 0.23.1",
- "bytes",
- "eventsource-stream",
- "futures",
- "http",
- "httpdate",
- "insta",
- "jsonwebtoken",
- "parking_lot 0.13.0",
- "rand 0.10.3",
- "reqwest",
- "serde",
- "serde_json",
- "sha2 0.11.1",
- "thiserror 2.0.21",
- "tokio",
- "ts-rs",
- "url",
 ]
 
 [[package]]
@@ -5566,45 +5602,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "siphon"
-version = "0.0.1"
-dependencies = [
- "anyhow",
- "beak",
- "bytes",
- "futures",
- "globset",
- "grep-matcher",
- "grep-regex",
- "grep-searcher",
- "ignore",
- "json-patch",
- "jsonschema",
- "nucleo-matcher",
- "octoii-ai",
- "rayon",
- "schemars 1.2.3",
- "serde",
- "serde_json",
- "serde_with",
- "sha2 0.11.1",
- "siphon-image",
- "siphon-runtime",
- "siphon-script",
- "siphon-shell",
- "siphon-text",
- "thiserror 2.0.21",
- "tokio",
- "tokio-util",
- "ts-rs",
-]
-
-[[package]]
 name = "siphon-base"
 version = "0.0.1"
 dependencies = [
  "anyhow",
- "siphon",
+ "octoii",
  "tempfile",
  "tokio",
 ]
@@ -5619,11 +5621,11 @@ dependencies = [
  "chromiumoxide_cdp",
  "chromiumoxide_types",
  "jsonschema",
+ "octoii",
  "octoii-ai",
  "schemars 1.2.3",
  "serde",
  "serde_json",
- "siphon",
  "siphon-base",
  "siphon-html",
  "tempfile",
@@ -5638,10 +5640,10 @@ version = "0.0.1"
 dependencies = [
  "futures",
  "jiff",
+ "octoii",
  "octoii-ai",
  "serde",
  "serde_json",
- "siphon",
  "tempfile",
  "tokio",
  "tokio-util",
@@ -5654,11 +5656,11 @@ version = "0.0.1"
 dependencies = [
  "anyhow",
  "jsonschema",
+ "octoii",
  "octoii-ai",
  "schemars 1.2.3",
  "serde",
  "serde_json",
- "siphon",
  "tempfile",
  "tokio",
 ]
@@ -5668,11 +5670,11 @@ name = "siphon-files"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "octoii",
  "octoii-ai",
  "schemars 1.2.3",
  "serde",
  "serde_json",
- "siphon",
  "siphon-html",
  "tempfile",
  "tokio",
@@ -5685,11 +5687,11 @@ dependencies = [
  "anyhow",
  "bytes",
  "jsonschema",
+ "octoii",
  "octoii-ai",
  "schemars 1.2.3",
  "serde",
  "serde_json",
- "siphon",
  "siphon-base",
  "tempfile",
  "thiserror 2.0.21",
@@ -5703,8 +5705,8 @@ name = "siphon-html"
 version = "0.0.1"
 dependencies = [
  "base64 0.23.1",
+ "octoii",
  "regex",
- "siphon",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -5728,12 +5730,12 @@ dependencies = [
  "bytes",
  "futures",
  "http",
+ "octoii",
  "octoii-ai",
  "rmcp",
  "schemars 1.2.3",
  "serde",
  "serde_json",
- "siphon",
  "siphon-base",
  "tempfile",
  "tokio",
@@ -5746,9 +5748,9 @@ name = "siphon-memory"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "octoii",
  "serde",
  "serde_json",
- "siphon",
  "tempfile",
  "thiserror 2.0.21",
  "ts-rs",
@@ -5760,11 +5762,11 @@ version = "0.0.1"
 dependencies = [
  "anyhow",
  "jsonschema",
+ "octoii",
  "octoii-ai",
  "schemars 1.2.3",
  "serde",
  "serde_json",
- "siphon",
 ]
 
 [[package]]
@@ -5806,8 +5808,8 @@ name = "siphon-skills"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "octoii",
  "serde_json",
- "siphon",
 ]
 
 [[package]]
@@ -5816,11 +5818,11 @@ version = "0.0.1"
 dependencies = [
  "anyhow",
  "bytes",
+ "octoii",
  "octoii-ai",
  "schemars 1.2.3",
  "serde",
  "serde_json",
- "siphon",
  "siphon-base",
  "tempfile",
  "thiserror 2.0.21",
@@ -5843,11 +5845,11 @@ dependencies = [
  "anyhow",
  "jiff",
  "jsonschema",
+ "octoii",
  "octoii-ai",
  "schemars 1.2.3",
  "serde",
  "serde_json",
- "siphon",
  "tempfile",
  "tokio",
 ]
@@ -5856,8 +5858,8 @@ dependencies = [
 name = "siphon-web-search"
 version = "0.0.1"
 dependencies = [
+ "octoii",
  "octoii-ai",
- "siphon",
 ]
 
 [[package]]

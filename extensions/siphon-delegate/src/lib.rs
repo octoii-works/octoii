@@ -1,4 +1,4 @@
-//! Sub-threads as an extension of Siphon's: the `delegate` tool, by which a thread's model hands a task to a thread of
+//! Sub-threads as an extension of Octoii's: the `delegate` tool, by which a thread's model hands a task to a thread of
 //! its own, as a parent forks a child — only where the person asks it to delegate, or to work on things at once. A new
 //! sub-thread is made in the thread's folder, with its model, its mode and its effort, the task its first input; a task
 //! for one made before goes to its inbox, steering it where it runs. The call waits till the turn that took the task
@@ -12,15 +12,15 @@ mod context;
 
 use std::future::Future;
 
+use octoii::agent::how;
+use octoii::agent::parent_of;
+use octoii::machine::Base;
+use octoii::threads::{Ended, Joins, SubThreadKind};
+use octoii::tools::{Context, Effect, Plan, Refusal, Report, Spawned, Told, Tool};
+use octoii::{Extension, Registrar};
 use octoii_ai::vocabulary::InputContent;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use siphon::agent::how;
-use siphon::agent::parent_of;
-use siphon::machine::Base;
-use siphon::threads::{Ended, Joins, SubThreadKind};
-use siphon::tools::{Context, Effect, Plan, Refusal, Report, Spawned, Told, Tool};
-use siphon::{Extension, Registrar};
 
 /// Sub-threads, as a host adds them.
 #[derive(Debug, Clone, Copy, Default)]
@@ -40,7 +40,7 @@ impl Extension for DelegateExtension {
     }
 
     fn build(self: Box<Self>, registrar: &mut Registrar<'_>) {
-        registrar.teller(siphon::agent::Shared::Machine, std::sync::Arc::new(crate::context::Context));
+        registrar.teller(octoii::agent::Shared::Machine, std::sync::Arc::new(crate::context::Context));
         registrar.tool(DelegateTool);
     }
 }
@@ -129,7 +129,7 @@ impl Tool for DelegateTool {
         let text = match ended {
             Some(Ended::Replied { said }) => format!(
                 "{}\n<system-reminder>sub-thread {child} {}</system-reminder>",
-                siphon::reminder::escaped(said),
+                octoii::reminder::escaped(said),
                 how(ended)
             ),
             _ => format!("<system-reminder>sub-thread {child} {}</system-reminder>", how(ended)),

@@ -1,14 +1,14 @@
-//! The terminals as Siphon's extension, through a client's connection: a terminal opened in its thread's workspace, its
+//! The terminals as Octoii's extension, through a client's connection: a terminal opened in its thread's workspace, its
 //! thread's terminals told, its screen drawn first with the offset it stands at, what it writes after told from there,
 //! and a client that stood at an offset told from that offset on.
 
 use std::path::PathBuf;
 
+use octoii::Octoii;
+use octoii::protocol::Scope;
+use octoii::testing::Beak;
+use octoii::testing::{self, Client};
 use serde_json::json;
-use siphon::Siphon;
-use siphon::protocol::Scope;
-use siphon::testing::Beak;
-use siphon::testing::{self, Client};
 use siphon_terminals::TerminalsExtension;
 
 /// The bytes of `pieces` as one text.
@@ -19,11 +19,11 @@ fn text(pieces: &[bytes::Bytes]) -> String {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_terminal_is_opened_drawn_and_told_as_it_writes_each_piece_once() {
     let beak = Beak::new().expect("Beak");
-    let machine = siphon::machine::Host {
+    let machine = octoii::machine::Host {
         shell: Some(PathBuf::from("/bin/sh")),
-        ..siphon::machine::Host::default()
+        ..octoii::machine::Host::default()
     };
-    let siphon = Siphon::builder(&beak, testing::setup(machine))
+    let siphon = Octoii::builder(&beak, testing::setup(machine))
         .expect("built")
         .extension(siphon_base::BaseExtension::default())
         .extension(TerminalsExtension)

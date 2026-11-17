@@ -4,7 +4,6 @@ members = ["crates/*", "vendor/beak/crates/*"]
 
 [workspace.dependencies]
 beak = { path = "vendor/beak/crates/beak" }
-octoii-ai = { path = "../libs/octoii-ai" }
 siphon-image = { path = "crates/siphon-image" }
 siphon-runtime = { path = "crates/siphon-runtime" }
 siphon-script = { path = "crates/siphon-script" }

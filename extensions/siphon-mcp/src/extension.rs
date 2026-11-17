@@ -1,4 +1,4 @@
-//! The MCP servers as an extension of Siphon's: their pool started on the machine, their tools a toolset of the model's and
+//! The MCP servers as an extension of Octoii's: their pool started on the machine, their tools a toolset of the model's and
 //! its scripts', the trust a project's configuration waits for asked of the person, and their catalog told the model
 //! of each thread at the place it works — the person asked first, under the thread, where they decided nothing on its
 //! project's configuration as it is.
@@ -8,12 +8,12 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use siphon::agent::{Shared, Teller, Telling};
-use siphon::protocol::Error;
-use siphon::tools::Place;
-use siphon::tools::{Context, Refusal, Toolset};
-use siphon::volume::Volume;
-use siphon::{Caller, Extension, Registrar};
+use octoii::agent::{Shared, Teller, Telling};
+use octoii::protocol::Error;
+use octoii::tools::Place;
+use octoii::tools::{Context, Refusal, Toolset};
+use octoii::volume::Volume;
+use octoii::{Caller, Extension, Registrar};
 
 use crate::protocol;
 use crate::{Catalog, Servers};
@@ -62,7 +62,7 @@ impl Toolset for Servers {
         context: &'a Context,
         name: &'a str,
         arguments: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<siphon::tools::Told, Refusal>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<octoii::tools::Told, Refusal>> + Send + 'a>> {
         Box::pin(Servers::call(self, context, name, arguments))
     }
 }
@@ -75,14 +75,14 @@ impl Teller for Servers {
         place: Option<&'a Place>,
     ) -> Pin<Box<dyn Future<Output = anyhow::Result<Telling>> + Send + 'a>> {
         Box::pin(async move {
-            if siphon::agent::parent_of(volume, thread)?.is_some_and(|parent| parent.kind == siphon::threads::SubThreadKind::Explorer) {
+            if octoii::agent::parent_of(volume, thread)?.is_some_and(|parent| parent.kind == octoii::threads::SubThreadKind::Explorer) {
                 return Ok(Telling::default());
             }
             // The servers are configured for the person and a project: a thread of no folder has none of a project's.
             let Some(place) = place else { return Ok(Telling::default()) };
             let catalog = self.catalog(volume, place).await?;
             if let Some(trust) = &catalog.asks {
-                siphon::trust::ask(volume, thread, trust).await?;
+                octoii::trust::ask(volume, thread, trust).await?;
             }
             let mut telling = Telling::default();
             if !catalog.tools.is_empty() || !catalog.problems.is_empty() {
@@ -119,7 +119,7 @@ fn catalog_told(catalog: &Catalog) -> String {
     let mut out = String::from("<catalog>\n");
     if !catalog.tools.is_empty() {
         out.push_str("Tools of MCP servers, called from an execute script on `tools`:\n");
-        out.push_str(&siphon::tools::declarations(&catalog.tools));
+        out.push_str(&octoii::tools::declarations(&catalog.tools));
         out.push('\n');
     }
     for problem in &catalog.problems {

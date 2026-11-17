@@ -1,18 +1,18 @@
 //! Multipart accepts a complete initial message; rejected bodies never create partial Threads.
 use axum::http::StatusCode;
 use http_body_util::BodyExt as _;
-use octoii::{
+use octoii::protocol::{Machine, Scope};
+use octoii_node::{
     access::Access,
     home::Home,
     http::{self, Node},
 };
 use serde_json::{Value, json};
-use siphon::protocol::{Machine, Scope};
 use tower::ServiceExt as _;
 
 struct TestNode {
     _home: tempfile::TempDir,
-    siphon: siphon::Siphon,
+    siphon: octoii::Octoii,
     address: String,
     router: axum::Router,
     writer: String,
@@ -25,7 +25,7 @@ impl TestNode {
         let folder = tempfile::tempdir().unwrap();
         let home = Home::at(folder.path());
         home.prepare().unwrap();
-        let siphon = octoii::serve::siphon(&home, siphon::providers::SignInSetup::default()).unwrap();
+        let siphon = octoii_node::serve::siphon(&home, octoii::providers::SignInSetup::default()).unwrap();
         let access = Access::new(siphon.runtime.clone());
         let writer = access
             .issue(None, vec![Scope::ThreadsOperate, Scope::ThreadsRead, Scope::GitOperate])
@@ -214,7 +214,7 @@ async fn permissions_origin_and_size_limits_precede_acceptance() {
         .0,
         StatusCode::PAYLOAD_TOO_LARGE
     );
-    let mut client = siphon::testing::Client::connect(&node.siphon, vec![Scope::ThreadsOperate], 16);
+    let mut client = octoii::testing::Client::connect(&node.siphon, vec![Scope::ThreadsOperate], 16);
     client.message().await;
     let id = client
         .call("settings.set", json!({"environment":{"disabled_extensions":["git"]}}))

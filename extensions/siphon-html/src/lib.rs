@@ -1,10 +1,10 @@
 //! One HTML preview document for the person's interface and the browser that checks the result. The source is read
-//! through Siphon's machine, without changing it; the document prepares its isolated inner frame in one place.
+//! through Octoii's machine, without changing it; the document prepares its isolated inner frame in one place.
 
 mod images;
 
-use siphon::machine::Machine;
-use siphon::threads::files;
+use octoii::machine::Machine;
+use octoii::threads::files;
 
 pub use images::inline_local_images;
 
@@ -21,11 +21,11 @@ pub const DOCUMENT: &str = include_str!("../assets/preview.html");
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error(transparent)]
-    Read(#[from] siphon::machine::Error),
+    Read(#[from] octoii::machine::Error),
     #[error("HTML preview needs a UTF-8 .html or .htm file without NUL bytes")]
     NotHtml,
     #[error("local image {path}: {source}")]
-    ImageRead { path: String, source: siphon::machine::Error },
+    ImageRead { path: String, source: octoii::machine::Error },
     #[error("local image {0} does not contain supported image bytes")]
     NotImage(String),
     #[error("HTML with its local images must fit within 32 MiB; use smaller images")]
@@ -39,7 +39,7 @@ pub enum Error {
 /// An inaccessible or non-regular file, invalid HTML text or local image, or a page past the byte limit.
 pub fn prepare(machine: &Machine, path: &str) -> Result<String, Error> {
     if path.is_empty() || path.contains('\0') {
-        return Err(siphon::machine::Error::InvalidPath.into());
+        return Err(octoii::machine::Error::InvalidPath.into());
     }
     let (name, bytes) = machine.read_file(&machine.path(path), files::BYTES_MAX as u64)?;
     if files::media_type(&name, &bytes) != "text/html" {

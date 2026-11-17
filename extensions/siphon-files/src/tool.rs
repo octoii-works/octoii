@@ -1,11 +1,11 @@
 //! `present_file`: a file kept in the thread before its resource link is returned; HTML embeds its local images.
 
+use octoii::machine::Base;
+use octoii::threads::files;
+use octoii::tools::{Context, Effect, Refusal, Told, Tool};
 use octoii_ai::vocabulary::InputContent;
 use schemars::JsonSchema;
 use serde::Deserialize;
-use siphon::machine::Base;
-use siphon::threads::files;
-use siphon::tools::{Context, Effect, Refusal, Told, Tool};
 
 /// The arguments of `present_file`.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]

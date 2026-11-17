@@ -1,9 +1,9 @@
 //! Kind is fixed at creation and checked against the thread's metadata on every continuation.
 
+use octoii::testing::{Beak, Called, Calling};
+use octoii::tools::{CallStatus, Context, Effect, Refusal, Told, Tool};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use siphon::testing::{Beak, Called, Calling};
-use siphon::tools::{CallStatus, Context, Effect, Refusal, Told, Tool};
 use siphon_delegate::{DelegateArgs, DelegateTool};
 
 /// Executes the real delegate tool but lets this model-free test finish without awaiting a child's reply.
@@ -13,7 +13,7 @@ impl Tool for Dispatch {
     const DESCRIPTION: &'static str = "Dispatch a task";
     const REACHES_THREADS: bool = true;
     type Args = DelegateArgs;
-    fn effect(&self, _: &Self::Args, _: &siphon::machine::Base) -> Effect {
+    fn effect(&self, _: &Self::Args, _: &octoii::machine::Base) -> Effect {
         Effect::Delegates
     }
     async fn exec(&self, context: &Context, args: Self::Args) -> Result<Told, Refusal> {
@@ -30,14 +30,14 @@ struct InspectArgs {
 struct Inspect;
 impl Tool for Inspect {
     const NAME: &'static str = "inspect";
-    const DESCRIPTION: &'static str = "Inspect a listed thread through Siphon's public interface";
+    const DESCRIPTION: &'static str = "Inspect a listed thread through Octoii's public interface";
     type Args = InspectArgs;
-    fn effect(&self, _: &Self::Args, _: &siphon::machine::Base) -> Effect {
+    fn effect(&self, _: &Self::Args, _: &octoii::machine::Base) -> Effect {
         Effect::Reads
     }
     fn exec(&self, context: &Context, args: Self::Args) -> impl std::future::Future<Output = Result<Told, Refusal>> + Send {
         std::future::ready(
-            siphon::threads::list(&context.volume())
+            octoii::threads::list(&context.volume())
                 .map_err(|error| Refusal(error.to_string()))
                 .map(|rows| {
                     let row = rows.into_iter().find(|row| row.id == args.thread).expect("the created child");
