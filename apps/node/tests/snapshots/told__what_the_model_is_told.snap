@@ -1,6 +1,5 @@
 ---
 source: apps/node/tests/told.rs
-assertion_line: 91
 expression: "steady(&shown(&told), &id, folder.path(), &temporary)"
 ---
 === section base
@@ -744,11 +743,11 @@ An action that changes the page waits for it to settle, then says whether it nav
 }
 
 === tool delegate
-Run a task in a sub-thread working in this folder. Use it only when the person asks you to delegate, to use sub-agents, or to work on several things at once; never on your own initiative, and not for a new thread the person asks for.
+Run a task in a sub-thread working in this folder. Use action=start to create one, or action=send with thread to continue one. Use it only when the person asks you to delegate, to use sub-agents, or to work on several things at once; never on your own initiative, and not for a new thread the person asks for.
 - A new `general_purpose` sub-thread inherits your tools and mode. An `explorer` can only read with read, glob, grep and execute; its scripts have the same restriction. Neither kind delegates or reaches other threads.
 - The sub-thread does not see this conversation: put everything it needs in `task`.
 - The call waits and returns the sub-thread's final answer; several calls in one reply run at once. With `background`, it returns at once and you get a message when the sub-thread finishes.
-- Every result names the sub-thread; to give it more work, pass its id in `thread`. It keeps its original kind; you cannot change it by continuing.
+- Every result names the sub-thread; to give it more work, use action=send with its id in `thread`. It keeps its original kind; you cannot change it by continuing.
 - Its answer is not proof: check what it changed before you report the work done.
 - The person sees every sub-thread and can steer it.
 --- parameters
@@ -763,46 +762,71 @@ Run a task in a sub-thread working in this folder. Use it only when the person a
       "type": "string"
     }
   },
-  "properties": {
-    "background": {
-      "default": false,
-      "description": "Return at once; you get a message when the sub-thread finishes. Do not wait for it or poll.",
-      "type": "boolean"
-    },
-    "kind": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/SubThreadKind"
+  "oneOf": [
+    {
+      "additionalProperties": false,
+      "description": "Start an independent sub-thread with a fixed kind.",
+      "properties": {
+        "action": {
+          "const": "start",
+          "type": "string"
         },
-        {
-          "type": "null"
+        "background": {
+          "default": false,
+          "description": "Return at once and report completion to the parent instead of waiting.",
+          "type": "boolean"
+        },
+        "kind": {
+          "$ref": "#/$defs/SubThreadKind",
+          "default": "general_purpose",
+          "description": "Explorer is read-only; `general_purpose` inherits the parent's tools and mode."
+        },
+        "task": {
+          "description": "Everything the new sub-thread needs; it does not see this conversation.",
+          "type": "string"
+        },
+        "title": {
+          "description": "A short title shown to the person.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
+      },
+      "required": [
+        "action",
+        "task"
       ],
-      "description": "For a new sub-thread: `explorer` reads with read/glob/grep/execute; `general_purpose` inherits your tools and\nmode, the default. A continued sub-thread keeps its kind; an explicitly different kind is refused."
+      "type": "object"
     },
-    "task": {
-      "description": "The complete task. A new sub-thread knows nothing else.",
-      "type": "string"
-    },
-    "thread": {
-      "description": "Id of one of your sub-threads, running or finished, to continue; it keeps its earlier work. Omit to start a new\none.",
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "title": {
-      "description": "A short title for a new sub-thread, shown to the person.",
-      "type": [
-        "string",
-        "null"
-      ]
+    {
+      "additionalProperties": false,
+      "description": "Give one of your existing sub-threads more work; its kind cannot change.",
+      "properties": {
+        "action": {
+          "const": "send",
+          "type": "string"
+        },
+        "background": {
+          "default": false,
+          "description": "Return at once and report completion to the parent instead of waiting.",
+          "type": "boolean"
+        },
+        "task": {
+          "type": "string"
+        },
+        "thread": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "thread",
+        "task"
+      ],
+      "type": "object"
     }
-  },
-  "required": [
-    "task"
-  ],
-  "type": "object"
+  ]
 }
 
 === tool edit

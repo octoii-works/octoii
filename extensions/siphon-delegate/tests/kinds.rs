@@ -72,7 +72,14 @@ async fn creation_defaults_to_general_and_explorer_continuation_never_upgrades()
     let first = calling(&beak);
     let folder = tempfile::tempdir().unwrap();
     let workspace = folder.path().canonicalize().unwrap();
-    let general = called(&first, &workspace, "general", "delegate", json!({ "task": "work" })).await;
+    let general = called(
+        &first,
+        &workspace,
+        "general",
+        "delegate",
+        json!({ "action": "start", "task": "work" }),
+    )
+    .await;
     assert_eq!(general.status, CallStatus::Ok, "{}", general.text);
     assert_eq!(general.structured_content.as_ref().unwrap()["kind"], "general_purpose");
     let started = called(
@@ -80,7 +87,7 @@ async fn creation_defaults_to_general_and_explorer_continuation_never_upgrades()
         &workspace,
         "explorer",
         "delegate",
-        json!({ "task": "read", "kind": "explorer" }),
+        json!({ "action": "start", "task": "read", "kind": "explorer" }),
     )
     .await;
     assert_eq!(started.status, CallStatus::Ok, "{}", started.text);
@@ -88,8 +95,8 @@ async fn creation_defaults_to_general_and_explorer_continuation_never_upgrades()
     let before = called(&first, &workspace, "before", "inspect", json!({ "thread": child })).await;
     assert_eq!(before.structured_content.as_ref().unwrap()["parent"]["kind"], "explorer");
     for (key, args) in [
-        ("continue", json!({ "task": "read again", "thread": child })),
-        ("same-kind", json!({ "task": "read more", "thread": child, "kind": "explorer" })),
+        ("continue", json!({ "action": "send", "task": "read again", "thread": child })),
+        ("continue-again", json!({ "action": "send", "task": "read more", "thread": child })),
     ] {
         let continued = called(&first, &workspace, key, "delegate", args).await;
         assert_eq!(continued.status, CallStatus::Ok, "{}", continued.text);
@@ -103,11 +110,11 @@ async fn creation_defaults_to_general_and_explorer_continuation_never_upgrades()
         &workspace,
         "upgrade",
         "delegate",
-        json!({ "task": "write", "thread": child, "kind": "general_purpose" }),
+        json!({ "action": "send", "task": "write", "thread": child, "kind": "general_purpose" }),
     )
     .await;
-    assert_eq!(changed.status, CallStatus::ToolError);
-    assert!(changed.text.contains("keeps its original kind"));
+    assert_eq!(changed.status, CallStatus::InvalidArguments);
+    assert!(changed.text.contains("kind"), "{}", changed.text);
     assert_eq!(changed.structured_content, None);
     let after = called(&first, &workspace, "after", "inspect", json!({ "thread": child })).await;
     assert_eq!(

@@ -44,20 +44,29 @@ impl Extension for DelegateExtension {
 
 /// The arguments of `delegate`.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct DelegateArgs {
-    /// The complete task. A new sub-thread knows nothing else.
-    pub task: String,
-    /// A short title for a new sub-thread, shown to the person.
-    pub title: Option<String>,
-    /// Id of one of your sub-threads, running or finished, to continue; it keeps its earlier work. Omit to start a new
-    /// one.
-    pub thread: Option<String>,
-    /// For a new sub-thread: `explorer` reads with read/glob/grep/execute; `general_purpose` inherits your tools and
-    /// mode, the default. A continued sub-thread keeps its kind; an explicitly different kind is refused.
-    pub kind: Option<SubThreadKind>,
-    /// Return at once; you get a message when the sub-thread finishes. Do not wait for it or poll.
-    #[serde(default)]
-    pub background: bool,
+#[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
+pub enum DelegateArgs {
+    /// Start an independent sub-thread with a fixed kind.
+    Start {
+        /// Everything the new sub-thread needs; it does not see this conversation.
+        task: String,
+        /// A short title shown to the person.
+        title: Option<String>,
+        /// Explorer is read-only; `general_purpose` inherits the parent's tools and mode.
+        #[serde(default)]
+        kind: SubThreadKind,
+        /// Return at once and report completion to the parent instead of waiting.
+        #[serde(default)]
+        background: bool,
+    },
+    /// Give one of your existing sub-threads more work; its kind cannot change.
+    Send {
+        thread: String,
+        task: String,
+        /// Return at once and report completion to the parent instead of waiting.
+        #[serde(default)]
+        background: bool,
+    },
 }
 
 /// A task handed to a sub-thread, or the result of the turn that took it.
@@ -98,7 +107,7 @@ pub struct DelegateTool;
 impl Tool for DelegateTool {
     const NAME: &'static str = "delegate";
     const REACHES_THREADS: bool = true;
-    const DESCRIPTION: &'static str = "Run a task in a sub-thread working in this folder. Use it only when the person asks you to delegate, to use sub-agents, or to work on several things at once; never on your own initiative, and not for a new thread the person asks for.\n- A new `general_purpose` sub-thread inherits your tools and mode. An `explorer` can only read with read, glob, grep and execute; its scripts have the same restriction. Neither kind delegates or reaches other threads.\n- The sub-thread does not see this conversation: put everything it needs in `task`.\n- The call waits and returns the sub-thread's final answer; several calls in one reply run at once. With `background`, it returns at once and you get a message when the sub-thread finishes.\n- Every result names the sub-thread; to give it more work, pass its id in `thread`. It keeps its original kind; you cannot change it by continuing.\n- Its answer is not proof: check what it changed before you report the work done.\n- The person sees every sub-thread and can steer it.";
+    const DESCRIPTION: &'static str = "Run a task in a sub-thread working in this folder. Use action=start to create one, or action=send with thread to continue one. Use it only when the person asks you to delegate, to use sub-agents, or to work on several things at once; never on your own initiative, and not for a new thread the person asks for.\n- A new `general_purpose` sub-thread inherits your tools and mode. An `explorer` can only read with read, glob, grep and execute; its scripts have the same restriction. Neither kind delegates or reaches other threads.\n- The sub-thread does not see this conversation: put everything it needs in `task`.\n- The call waits and returns the sub-thread's final answer; several calls in one reply run at once. With `background`, it returns at once and you get a message when the sub-thread finishes.\n- Every result names the sub-thread; to give it more work, use action=send with its id in `thread`. It keeps its original kind; you cannot change it by continuing.\n- Its answer is not proof: check what it changed before you report the work done.\n- The person sees every sub-thread and can steer it.";
     type Args = DelegateArgs;
 
     fn output_schema() -> Option<serde_json::Value> {
@@ -143,41 +152,42 @@ impl Tool for DelegateTool {
 /// `args` names, or to a new one; waited on, or in the background answered at once.
 fn planned(context: &Context, args: DelegateArgs) -> Result<Told, Refusal> {
     let mut plan = Plan::default();
-    let (child, kind) = if let Some(named) = &args.thread {
-        let parent = parent_of(&context.volume(), named).map_err(|error| Refusal(error.to_string()))?;
-        let Some(parent) = parent.filter(|parent| parent.thread == context.thread) else {
-            return Err(Refusal(format!("the thread {named} is no sub-thread of yours")));
-        };
-        if args.kind.is_some_and(|kind| kind != parent.kind) {
-            return Err(Refusal(format!(
-                "the sub-thread {named} keeps its original kind; start a new sub-thread for a different kind"
-            )));
+    let (child, task, background, result) = match args {
+        DelegateArgs::Start {
+            task,
+            title,
+            kind,
+            background,
+        } => {
+            let child = plan.spawn(&context.volume(), title, Spawned::SubThread(kind))?;
+            let result = DelegateResult::Started {
+                thread: child.clone(),
+                kind,
+                background,
+            };
+            (child, task, background, result)
         }
-        (named.clone(), parent.kind)
-    } else {
-        let kind = args.kind.unwrap_or_default();
-        (plan.spawn(&context.volume(), args.title.clone(), Spawned::SubThread(kind))?, kind)
+        DelegateArgs::Send { thread, task, background } => {
+            let parent = parent_of(&context.volume(), &thread).map_err(|error| Refusal(error.to_string()))?;
+            let Some(parent) = parent.filter(|parent| parent.thread == context.thread) else {
+                return Err(Refusal(format!("the thread {thread} is no sub-thread of yours")));
+            };
+            let result = DelegateResult::Continued {
+                thread: thread.clone(),
+                kind: parent.kind,
+                background,
+            };
+            (thread, task, background, result)
+        }
     };
-    let report = if args.background { Report::Inbox } else { Report::Call };
-    plan.deliver(&context.volume(), &child, vec![InputContent::text(args.task)], Joins::Step, report)?;
-    let text = if args.background {
+    let report = if background { Report::Inbox } else { Report::Call };
+    plan.deliver(&context.volume(), &child, vec![InputContent::text(task)], Joins::Step, report)?;
+    let text = if background {
         format!(
-            "<system-reminder>sub-thread {child} is working on it in the background; you will get a message with its final answer when it finishes</system-reminder>\n<system-reminder>do not wait, poll or ask about its progress, and do not do its work; continue with work that does not depend on it, or tell the person what you started and end your reply</system-reminder>\n<system-reminder>to give it more work, call delegate with thread {child}</system-reminder>"
+            "<system-reminder>sub-thread {child} is working on it in the background; you will get a message with its final answer when it finishes</system-reminder>\n<system-reminder>do not wait, poll or ask about its progress, and do not do its work; continue with work that does not depend on it, or tell the person what you started and end your reply</system-reminder>\n<system-reminder>to give it more work, call delegate with action=send and thread {child}</system-reminder>"
         )
     } else {
         String::new()
-    };
-    let result = match args.thread {
-        Some(_) => DelegateResult::Continued {
-            thread: child,
-            kind,
-            background: args.background,
-        },
-        None => DelegateResult::Started {
-            thread: child,
-            kind,
-            background: args.background,
-        },
     };
     Ok(Told {
         plan,
@@ -192,12 +202,35 @@ mod tests {
     use serde_json::json;
 
     #[test]
+    fn actions_require_their_own_fields_and_reject_implicit_or_mixed_operations() {
+        let schema = schemars::schema_for!(DelegateArgs).to_value();
+        let validator = jsonschema::validator_for(&schema).unwrap();
+        for value in [
+            json!({"action": "start", "task": "read"}),
+            json!({"action": "start", "task": "read", "kind": "explorer", "background": true}),
+            json!({"action": "send", "thread": "child", "task": "continue"}),
+        ] {
+            assert!(validator.is_valid(&value), "{value}");
+            assert!(serde_json::from_value::<DelegateArgs>(value).is_ok());
+        }
+        for value in [
+            json!({"task": "implicit start"}),
+            json!({"action": "start", "thread": "child", "task": "mixed"}),
+            json!({"action": "send", "task": "missing thread"}),
+            json!({"action": "send", "thread": "child", "task": "upgrade", "kind": "general_purpose"}),
+            json!({"action": "send", "thread": "child", "task": "rename", "title": "new title"}),
+        ] {
+            assert!(!validator.is_valid(&value), "{value}");
+            assert!(serde_json::from_value::<DelegateArgs>(value).is_err());
+        }
+    }
+
+    #[test]
     fn awaited_results_keep_each_terminal_state_and_the_unescaped_answer() {
-        let args = DelegateArgs {
+        let args = DelegateArgs::Start {
             task: "a task".to_owned(),
             title: None,
-            thread: None,
-            kind: None,
+            kind: SubThreadKind::GeneralPurpose,
             background: false,
         };
         let schema = DelegateTool::output_schema().expect("a result schema");

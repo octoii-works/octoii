@@ -3,5 +3,10 @@ import { toolView, type ToolView } from "../../core/tools.ts";
 
 /** The sub-threads extension's tools. */
 export const DELEGATE_TOOLS: Readonly<Record<string, ToolView>> = {
-	delegate: toolView({ work: "delegate", verbs: ["Delegate", "Delegating", "Delegated"], subject: (given) => given.title ?? given.task?.split("\n")[0] }),
+	delegate: toolView({
+		work: "delegate",
+		verbs: (given) =>
+			given.action === "send" ? ["Message a sub-thread", "Messaging a sub-thread", "Messaged a sub-thread"] : ["Delegate", "Delegating", "Delegated"],
+		subject: (given) => given.title ?? given.task?.split("\n")[0],
+	}),
 };

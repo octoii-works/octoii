@@ -32,7 +32,8 @@ describe("what the page knows of each tool", () => {
 		expect(callWords(called("execute", { code: "return 1" }))).toBe("Ran a script");
 		expect(callWords(called("present_file", { path: "reports/result.pdf" }))).toBe("Presented file reports/result.pdf");
 		expect(callWords(called("question", { questions: [{ header: "Stack" }, { header: "Checks" }] }))).toBe("Asked about Stack, Checks");
-		expect(callWords(called("delegate", { title: "Docs" }, "running"))).toBe("Delegating Docs");
+		expect(callWords(called("delegate", { action: "start", title: "Docs", task: "Read docs" }, "running"))).toBe("Delegating Docs");
+		expect(callWords(called("delegate", { action: "send", task: "Check tests" }, "running"))).toBe("Messaging a sub-thread Check tests");
 		expect(callWords(called("browser", { action: "open", url: "https://example.com" }))).toBe("Opened https://example.com");
 		expect(callWords(called("browser", { action: "click" }, "running"))).toBe("Clicking on the page");
 		expect(callWords(called("browser", { action: "drag" }))).toBe("Acted on the page");

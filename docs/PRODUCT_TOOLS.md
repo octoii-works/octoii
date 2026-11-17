@@ -27,6 +27,8 @@ Octoii 是 run anywhere 的 Agent。产品工具让它操作用户能够看见�
 | 工具结果 | Told.content / structuredContent / metadata | 给模型简短引用，给界面明确的文件信息 |
 | Git | siphon-git，为 Diff 提供仓库、补丁、版本读取 | 后续增加新任务工作区准备；不包装全部 git 命令 |
 
+扩展职责和 action 接口规范见 [EXTENSIONS.md](EXTENSIONS.md)。
+
 ## 工具命名与接口原则
 
 保留以产品对象为中心的 `thread`、`browser`、`terminal`；同一对象中的离散操作采用现有的 tagged action 参数，各操作各自定义必需字段，不使用“大对象加一批可选字段”。

@@ -285,7 +285,7 @@ describe("a thread's timeline", () => {
 			conversationOf(
 				viewOf([
 					{ id: id(0, 1), type: "input", delivery: "d1", actor: "P", content: text("Check the docs."), reply_to: { process: "p", key: "k" } },
-					reply(id(1, 2), "q1", [call("c1", "delegate", { thread: "C", task: "Also the links." })]),
+					reply(id(1, 2), "q1", [call("c1", "delegate", { action: "send", thread: "C", task: "Also the links." })]),
 					result(id(2, 3), "c1", "ok"),
 					reply(id(3, 4), "q2", [words("Asked.")]),
 					end(id(4, 5), "replied"),
