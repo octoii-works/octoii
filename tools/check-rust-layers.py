@@ -45,7 +45,7 @@ def allowed(source, target):
 
 def main():
     packages_by_path = {}
-    for manifest in [ROOT / "Cargo.toml", ROOT / "siphon/Cargo.toml"]:
+    for manifest in [ROOT / "Cargo.toml", ROOT / "siphon/Cargo.toml", ROOT / "libs/octoii-ai/Cargo.toml"]:
         result = subprocess.run(
             ["cargo", "metadata", "--manifest-path", str(manifest), "--format-version", "1", "--no-deps", "--locked", "--offline"],
             cwd=ROOT, check=True, capture_output=True, text=True,

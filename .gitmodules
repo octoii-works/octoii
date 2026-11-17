@@ -1,0 +1,6 @@
+[submodule "siphon"]
+	path = siphon
+	url = https://github.com/devxiyang/octoii-siphon.git
+[submodule "libs/octoii-ai"]
+	path = libs/octoii-ai
+	url = https://github.com/octoii-works/octoii-ai.git
