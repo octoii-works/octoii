@@ -16,7 +16,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0.104"
-axum = { version = "0.8.9", features = ["ws", "macros"] }
+axum = { version = "0.8.9", features = ["ws", "macros", "multipart"] }
 base64 = "0.23.1"
 beak.workspace = true
 bytes = "1.12.1"
@@ -63,6 +63,7 @@ oauth2 = { version = "5.0.0", default-features = false }
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls"] }
 
 [dev-dependencies]
+tower = { version = "0.5.3", features = ["util"] }
 insta = "1.49.0"
 net = { package = "iroh", version = "1.4.1", features = ["test-utils"] }
 futures-util = "0.3.34"

@@ -14,3 +14,4 @@ pub mod pairing;
 pub mod qr;
 pub mod serve;
 pub mod service;
+mod thread_start;

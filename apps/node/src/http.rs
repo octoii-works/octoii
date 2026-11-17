@@ -65,6 +65,10 @@ pub fn router(node: Node) -> Router {
             post(crate::files::sent).layer(axum::extract::DefaultBodyLimit::max(siphon::threads::files::BYTES_MAX)),
         )
         .route("/threads/{thread}/files/{hash}", get(crate::files::kept))
+        .route(
+            "/git/threads",
+            post(crate::thread_start::accepted).layer(axum::extract::DefaultBodyLimit::max(crate::thread_start::BODY_MAX)),
+        )
         .route("/machine", get(crate::files::machined))
         .route("/auth/callback", get(signed_in))
         .with_state(node);

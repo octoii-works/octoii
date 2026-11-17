@@ -56,7 +56,7 @@ pub(crate) async fn answer(caller: &Caller, action: StartAction) -> anyhow::Resu
         worktree,
     } = action
     {
-        return accept(&volume, &key, config, content, worktree).await;
+        return accept(&volume, &key, config, content.into_iter().map(Into::into).collect(), worktree).await;
     }
 
     let thread = match &action {
@@ -149,11 +149,16 @@ pub(crate) fn authorize(caller: &Caller) -> Result<(), siphon::protocol::Error> 
     caller.require_scope(Scope::ThreadsOperate)
 }
 
-async fn accept(
+/// Accept a worktree task through either transport using the same Git validation and atomic Thread operation.
+/// The host must authorize Git and Thread operations before calling this trusted interface.
+///
+/// # Errors
+/// Invalid task parameters, conflicting idempotency key, attachment processing or storage failure.
+pub async fn accept(
     volume: &siphon::volume::Volume,
     key: &str,
     config: Config,
-    content: Vec<InputContent>,
+    content: Vec<siphon::threads::InputPart>,
     worktree: CreateWorktree,
 ) -> anyhow::Result<ThreadStart> {
     anyhow::ensure!(Path::new(&worktree.path).is_absolute(), "source must be absolute");
@@ -172,7 +177,7 @@ async fn accept(
     let (thread, start) = volume
         .prepare_thread(
             &new,
-            content.into_iter().map(Into::into).collect(),
+            content,
             StartRequest {
                 owner: OWNER.into(),
                 payload: serde_json::to_value(worktree)?,

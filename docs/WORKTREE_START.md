@@ -166,3 +166,45 @@ Git 扩展已迁移纯内容调用方；客户端传输类型没有变化。
 
 此切片解决内核接收顺序，尚未新增 multipart 路由或开放新建 worktree UI。下一步在节点接入受限 multipart，
 保持 Git 参数验证在扩展侧，再迁移客户端现有持久提交流程。详细机制与已批准范围见 THREAD_START.md。
+
+## 第八切片：节点 multipart 接收
+
+新增 `POST /git/threads`，仅接受并保存任务，不执行 Git 或 Agent。返回与 `git.start` 相同的
+ThreadStart，后续准备/检查/重试仍走原来的扩展接口。节点通过 Siphon.volume() 和 Git 扩展公开 accept
+接入；没有新增对 runtime/Beak 的生产写入，没有修改 core。
+
+请求为 multipart/form-data，第一个字段必须是 `manifest`（JSON）：
+
+```json
+{
+  "key": "stable-submission-key",
+  "config": {},
+  "worktree": {
+    "path": "/project",
+    "destination": "/project-task",
+    "branch": "task",
+    "base": "完整 commit ID"
+  },
+  "parts": [
+    { "type": "content", "content": { "type": "input_text", "text": "任务内容" } },
+    { "type": "attachment", "index": 0, "media_type": "image/png", "filename": "reference.png" }
+  ]
+}
+```
+
+后续二进制字段按 `file-0` 等规范名称对应附件索引。消息顺序由 parts 决定，不由二进制字段到达顺序决定。
+文件名和媒体类型以 manifest 为准；不根据 multipart 字段的 filename 或 Content-Type 覆盖已提交元数据。
+
+- 复用节点会话和 origin/tunnel 边界。验证 git.operate + threads.operate、Git 扩展存在且启用后才解析请求体。
+- 整个请求最大 64 MiB（包含 multipart 开销），manifest 最大 1 MiB，最多 128 个消息部分，单附件最大 32 MiB。
+- 缺失、重复、未引用的附件，重复索引、非规范字段名及未知 manifest 字段均拒绝；解析完之前不创建 Thread。
+- 接受失败不创建半成品；图片拟合沿用原语。相同 key/原始输入返回同一 Thread，附件变化被拒绝。
+- Axum 的 multipart feature 提供解析，Cargo.lock 仅增加对应 multer 依赖，不自行实现 MIME parser。
+
+新增 4 项路由测试覆盖完整图文、附件读取、重复提交、附件变化、非法图片、缺失/重复/多余附件、
+纯图片拟合、权限/origin、manifest/单文件/总请求大小限制和扩展禁用。既有文件上传、权限和协议测试同时通过。
+大小拒绝使用真实 Router 的进程内请求验收，避免超大 HTTP/1 上传被提前拒绝时的连接重置干扰状态码断言；
+附件读取及 origin 拒绝也经过隔离 loopback HTTP 服务。本批没有 UI 修改或浏览器验收。
+
+下一步：客户端构建有序 multipart 并接入现有 IndexedDB 提交恢复，再开放新建 worktree 选项。
+接受前保留原始 Blob 和稳定 key；接受成功后导航到已有恢复界面，不把 Git 准备隐式绑到上传请求。
