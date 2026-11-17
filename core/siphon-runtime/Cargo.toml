@@ -12,7 +12,7 @@ workspace = true
 
 [dependencies]
 anyhow = "1.0.104"
-beak = { path = "../../vendor/beak/crates/beak" }
+beak.workspace = true
 bytes = "1.12.1"
 jsonschema = { version = "0.61.1", default-features = false }
 schemars = "1.2.3"

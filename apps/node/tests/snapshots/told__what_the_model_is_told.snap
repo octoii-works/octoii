@@ -1,5 +1,6 @@
 ---
-source: crates/octoii/tests/told.rs
+source: apps/node/tests/told.rs
+assertion_line: 91
 expression: "steady(&shown(&told), &id, folder.path(), &temporary)"
 ---
 === section base
@@ -83,7 +84,7 @@ This thread is <thread>. When the person asks about other threads or earlier wor
 
 === tool browser
 Control the thread's browser, which the person sees beside the chat. One action per call, on the current page; switch changes the current page.
-- Pages: open, preview, tabs, switch, close, navigate, back, forward, reload. Preview opens a local HTML file in isolation: inline scripts work, external resource loads and fetch requests are blocked. Use look, console and coordinate clicks to check it.
+- Pages: open, preview, tabs, switch, close, navigate, back, forward, reload. Preview opens a local HTML file in isolation: inline scripts work, HTTP/HTTPS resources and fetch requests are allowed, and referenced local images are embedded. Use look, console and coordinate clicks to check it.
 - Seeing: read returns the page's accessibility tree, each element with a ref such as e12, refs new since the last read marked *; look returns a screenshot; info returns the URL, title, size and scroll.
 - Acting on an element, by ref, CSS selector or point: click, hover, type, press, select, scroll, drag, upload, dialog.
 - Other: evaluate runs JavaScript in the page or a frame; wait waits for text, a URL, an element or an idle network; console and downloads return the page's logs and downloads; cdp sends a raw Chrome DevTools Protocol command when no other action can.
@@ -171,7 +172,7 @@ An action that changes the page waits for it to settle, then says whether it nav
       "type": "object"
     },
     {
-      "description": "Open a local HTML file in an isolated preview and make it current. Inline scripts run; external resource loads,\nfetch requests, popups and access to other files are blocked. Inspect it with look, console and clicks.",
+      "description": "Open a local HTML file in an isolated preview and make it current. Inline scripts run, HTTP/HTTPS resources and fetch\nrequests are allowed, and local image references are embedded. Popups and parent-page access remain blocked. Inspect it with look, console and clicks.",
       "properties": {
         "action": {
           "const": "preview",
@@ -743,19 +744,41 @@ An action that changes the page waits for it to settle, then says whether it nav
 }
 
 === tool delegate
-Run a task in a sub-thread that has your tools and works in this folder. Use it only when the person asks you to delegate, to use sub-agents, or to work on several things at once; never on your own initiative, and not for a new thread the person asks for.
+Run a task in a sub-thread working in this folder. Use it only when the person asks you to delegate, to use sub-agents, or to work on several things at once; never on your own initiative, and not for a new thread the person asks for.
+- A new `general_purpose` sub-thread inherits your tools and mode. An `explorer` can only read with read, glob, grep and execute; its scripts have the same restriction. Neither kind delegates or reaches other threads.
 - The sub-thread does not see this conversation: put everything it needs in `task`.
 - The call waits and returns the sub-thread's final answer; several calls in one reply run at once. With `background`, it returns at once and you get a message when the sub-thread finishes.
-- Every result names the sub-thread; to give it more work, pass its id in `thread`.
+- Every result names the sub-thread; to give it more work, pass its id in `thread`. It keeps its original kind; you cannot change it by continuing.
 - Its answer is not proof: check what it changed before you report the work done.
 - The person sees every sub-thread and can steer it.
 --- parameters
 {
+  "$defs": {
+    "SubThreadKind": {
+      "description": "A sub-thread's fixed scope, chosen when it is created and retained for every later task.",
+      "enum": [
+        "explorer",
+        "general_purpose"
+      ],
+      "type": "string"
+    }
+  },
   "properties": {
     "background": {
       "default": false,
       "description": "Return at once; you get a message when the sub-thread finishes. Do not wait for it or poll.",
       "type": "boolean"
+    },
+    "kind": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SubThreadKind"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "For a new sub-thread: `explorer` reads with read/glob/grep/execute; `general_purpose` inherits your tools and\nmode, the default. A continued sub-thread keeps its kind; an explicitly different kind is refused."
     },
     "task": {
       "description": "The complete task. A new sub-thread knows nothing else.",
@@ -814,7 +837,7 @@ Replace text in a file. `old` must match exactly one place, or every place with 
 }
 
 === tool execute
-Run JavaScript as the body of an async function, with your tools on `tools`: `await tools.read({ path: "a.txt" })` returns { content, structuredContent?, metadata? } and rejects on failure. Use loops, Promise.all and code to work on the results. Text and images reach the model through explicit text(value), console.log, image(contentBlock), and the return value. Images use input_image blocks from tool results; metadata is not sent automatically. File delivery links are retained automatically, including when the script throws. Use it for work of many steps: reading or changing many files, many browser actions, batch extraction. `tools` has each of your tools by name, except execute and tools that ask the person or start threads, plus the tools listed in <catalog>.
+Run JavaScript as the body of an async function, with your tools on `tools`: `await tools.read({ path: "a.txt" })` returns { content, structuredContent?, metadata? } and rejects on failure. Use loops, Promise.all and code to work on the results. Text and images reach the model through explicit text(value), console.log, image(contentBlock), and the return value. No return or return undefined emits no value; explicit null remains null. Images use input_image blocks from tool results; metadata is not sent automatically. File delivery links are retained automatically, including when the script throws. Use it for work of many steps: reading or changing many files, many browser actions, batch extraction. `tools` has each of your tools by name, except execute and tools that ask the person or start threads, plus the tools listed in <catalog>.
 --- parameters
 {
   "properties": {
@@ -914,7 +937,25 @@ Search file contents with a regular expression (ripgrep syntax), in the files un
 }
 
 === tool present_file
-Present one file to the person for download, keeping its original bytes in this conversation. Use after generating a report, image, archive, or other result. Accepts a regular file up to 32 MiB that this call may read; directories are refused. The saved file survives changes to the source. This does not read the file into model context or publish it on the internet.
+Present one file in this conversation. Use after generating a report, image, archive, or other result. Accepts a readable regular file up to 32 MiB; directories are refused. The saved file survives changes to the source. Non-HTML files keep their original bytes. HTML embeds referenced local images into the saved copy; the source file is unchanged. This does not publish the file on the internet.
+
+HTML appears inline above the final reply. Do not announce or restate the page.
+
+Layout:
+- The frame is the reply's width, including on phones. Use fluid widths. Leave html, body, and the outer element without a background color, outer card, border, banner title, or side padding. The viewer provides the background and an overridable 8px gutter.
+- Give boxes that need their own background 16px padding and var(--radius) corners. Charts may have fixed pixel heights.
+- Let content determine height. Do not use viewport-height units or height:100% on html, body, or the outer page.
+
+Theme:
+- Prefer theme CSS variables by default: --background, --foreground, --muted, --card, --popover, --secondary, --border, --input, --ring, --primary, --accent, --destructive, --warning, --success, --info, --code-background. Most have matching -foreground variables; accent, destructive, and warning also have -surface variants. Other colors, including fixed colors, are welcome when they suit the content or design; keep text readable against its background in light and dark themes.
+- Use --chart-1 through --chart-6, --radius, --font-sans, and --font-mono. The viewer supplies the base background, text and fonts, and updates variables with the conversation theme.
+- Inherit the base typography. For explicit sizes use --text-body (14px), --text-body--line-height (1.625), --text-heading-1 (16px), --text-heading-2 (15px), --text-heading-3 (14px), and --text-heading--line-height (1.3). Keep ordinary report metrics and counters at the h1 size; emphasize with weight and color. Use larger typography only when requested for a poster or website design.
+- Give var() sensible fallback values for opening the downloaded file outside Octoii. Do not redefine the theme variables themselves.
+
+Resources and checking:
+- Prefer inline styles and scripts. HTTP/HTTPS images, fonts, styles, scripts and fetch requests are allowed; remote URLs load as-is and require connectivity. Use quoted local image paths (relative to the HTML file or absolute) or CSS url(...); readable image files are embedded before preview and delivery. Use one src per local image, not srcset. Local stylesheets and scripts are not bundled: inline them or use remote URLs.
+- Use browser.preview before presenting when available. Check desktop and phone widths, console messages and interactive controls. Check both light and dark appearance when possible. Fix clipping or horizontal overflow, then present the finished file once.
+
 --- parameters
 {
   "properties": {
@@ -1200,7 +1241,9 @@ Work with the person's other threads, which they see in their thread list.
 - start: create a thread in this folder with your model and mode; `message` is its first input.
 - send: send a thread a message; it takes it at its next step, or starts a turn with it.
 - stop: stop the turn a thread is working on.
-Use it only when the person asks about other threads, asks for a new thread, or names a thread to message or stop; never for sub-agents, delegation or parallel work. To find what was said about something earlier, search for it rather than page through a thread. A new thread does not see this conversation: put everything it needs in `message`. With `report`, you get a message when the turn that takes your message ends; do not wait for it or poll. Link a thread in your reply as :thread{id=<id>}, or as ::thread{id=<id>} on its own line to show its card.
+- rename: request a new, nonempty title; it applies when the thread takes its next step.
+- pin/unpin, archive/unarchive, snooze/unsnooze: organize the person's thread list without starting or stopping work. Snooze requires a future ISO timestamp with an explicit UTC offset. These actions and rename can target this thread too.
+Use it only when the person asks about threads, asks for a new thread, or asks to message, stop or organize a named thread; never for sub-agents, delegation or parallel work. To find what was said about something earlier, search for it rather than page through a thread. A new thread does not see this conversation: put everything it needs in `message`. With `report`, you get a message when the turn that takes your message ends; do not wait for it or poll. Link a thread in your reply as :thread{id=<id>}, or as ::thread{id=<id>} on its own line to show its card.
 --- parameters
 {
   "$defs": {
@@ -1386,6 +1429,134 @@ Use it only when the person asks about other threads, asks for a new thread, or 
         },
         "thread": {
           "description": "The thread's id.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "thread"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "Queue a new, nonempty title for the thread; surrounding whitespace is trimmed.",
+      "properties": {
+        "action": {
+          "const": "rename",
+          "type": "string"
+        },
+        "thread": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "thread",
+        "title"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "Pin a thread in the person's list.",
+      "properties": {
+        "action": {
+          "const": "pin",
+          "type": "string"
+        },
+        "thread": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "thread"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "Unpin a thread in the person's list.",
+      "properties": {
+        "action": {
+          "const": "unpin",
+          "type": "string"
+        },
+        "thread": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "thread"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "Archive a thread; its work is not stopped.",
+      "properties": {
+        "action": {
+          "const": "archive",
+          "type": "string"
+        },
+        "thread": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "thread"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "Restore an archived thread to the person's list.",
+      "properties": {
+        "action": {
+          "const": "unarchive",
+          "type": "string"
+        },
+        "thread": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "thread"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "Hide a thread until a future instant; its work is not stopped.",
+      "properties": {
+        "action": {
+          "const": "snooze",
+          "type": "string"
+        },
+        "thread": {
+          "type": "string"
+        },
+        "until": {
+          "description": "A future ISO timestamp with an explicit UTC offset, such as `2026-12-01T09:00:00+08:00` or `2026-12-01T01:00:00Z`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "thread",
+        "until"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "End a thread's snooze without starting its work.",
+      "properties": {
+        "action": {
+          "const": "unsnooze",
+          "type": "string"
+        },
+        "thread": {
           "type": "string"
         }
       },

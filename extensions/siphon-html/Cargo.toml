@@ -13,7 +13,7 @@ workspace = true
 [dependencies]
 base64 = "0.23.1"
 regex = "1.13.1"
-siphon = { path = "../../crates/siphon" }
+siphon.workspace = true
 thiserror = "2.0.21"
 
 [dev-dependencies]

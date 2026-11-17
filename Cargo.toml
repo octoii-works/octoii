@@ -1,6 +1,29 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "extensions/*", "vendor/beak/crates/*"]
+members = ["core/*", "apps/node", "extensions/*", "vendor/beak/crates/*"]
+
+[workspace.dependencies]
+beak = { path = "vendor/beak/crates/beak" }
+octoii-ai = { path = "core/octoii-ai" }
+siphon = { path = "core/siphon" }
+siphon-image = { path = "core/siphon-image" }
+siphon-runtime = { path = "core/siphon-runtime" }
+siphon-script = { path = "core/siphon-script" }
+siphon-shell = { path = "core/siphon-shell" }
+siphon-text = { path = "core/siphon-text" }
+siphon-browser = { path = "extensions/siphon-browser" }
+siphon-claude-code = { path = "extensions/siphon-claude-code" }
+siphon-delegate = { path = "extensions/siphon-delegate" }
+siphon-files = { path = "extensions/siphon-files" }
+siphon-git = { path = "extensions/siphon-git" }
+siphon-html = { path = "extensions/siphon-html" }
+siphon-mcp = { path = "extensions/siphon-mcp" }
+siphon-memory = { path = "extensions/siphon-memory" }
+siphon-question = { path = "extensions/siphon-question" }
+siphon-skills = { path = "extensions/siphon-skills" }
+siphon-terminals = { path = "extensions/siphon-terminals" }
+siphon-thread = { path = "extensions/siphon-thread" }
+siphon-web-search = { path = "extensions/siphon-web-search" }
 
 [workspace.package]
 edition = "2024"

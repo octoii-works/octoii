@@ -13,4 +13,4 @@ workspace = true
 [dependencies]
 anyhow = "1.0.104"
 serde_json = "1.0.154"
-siphon = { path = "../../crates/siphon" }
+siphon.workspace = true

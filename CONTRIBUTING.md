@@ -19,5 +19,8 @@ it needs.
   `octoii:allow-prs` closes on its own.
 - **Checks pass.** `bun install`, then `bun run check`: formatting, lint, unused code, types, and the tests on Bun and
   on Node.
+- **Rust changes:** run `python3 tools/check-rust-layers.py`, `cargo fmt --all --check`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace` on a platform supported by the
+  bundled Beak library. Follow the [package boundaries](docs/ARCHITECTURE.md).
 - **Keep it to one change**, written like the code around it, within the rules of [AGENTS.md](AGENTS.md): clear names,
   small functions, the simplest design that works, and nothing built before it is needed.

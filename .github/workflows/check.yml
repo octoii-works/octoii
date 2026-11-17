@@ -49,6 +49,7 @@ jobs:
       - run: rustup toolchain install
       - uses: ./.github/actions/setup-bun
       - run: cargo fmt --all --check
+      - run: python3 tools/check-rust-layers.py
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
       - run: bun run --filter ./packages/client test:against-node

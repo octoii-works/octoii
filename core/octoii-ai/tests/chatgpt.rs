@@ -158,7 +158,7 @@ fn signed_in(expires_at_ms: i64) -> Credential {
 
 #[tokio::test]
 async fn a_sign_in_keeps_its_issued_host_identity_and_rejects_invalid_host_ids() {
-    let store = support::Store::of(signed_in(3600_000));
+    let store = support::Store::of(signed_in(3_600_000));
     let mut call = support::call(support::Provider::streaming(&[]));
     call.credentials = store.clone();
     let mut options = SignInOptions {
@@ -187,7 +187,7 @@ async fn a_sign_in_keeps_its_issued_host_identity_and_rejects_invalid_host_ids()
         "a raw key cannot identify a new host"
     );
 
-    let Credential::OAuth(mut earlier) = signed_in(3600_000) else {
+    let Credential::OAuth(mut earlier) = signed_in(3_600_000) else {
         panic!("an OAuth credential")
     };
     earlier.host_id = Some("an-invalid-issued-host".into());

@@ -12,7 +12,7 @@ workspace = true
 
 [dependencies]
 anyhow = "1.0.104"
-beak = { path = "../../vendor/beak/crates/beak" }
+beak.workspace = true
 bytes = "1.12.1"
 futures = "0.3.34"
 globset = "0.4.21"
@@ -23,18 +23,18 @@ ignore = "0.4.34"
 json-patch = "5.0.0"
 jsonschema = { version = "0.61.1", default-features = false }
 nucleo-matcher = "0.3.1"
-octoii-ai = { path = "../octoii-ai" }
+octoii-ai.workspace = true
 rayon = "1.12.0"
 schemars = "1.2.3"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.154", features = ["raw_value"] }
 serde_with = "3.24.0"
 sha2 = "0.11.1"
-siphon-image = { path = "../siphon-image" }
-siphon-runtime = { path = "../siphon-runtime" }
-siphon-script = { path = "../siphon-script" }
-siphon-shell = { path = "../siphon-shell" }
-siphon-text = { path = "../siphon-text" }
+siphon-image.workspace = true
+siphon-runtime.workspace = true
+siphon-script.workspace = true
+siphon-shell.workspace = true
+siphon-text.workspace = true
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", features = ["io-util", "macros", "rt", "sync", "time"] }
 tokio-util = { version = "0.7.20", features = ["io"] }

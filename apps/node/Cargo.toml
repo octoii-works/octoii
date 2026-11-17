@@ -18,7 +18,7 @@ path = "src/main.rs"
 anyhow = "1.0.104"
 axum = { version = "0.8.9", features = ["ws", "macros"] }
 base64 = "0.23.1"
-beak = { path = "../../vendor/beak/crates/beak" }
+beak.workspace = true
 bytes = "1.12.1"
 clap = { version = "4.6.7", features = ["derive", "env"] }
 futures-util = "0.3.34"
@@ -27,28 +27,28 @@ getrandom = "0.4.3"
 http-body-util = "0.1.5"
 hyper = { version = "1.12.0", features = ["client", "http1"] }
 hyper-util = { version = "0.1.21", features = ["tokio"] }
-octoii-ai = { path = "../octoii-ai" }
+octoii-ai.workspace = true
 octoii-tunnel = { git = "https://github.com/octoii-works/octoii-tunnel", rev = "f6a52dbe0f3ab86215a2b304190d5867c5149ae6" }
 qrcode = { version = "0.14.1", default-features = false }
 rustix = { version = "1.1.6", features = ["process"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 sha2 = "0.11.1"
-siphon = { path = "../siphon" }
-siphon-browser = { path = "../../extensions/siphon-browser" }
-siphon-image = { path = "../siphon-image" }
-siphon-claude-code = { path = "../../extensions/siphon-claude-code" }
-siphon-mcp = { path = "../../extensions/siphon-mcp" }
-siphon-delegate = { path = "../../extensions/siphon-delegate" }
-siphon-files = { path = "../../extensions/siphon-files" }
-siphon-git = { path = "../../extensions/siphon-git" }
-siphon-memory = { path = "../../extensions/siphon-memory" }
-siphon-question = { path = "../../extensions/siphon-question" }
-siphon-skills = { path = "../../extensions/siphon-skills" }
-siphon-thread = { path = "../../extensions/siphon-thread" }
-siphon-web-search = { path = "../../extensions/siphon-web-search" }
-siphon-runtime = { path = "../siphon-runtime" }
-siphon-terminals = { path = "../../extensions/siphon-terminals" }
+siphon.workspace = true
+siphon-browser.workspace = true
+siphon-image.workspace = true
+siphon-claude-code.workspace = true
+siphon-mcp.workspace = true
+siphon-delegate.workspace = true
+siphon-files.workspace = true
+siphon-git.workspace = true
+siphon-memory.workspace = true
+siphon-question.workspace = true
+siphon-skills.workspace = true
+siphon-thread.workspace = true
+siphon-web-search.workspace = true
+siphon-runtime.workspace = true
+siphon-terminals.workspace = true
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "net", "signal", "fs", "time"] }
 tokio-util = "0.7.20"

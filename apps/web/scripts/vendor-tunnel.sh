@@ -8,7 +8,7 @@
 set -euo pipefail
 
 WEB="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PINNED="$(sed -n 's/^octoii-tunnel = .*rev = "\([0-9a-f]*\)".*/\1/p' "${WEB}/../../crates/octoii/Cargo.toml")"
+PINNED="$(sed -n 's/^octoii-tunnel = .*rev = "\([0-9a-f]*\)".*/\1/p' "${WEB}/../../apps/node/Cargo.toml")"
 TUNNEL="${HOME}/.cache/octoii/octoii-tunnel"
 
 [[ -d "${TUNNEL}/.git" ]] || git clone --filter=blob:none https://github.com/octoii-works/octoii-tunnel.git "${TUNNEL}"

@@ -1,5 +1,5 @@
 ---
-source: crates/octoii-ai/tests/google.rs
+source: core/octoii-ai/tests/google.rs
 expression: body
 ---
 {

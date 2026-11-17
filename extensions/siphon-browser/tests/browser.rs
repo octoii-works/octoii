@@ -61,7 +61,10 @@ fn answer(line: &str, port: u16) -> (&'static str, String) {
     } else if line.starts_with("GET /remote.css") {
         ("text/css", "body{--remote-style:loaded}".to_owned())
     } else if line.starts_with("GET /remote.svg") {
-        ("image/svg+xml", "<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10'><rect width='10' height='10' fill='blue'/></svg>".to_owned())
+        (
+            "image/svg+xml",
+            "<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10'><rect width='10' height='10' fill='blue'/></svg>".to_owned(),
+        )
     } else if line.starts_with("GET /remote-data") {
         ("text/plain\r\naccess-control-allow-origin: *", "remote data loaded".to_owned())
     } else if line.starts_with("GET /html-preview.html") {
@@ -734,7 +737,6 @@ async fn a_local_html_preview_is_isolated_painted_clicked_and_its_console_is_rea
         .expect("its logs")
         .text;
     assert!(console.contains("preview clicked"), "{console}");
-
 }
 
 #[test]

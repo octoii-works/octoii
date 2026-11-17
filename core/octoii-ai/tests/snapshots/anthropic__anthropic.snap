@@ -1,5 +1,5 @@
 ---
-source: crates/octoii-ai/tests/anthropic.rs
+source: core/octoii-ai/tests/anthropic.rs
 expression: body
 ---
 {

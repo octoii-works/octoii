@@ -1,5 +1,5 @@
 ---
-source: crates/octoii-ai/tests/responses.rs
+source: core/octoii-ai/tests/responses.rs
 expression: response
 ---
 {

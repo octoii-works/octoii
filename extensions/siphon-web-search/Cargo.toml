@@ -11,5 +11,5 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
-octoii-ai = { path = "../../crates/octoii-ai" }
-siphon = { path = "../../crates/siphon" }
+octoii-ai.workspace = true
+siphon.workspace = true
