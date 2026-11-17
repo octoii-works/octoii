@@ -112,3 +112,50 @@ Thread 主进程处理回执；节点退出时调用方仍需中止请求，重�
 - 节点权限与协议：3 项通过；生成 TypeScript 保持与节点输出一致。
 - Clippy 全目标、Rust 格式、客户端类型检查、24 个包的 Rust 依赖边界检查通过。
 - 本批未改产品 UI，未进行浏览器验收。
+
+## 下一批：首条输入与附件原子接受（待 core 范围确认）
+
+现有 HTTP 上传绑定已存在的 Thread，且图片经过 keep_given / keep_image 后引用可能改变。
+不得先创建会执行的空 Thread、保存占位消息、预计算图片引用，或把附件暂存到另一个 Thread。
+
+采用同一个接受原语：prepare_thread 的输入改为有序的 InputPart 列表，分为已有 InputContent 与
+待接收附件（bytes、media_type、可选 filename）。这是 Rust 接收接口，不是模型协议的新消息类型，
+不新增持久化状态或运行时程序。所有现有纯文本调用方一起迁移，不保留平行 API。
+
+处理顺序：
+
+1. 对原始输入的顺序、内容、附件字节摘要及元数据、Thread 配置和准备请求计算幂等身份。
+   使用附件摘要，避免为大文件构建 JSON 数字数组；同一 key 的附件变化必须被拒绝。
+2. 查询已有接受记录；若已经成功接受，返回原 Thread，不重复拟合图片或写附件。
+3. 复用 files::keep_given，把文件写入待提交 Changes；图片仍用现有 MODELS bounds。
+   为每个附件形成最终 InputContent，保留原始输入顺序。
+4. 在一次提交中创建 Thread、文件、最终首条输入、启动状态和密封接受记录。
+   处理失败或并发冲突不会留下部分 Thread、部分首条输入或孤立文件。
+
+Siphon 同时提供 volume() 公共访问器，供节点 HTTP 接入同一公开接口，避免节点为此直接写 runtime/Beak。
+附件原语不处理 Git、multipart、用户认证或 UI。输入类型不进入模型协议；接收完成后仍只保存既有 InputContent。
+
+### 拟确认的 core 文件
+
+- 新增 core/siphon/src/threads/input.rs：InputPart、原始输入身份与复用现有文件接收逻辑。
+- core/siphon/src/threads.rs：导出输入类型。
+- core/siphon/src/threads/operations.rs：prepare 接收新输入，文件与首条消息共同原子提交。
+- core/siphon/src/volume.rs：迁移公开 prepare_thread 签名。
+- core/siphon/src/lib.rs：新增只读取得 Volume 句柄的公共方法，不暴露裸 runtime。
+- core/siphon/src/tests/threads.rs：迁移调用，补纯附件、图文顺序、无效图片回滚、附件幂等与重启读取测试。
+- core/siphon/src/tests/agent.rs：迁移调用，验证放行前不调用模型、放行后输入引用已落盘。
+
+不修改 files.rs 的现有处理规则，不修改 Beak、runtime、启动状态机或模型协议。
+如果检查发现还需其他核心文件，另列范围确认；本方案本身不代表已获批准。
+
+### core 之外的后续接入
+
+节点 HTTP 接受有总大小限制的 multipart：一个有序消息清单及附件二进制，各附件索引只允许引用一次，
+缺失/重复/多余部分均拒绝；不通过 WebSocket 传大文件 JSON 数组。鉴权在接收处理前验证 Git 与 Thread
+操作权限，复用节点 loopback/tunnel 的会话边界。Git 扩展继续验证固定 commit、目录及分支参数。
+
+客户端先把原始草稿、Blob、Git 参数和 key 写入现有 IndexedDB。接受成功后立即保存 Thread ID，再进入
+显式准备流程；接受响应丢失用同一份 multipart 和 key 重放。不复用旧 threads.create/deliver 的 23 小时窗口，
+也不把 Git 写操作改成自动重试。新建入口和恢复页共享现有持久草稿，不引入第二套待处理记录。
+
+本批优先完成核心原语及回归，之后分别提交 HTTP/客户端接收和新建入口，完整任务验收后再开放功能。
