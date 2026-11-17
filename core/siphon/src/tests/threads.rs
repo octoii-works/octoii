@@ -110,9 +110,10 @@ async fn inbox_empty(threads: &Threads<Taker>, id: &str) {
     .expect("the title request was taken");
 }
 
-async fn remove_main(runtime: &Runtime, id: &str) {
+/// Establishes an absent main process for revival tests, without waiting for graceful termination.
+async fn force_remove_main(runtime: &Runtime, id: &str) {
     let mut changes = siphon_runtime::Changes::new();
-    changes.remove(crate::threads::thread::main(id), None);
+    changes.force_remove(crate::threads::thread::main(id), None);
     runtime.commit(changes).await.unwrap();
     let mut committed = runtime.committed();
     tokio::time::timeout(Duration::from_secs(10), async {
@@ -127,7 +128,14 @@ async fn remove_main(runtime: &Runtime, id: &str) {
         }
     })
     .await
-    .expect("the main process was removed");
+    .unwrap_or_else(|error| {
+        let snapshot = runtime.snapshot().unwrap();
+        panic!(
+            "the main process was not removed: {error}; record={:?}; directory={:?}",
+            snapshot.record(&crate::threads::thread::main(id)).unwrap(),
+            snapshot.stat(&crate::threads::thread::main(id)).unwrap()
+        );
+    });
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -262,7 +270,7 @@ async fn marks_do_not_revive_or_stop_work_and_snoozes_follow_plan_order_and_expi
     let threads = organizing_threads(&beak, Options::default());
     let own = threads.create(&person(Config::default()), "own").await.unwrap();
     let target = threads.create(&person(Config::default()), "target").await.unwrap();
-    remove_main(threads.runtime(), &target).await;
+    force_remove_main(threads.runtime(), &target).await;
     let until = threads.runtime().now_ms() + 60_000;
     let mut plan = Plan::default();
     let change = MarksChange {
@@ -399,7 +407,7 @@ async fn rename_and_deliver_revive_a_target_once_and_removing_targets_are_refuse
     let threads = organizing_threads(&beak, Options::default());
     let own = threads.create(&person(Config::default()), "own").await.unwrap();
     let target = threads.create(&person(Config::default()), "target").await.unwrap();
-    remove_main(threads.runtime(), &target).await;
+    force_remove_main(threads.runtime(), &target).await;
     let volume = crate::volume::Volume {
         runtime: threads.runtime().clone(),
     };

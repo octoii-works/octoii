@@ -279,3 +279,80 @@ fn lend<'a>(
         },
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Reserve a run without finishing it: removal must handle work already admitted by the kernel.
+    #[tokio::test]
+    async fn forced_removal_does_not_wait_for_an_admitted_runs_termination_grace() {
+        let beak = beak::Beak::new().unwrap();
+        let (kernel, _events) = beak::Kernel::open(
+            &beak,
+            &beak::Options {
+                directory: None,
+                time: 1_000,
+            },
+        )
+        .unwrap();
+        kernel
+            .register(
+                b"test.main",
+                beak::Program {
+                    version: 1,
+                    stop_handler: false,
+                    retries: 0,
+                    retry_delay_min_ms: 0,
+                    retry_delay_max_ms: 0,
+                },
+            )
+            .unwrap();
+        kernel
+            .commit(
+                1_000,
+                &[beak::Change::Start {
+                    parent: b"",
+                    key: b"main",
+                    kind: b"test.main",
+                    version: 1,
+                    input: b"null",
+                    checkpoint: b"",
+                    priority: 0,
+                    namespace: None,
+                }],
+            )
+            .unwrap();
+        let run = kernel.runnable(1_000).unwrap().remove(0);
+        let mut graceful = Changes::new();
+        graceful.remove(run.path.clone(), None);
+        graceful.lent(|changes| kernel.commit(1_001, changes)).unwrap();
+        assert_eq!(
+            kernel.finish(1_002, &run, &beak::Ending::Done(b"null"), &[]).unwrap_err().status,
+            beak::Status::Refused,
+            "the interrupted work can no longer commit its result"
+        );
+        kernel.runnable(1_002).unwrap();
+        let record = kernel.snapshot().unwrap().record(&run.path).unwrap().unwrap();
+        assert_eq!(record.state, beak::ProcessState::Running);
+        assert!(record.term.is_some(), "graceful removal waits for the admitted run's grace");
+
+        let mut forced = Changes::new();
+        forced.force_remove(run.path.clone(), None);
+        forced.lent(|changes| kernel.commit(1_003, changes)).unwrap();
+        kernel.runnable(1_003).unwrap();
+        assert!(kernel.snapshot().unwrap().record(&run.path).unwrap().is_none());
+        let late_write = beak::Change::Write {
+            path: b"late",
+            bytes: b"must not commit",
+        };
+        assert_eq!(
+            kernel
+                .finish(1_004, &run, &beak::Ending::Done(b"null"), &[late_write])
+                .unwrap_err()
+                .status,
+            beak::Status::Refused
+        );
+        assert!(kernel.snapshot().unwrap().stat(b"late").unwrap().is_none());
+    }
+}
