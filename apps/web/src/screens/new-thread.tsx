@@ -271,7 +271,9 @@ function DraftHeadline({
 				) : (
 					<>
 						<span>What should we build in</span>
-						<span className="max-w-full [&>button]:font-semibold [&>button]:underline-offset-4 [&>button:hover]:underline">{project}</span>
+						<span className="max-w-full [&>button]:font-semibold [&>button]:text-muted-foreground [&>button]:underline [&>button]:decoration-border [&>button]:underline-offset-4 [&>button]:transition-colors [&>button:hover]:text-primary [&>button:hover]:decoration-primary">
+							{project}
+						</span>
 						<span>?</span>
 					</>
 				)}
