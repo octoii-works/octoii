@@ -6,6 +6,7 @@
 import type { Contributions } from "../components/state/contributions.ts";
 import { registerTools } from "../core/tools.ts";
 import { BROWSER_TOOLS } from "./browser/tool-view.ts";
+import { GIT_TOOLS } from "./git/tool-view.ts";
 import { DELEGATE_TOOLS } from "./delegate/tool-view.ts";
 import { QUESTION_TOOLS } from "./question/tool-view.ts";
 import { TERMINAL_TOOLS } from "./terminals/tool-view.ts";
@@ -17,4 +18,4 @@ import { THREAD_VIEW } from "./thread/thread-thing.tsx";
 /** What the extensions give. */
 export const CONTRIBUTIONS: Contributions = { things: { thread: THREAD_VIEW, page: PAGE_VIEW, terminal: TERMINAL_VIEW } };
 
-registerTools({ ...BROWSER_TOOLS, ...DELEGATE_TOOLS, ...QUESTION_TOOLS, ...TERMINAL_TOOLS, ...THREAD_TOOLS });
+registerTools({ ...GIT_TOOLS, ...BROWSER_TOOLS, ...DELEGATE_TOOLS, ...QUESTION_TOOLS, ...TERMINAL_TOOLS, ...THREAD_TOOLS });

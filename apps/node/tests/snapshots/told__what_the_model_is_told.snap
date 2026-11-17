@@ -914,6 +914,91 @@ Run JavaScript as the body of an async function, with your tools on `tools`: `aw
   "type": "object"
 }
 
+=== tool git
+Inspect the workspace repository and manage linked worktrees. status returns the repository and uncommitted changes; list_worktrees lists registered paths, branches and locks. create_worktree creates a new directory and branch from a committed base (HEAD by default); uncommitted work stays in its original directory. remove_worktree removes only a clean, unlocked linked worktree and keeps its branch. Neither operation switches this thread's workspace or context. Use shell for commit, push, merge and other Git commands. Creation failures may leave a directory or branch: inspect before retrying; nothing is automatically deleted.
+--- parameters
+{
+  "oneOf": [
+    {
+      "additionalProperties": false,
+      "description": "Repository, branch and uncommitted changes in the thread's workspace.",
+      "properties": {
+        "action": {
+          "const": "status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "description": "Registered worktrees, including lock and pruning information.",
+      "properties": {
+        "action": {
+          "const": "list_worktrees",
+          "type": "string"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "description": "Create a new linked worktree and branch from a committed revision. Does not switch the thread.",
+      "properties": {
+        "action": {
+          "const": "create_worktree",
+          "type": "string"
+        },
+        "base": {
+          "description": "Commit, branch or tag to start from; HEAD if omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "branch": {
+          "description": "New literal branch name.",
+          "type": "string"
+        },
+        "path": {
+          "description": "New directory; relative to the workspace, absolute, or starting with ~/. Its parent must exist.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "path",
+        "branch"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "description": "Remove a clean, unlocked linked worktree, retaining its branch. Never forces removal.",
+      "properties": {
+        "action": {
+          "const": "remove_worktree",
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "path"
+      ],
+      "type": "object"
+    }
+  ]
+}
+
 === tool glob
 Find files under a directory whose paths match a glob, respecting ignore files. Returns one path per line, newest first, 200 per page; a note gives the offset of the next page.
 --- parameters

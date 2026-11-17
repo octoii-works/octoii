@@ -3,6 +3,7 @@
 
 pub mod git;
 pub mod protocol;
+pub mod tool;
 
 use std::path::Path;
 
@@ -33,6 +34,7 @@ impl Extension for GitExtension {
     }
 
     fn build(self: Box<Self>, registrar: &mut Registrar<'_>) {
+        registrar.tool(tool::GitTool);
         registrar.methods(protocol::set(), Method::read, |caller: Caller, method| async move {
             answered(&caller, method).await
         });

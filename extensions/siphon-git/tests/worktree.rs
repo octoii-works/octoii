@@ -294,3 +294,74 @@ async fn preparation_does_not_expand_the_callers_write_permissions() {
     );
     worktrees.calling.close().await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn agent_worktree_actions_keep_the_workspace_and_protect_uncommitted_work() {
+    use serde_json::{Value, json};
+    use siphon::tools::{CallStatus, Tool};
+    use siphon_git::tool::GitTool;
+
+    let folder = tempfile::tempdir().unwrap();
+    let workspace = folder.path().canonicalize().unwrap();
+    let root = workspace.join("source");
+    std::fs::create_dir(&root).unwrap();
+    repository(&root);
+    let beak = Beak::new().unwrap();
+    let calling = Calling::start(&beak, |tools| tools.with(GitTool));
+    let schema = GitTool::output_schema().unwrap();
+    let validator = jsonschema::validator_for(&schema).unwrap();
+    let call = async |key: &str, args: Value| {
+        calling
+            .called(key, root.clone(), Vec::new(), vec![(key.into(), "git".into(), args.to_string())])
+            .await
+            .remove(0)
+    };
+    let created = call(
+        "create",
+        json!({"action": "create_worktree", "path": "../topic\nwith space", "branch": "topic"}),
+    )
+    .await;
+    assert_eq!(created.status, CallStatus::Ok, "{}", created.text);
+    assert!(validator.is_valid(created.structured_content.as_ref().unwrap()));
+    let destination = workspace.join("topic\nwith space");
+    assert!(destination.join("tracked.txt").exists());
+    let status = call("status", json!({"action": "status"})).await;
+    assert_eq!(
+        status.structured_content.as_ref().unwrap()["repository"]["root"],
+        root.to_str().unwrap()
+    );
+    assert!(validator.is_valid(status.structured_content.as_ref().unwrap()));
+    git(
+        &root,
+        &["worktree", "lock", "--reason", "keep\nthis", destination.to_str().unwrap()],
+    );
+    let listed = call("list", json!({"action": "list_worktrees"})).await;
+    let data = listed.structured_content.unwrap();
+    assert!(validator.is_valid(&data));
+    let entry = data["worktrees"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["branch"] == "topic")
+        .unwrap();
+    assert_eq!(entry["path"], destination.to_str().unwrap());
+    assert_eq!(entry["locked"], "keep\nthis");
+    let remove = json!({"action": "remove_worktree", "path": destination});
+    assert_eq!(call("locked", remove.clone()).await.status, CallStatus::ToolError);
+    git(&root, &["worktree", "unlock", destination.to_str().unwrap()]);
+    std::fs::write(destination.join("untracked"), "keep").unwrap();
+    assert_eq!(call("dirty", remove.clone()).await.status, CallStatus::ToolError);
+    assert!(destination.join("untracked").exists());
+    std::fs::remove_file(destination.join("untracked")).unwrap();
+    let removed = call("remove", remove).await;
+    assert_eq!(removed.status, CallStatus::Ok, "{}", removed.text);
+    assert!(validator.is_valid(removed.structured_content.as_ref().unwrap()));
+    assert!(!destination.exists());
+    assert_eq!(git(&root, &["rev-parse", "refs/heads/topic"]), git(&root, &["rev-parse", "HEAD"]));
+    assert_eq!(
+        call("main", json!({"action": "remove_worktree", "path": "."})).await.status,
+        CallStatus::ToolError
+    );
+    assert!(root.join("tracked.txt").exists());
+    calling.close().await;
+}

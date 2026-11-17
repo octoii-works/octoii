@@ -8,6 +8,7 @@
 use std::path::Path;
 
 use bytes::Bytes;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 use ts_rs::TS;
@@ -20,7 +21,7 @@ const COMMITS_MAX: usize = 200;
 /// A repository, as a folder in it is: where its work tree begins, its branch — none where its head is detached — its
 /// head's commit — none before the first — its upstream, how far ahead of it and behind, and the branch its work was
 /// taken from, as its changes are told against unless one is asked for.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
 pub struct Repository {
     pub root: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -40,16 +41,28 @@ pub struct Repository {
 }
 
 /// A new linked worktree: its absolute path, its own new branch, and the commit it was created from.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
 pub struct Worktree {
     pub path: String,
     pub branch: String,
     pub base_commit: String,
 }
 
+/// A registered worktree, including detached, bare, locked and prunable entries.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct WorktreeEntry {
+    pub path: String,
+    pub head: Option<String>,
+    pub branch: Option<String>,
+    pub bare: bool,
+    pub detached: bool,
+    pub locked: Option<String>,
+    pub prunable: Option<String>,
+}
+
 /// Which changes are asked for: those not yet committed; a branch's against where it parted from its base — the
 /// repository's, where none is named — the working tree's own included; or one commit's.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ChangesScope {
     Uncommitted,
@@ -65,7 +78,7 @@ pub enum ChangesScope {
 
 /// The two trees changes are told between: the older, by its object's id; the newer, a commit's, or the working
 /// tree's where none.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
 pub struct Comparison {
     pub old: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -74,7 +87,7 @@ pub struct Comparison {
 }
 
 /// What became of a file between two trees; untracked, one in the working tree git does not keep.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(rename_all = "kebab-case")]
 pub enum ChangeStatus {
     Added,
@@ -88,7 +101,7 @@ pub enum ChangeStatus {
 
 /// A file changed: its path from the repository's root, the one it had, what became of it, the lines it gained and
 /// lost — none where they were not counted — and whether it is binary.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
 pub struct ChangedFile {
     pub path: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -106,7 +119,7 @@ pub struct ChangedFile {
 
 /// The changes asked for: the repository's root, the trees they are between, the branch they are told against, and
 /// the files changed.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
 pub struct Changes {
     pub root: String,
     pub comparison: Comparison,
@@ -117,7 +130,7 @@ pub struct Changes {
 }
 
 /// A commit of a branch: its id, when it was committed, in seconds since the epoch, and its subject.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
 pub struct Commit {
     pub commit: String,
     pub time: i64,
@@ -161,6 +174,53 @@ fn text(bytes: &[u8]) -> String {
 }
 
 impl Git<'_> {
+    /// List registered worktrees with NUL-delimited paths and lock reasons intact.
+    ///
+    /// # Errors
+    /// Git could not list the repository's worktrees.
+    pub async fn worktrees(&self, folder: &Path) -> Result<Vec<WorktreeEntry>, GitError> {
+        let output = self.output(folder, &["worktree", "list", "--porcelain", "-z"]).await?;
+        let mut entries = Vec::new();
+        let mut entry = WorktreeEntry::default();
+        for field in output.split(|&byte| byte == 0) {
+            if field.is_empty() {
+                if !entry.path.is_empty() {
+                    entries.push(std::mem::take(&mut entry));
+                }
+                continue;
+            }
+            let field = text(field);
+            let (key, value) = field.split_once(' ').unwrap_or((&field, ""));
+            match key {
+                "worktree" => value.clone_into(&mut entry.path),
+                "HEAD" => entry.head = Some(value.to_owned()),
+                "branch" => entry.branch = Some(value.strip_prefix("refs/heads/").unwrap_or(value).to_owned()),
+                "bare" => entry.bare = true,
+                "detached" => entry.detached = true,
+                "locked" => entry.locked = Some(value.to_owned()),
+                "prunable" => entry.prunable = Some(value.to_owned()),
+                _ => {}
+            }
+        }
+        Ok(entries)
+    }
+
+    /// Remove a clean linked worktree. Keep its branch and never force removal.
+    ///
+    /// # Errors
+    /// Git refuses dirty, locked or main worktrees, or cannot remove the directory.
+    pub async fn remove_worktree(&self, folder: &Path, destination: &Path) -> Result<(), GitError> {
+        let path = destination
+            .to_str()
+            .filter(|_| destination.is_absolute())
+            .ok_or_else(|| GitError::Refused {
+                command: "worktree remove".into(),
+                said: "the destination must be an absolute UTF-8 path".into(),
+            })?;
+        self.output(folder, &["worktree", "remove", "--", path]).await?;
+        Ok(())
+    }
+
     /// Creates a linked worktree at the absolute `destination`, whose parent must exist, on the new literal `branch`.
     /// `base` is resolved to a commit before anything is created; the source worktree's uncommitted changes stay there.
     /// Every command, including directory creation and git's hooks and filters, runs on this same machine.

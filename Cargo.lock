@@ -5652,6 +5652,9 @@ name = "siphon-git"
 version = "0.0.1"
 dependencies = [
  "bytes",
+ "jsonschema",
+ "octoii-ai",
+ "schemars 1.2.3",
  "serde",
  "serde_json",
  "siphon",

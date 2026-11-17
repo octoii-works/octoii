@@ -25,7 +25,7 @@
 | terminals | terminal 的 open/read/write/close；与一次性 shell 分工 |
 | thread | thread 的查询、历史、通信与整理 action；不承载 Git |
 | delegate | start 创建、send 继续；两者保留等待/后台通知，send 不接受类型或标题 |
-| git | 计划一个 git 入口，优先 status/list_worktrees/create_worktree/remove_worktree；目前尚未注册 Agent 工具。普通 commit/push/merge 继续 shell |
+| git | 一个 git 入口：status/list_worktrees/create_worktree/remove_worktree；创建和移除分别声明权限，移除不支持 force、保留分支。普通 commit/push/merge 继续 shell |
 | files | present_file 单操作；不承担基础 read/write/edit |
 | question | question 单操作；不是权限审批 |
 | memory | 记忆上下文与管理，暂不新增 Agent 工具 |
@@ -35,14 +35,14 @@
 | claude-code | Provider 接入，不新增管理工具给 Agent |
 | html | 共享库，零工具、零独立服务 |
 
-Git 创建 worktree 不等于切换 Thread。目录切换、项目归属、上下文重新收集及权限必须先核对 Siphon 的能力；需要 core 修改时单独确认。不得把“已创建”报告成“已切换”。
+Git 创建 worktree 不等于切换 Thread。目录切换、项目归属、上下文重新收集及权限必须先核对 Siphon 的能力；需要 core 修改时单独确认。不得把“已创建”报告成“已切换”。当前 Plan 只能创建继承父 Thread 工作目录的 Thread，不能变更目录；本轮不新增切换机制，也不直接写 Thread 配置或绕过项目上下文收集。
 
 ## 顺序与验收
 
 1. Delegate 显式 action：schema 与反序列化一致，拒绝混合字段，start 默认 general_purpose，send 保留类型与父子权限；结果契约和等待机制不变。
 2. Browser 参数整理：保留页面操作能力，迁移调用方和测试；不同时改生命周期。
-3. Git/worktree：先确认目录切换边界，再实现实际需要的 action，UI 只显示环境与操作结果。
+3. Git/worktree：通过既有 Machine 接口实现查询、创建和移除，UI 只显示操作摘要；Thread 目录切换不在本次范围。
 
-Delegate 已完成显式 action 迁移，包含参数校验、真实调用测试、模型提示词快照和 UI 摘要；等待与后台通知沿用原实现。Browser 已完成 type/fill/press 拆分，真实 Chromium 验证覆盖输入、替换、清空、只读拒绝和显式提交。Git 尚待实施。
+Delegate 已完成显式 action 迁移，包含参数校验、真实调用测试、模型提示词快照和 UI 摘要；等待与后台通知沿用原实现。Browser 已完成 type/fill/press 拆分，真实 Chromium 验证覆盖输入、替换、清空、只读拒绝和显式提交。Git 已注册四个 action，复用已有仓库查询与 worktree 创建实现；补充列表、非强制移除、独立操作权限和真实工具调用测试。
 
 移除扩展开关和 common 目录迁移分别提交，不混入工具参数变更。冻结的 core 中自包含执行测试夹具不是扩展真实契约的替代；真实扩展 schema、权限和调用行为在扩展自身测试中验证。
