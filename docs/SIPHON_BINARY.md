@@ -271,10 +271,10 @@ reject ABI mismatches and unsupported targets, and fail clearly without a privat
 Why core work is necessary: only the private build can compile the implementation into a native library;
 an extension or an alias crate would still require the private sources at consumer build time.
 
-B2.1 is not the product migration. B2.2 adds typed program/request registration over the ABI and validates
-phase execution, host answers, streaming, cancellation, shutdown and crash recovery. Its exact core files
-will be separately reviewed after the first binary slice. B3 migrates the remaining machine/storage and
-processing callers. B4 publishes the complete verified package and removes private checkout dependencies.
+B2.1 is not the product migration. [B2.2](SIPHON_EXECUTION.md) first validates Program execution through the binary,
+then adds host Requests, cancellation and recovery, and the streaming and person interfaces used by the product.
+B3 migrates the remaining machine/storage and processing callers. B4 publishes the complete verified package and
+removes private checkout dependencies.
 
 ### Distribution verification
 

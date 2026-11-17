@@ -24,3 +24,10 @@ it needs.
   bundled Beak library. Follow the [package boundaries](docs/ARCHITECTURE.md).
 - **Keep it to one change**, written like the code around it, within the rules of [AGENTS.md](AGENTS.md): clear names,
   small functions, the simplest design that works, and nothing built before it is needed.
+
+## Local verification cleanup
+
+Use a temporary `CARGO_TARGET_DIR` for each local Rust build or verification run. Keep native link outputs and
+disposable test data in the same temporary directory. When the run finishes, even if it fails, stop the processes it
+started and remove that directory. If a command used a workspace's default `target/`, clean that workspace too.
+Keep tracked files, Cargo's dependency cache, and existing app data and services untouched.
