@@ -28,6 +28,19 @@ impl Volume {
         self.runtime.snapshot()
     }
 
+    /// The current configuration of one thread; none if the thread does not exist.
+    ///
+    /// # Errors
+    /// The volume could not be read, or the stored configuration is invalid.
+    pub fn thread_config(&self, id: &str) -> anyhow::Result<Option<crate::threads::Config>> {
+        self.snapshot()?
+            .stat(&thread::path(id))?
+            .and_then(|entry| entry.directory)
+            .map(|directory| crate::threads::Config::of(&directory))
+            .transpose()
+            .map_err(Into::into)
+    }
+
     /// A new id, minted from the volume: a `UUIDv7`, rising.
     ///
     /// # Errors

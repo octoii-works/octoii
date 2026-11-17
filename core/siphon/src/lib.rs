@@ -28,7 +28,7 @@ use std::sync::Arc;
 
 use crate::agent::{
     CORE, CompactProgram, DelegatedProgram, Gather, ModelRequest, ResumeProgram, Sources, ThreadProgram, TitleProgram, Told, TurnProgram,
-    answer_gather, answer_model, answer_review, sections,
+    answer_gather, answer_model, answer_review,
 };
 use crate::machine::Host;
 use crate::protocol::Scope;
@@ -47,13 +47,11 @@ use siphon_runtime::{Asked, Options, Runtime};
 pub use extension::{Caller, Extension, Full, Lagged, Registrar, Sink, Subscription};
 pub use kept::{Ends, Kept};
 
-/// What Siphon is built on: the machine its work is done on; the folder of the person's own configuration, for every
-/// project — their instructions, `AGENTS.md`, and their skills, `skills/` — where they keep one; the host's credentials
+/// What Siphon is built on: the machine its work is done on; the host's credentials
 /// and where the models' requests go, the host's providers and the catalogue of models; and the volume's options. The
 /// ids the models' answers are given are the volume's, and their clock the runtime's.
 pub struct Setup {
     pub machine: Host,
-    pub config: Option<std::path::PathBuf>,
     pub sign_in: providers::SignInSetup,
     pub credentials: Arc<dyn Credentials>,
     pub transport: Arc<dyn Transport>,
@@ -144,7 +142,6 @@ pub struct HostCaller {
 /// Siphon being built: what its extensions add to, and what it is started with.
 pub struct Building {
     builder: extension::Builder,
-    config: Option<std::path::PathBuf>,
     sign_in: providers::SignInSetup,
     credentials: Arc<dyn Credentials>,
     events: Events,
@@ -161,10 +158,7 @@ impl std::fmt::Debug for Siphon {
 
 impl std::fmt::Debug for Setup {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Setup")
-            .field("machine", &self.machine)
-            .field("config", &self.config)
-            .finish_non_exhaustive()
+        f.debug_struct("Setup").field("machine", &self.machine).finish_non_exhaustive()
     }
 }
 
@@ -181,7 +175,6 @@ impl Siphon {
     pub fn builder(beak: &Beak, setup: Setup) -> beak::Result<Building> {
         let Setup {
             machine,
-            config,
             sign_in,
             credentials,
             transport,
@@ -208,6 +201,7 @@ impl Siphon {
             tellers: Vec::new(),
             natives: Vec::new(),
             writables: Vec::new(),
+            writable_folders: crate::agent::WritableFolders::new(),
             registry: extension::Registry::default(),
         };
         own(&mut builder.registrar(CORE));
@@ -220,7 +214,6 @@ impl Siphon {
         builder.topics(CORE, Scope::ThreadsRead, connection::told);
         Ok(Building {
             builder,
-            config,
             sign_in,
             credentials,
             events,
@@ -290,8 +283,7 @@ impl Building {
             });
         }
         let Building {
-            mut builder,
-            config,
+            builder,
             sign_in,
             credentials,
             events,
@@ -299,12 +291,7 @@ impl Building {
             catalogue,
             options,
         } = self;
-        // Siphon's own tellers are told the folders its extensions gave.
-        let (host, writables) = (builder.machine.clone(), builder.writables.clone());
-        let mut core = builder.registrar(CORE);
-        for (shared, teller) in sections::tellers(&host, config.as_deref(), writables) {
-            core.teller(shared, teller);
-        }
+        builder.writable_folders.finish(builder.writables.clone())?;
         let extension::Builder {
             kernel,
             machine,
@@ -315,6 +302,7 @@ impl Building {
             tellers,
             natives,
             writables,
+            writable_folders: _,
             registry,
         } = builder;
         let hosts = Arc::new(providers);
@@ -347,8 +335,7 @@ impl Building {
     }
 }
 
-/// What Siphon adds as its own, through `registrar`: the coding tools and `execute`. Its tellers come once its
-/// extensions are added, told the folders they give.
+/// Siphon's built-in coding tools and execute; model instructions are supplied by extensions.
 fn own(registrar: &mut Registrar<'_>) {
     registrar.tool(ReadTool);
     registrar.tool(WriteTool);

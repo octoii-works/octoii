@@ -109,7 +109,6 @@ pub fn building(home: &Home, sign_in: SignInSetup) -> anyhow::Result<siphon::Bui
     let temporary = home.temporary().context("the Home's temporary folder")?;
     let setup = Setup {
         machine: machine(home, &temporary),
-        config: Some(home.config()),
         sign_in,
         credentials: Arc::new(Credstore::new(home.credstore(), &providers)),
         transport: Arc::new(octoii_ai::transport::Network::default()),
@@ -134,7 +133,9 @@ pub fn building(home: &Home, sign_in: SignInSetup) -> anyhow::Result<siphon::Bui
         folder: home.state().join("claude-code"),
     };
     Ok(built
-        .extension(BaseExtension)
+        .extension(BaseExtension {
+            config: Some(home.config()),
+        })
         .extension(browser)
         .extension(TerminalsExtension)
         .extension(QuestionExtension)

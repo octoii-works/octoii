@@ -26,7 +26,8 @@ pub(crate) use outlet::answer_exec;
 pub(crate) use plan::{Awaited, Primitives, Step};
 pub(crate) use requests::{Asks, Exec, Judgment, Permission, Review};
 pub(crate) use shell::ShellTool;
-pub(crate) use told::{INSTRUCTIONS_FILE, Instructions, Structured};
+pub(crate) use told::Structured;
+pub use told::{INSTRUCTIONS_FILE, Instructions};
 
 pub use crate::threads::CallStatus;
 pub use declarations::declarations;

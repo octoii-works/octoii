@@ -82,16 +82,7 @@ fn runtime(beak: &Beak, models: &Arc<Models>) -> Runtime {
     let tools = inner.clone().with(ExecuteTool);
     let sources = Sources {
         tools: tools.clone(),
-        tellers: Sources::ordered(
-            crate::agent::sections::tellers(&Machine::default(), None, Vec::new())
-                .into_iter()
-                .map(|(shared, teller)| crate::agent::OwnedTeller {
-                    extension: crate::agent::CORE.to_owned(),
-                    shared,
-                    teller,
-                })
-                .collect(),
-        ),
+        tellers: Vec::new(),
         owners: std::collections::HashMap::new(),
         natives: Vec::new(),
         models: Arc::clone(models),

@@ -25,7 +25,7 @@ async fn a_terminal_is_opened_drawn_and_told_as_it_writes_each_piece_once() {
     };
     let siphon = Siphon::builder(&beak, testing::setup(machine))
         .expect("built")
-        .extension(siphon_base::BaseExtension)
+        .extension(siphon_base::BaseExtension::default())
         .extension(TerminalsExtension)
         .start()
         .expect("started");

@@ -41,7 +41,6 @@ impl Credentials for Nothing {
 pub fn setup(machine: crate::machine::Host) -> Setup {
     Setup {
         machine,
-        config: None,
         sign_in: crate::providers::SignInSetup::default(),
         credentials: Arc::new(Nothing),
         transport: Arc::new(octoii_ai::transport::Network::default()),

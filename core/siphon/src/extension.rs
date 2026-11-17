@@ -199,6 +199,7 @@ pub(crate) struct Builder {
     pub(crate) tellers: Vec<OwnedTeller>,
     pub(crate) natives: Vec<(String, octoii_ai::vocabulary::Tool)>,
     pub(crate) writables: Vec<crate::agent::Writable>,
+    pub(crate) writable_folders: crate::agent::WritableFolders,
     pub(crate) registry: Registry,
 }
 
@@ -309,6 +310,12 @@ impl Registrar<'_> {
     #[must_use]
     pub fn machine(&self) -> &Host {
         &self.builder.machine
+    }
+
+    /// Read the final registered writable folders after Siphon starts, including extensions added later.
+    #[must_use]
+    pub fn writable_folders(&self) -> crate::agent::WritableFolders {
+        self.builder.writable_folders.clone()
     }
 
     /// The tool `tool`, which a thread's model and its scripts call.

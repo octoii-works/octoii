@@ -1,0 +1,79 @@
+//! Base reads final runtime configuration even when it is registered before product extensions.
+use siphon::testing::{self, Beak};
+use siphon::threads::{Config, Mode, NewThread};
+use siphon::{Extension, Registrar, Siphon};
+use siphon_base::BaseExtension;
+use std::path::PathBuf;
+
+struct WorkspaceNotes(PathBuf);
+impl Extension for WorkspaceNotes {
+    fn name(&self) -> &'static str {
+        "notes"
+    }
+    fn title(&self) -> &'static str {
+        "Notes"
+    }
+    fn description(&self) -> &'static str {
+        "Test writable directory"
+    }
+    fn build(self: Box<Self>, registrar: &mut Registrar<'_>) {
+        registrar.writable("notes folder", self.0);
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn base_reads_late_registered_folders_and_tracks_extension_settings() {
+    let root = tempfile::tempdir().unwrap();
+    let workspace = root.path().canonicalize().unwrap();
+    let user = workspace.join("user");
+    std::fs::create_dir(&user).unwrap();
+    std::fs::write(user.join("AGENTS.md"), "USER_INSTRUCTION").unwrap();
+    std::fs::write(workspace.join("AGENTS.md"), "PROJECT_INSTRUCTION").unwrap();
+    let beak = Beak::new().unwrap();
+    let siphon = Siphon::builder(&beak, testing::setup(siphon::machine::Host::default()))
+        .unwrap()
+        .extension(BaseExtension { config: Some(user) })
+        .extension(WorkspaceNotes(workspace.join("notes")))
+        .start()
+        .unwrap();
+    let key = siphon.runtime.new_id().unwrap();
+    let id = siphon
+        .threads
+        .create(
+            &NewThread {
+                actor: "person".into(),
+                config: Config {
+                    workspace: Some(workspace.display().to_string()),
+                    mode: Some(Mode::FullAccess),
+                    ..Config::default()
+                },
+                ..NewThread::default()
+            },
+            &key,
+        )
+        .await
+        .unwrap();
+    let told = siphon.told(&id).await.unwrap();
+    assert_eq!(
+        told.sections.iter().map(|(name, _)| name.as_str()).collect::<Vec<_>>(),
+        ["base", "instructions", "environment"]
+    );
+    let instructions = &told.sections[1].1;
+    assert!(instructions.contains("USER_INSTRUCTION"));
+    assert!(instructions.contains("PROJECT_INSTRUCTION"));
+    let environment = &told.sections[2].1;
+    assert!(environment.contains("notes folder:"));
+    assert!(environment.contains("permissions: full-access"));
+    assert!(!environment.contains("git:"));
+    let change = siphon::settings::SettingsChange {
+        environment: Some(siphon::settings::EnvironmentChange {
+            disabled_extensions: Some(vec!["notes".into()]),
+            ..Default::default()
+        }),
+        device: None,
+    };
+    siphon::settings::set(&siphon.runtime, "test", &change).await.unwrap();
+    let told = siphon.told(&id).await.unwrap();
+    assert!(!told.sections[2].1.contains("notes folder:"));
+    siphon.runtime.close().await;
+}

@@ -57,7 +57,7 @@ async fn git_tells_a_repository_s_changes_patches_versions_and_commits() {
     let siphon = Siphon::builder(&beak, testing::setup(siphon::machine::Host::default()))
         .map(|building| building.extension(siphon_git::GitExtension))
         .expect("built")
-        .extension(siphon_base::BaseExtension)
+        .extension(siphon_base::BaseExtension::default())
         .start()
         .expect("started");
     let mut client = Client::connect(&siphon, vec![Scope::FilesRead], 64);

@@ -21,3 +21,31 @@ impl Teller for GitContext {
         })))
     }
 }
+
+/// The repository location is project context, separate from the stable Git rules.
+pub(crate) struct RepositoryContext;
+
+impl Teller for RepositoryContext {
+    fn tell<'a>(
+        &'a self,
+        _: &'a Volume,
+        _: &'a str,
+        place: Option<&'a Place>,
+    ) -> Pin<Box<dyn Future<Output = anyhow::Result<Telling>> + Send + 'a>> {
+        let sections = place
+            .map(|place| {
+                let text = if place.project.join(".git").exists() {
+                    format!("Git repository: {}", place.project.display())
+                } else {
+                    "No Git repository detected for this workspace.".to_owned()
+                };
+                ("repository".to_owned(), text)
+            })
+            .into_iter()
+            .collect();
+        Box::pin(std::future::ready(Ok(Telling {
+            sections,
+            tools: Vec::new(),
+        })))
+    }
+}

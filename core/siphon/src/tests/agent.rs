@@ -194,16 +194,7 @@ fn runtime(beak: &Beak, script: &Arc<Script>) -> Runtime {
     let models = models(script);
     let sources = Sources {
         tools: tools.clone(),
-        tellers: Sources::ordered(
-            crate::agent::sections::tellers(&Machine::default(), None, Vec::new())
-                .into_iter()
-                .map(|(shared, teller)| crate::agent::OwnedTeller {
-                    extension: crate::agent::CORE.to_owned(),
-                    shared,
-                    teller,
-                })
-                .collect(),
-        ),
+        tellers: Vec::new(),
         owners: std::collections::HashMap::new(),
         natives: Vec::new(),
         models: Arc::clone(&models),
@@ -485,8 +476,11 @@ async fn a_turn_takes_on_the_calls_its_replies_make_and_asks_again_till_one_call
         .collect();
     assert_eq!(names, ["delegate", "execute", "read", "shell", "thread", "write"]);
     assert!(
-        matches!(&asked[0].input[0], Item::Message(Message::Developer { content }) if content.len() == 1),
-        "the environment alone; base instructions are supplied by an extension"
+        !asked[0]
+            .input
+            .iter()
+            .any(|item| matches!(item, Item::Message(Message::Developer { .. }))),
+        "core supplies no implicit instruction or environment sections"
     );
     assert!(
         matches!(asked[1].input.last(), Some(Item::FunctionCallOutput(output)) if output.call_id == "c1" && !output.is_error),
@@ -809,10 +803,14 @@ async fn a_window_too_full_for_its_next_request_is_compacted_and_the_model_asked
     let asked = script.asked.lock().expect("held").clone();
     let last = asked.last().expect("asked");
     assert!(
-        matches!(&last.input[1], Item::Message(Message::Developer { content }) if content == &[InputContent::text("<recap>\nthe recap\n</recap>")])
+        matches!(&last.input[0], Item::Message(Message::Developer { content }) if content == &[InputContent::text("<recap>\nthe recap\n</recap>")])
     );
-    assert!(matches!(&last.input[2], Item::Message(Message::User { content }) if content[0] == InputContent::text(long)));
-    assert_eq!(last.input.len(), 3, "nothing before the cut is sent");
+    assert!(matches!(&last.input[1], Item::Message(Message::User { content }) if content[0] == InputContent::text(long)));
+    assert_eq!(
+        last.input.len(),
+        2,
+        "no implicit environment or conversation before the cut is sent"
+    );
     runtime.close().await;
 }
 

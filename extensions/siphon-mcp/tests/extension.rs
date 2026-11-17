@@ -32,7 +32,7 @@ async fn servers_are_listed_as_they_stand_and_a_project_s_trusted_by_the_person(
     };
     let siphon = Siphon::builder(&beak, testing::setup(siphon::machine::Host::default()))
         .expect("built")
-        .extension(siphon_base::BaseExtension)
+        .extension(siphon_base::BaseExtension::default())
         .extension(extension)
         .start()
         .expect("started");

@@ -22,3 +22,9 @@ pub use coprocess::{Coprocess, Stderr, Stdin, Stdout, Variables};
 pub use files::{Error, Read, ReadOptions, media_type};
 pub use namespace::{Host, Machine, Program, RunError, Writes, inside};
 pub use paths::Base;
+
+/// Whether commands can be confined by this machine's sandbox.
+#[must_use]
+pub fn confines() -> bool {
+    beak::machine_confines()
+}

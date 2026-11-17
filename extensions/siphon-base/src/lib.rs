@@ -1,6 +1,10 @@
 //! Octoii's base instructions, supplied by the application rather than embedded in Siphon.
 
+mod environment;
+mod instructions;
+
 use std::future::Future;
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 
@@ -9,8 +13,10 @@ use siphon::tools::Place;
 use siphon::volume::Volume;
 use siphon::{Extension, Registrar};
 
-#[derive(Debug, Clone, Copy, Default)]
-pub struct BaseExtension;
+#[derive(Debug, Clone, Default)]
+pub struct BaseExtension {
+    pub config: Option<PathBuf>,
+}
 
 impl Extension for BaseExtension {
     fn name(&self) -> &'static str {
@@ -27,6 +33,12 @@ impl Extension for BaseExtension {
 
     fn build(self: Box<Self>, registrar: &mut Registrar<'_>) {
         registrar.teller(Shared::Machine, Arc::new(Base));
+        registrar.teller(Shared::Project, Arc::new(instructions::Instructions { config: self.config }));
+        let environment = environment::Environment {
+            host: registrar.machine().clone(),
+            writable: registrar.writable_folders(),
+        };
+        registrar.teller(Shared::Thread, Arc::new(environment));
     }
 }
 

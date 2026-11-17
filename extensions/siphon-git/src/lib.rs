@@ -37,6 +37,7 @@ impl Extension for GitExtension {
     fn build(self: Box<Self>, registrar: &mut Registrar<'_>) {
         registrar.tool(tool::GitTool);
         registrar.teller(siphon::agent::Shared::Machine, std::sync::Arc::new(context::GitContext));
+        registrar.teller(siphon::agent::Shared::Project, std::sync::Arc::new(context::RepositoryContext));
         registrar.methods(protocol::set(), Method::read, |caller: Caller, method| async move {
             answered(&caller, method).await
         });

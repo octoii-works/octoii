@@ -11,7 +11,6 @@ pub(crate) mod primitives;
 pub(crate) mod render;
 pub(crate) mod resume;
 pub(crate) mod review;
-pub(crate) mod sections;
 pub(crate) mod thread;
 pub(crate) mod title;
 pub(crate) mod told;
@@ -31,7 +30,7 @@ pub(crate) use title::TitleProgram;
 
 pub(crate) use turn::TurnProgram;
 pub(crate) use waiting::DelegatedProgram;
-pub(crate) use writable::Writable;
+pub use writable::{Writable, WritableFolders};
 
 /// What extensions and hosts use of it.
 pub use gather::{Shared, Teller, Telling};

@@ -3,6 +3,7 @@
 //! named so to the model.
 
 use std::path::PathBuf;
+use std::sync::{Arc, OnceLock};
 
 use beak::Snapshot;
 
@@ -29,4 +30,34 @@ pub fn places(host: &Host, thread: &str, writables: &[Writable], snapshot: &Snap
     let mut places = host.places_of(thread);
     places.extend(on(writables, snapshot).map(|writable| writable.folder.clone()));
     places
+}
+
+/// Read-only view of all registered extra writable folders, finalized before Siphon starts.
+#[derive(Debug, Clone)]
+pub struct WritableFolders(Arc<OnceLock<Vec<Writable>>>);
+
+impl WritableFolders {
+    pub(crate) fn new() -> Self {
+        Self(Arc::new(OnceLock::new()))
+    }
+
+    pub(crate) fn finish(&self, folders: Vec<Writable>) -> beak::Result<()> {
+        self.0.set(folders).map_err(|_| beak::Error {
+            status: beak::Status::Invalid,
+            reason: "writable folders already finalized".into(),
+        })
+    }
+
+    /// Extra folders whose extensions are enabled in the volume's current settings.
+    ///
+    /// # Errors
+    /// Siphon has not started, or the volume could not be read.
+    pub fn read(&self, volume: &crate::volume::Volume) -> beak::Result<Vec<Writable>> {
+        let folders = self.0.get().ok_or_else(|| beak::Error {
+            status: beak::Status::Invalid,
+            reason: "writable folders are not finalized until Siphon starts".into(),
+        })?;
+        let snapshot = volume.snapshot()?;
+        Ok(on(folders, &snapshot).cloned().collect())
+    }
 }
