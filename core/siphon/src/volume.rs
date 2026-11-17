@@ -28,14 +28,14 @@ impl Volume {
         self.runtime.snapshot()
     }
 
-    /// Accepts a thread and its initial input behind a durable startup gate.
+    /// Accepts a thread, its ordered initial input and fitted attachments in one commit behind a startup gate.
     ///
     /// # Errors
     /// Invalid/reused input, a deleted thread, or a storage failure.
     pub async fn prepare_thread(
         &self,
         new: &crate::threads::NewThread,
-        content: Vec<octoii_ai::vocabulary::InputContent>,
+        content: Vec<crate::threads::InputPart>,
         request: crate::threads::StartRequest,
         key: &str,
     ) -> anyhow::Result<(String, crate::threads::Start)> {

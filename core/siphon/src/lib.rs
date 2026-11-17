@@ -78,6 +78,14 @@ pub struct Siphon {
 }
 
 impl Siphon {
+    /// The volume through Siphon's public operations, without exposing its storage implementation.
+    #[must_use]
+    pub fn volume(&self) -> crate::volume::Volume {
+        crate::volume::Volume {
+            runtime: self.runtime.clone(),
+        }
+    }
+
     /// The sets of methods Siphon and its extensions brought, as the protocol is described by.
     #[must_use]
     pub fn sets(&self) -> &[crate::protocol::Set] {

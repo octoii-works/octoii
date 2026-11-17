@@ -999,15 +999,25 @@ async fn startup_claim_is_atomic_fenced_and_survives_reopening() {
     let new = person(Config::default());
     let inputs = vec![InputContent::text("keep this")];
     let (a, b) = tokio::join!(
-        volume.prepare_thread(&new, inputs.clone(), startup_request(), "startup-race"),
-        volume.prepare_thread(&new, inputs.clone(), startup_request(), "startup-race")
+        volume.prepare_thread(
+            &new,
+            inputs.iter().cloned().map(Into::into).collect(),
+            startup_request(),
+            "startup-race"
+        ),
+        volume.prepare_thread(
+            &new,
+            inputs.iter().cloned().map(Into::into).collect(),
+            startup_request(),
+            "startup-race"
+        )
     );
     let (id, start) = a.unwrap();
     assert_eq!(b.unwrap(), (id.clone(), start.clone()));
     assert_eq!(crate::threads::list(&volume).unwrap().len(), 1);
     assert!(
         volume
-            .prepare_thread(&new, vec![InputContent::text("changed")], startup_request(), "startup-race")
+            .prepare_thread(&new, vec![InputContent::text("changed").into()], startup_request(), "startup-race")
             .await
             .is_err()
     );
@@ -1064,7 +1074,7 @@ async fn stopping_or_deleting_preparation_cannot_be_undone_by_a_late_result() {
     let threads = Threads::<crate::agent::ThreadProgram>::new(volume.runtime.clone());
     let new = person(Config::default());
     let (id, start) = volume
-        .prepare_thread(&new, vec![InputContent::text("wait")], startup_request(), "startup-stop")
+        .prepare_thread(&new, vec![InputContent::text("wait").into()], startup_request(), "startup-stop")
         .await
         .unwrap();
     threads.stop(&id, "person").await.unwrap();
@@ -1076,7 +1086,12 @@ async fn stopping_or_deleting_preparation_cannot_be_undone_by_a_late_result() {
     assert!(volume.finish_thread_start(&id, &start.token, directory.clone()).await.is_err());
     assert!(volume.retry_thread_start(&id, &start.token).await.is_err());
     let (tool_stopped, start) = volume
-        .prepare_thread(&new, vec![InputContent::text("tool stop")], startup_request(), "startup-tool-stop")
+        .prepare_thread(
+            &new,
+            vec![InputContent::text("tool stop").into()],
+            startup_request(),
+            "startup-tool-stop",
+        )
         .await
         .unwrap();
     let mut changes = siphon_runtime::Changes::new();
@@ -1093,14 +1108,127 @@ async fn stopping_or_deleting_preparation_cannot_be_undone_by_a_late_result() {
         StartState::Cancelled
     ));
     let (deleted, start) = volume
-        .prepare_thread(&new, vec![InputContent::text("delete")], startup_request(), "startup-delete")
+        .prepare_thread(&new, vec![InputContent::text("delete").into()], startup_request(), "startup-delete")
         .await
         .unwrap();
     threads.delete(&deleted).await.unwrap();
     assert!(volume.finish_thread_start(&deleted, &start.token, directory).await.is_err());
     assert!(
         volume
-            .prepare_thread(&new, vec![InputContent::text("delete")], startup_request(), "startup-delete")
+            .prepare_thread(&new, vec![InputContent::text("delete").into()], startup_request(), "startup-delete")
+            .await
+            .is_err()
+    );
+    volume.runtime.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn initial_attachments_commit_with_ordered_input_and_survive_reopening() {
+    use crate::threads::{InputPart, files};
+    let beak = Beak::new().unwrap();
+    let storage = tempfile::tempdir().unwrap();
+    let options = Options {
+        directory: Some(storage.path().to_owned()),
+        ..Options::default()
+    };
+    let volume = startup_volume(&beak, options.clone());
+    let mut png = Vec::new();
+    image::RgbImage::from_pixel(2048, 2048, image::Rgb([40, 100, 200]))
+        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .unwrap();
+    let original = files::reference_of(&png);
+    let attachment = InputPart::Attachment {
+        bytes: png.into(),
+        media_type: "image/png".into(),
+        filename: Some("image.png".into()),
+    };
+    let parts = vec![InputContent::text("before").into(), attachment, InputContent::text("after").into()];
+    let new = person(Config::default());
+    let (a, b) = tokio::join!(
+        volume.prepare_thread(&new, parts.clone(), startup_request(), "attachments"),
+        volume.prepare_thread(&new, parts.clone(), startup_request(), "attachments")
+    );
+    let (id, start) = a.unwrap();
+    assert_eq!(b.unwrap(), (id.clone(), start));
+    assert_eq!(crate::threads::list(&volume).unwrap().len(), 1);
+    let waiting = inbox::waiting(&volume.snapshot().unwrap(), &id).unwrap();
+    let inbox::Inbound::Input { content, .. } = &waiting[0].inbound else {
+        panic!("initial input")
+    };
+    assert_eq!(content.first(), Some(&InputContent::text("before")));
+    assert_eq!(content.last(), Some(&InputContent::text("after")));
+    let InputContent::InputImage { file, .. } = &content[1] else {
+        panic!("fitted image")
+    };
+    assert_ne!(file.reference, original);
+    let kept = files::read(&volume.snapshot().unwrap(), &id, &file.reference).unwrap().unwrap();
+    assert_eq!(files::reference_of(&kept), file.reference);
+    let reference = file.reference.clone();
+    volume.runtime.close().await;
+    drop(volume);
+    let volume = startup_volume(&beak, options);
+    assert_eq!(files::read(&volume.snapshot().unwrap(), &id, &reference).unwrap(), Some(kept));
+    assert_eq!(
+        volume
+            .prepare_thread(&new, parts.clone(), startup_request(), "attachments")
+            .await
+            .unwrap()
+            .0,
+        id
+    );
+    let mut changed = parts;
+    if let InputPart::Attachment { filename, .. } = &mut changed[1] {
+        *filename = Some("changed.png".into());
+    }
+    assert!(
+        volume
+            .prepare_thread(&new, changed, startup_request(), "attachments")
+            .await
+            .is_err()
+    );
+    volume.runtime.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn invalid_attachment_rolls_back_every_part_and_pure_attachments_are_accepted() {
+    use crate::threads::{InputPart, files};
+    let beak = Beak::new().unwrap();
+    let volume = startup_volume(&beak, Options::default());
+    let new = person(Config::default());
+    let file = InputPart::Attachment {
+        bytes: Bytes::from_static(b"saved"),
+        media_type: "text/plain".into(),
+        filename: Some("note.txt".into()),
+    };
+    let invalid = InputPart::Attachment {
+        bytes: Bytes::from_static(b"not an image"),
+        media_type: "image/png".into(),
+        filename: None,
+    };
+    assert!(
+        volume
+            .prepare_thread(&new, vec![file.clone(), invalid], startup_request(), "files-only")
+            .await
+            .is_err()
+    );
+    assert_eq!(crate::threads::list(&volume).unwrap(), []);
+    assert!(volume.snapshot().unwrap().stat(b"siphon.start/files-only").unwrap().is_none());
+    let (id, _) = volume
+        .prepare_thread(&new, vec![file], startup_request(), "files-only")
+        .await
+        .unwrap();
+    assert_eq!(
+        files::read(&volume.snapshot().unwrap(), &id, &files::reference_of(b"saved")).unwrap(),
+        Some(Bytes::from_static(b"saved"))
+    );
+    let changed = InputPart::Attachment {
+        bytes: Bytes::from_static(b"different"),
+        media_type: "text/plain".into(),
+        filename: Some("note.txt".into()),
+    };
+    assert!(
+        volume
+            .prepare_thread(&new, vec![changed], startup_request(), "files-only")
             .await
             .is_err()
     );

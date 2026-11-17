@@ -1,7 +1,6 @@
 //! The operations on threads, each checked against the volume as it stands and committed as one, durable as it
 //! returns; one that makes or adds to a thread done once for its idempotency key.
 
-use sha2::{Digest, Sha256};
 use std::marker::PhantomData;
 
 use beak::{Query, Range, layout};
@@ -54,6 +53,8 @@ pub enum Error {
     Beak(#[from] beak::Error),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
+    #[error(transparent)]
+    File(#[from] super::files::Refused),
 }
 
 /// The threads, on a runtime whose program `M` runs each thread's main process.
@@ -109,7 +110,7 @@ impl<M: Program<Input = MainInput>> Threads<M> {
     pub async fn prepare(
         &self,
         new: &NewThread,
-        content: Vec<InputContent>,
+        content: Vec<super::InputPart>,
         request: super::StartRequest,
         key: &str,
     ) -> Result<(String, super::Start), Error> {
@@ -119,7 +120,7 @@ impl<M: Program<Input = MainInput>> Threads<M> {
         }
         let path: Bytes = [b"siphon.start/", key.as_bytes()].concat().into();
         let claim = StartClaim {
-            fingerprint: Sha256::digest(serde_json::to_vec(&(new, &content, &request))?).into(),
+            fingerprint: super::input::fingerprint(new, &content, &request)?,
             thread: self.runtime.new_id()?,
         };
         if let Some(bytes) = self.runtime.snapshot()?.read(&path, 0, u64::MAX)? {
@@ -134,6 +135,7 @@ impl<M: Program<Input = MainInput>> Threads<M> {
         let mut changes = Changes::new();
         Self::made(&mut changes, &claim.thread, &self.runtime.new_id()?, new)?;
         super::start::made(&mut changes, &claim.thread, &start)?;
+        let content = super::input::keep(&self.runtime.snapshot()?, &mut changes, &claim.thread, content)?;
         inbox::put(
             &mut changes,
             &claim.thread,

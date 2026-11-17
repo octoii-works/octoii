@@ -172,7 +172,7 @@ async fn accept(
     let (thread, start) = volume
         .prepare_thread(
             &new,
-            content,
+            content.into_iter().map(Into::into).collect(),
             StartRequest {
                 owner: OWNER.into(),
                 payload: serde_json::to_value(worktree)?,

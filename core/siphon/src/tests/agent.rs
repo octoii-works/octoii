@@ -1325,7 +1325,14 @@ async fn startup_gate_holds_all_input_until_the_final_workspace_is_bound() {
     let (id, start) = volume
         .prepare_thread(
             &new,
-            vec![InputContent::text("first")],
+            vec![
+                InputContent::text("first").into(),
+                crate::threads::InputPart::Attachment {
+                    bytes: bytes::Bytes::from_static(b"attached context"),
+                    media_type: "text/plain".into(),
+                    filename: Some("context.txt".into()),
+                },
+            ],
             StartRequest {
                 owner: "test".into(),
                 payload: serde_json::json!({}),
@@ -1374,6 +1381,23 @@ async fn startup_gate_holds_all_input_until_the_final_workspace_is_bound() {
     until(&threads, &id, Turn::Replied).await;
     assert_eq!(threads.listed(&id).unwrap().config.workspace.as_deref(), Some(workspace.as_str()));
     assert_eq!(threads.listed(&id).unwrap().project.as_deref(), Some(workspace.as_str()));
+    let logged = entries(&threads, &id);
+    let file = logged
+        .iter()
+        .filter_map(|entry| match entry {
+            Entry::Input { content, .. } => Some(content),
+            _ => None,
+        })
+        .flatten()
+        .find_map(|part| match part {
+            InputContent::InputFile { file } => Some(file),
+            _ => None,
+        })
+        .expect("attached input");
+    assert_eq!(
+        crate::threads::files::read(&volume.snapshot().unwrap(), &id, &file.reference).unwrap(),
+        Some(bytes::Bytes::from_static(b"attached context"))
+    );
     assert_eq!(script.asked.lock().unwrap().len(), 1);
     volume.finish_thread_start(&id, &retried.token, directory).await.unwrap();
     assert_eq!(script.asked.lock().unwrap().len(), 1);
