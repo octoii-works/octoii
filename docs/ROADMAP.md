@@ -145,6 +145,6 @@ Rust 已按 `core/`、`extensions/`、`apps/node/` 分层，Cargo 依赖与 CI �
 
 ## 下一项任务
 
-R0 已完成。下一步设计并实施 R1a：复用 Git worktree 准备原语，打通新 Thread 的目录准备与启动。每次只推进一个可验收的产品闭环，不同时重构内核和扩展体系。
+R0 已完成。R1a/b 已接通启动门、附件原子接收、首次自动准备和创建界面，正常真实任务已验收；当前推进 R1c 生命周期与故障恢复验收。每次只推进一个可验收的产品闭环，不同时重构内核和扩展体系。
 
-R1a 的 worktree RPC 前置切片已完成，权限与验收见 [WORKTREE_START.md](WORKTREE_START.md)；R1a 整体尚未完成。
+R1 的权限、实现与分批验收见 [WORKTREE_START.md](WORKTREE_START.md)。已补充双任务隔离、保留源目录未提交内容、删除后保留 worktree 与拒绝迟到请求的集成回归；进程级故障和浏览器恢复场景尚未全部完成，不将 R1 标记为整体完成。

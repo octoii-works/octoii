@@ -183,37 +183,25 @@ async fn reopening_keeps_the_request_and_retry_requires_the_saved_token() {
             .start()
             .unwrap()
     };
-    let first = open();
     let scopes = vec![Scope::GitOperate, Scope::ThreadsOperate, Scope::ThreadsRead];
-    // Own the connection task so reopening waits for every old volume handle to be dropped.
-    let (calls, incoming) = tokio::sync::mpsc::channel(4);
-    let (outgoing, mut replies) = tokio::sync::mpsc::channel(4);
-    let connection = tokio::spawn(siphon::connection::serve(
-        first.clone(),
-        siphon::connection::Access {
-            session: "test".into(),
-            scopes: scopes.clone(),
-        },
-        siphon::protocol::Machine::of("here".into(), &first.machine),
-        incoming,
-        outgoing,
-    ));
-    replies.recv().await.unwrap();
     let request = accept(&root, &destination);
-    calls
-        .send(json!({"id":"accept", "method":"git.start", "params":request}).to_string())
-        .await
-        .unwrap();
-    let siphon::connection::Outgoing::Text(reply) = replies.recv().await.unwrap() else {
-        panic!("text response")
-    };
-    let reply: Value = serde_json::from_str(&reply).unwrap();
-    assert!(reply["error"].is_null(), "{reply}");
-    let accepted = reply["result"].clone();
-    drop(calls);
-    connection.await.unwrap();
-    first.runtime.close().await;
-    drop(first);
+    // Reopening models a new host: tear down the old executor as well as its node.
+    // Connection and runtime completion alone do not join every executor-owned task.
+    let accepted = std::thread::scope(|scope| {
+        scope
+            .spawn(|| {
+                tokio::runtime::Runtime::new().unwrap().block_on(async {
+                    let first = open();
+                    let mut connection = client(&first, scopes.clone()).await;
+                    let accepted = call(&mut connection, "git.start", request.clone()).await;
+                    drop(connection);
+                    first.runtime.close().await;
+                    accepted
+                })
+            })
+            .join()
+            .unwrap()
+    });
     let second = open();
     let mut after = client(&second, scopes).await;
     assert_eq!(call(&mut after, "git.start", request).await, accepted);
@@ -246,4 +234,77 @@ async fn reopening_keeps_the_request_and_retry_requires_the_saved_token() {
     assert!(!after.answer(&stale).await["error"].is_null());
     assert_eq!(std::fs::read_to_string(destination.join("tracked")).unwrap(), "original");
     second.runtime.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn independent_tasks_preserve_dirty_source_and_worktrees_after_thread_deletion() {
+    let folder = tempfile::tempdir().unwrap();
+    let root = folder.path().canonicalize().unwrap();
+    repository(&root);
+    std::fs::write(root.join("tracked"), "uncommitted source").unwrap();
+    std::fs::write(root.join("source-only"), "not committed").unwrap();
+    let before = git(&root, &["status", "--porcelain"]);
+    let beak = Beak::new().unwrap();
+    let node = node(&beak);
+    let mut client = client(&node, vec![Scope::GitOperate, Scope::ThreadsOperate, Scope::ThreadsRead]).await;
+    let mut tasks = Vec::new();
+    for name in ["first", "second"] {
+        // Sibling paths keep generated worktrees out of the source checkout's status.
+        let destination_owner = tempfile::Builder::new().prefix(name).tempdir().unwrap();
+        let destination = destination_owner.path().join("checkout");
+        let mut request = accept(&root, &destination);
+        request["key"] = json!(name);
+        request["worktree"]["branch"] = json!(name);
+        let accepted = call(&mut client, "git.start", request.clone()).await;
+        let prepare = json!({"action":"prepare", "thread":accepted["thread"], "token":accepted["start"]["token"]});
+        let ready = call(&mut client, "git.start", prepare.clone()).await;
+        assert_eq!(ready["start"]["state"]["state"], "ready");
+        assert_eq!(std::fs::read_to_string(destination.join("tracked")).unwrap(), "original");
+        assert!(!destination.join("source-only").exists());
+        std::fs::write(destination.join("tracked"), name).unwrap();
+        assert_eq!(call(&mut client, "git.start", prepare).await, ready);
+        tasks.push((destination_owner, destination, accepted["thread"].clone(), request));
+    }
+    assert_eq!(git(&root, &["status", "--porcelain"]), before);
+    assert_eq!(git(&root, &["branch", "--show-current"]), "main");
+    for (_, path, thread, request) in &tasks {
+        let contents = std::fs::read_to_string(path.join("tracked")).unwrap();
+        call(&mut client, "threads.delete", json!({"thread":thread})).await;
+        assert_eq!(std::fs::read_to_string(path.join("tracked")).unwrap(), contents);
+        let replay = client.call("git.start", request.clone()).await;
+        assert!(
+            !client.answer(&replay).await["error"].is_null(),
+            "a deleted task must not be recreated"
+        );
+    }
+    assert_eq!(call(&mut client, "threads.list", json!({})).await["threads"], json!([]));
+    assert_eq!(git(&root, &["worktree", "list", "--porcelain"]).matches("worktree ").count(), 3);
+    assert_eq!(std::fs::read_to_string(tasks[0].1.join("tracked")).unwrap(), "first");
+    assert_eq!(std::fs::read_to_string(tasks[1].1.join("tracked")).unwrap(), "second");
+    node.runtime.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn deleting_pending_task_rejects_late_preparation_and_acceptance_replay() {
+    let folder = tempfile::tempdir().unwrap();
+    let root = folder.path().canonicalize().unwrap();
+    repository(&root);
+    let destination = root.join("task");
+    let beak = Beak::new().unwrap();
+    let node = node(&beak);
+    let mut client = client(&node, vec![Scope::GitOperate, Scope::ThreadsOperate, Scope::ThreadsRead]).await;
+    let request = accept(&root, &destination);
+    let accepted = call(&mut client, "git.start", request.clone()).await;
+    call(&mut client, "threads.delete", json!({"thread":accepted["thread"]})).await;
+    for action in [
+        json!({"action":"prepare", "thread":accepted["thread"], "token":accepted["start"]["token"]}),
+        request,
+    ] {
+        let id = client.call("git.start", action).await;
+        assert!(!client.answer(&id).await["error"].is_null());
+    }
+    assert!(!destination.exists());
+    assert_eq!(git(&root, &["branch", "--list", "task"]), "");
+    assert_eq!(call(&mut client, "threads.list", json!({})).await["threads"], json!([]));
+    node.runtime.close().await;
 }
