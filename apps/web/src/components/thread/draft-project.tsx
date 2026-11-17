@@ -58,7 +58,7 @@ export function DraftProject(props: {
 					}}
 				>
 					<FolderPlus className="size-4" />
-					Choose a folder…
+					Add project…
 				</button>
 			</PopoverPopup>
 		</Popover>

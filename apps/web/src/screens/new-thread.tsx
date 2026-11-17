@@ -129,7 +129,7 @@ export function NewThreadScreen(props: NewThreadScreenProps): ReactNode {
 					<DetailsFloat>{details}</DetailsFloat>
 				</fieldset>
 			</div>
-			<FolderChooser open={choosing} onOpenChange={setChoosing} start={folder} projects={projects} onChoose={choose} />
+			<FolderChooser open={choosing} onOpenChange={setChoosing} start={folder} onChoose={choose} />
 		</Pane>
 	);
 }
