@@ -23,7 +23,7 @@ base 扩展的所有 Teller 固定最先，内部及其余扩展按 Shared 稳�
 
 | 部分 | 当前情况 | 目标 |
 | --- | --- | --- |
-| base | 已由 siphon-base 注入；简洁的 Context/Work/Replies，Git 已迁出 | 通用卡片语法只保留一份，各功能扩展声明 kind |
+| base | 已由 siphon-base 注入；简洁的 Context/Work/Replies，Git 已迁出 | 不包含文件链接或产品卡片展示协议 |
 | instructions | 已由基础扩展收集用户指令和逐层 AGENTS.md | 复用公开的 Instructions 标记格式，保持来源与范围规则 |
 | environment | 已由基础扩展主动读取运行事实并组织文本 | 不自行推导权限；目录由同一注册集合提供，仓库信息由 Git 扩展注入 |
 | Git | 已有独立 Teller，注入 Git 政策和 worktree 约定 | P2 核对仓库事实的归属；工具描述只保留职责 |
@@ -38,13 +38,13 @@ base 扩展的所有 Teller 固定最先，内部及其余扩展按 Shared 稳�
 | Question | question Teller 负责提问政策 | 功能交互约定交给 Teller，选项和回答参数由 schema 表达；不新增空泛的提问教程 |
 | Web search / Claude provider | Provider 原生能力或接入层 | 无产品专属规则时不新增 Teller |
 
-产品卡片的通用语法应只维护一份，按实际展示协议归属确定共享文本的位置，各扩展仅声明自己提供的 kind。暂不为了提示词迁移新增 UI 包或修改 core 的运行机制。
+产品卡片语法由各功能扩展独立说明：Browser 提供 page，Terminal 提供 terminal，Thread 提供 thread。允许少量语法重复，不增加共享提示词层或 UI 扩展包；关闭扩展后，对应展示说明随其 Teller 消失。
 
 ## 基础文本
 
 当前实际文本见 [base.md](../extensions/siphon-base/prompts/base.md)。它解释上下文与授权边界、路径和调用顺序、工作范围及准确汇报。Git 约定见 [git.md](../extensions/siphon-git/src/git.md)。
 
-精简不改变权限执行规则。文件链接语法归 Files；通用资源卡片语法由 base 维护一份，Browser、Terminal、Thread 仅声明自己的 kind 与标识含义。暂不为这一行共享语法新增 UI 扩展包。
+精简不改变权限执行规则。Files 负责文件、图片与 HTML 呈现；Browser、Terminal、Thread 各自说明完整引用和卡片语法。base 仅保留通用回复要求，不承担产品展示协议。
 
 ## 验收
 
