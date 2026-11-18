@@ -231,9 +231,9 @@ published octoii-siphon-lib package and crates.io octoii-ai. Repository creation
 
 ### Boundary
 
-The public package owns safe Rust types, serialization, typed Program/Request adapters, FFI declarations,
+The public package owns safe Rust types, serialization, typed execution and request adapters, FFI declarations,
 artifact selection and verification. The private binary owns durable state, scheduling, commit semantics,
-request interruption/recovery, machine operations and the existing processing implementations.
+request interruption and recovery, and machine operations.
 Do not export Rust trait objects, Future, Tokio objects, references, Vec or String layouts across the ABI.
 Use versioned C declarations, opaque handles, byte slices and explicit ownership/release functions.
 Catch unwinding panics inside each side of a foreign call; never promise recovery from aborting panics.
@@ -243,9 +243,56 @@ uses associated constants and private erased traits; adapting those is a later e
 not justification for rebuilding the scheduler in the public wrapper. Run-scoped snapshots must keep
 one consistent view, and a phase's changes and ending must still commit atomically.
 
-The existing script, shell, image and text dependencies also require public replacement through this
-package before deleting siphon/. Merely wrapping siphon-runtime leaves private dependencies in place.
-No public Beak/kernel escape hatch is introduced to make product compilation pass.
+The product builds script, shell, image and text from the public Octoii workspace. Keep the underlying
+Beak handles private when migrating the remaining product callers to the public package.
+
+### Processing library extraction
+
+`siphon-text`, `siphon-image`, `siphon-shell` and `siphon-script` use registry dependencies and inherit
+matching package settings from their workspace. `siphon-script` also compiles its local C engine and the vendored QuickJS
+sources. The script host interface is supplied by Octoii. The other three libraries handle file text,
+image fitting and shell parsing. Product code can build all four directly in its Rust workspace.
+
+| Repository and files | Completed move |
+| --- | --- |
+| Private `crates/siphon-{text,image,shell,script}/` and `vendor/quickjs-ng/` | Moved all 44 tracked files, including tests, QuickJS sources and its license, to Octoii. |
+| Private `Cargo.toml`, `Cargo.lock`, `README.md` | Removed the four dependencies and 37 lockfile entries. Retained dependency versions match the previous lockfile. |
+| Octoii `libs/siphon-{text,image,shell,script}/` and `vendor/quickjs-ng/` | Kept the Cargo package names. The existing relative build path supplies QuickJS. The vendored README now points to `libs/siphon-script`. All other transferred files match the original bytes. |
+| Octoii `Cargo.toml`, `docs/ARCHITECTURE.md`, this document and the `siphon` pin | Changed the four path dependencies and recorded ownership. The locked product workspace resolves with its existing `Cargo.lock`. |
+
+Private commit `c5207b2`. The 30 processing tests passed both in isolation and in the product workspace.
+Node's all-target check, the 34-package dependency check, 23 private Siphon tests and three independent ABI 3
+C consumers passed on macOS ARM64. Both workspaces passed formatting and strict Clippy for the tested crates.
+
+### Fiber naming
+
+Use `Fiber` for the durable execution definition currently named `Program`. A `Process` is its stored
+instance, and a `Run` is an admitted phase. Rename the corresponding Octoii implementations, such as
+`ThreadFiber`, `TurnFiber` and `ScriptFiber`, and use `Builder::fiber` in both Rust interfaces. The Beak
+registration descriptor can be named `FiberSpec`. Persisted kind strings and versions remain the lookup keys
+for waiting and recovering processes. The serialized tool-call state tag `program` is already part of Octoii's
+checkpoints and needs an explicit serialization name if its Rust variant is renamed.
+
+Coordinate the public Rust rename with the native symbol `siphon_builder_fiber`, matching headers,
+tests and development ABI 4. Migrate callers to the new names in the same batch. The machine's
+executable lookup has its own `Program` type.
+
+Verify a matching header and manifest for the public wrapper, link independent C and Rust consumers, and
+reopen stored runs and checkpoints from ABI 3. The rename changes the registration interface. It reuses
+the existing `Process`, `Run`, request admission and scheduling mechanisms.
+
+Proposed scope for the naming change:
+
+| Area | Files |
+| --- | --- |
+| Siphon runtime, relative to `crates/siphon-runtime/` | `src/{lib,changes,program,runtime}.rs`, `src/runtime/{builder,dispatcher}.rs`, `tests/runtime.rs`. Rename `src/program.rs` to `src/fiber.rs` and migrate the Rust registration interfaces. |
+| Siphon ABI, relative to `crates/siphon-ffi/` | `src/{lib,builder,program,request,runtime}.rs`, `include/siphon.h`, `tests/{program,request}.rs`, `tests/c/{lifecycle,program,request}.c`. Rename the `program` module and tests to `fiber`, update the registration symbol and ABI checks. In the private repository update `README.md` and `.github/workflows/check.yml` for the matching consumer. |
+| Beak, relative to `beak/crates/` | `beak-process/src/{lib,commit,scheduler}.rs`, `beak-process/src/scheduler/simulation.rs`, `beak-process/tests/scheduler.rs`, `beak-volume/src/{lib,volume}.rs`, `beak-volume/tests/{volume,concurrency}.rs`, `beak-kernel/tests/{kernel,concurrency}.rs`, `beak-c/src/kernel.rs`, `beak-c/include/beak.h`, `beak-c/tests/abi.rs`, `beak/src/{lib,kernel}.rs`, `beak/tests/beak.rs`. Rename the durable registration descriptor to `FiberSpec` and update its consumers. |
+| Public `octoii-siphon-lib` | `src/{lib,program,sys}.rs`, `build.rs`, `include/siphon.h`, `README.md`, `tests/{program,request}.rs`. Rename the Rust module and program test to `fiber`, update the native declaration and artifact ABI. |
+| Octoii, relative to `libs/octoii/src/` | `agent.rs`, `agent/{compaction,primitives,resume,thread,title,turn,waiting}.rs`, `lib.rs`, `testing.rs`, `tests/{agent,calls,execute,live,threads}.rs`, `threads/operations.rs`, `tools.rs`, `tools/{calls,execute}.rs`, `trust.rs`, `volume.rs`. Migrate durable definitions, type parameters and registrations. Verify that the old `program` checkpoint tag still reads. |
+
+The durable trait and the native registration symbol are owned by the core. Changing extension names alone
+cannot change the registration interface or its ABI version.
 
 ### B2.1: binary lifecycle and storage slice — complete
 
@@ -273,7 +320,7 @@ an extension or an alias crate would still require the private sources at consum
 
 B2.1 is not the product migration. [B2.2](SIPHON_EXECUTION.md) first validates Program execution through the binary,
 then adds host Requests, cancellation and recovery, and the streaming and person interfaces used by the product.
-B3 migrates the remaining machine/storage and processing callers. B4 publishes the complete verified package and
+B3 migrates the remaining machine and storage callers. B4 publishes the complete verified package and
 removes private checkout dependencies.
 
 ### Distribution verification

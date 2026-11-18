@@ -7,10 +7,10 @@ exclude = ["siphon"]
 beak = { path = "siphon/beak/crates/beak" }
 octoii-ai = "0.0.2"
 octoii = { path = "libs/octoii" }
-siphon-script = { path = "siphon/crates/siphon-script" }
-siphon-shell = { path = "siphon/crates/siphon-shell" }
-siphon-text = { path = "siphon/crates/siphon-text" }
-siphon-image = { path = "siphon/crates/siphon-image" }
+siphon-script = { path = "libs/siphon-script" }
+siphon-shell = { path = "libs/siphon-shell" }
+siphon-text = { path = "libs/siphon-text" }
+siphon-image = { path = "libs/siphon-image" }
 siphon-runtime = { path = "siphon/crates/siphon-runtime" }
 siphon-base = { path = "extensions/siphon-base" }
 siphon-browser = { path = "extensions/siphon-browser" }
