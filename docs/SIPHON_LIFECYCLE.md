@@ -303,7 +303,8 @@ admission. Request handlers retain their answer in the same way. A closed reques
 releases the result. A successful finish may still hand off to the stop handler using the committed checkpoint,
 as R05 defines. Transaction retries only repeat the Beak operation. A Fiber's registered retry policy still
 applies when Beak commits a thrown ending. While the dispatcher is waiting to finish a phase, it holds at most
-one evaluated result and does not evaluate the next reservation in that batch.
+one evaluated result. Before evaluating a later reservation in that batch, it asks Beak whether the exact
+admission still stands.
 
 Measure phase duration with a monotonic clock around evaluation, before constructing or retrying its commit.
 Pass that duration through Beak's existing finish path, including stop handoff and thrown endings. Keep the
@@ -324,7 +325,7 @@ close through ABI 4's existing failure status. The host releases handles before 
 letting Beak establish what was committed. A reopened runtime starts from Beak's recovered checkpoint under
 the existing crash recovery rules. Callers holding raw Beak handles manage them through Beak's lifecycle.
 
-Proposed private scope, relative to `devxiyang/octoii-siphon`
+Confirmed private scope, relative to `devxiyang/octoii-siphon`
 
 | Files | Change |
 | --- | --- |
@@ -344,6 +345,17 @@ snapshots readable. Repeat the isolated disk fault probe and link the ABI 4 C an
 
 Extensions only supply Fiber code and request handlers. They cannot retain an admission's result after
 evaluation returns, change how Beak charges it, or stop and report failure across runtime entry points.
+
+Private commit `83d5fd6`. The isolated disk probe saw one Fiber evaluation and two finish attempts after a
+proven abort. A short append stopped the runtime, closed its commit watch, and recovered the last confirmed
+prefix on reopen. The linked C fault probe received the same error from snapshot, commit and explicit close
+while retaining a readable prior snapshot. Unit tests also covered a wait version observed before retry,
+a revoked queued admission, a caller dropping an in-flight blocking call, and request answer cancellation.
+
+On macOS ARM64 with Rust 1.100, Beak passed 153 tests, Siphon passed 28, and Octoii passed 105 library tests
+with the live model test ignored. Three regular C consumers, the C fault probe, and 13 Rust consumer tests
+passed against ABI 4. Formatting, strict Beak/Siphon Clippy, Node's all-target check, and the Rust dependency
+check passed.
 
 ## Command cleanup and binary streaming
 
