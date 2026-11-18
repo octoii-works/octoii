@@ -21,11 +21,11 @@ the cutover.
   packages. The macOS ARM64 product graph resolves 11 private source packages. The product graph has no
   dependency on `octoii-siphon-lib`. Product CI reads the gitlink, checks out the private repo with
   `SIPHON_DEPLOY_KEY`, and tests all three source workspaces.
-- The local public wrapper at `0528bc3` and development ABI 4 cover storage writes, retained snapshots, fibers,
+- The local public wrapper at `7c65fac` and development ABI 4 cover storage writes, retained snapshots, fibers,
   host request callbacks, directory reads, indexed label queries, metadata changes, the commit journal,
-  Fiber records, and reopen. The product still needs streaming, person replies, and machine operations. The wrapper's
-  build reads a local archive and verifies the ABI, target, and hash. It rejects native linking outside macOS.
-  Native binary consumers have run on macOS ARM64.
+  Fiber records, volume IDs, time, file retention, and reopen. The wrapper builds from a local archive
+  and verifies the ABI, target, and hash. It rejects native linking outside macOS. Native binary consumers
+  have run on macOS ARM64.
 - The GitHub release list was empty and the crates.io sparse index returned 404 on 2026-11-18. The SDK
   currently links a local artifact.
   [GitHub releases](https://api.github.com/repos/octoii-works/octoii-siphon-lib/releases) · [crates.io index](https://index.crates.io/oc/to/octoii-siphon-lib)
@@ -92,7 +92,7 @@ Each private implementation batch lists its exact files and technical dependency
 
 | Work | Completion condition |
 | --- | --- |
-| Writes and Fiber lifecycle | Finish volume IDs, runtime time, sealing and expiration. Expose the phase and batch operations the product uses for mail, waits, removal, termination, reaping and usage counters. |
+| Writes and Fiber lifecycle | Expose the remaining phase and batch operations for plain mail, selector waits, removal, termination with a reason, reaping and usage counters. |
 | Runtime events and requests | Carry commit notifications, exact request identities, person replies, stream replay, closure, and cancellation through the binary. Exercise these while reopening and shutting down. |
 | Machine capabilities | Move namespaces, file views, restricted commands, terminal I/O and coprocess channels behind the native SDK. Bring each supported platform up to the same ownership and permission contract. |
 | Product adoption | Build Octoii and Node against a local binary candidate. Migrate startup registration and host callbacks, then verify real turns, approval, workspace tools, stop, and reopen. |
@@ -320,7 +320,7 @@ when expiring pairing links and sessions. Thread logs seal files and schedule ol
 these operations through the existing runtime, phase and changes handles. Expiration takes an optional instant
 in milliseconds. Setting an expiration or clearing it is part of the existing atomic batch.
 
-Proposed scope
+Confirmed scope
 
 | Repository | Files | Change |
 | --- | --- | --- |
@@ -330,6 +330,10 @@ Proposed scope
 The binary owns the committed ID sequence, time source and file mutation transaction. Acceptance covers
 runtime and phase IDs from one volume, reopening, close and callback safety, sealed file refusal, and setting
 and clearing expiration on retained snapshots.
+
+Private commit `fea8ec4` and public SDK commit `7c65fac`. On macOS ARM64, 36 Siphon tests, three
+independent C programs and 19 standalone Rust SDK tests passed. The product startup change passed 257 tests
+with two external tests ignored. Strict Clippy passed for all three workspaces.
 
 ## Completion checks
 
