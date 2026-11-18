@@ -284,7 +284,11 @@ fn tell(run: &mut Run<'_>, entries: &[Entry], ended: &Ended) -> anyhow::Result<(
 /// The turn keyed `turn` running: settled once it ended, and reaped.
 fn running(run: &mut Run<'_>, id: &str, turn: &str) -> anyhow::Result<Ending<MainState, ()>> {
     let process = layout::process(run.path(), turn.as_bytes());
-    let outcome = run.snapshot().record(&process)?.and_then(|record| record.outcome);
+    let outcome = run
+        .snapshot()
+        .record(&process)?
+        .filter(crate::volume::reapable)
+        .and_then(|record| record.outcome);
     let Some(outcome) = outcome else {
         return Ok(Ending::Wait(
             MainState::Running { turn: turn.to_owned() },

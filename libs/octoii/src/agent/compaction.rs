@@ -152,7 +152,7 @@ pub fn path(id: &str) -> Bytes {
 /// The volume's failure.
 pub fn start(snapshot: &beak::Snapshot, changes: &mut Changes, id: &str) -> anyhow::Result<()> {
     match snapshot.record(&path(id))? {
-        Some(record) if record.outcome.is_none() => return Ok(()),
+        Some(record) if !crate::volume::reapable(&record) => return Ok(()),
         Some(_) => {
             changes.reap(path(id));
         }

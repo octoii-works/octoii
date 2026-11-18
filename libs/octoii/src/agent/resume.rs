@@ -60,11 +60,11 @@ pub enum ArmError {
 /// Adds to `changes` the resume of `input` armed, one that ended reaped as it is armed anew.
 ///
 /// # Errors
-/// `Armed` where one waits still; the volume's failure.
+/// `Armed` while a prior Fiber remains active or is still exiting, or the volume's failure.
 pub fn arm(snapshot: &Snapshot, changes: &mut Changes, input: &ResumeInput) -> Result<(), ArmError> {
     let path = beak::layout::process(&thread::main(&input.thread), ResumeFiber::KEY.as_bytes());
     match snapshot.record(&path)? {
-        Some(record) if record.outcome.is_none() => return Err(ArmError::Armed),
+        Some(record) if !crate::volume::reapable(&record) => return Err(ArmError::Armed),
         Some(_) => {
             changes.reap(path);
         }

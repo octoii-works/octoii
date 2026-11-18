@@ -1403,3 +1403,63 @@ async fn startup_gate_holds_all_input_until_the_final_workspace_is_bound() {
     assert_eq!(script.asked.lock().unwrap().len(), 1);
     runtime.close().await;
 }
+
+#[tokio::test]
+async fn compaction_keeps_its_slot_while_descendants_are_exiting() {
+    use crate::agent::compaction;
+    use crate::threads::thread;
+    use beak::{Change, Ending, FiberSpec, Kernel, Options};
+
+    const KIND: &[u8] = b"test.family";
+    fn start<'a>(parent: &'a [u8], key: &'a [u8]) -> Change<'a> {
+        Change::Start {
+            parent,
+            key,
+            kind: KIND,
+            version: 1,
+            input: b"null",
+            checkpoint: b"",
+            priority: 0,
+            namespace: None,
+        }
+    }
+
+    let beak = beak::Beak::new().unwrap();
+    let (kernel, _) = Kernel::open(&beak, &Options::default()).unwrap();
+    kernel
+        .register(
+            KIND,
+            FiberSpec {
+                version: 1,
+                stop_handler: false,
+                retries: 0,
+                retry_delay_min_ms: 0,
+                retry_delay_max_ms: 0,
+            },
+        )
+        .unwrap();
+    let id = "test";
+    let directory = thread::path(id);
+    let main = thread::main(id);
+    let compact = compaction::path(id);
+    kernel
+        .commit(
+            10,
+            &[
+                Change::Mkdir { path: &directory },
+                start(&directory, thread::MAIN_KEY.as_bytes()),
+                start(&main, thread::COMPACTION_KEY.as_bytes()),
+                start(&compact, b"child"),
+            ],
+        )
+        .unwrap();
+    let run = kernel.runnable(11).unwrap().into_iter().find(|run| run.path == compact).unwrap();
+    kernel.finish(12, &run, 0, &Ending::Done(b"null"), &[]).unwrap();
+    let snapshot = kernel.snapshot().unwrap();
+    let record = snapshot.record(&compact).unwrap().unwrap();
+    assert_eq!(record.state, beak::ProcessState::Exiting);
+    assert!(record.outcome.is_some());
+    let mut changes = siphon_runtime::Changes::new();
+    compaction::start(&snapshot, &mut changes, id).unwrap();
+    assert!(changes.is_empty(), "the compaction still holds its slot");
+}

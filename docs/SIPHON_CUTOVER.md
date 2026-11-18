@@ -19,9 +19,9 @@ the cutover.
   the private repo. Cargo metadata resolves 20 product packages. `octoii` and `octoii-node` both declare
   direct path dependencies on Beak and Siphon Runtime. The product CI reads the gitlink, checks out the
   private repo with `SIPHON_DEPLOY_KEY`, and tests all three source workspaces.
-- The local public wrapper at `9be72b8` and development ABI 4 cover storage writes, retained snapshots, fibers,
-  host request callbacks, directory reads, indexed label queries, metadata changes, the commit journal, and
-  reopen. The product still needs process state, streaming, person replies, and machine operations. The wrapper's
+- The local public wrapper at `0528bc3` and development ABI 4 cover storage writes, retained snapshots, fibers,
+  host request callbacks, directory reads, indexed label queries, metadata changes, the commit journal,
+  Fiber records, and reopen. The product still needs streaming, person replies, and machine operations. The wrapper's
   build reads a local archive and verifies the ABI, target, and hash. It rejects native linking outside macOS.
   Native binary consumers have run on macOS ARM64.
 - The public default branch is `ee0b752` and the release list is empty. The crates.io lookup for
@@ -266,6 +266,37 @@ preserving byte paths, and reading through the sequence of a retained snapshot. 
 tests, three independent C programs and 16 standalone Rust SDK tests passed. Strict Clippy passed for Siphon
 and the SDK. The Octoii workspace passed 256 tests and strict Clippy. Its two external integration tests
 were ignored.
+
+## Fiber records
+
+Octoii reads Fiber records to identify a turn, fence a delivery, show usage and a scheduled resume, and
+decide when an ended Fiber can be reaped. The snapshot and the borrowed view in a phase expose the same
+record. It carries the kind, version, creation sequence, optional wait deadline, usage counters, outcome,
+and whether reaping is available. A Fiber can have an outcome while its descendants are still exiting.
+
+The C visitor lends the record for the duration of the call. Missing Fibers use the existing missing
+status. Optional byte fields distinguish an absent result or reason from present empty bytes. The Rust
+SDK owns the returned record and uses it to decode typed outcomes for the registered kind and version.
+The record replaces the outcome-only C symbol.
+
+Octoii uses reaping eligibility to settle turns and tool Fibers and to recycle a compaction or resume slot.
+An exiting Fiber keeps its slot until its descendants have ended.
+
+Confirmed scope
+
+| Repository | Files | Change |
+| --- | --- | --- |
+| Private Siphon | `crates/siphon-ffi/src/snapshot.rs`, `crates/siphon-ffi/include/siphon.h`, `crates/siphon-ffi/tests/c/{fiber,request}.c` | Bind the existing snapshot record and migrate C consumers from the outcome-only function. |
+| Public SDK | `src/{lib,sys,snapshot,fiber}.rs`, `include/siphon.h`, `tests/fiber.rs` | Expose records and decode typed outcomes from the same native read. |
+
+The binary owns the recorded Fiber lifetime and usage.
+
+Private commit `10981dd` and public SDK commit `0528bc3`. The native test checks committed usage and the
+presence of an empty result. The standalone SDK checks a wait deadline, kind validation, and a recorded
+outcome before and after reaping becomes available. The archived binary exports `siphon_snapshot_fiber`
+as its single Fiber record reader. On macOS ARM64, 36 Siphon tests, three C consumers, 17 standalone Rust
+SDK tests, and 257 Octoii tests passed. The two external Octoii tests were ignored. Strict Clippy passed
+for all affected packages.
 
 ## Completion checks
 

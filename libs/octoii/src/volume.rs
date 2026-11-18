@@ -13,6 +13,11 @@ use crate::threads::{files, thread};
 /// What the volume's reads give, and how the volume and the machine's commands fail, as Beak tells it.
 pub use beak::{Error, Result, Snapshot};
 
+/// A Fiber can be reaped once it and all its descendants have ended.
+pub(crate) fn reapable(record: &beak::Record) -> bool {
+    record.state == beak::ProcessState::Zombie
+}
+
 /// The volume, as an extension reaches it.
 #[derive(Debug, Clone)]
 pub struct Volume {

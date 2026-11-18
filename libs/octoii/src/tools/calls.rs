@@ -368,7 +368,12 @@ impl Calls {
             },
             State::Fiber => {
                 let process = beak::layout::process(run.path(), call.key.as_bytes());
-                let Some(outcome) = run.snapshot().record(&process)?.and_then(|record| record.outcome) else {
+                let Some(outcome) = run
+                    .snapshot()
+                    .record(&process)?
+                    .filter(crate::volume::reapable)
+                    .and_then(|record| record.outcome)
+                else {
                     return Ok(());
                 };
                 run.changes.reap(process);

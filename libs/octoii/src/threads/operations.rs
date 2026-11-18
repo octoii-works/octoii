@@ -283,7 +283,7 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
     pub fn revive(snapshot: &beak::Snapshot, changes: &mut Changes, id: &str) -> Result<(), Error> {
         let main = thread::main(id);
         match snapshot.record(&main)? {
-            Some(record) if record.state != beak::ProcessState::Zombie => return Ok(()),
+            Some(record) if !crate::volume::reapable(&record) => return Ok(()),
             Some(_) => {
                 changes.reap(main);
             }
