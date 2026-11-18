@@ -192,7 +192,7 @@ Implement this in dependency order:
    commit. The scheduler uses the prepared tree rather than reading its own committed journal back.
 2. Have storage distinguish a proven abort from an indeterminate append. An append that may have written
    part or all of its frame faults the writer until recovery resolves it. Carry these outcomes across the
-   private Beak bridge to the runtime.
+   native Rust Beak interface to the runtime.
 3. Keep the evaluated result and its wait context until its admission is finished or invalidated. Retry the
    stored result and queued answers only when the failed commit is known to be unapplied. A terminal fault
    stops the runtime and is available to the host through its next operation. Retained snapshots are still
@@ -200,23 +200,34 @@ Implement this in dependency order:
 
 ### R06a: prepare the tree and scheduler together
 
-The tree prepares its change set, pending root and indexes once. Give the scheduler a read-only view of that
-prepared state so it can resolve the process, removal and expiry updates before the device commit. After the
-device accepts the commit, apply these updates in memory, consume ready work and publish the same commit
-and notices through the existing Volume writer lock. Keep ready work queued if preparation or the write fails.
-This is an incremental update of the affected paths. It does not clone the scheduler's live table.
+On private commit `29c96e8`, the simulated disk reproduced two failures. A rejected write left the process
+`Runnable` at commit 1, but the next step returned no run. Another step returned an error after commit 2 had
+already moved the process to `Running`. Both steps had consumed work that the host could no longer obtain.
 
-Proposed private scope, relative to `devxiyang/octoii-siphon`:
+1. The tree prepares one change set, pending root and indexes. The prepared transaction owns the objects
+   that have yet to be written. Its read interface serves the affected process records, removal paths and
+   next expiry from that same view. A direct tree commit uses the same preparation and persistence path.
+2. The scheduler collects the data it needs from the prepared view, in change-set order. It stages the
+   affected entries and notices while retaining the current live table and wait queues. A preparation
+   failure or a known write abort leaves the existing root and the selected wakes available to the next step.
+3. After the device accepts the commit, consume the wakes selected by this step, then apply the updates
+   and any wakes produced by the commit. This ordering preserves a wake that is both consumed and raised
+   again in one step. Install the corresponding run admissions and publish the snapshot and notices
+   under the existing Volume writer lock. Applying the scheduler updates uses the prepared data in memory.
+   Journal pruning remains best-effort maintenance.
+
+Proposed private scope, relative to `devxiyang/octoii-siphon`
 
 | Files | Change |
 | --- | --- |
-| `beak/crates/beak-tree/src/{lib.rs,tree.rs,tree/transaction.rs}` | Provide the prepared transaction view to the scheduler. Keep direct tree commits on the same prepare and persist path. |
-| `beak/crates/beak-process/src/scheduler.rs`, `beak/crates/beak-process/tests/scheduler.rs` | Prepare the affected scheduler state before persistence, apply it without device reads after success, and preserve ready work on failure. Verify that a journal read fault cannot lose a committed admission. |
-| `beak/crates/beak-volume/tests/volume.rs` | Inject a failed reservation commit and verify that it neither publishes nor consumes the wake, then verify successful reservation without a new wake. |
+| `beak/crates/beak-tree/src/{lib.rs,tree.rs,tree/transaction.rs}` | Expose the prepared read view within Beak and share the prepare and persist path with direct tree commits. |
+| `beak/crates/beak-process/src/scheduler.rs` | Prepare ordered updates for affected paths and consume the selected wakes after persistence. Reuse the existing admissions, live table and wait queues. |
+| `beak/crates/beak-process/tests/scheduler.rs` | Use the simulated disk to cover preparation failure and a journal read failure after the write. Verify that each successful reservation returns its admission. |
+| `beak/crates/beak-volume/tests/volume.rs` | Use the existing memory device to fail a reservation commit. Verify the snapshot, notices and readiness, then reserve once on retry without issuing another wake. |
 
-Extensions receive commits after this boundary. They cannot preserve the scheduler's ready work or prevent a
-post-commit journal read from failing. Leave storage error classification and runtime retries to the next two
-R06 changes.
+The tree and scheduler own this commit boundary. Extensions observe notices after it. Verify the existing
+wait, cancellation, stop handoff and process recovery suites, then link the ABI 4 C and Rust consumers.
+R06b owns ambiguous storage outcomes. R06c owns retrying a completed phase after a known abort.
 
 ## Command cleanup and binary streaming
 
