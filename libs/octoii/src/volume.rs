@@ -239,7 +239,8 @@ impl Volume {
         F: FnOnce(Bytes) -> Done,
         Done: Future<Output = T>,
     {
-        let record = beak::layout::child(b"", kind.as_bytes(), self.runtime.new_id()?.as_bytes());
+        let id = self.runtime.new_id()?;
+        let record = Bytes::from(format!("{kind}:{id}"));
         let mut changes = Changes::new();
         changes.mkdir(record.clone());
         self.runtime.commit(changes).await?;

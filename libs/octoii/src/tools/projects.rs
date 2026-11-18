@@ -52,7 +52,7 @@ const GRANTS: &str = "siphon.grants";
 /// The directory of the project of `folder`.
 #[must_use]
 pub fn path(folder: &str) -> Bytes {
-    beak::layout::child(b"", KIND.as_bytes(), sha256_hex(folder.as_bytes()).as_bytes())
+    format!("{KIND}:{}", sha256_hex(folder.as_bytes())).into()
 }
 
 /// The SHA-256 of `bytes`, in lowercase hexadecimal.

@@ -21,11 +21,11 @@ the cutover.
   packages. The macOS ARM64 product graph resolves 11 private source packages. The product graph has no
   dependency on `octoii-siphon-lib`. Product CI reads the gitlink, checks out the private repo with
   `SIPHON_DEPLOY_KEY`, and tests all three source workspaces.
-- The local public wrapper at `7c65fac` and development ABI 4 cover storage writes, retained snapshots, fibers,
+- The local public wrapper at `b025e59` and development ABI 4 cover storage writes, retained snapshots, fibers,
   host request callbacks, directory reads, indexed label queries, metadata changes, the commit journal,
-  Fiber records, volume IDs, time, file retention, and reopen. The wrapper builds from a local archive
-  and verifies the ABI, target, and hash. It rejects native linking outside macOS. Native binary consumers
-  have run on macOS ARM64.
+  Fiber records and lifecycle changes, volume IDs, time, file retention, and reopen. The wrapper builds
+  from a local archive and verifies the ABI, target, and hash. It rejects native linking outside macOS.
+  Native binary consumers have run on macOS ARM64.
 - The GitHub release list was empty and the crates.io sparse index returned 404 on 2026-11-18. The SDK
   currently links a local artifact.
   [GitHub releases](https://api.github.com/repos/octoii-works/octoii-siphon-lib/releases) · [crates.io index](https://index.crates.io/oc/to/octoii-siphon-lib)
@@ -92,7 +92,7 @@ Each private implementation batch lists its exact files and technical dependency
 
 | Work | Completion condition |
 | --- | --- |
-| Writes and Fiber lifecycle | Expose the remaining phase and batch operations for plain mail, selector waits, removal, termination with a reason, reaping and usage counters. |
+| Writes and Fiber lifecycle | Expose plain mail and selector-based waits. The SDK has both removal operations, signal reasons, reaping, and usage charges. |
 | Runtime events and requests | Carry commit notifications, exact request identities, person replies, stream replay, closure, and cancellation through the binary. Exercise these while reopening and shutting down. |
 | Machine capabilities | Move namespaces, file views, restricted commands, terminal I/O and coprocess channels behind the native SDK. Bring each supported platform up to the same ownership and permission contract. |
 | Product adoption | Build Octoii and Node against a local binary candidate. Migrate startup registration and host callbacks, then verify real turns, approval, workspace tools, stop, and reopen. |
@@ -334,6 +334,35 @@ and clearing expiration on retained snapshots.
 Private commit `fea8ec4` and public SDK commit `7c65fac`. On macOS ARM64, 36 Siphon tests, three
 independent C programs and 19 standalone Rust SDK tests passed. The product startup change passed 257 tests
 with two external tests ignored. Strict Clippy passed for all three workspaces.
+
+## Fiber lifecycle changes
+
+The product modules name their ordinary root directories for sessions, threads, accounts, project grants,
+and recorded command groups.
+
+Octoii sends a signal with a reason when stopping a turn, requests removal of a running subtree,
+forces removal when deleting a thread, reaps ended Fibers, and charges usage counters. Stage each
+operation on the existing atomic changes batch or on the batch borrowed during a phase.
+Graceful removal gives stop handlers a chance to run. Forced removal kills the live Fibers under the
+path. Reap applies to a terminal, reapable Fiber record. Counter names are byte slices and their amounts
+are unsigned 64-bit values.
+
+The C signal call takes an explicit signal and an optional byte reason. It replaces the termination-only
+symbol. The Rust SDK exposes the same operations through `Changes` and `Run`. The kernel decides when
+signals, subtree removal, reaping and charging take effect within the transaction.
+
+Confirmed scope
+
+| Repository | Files | Change |
+| --- | --- | --- |
+| Private Siphon | `crates/siphon-ffi/src/changes.rs`, `crates/siphon-ffi/include/siphon.h`, `crates/siphon-ffi/tests/c/{fiber,request}.c` | Bind signal, remove, force remove, reap, and charge. Migrate the native consumers to the signal call. |
+| Public SDK | `src/{lib,sys,fiber}.rs`, `include/siphon.h`, `tests/{fiber,request}.rs` | Expose the batch and phase operations, and verify signaling, removal, reaping and usage against the archive. |
+
+Private commit `6f79d2d` and public SDK commit `b025e59`. The binary consumers verify a stop reason,
+refusal of an early reap, a reaped record's disappearance, and the behavior of both removal operations.
+The SDK tests check batch and phase charges in committed Fiber records. On macOS ARM64, 36 Siphon tests,
+three C consumers, 20 standalone Rust SDK tests and 257 Octoii tests passed. The two external Octoii
+tests were ignored. Strict Clippy passed for all three workspaces.
 
 ## Completion checks
 

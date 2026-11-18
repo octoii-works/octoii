@@ -128,7 +128,7 @@ fn secret() -> Result<String, Refused> {
 }
 
 fn path(kind: &str, id: &str) -> Bytes {
-    beak::layout::child(b"", kind.as_bytes(), id.as_bytes())
+    format!("{kind}:{id}").into()
 }
 
 /// What the directory at `path` keeps, where `snapshot` has it.

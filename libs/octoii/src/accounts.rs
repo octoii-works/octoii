@@ -62,7 +62,7 @@ pub enum Error {
 /// The directory of the provider `id`; none for an id no directory can be named by.
 fn path(id: &str) -> Option<Bytes> {
     let valid = !id.is_empty() && !id.bytes().any(|byte| matches!(byte, b'/' | b':' | 0));
-    valid.then(|| beak::layout::child(b"", KIND.as_bytes(), id.as_bytes()))
+    valid.then(|| format!("{KIND}:{id}").into())
 }
 
 fn named(name: &str) -> Result<&str, Error> {

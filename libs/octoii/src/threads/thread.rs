@@ -47,7 +47,7 @@ pub const TURN_KIND: &str = "siphon.turn";
 /// The directory of the thread `id`.
 #[must_use]
 pub fn path(id: &str) -> Bytes {
-    layout::child(b"", KIND.as_bytes(), id.as_bytes())
+    format!("{KIND}:{id}").into()
 }
 
 /// The thread's directory in this snapshot, until removal begins.
