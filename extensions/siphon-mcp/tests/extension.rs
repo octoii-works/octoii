@@ -26,11 +26,10 @@ async fn servers_are_listed_as_they_stand_and_a_project_s_trusted_by_the_person(
     std::fs::create_dir_all(root.join(".git")).expect("a repository");
     let named = json!({ "mcpServers": { "theirs": { "command": "their-server" } } });
     std::fs::write(root.join(".mcp.json"), named.to_string()).expect("written");
-    let beak = Beak::new().expect("Beak");
     let extension = McpExtension {
         config: Some(config.path().to_owned()),
     };
-    let siphon = Octoii::builder(&beak, testing::setup(octoii::machine::Host::default()))
+    let siphon = Octoii::builder(testing::setup(octoii::machine::Host::default()))
         .expect("built")
         .extension(siphon_base::BaseExtension::default())
         .extension(extension)

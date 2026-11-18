@@ -6,7 +6,6 @@ use std::path::PathBuf;
 
 use octoii::Octoii;
 use octoii::protocol::Scope;
-use octoii::testing::Beak;
 use octoii::testing::{self, Client};
 use serde_json::json;
 use siphon_terminals::TerminalsExtension;
@@ -18,12 +17,11 @@ fn text(pieces: &[bytes::Bytes]) -> String {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_terminal_is_opened_drawn_and_told_as_it_writes_each_piece_once() {
-    let beak = Beak::new().expect("Beak");
     let machine = octoii::machine::Host {
         shell: Some(PathBuf::from("/bin/sh")),
         ..octoii::machine::Host::default()
     };
-    let siphon = Octoii::builder(&beak, testing::setup(machine))
+    let siphon = Octoii::builder(testing::setup(machine))
         .expect("built")
         .extension(siphon_base::BaseExtension::default())
         .extension(TerminalsExtension)

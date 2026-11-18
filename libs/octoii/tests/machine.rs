@@ -2,7 +2,6 @@
 //! a file's lines a page at a time, an image told by its type, a folder read refused, the files that match a query,
 //! the best first — each to a session that may read files alone.
 
-use beak::Beak;
 use octoii::Octoii;
 use octoii::protocol::Scope;
 use octoii::testing::{self, Client};
@@ -21,8 +20,7 @@ async fn the_person_browses_the_machine_s_files_as_git_sees_them() {
     std::fs::write(root.join("src/maintenance.md"), "later\n").expect("written");
     std::fs::write(root.join("target/built"), "x").expect("written");
     std::fs::write(root.join("dot.png"), b"\x89PNG\r\n\x1a\n rest").expect("written");
-    let beak = Beak::new().expect("Beak");
-    let siphon = Octoii::builder(&beak, testing::setup(octoii::machine::Host::default()))
+    let siphon = Octoii::builder(testing::setup(octoii::machine::Host::default()))
         .expect("built")
         .extension(TestBase)
         .start()

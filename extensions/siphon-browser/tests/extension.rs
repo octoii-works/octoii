@@ -4,7 +4,6 @@
 
 use octoii::Octoii;
 use octoii::protocol::Scope;
-use octoii::testing::Beak;
 use octoii::testing::{self, Client};
 use serde_json::json;
 use siphon_browser::BrowserExtension;
@@ -24,7 +23,6 @@ async fn a_page_is_opened_listed_painted_and_worked_by_the_person() {
         eprintln!("no browser on this machine");
         return;
     }
-    let beak = Beak::new().expect("Beak");
     // The profile within what the host keeps hidden, as a node keeps it in its Home.
     let folder = tempfile::tempdir().expect("the host's own folder");
     let kept = std::fs::canonicalize(folder.path()).expect("its real path");
@@ -37,7 +35,7 @@ async fn a_page_is_opened_listed_painted_and_worked_by_the_person() {
         profile: Some(kept.join("browser/profile")),
         ..BrowserExtension::default()
     };
-    let siphon = Octoii::builder(&beak, testing::setup(machine))
+    let siphon = Octoii::builder(testing::setup(machine))
         .expect("built")
         .extension(siphon_base::BaseExtension::default())
         .extension(extension)

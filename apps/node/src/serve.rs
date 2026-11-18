@@ -93,7 +93,7 @@ fn machine(home: &Home, temporary: &Path) -> octoii::machine::Host {
 /// Octoii on this computer, started with its core extensions: a provider's sign-in in a browser come back to `sign_in`.
 ///
 /// # Errors
-/// Where Beak or the volume cannot be opened.
+/// Where the host runtime or volume cannot be opened.
 pub fn siphon(home: &Home, sign_in: SignInSetup) -> anyhow::Result<Octoii> {
     building(home, sign_in)?.start().context("Octoii")
 }
@@ -102,9 +102,8 @@ pub fn siphon(home: &Home, sign_in: SignInSetup) -> anyhow::Result<Octoii> {
 /// Code — for the node to add its own and start it.
 ///
 /// # Errors
-/// Where Beak or the volume cannot be opened.
+/// Where the host runtime or volume cannot be opened.
 pub fn building(home: &Home, sign_in: SignInSetup) -> anyhow::Result<octoii::Building> {
-    let beak = beak::Beak::new().context("Beak")?;
     let providers = providers();
     let temporary = home.temporary().context("the Home's temporary folder")?;
     let setup = Setup {
@@ -124,7 +123,7 @@ pub fn building(home: &Home, sign_in: SignInSetup) -> anyhow::Result<octoii::Bui
         profile: Some(home.browser().join("profile")),
         downloads: Some(temporary.join("downloads")),
     };
-    let built = Octoii::builder(&beak, setup).context("the volume")?;
+    let built = Octoii::builder(setup).context("the volume")?;
     let config = McpExtension {
         config: Some(home.config()),
     };

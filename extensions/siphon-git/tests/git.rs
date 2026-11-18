@@ -7,7 +7,6 @@ use std::process::Command;
 
 use octoii::Octoii;
 use octoii::protocol::Scope;
-use octoii::testing::Beak;
 use octoii::testing::{self, Client};
 use serde_json::{Value, json};
 
@@ -59,8 +58,7 @@ async fn git_tells_a_repository_s_changes_patches_versions_and_commits() {
     git(&root, &["commit", "-m", "add b"]);
     std::fs::write(root.join("a.txt"), "one\nTWO\nthree\n").expect("written");
     std::fs::write(root.join("new.txt"), "fresh\n").expect("written");
-    let beak = Beak::new().expect("Beak");
-    let siphon = Octoii::builder(&beak, testing::setup(octoii::machine::Host::default()))
+    let siphon = Octoii::builder(testing::setup(octoii::machine::Host::default()))
         .map(|building| building.extension(git_extension()))
         .expect("built")
         .extension(siphon_base::BaseExtension::default())
@@ -175,8 +173,7 @@ async fn worktree_rpc_requires_git_permission_and_checks_out_the_requested_base(
     std::fs::write(source.join("value.txt"), "uncommitted\n").unwrap();
     std::fs::write(source.join("untracked.txt"), "keep here\n").unwrap();
 
-    let beak = Beak::new().unwrap();
-    let siphon = Octoii::builder(&beak, testing::setup(octoii::machine::Host::default()))
+    let siphon = Octoii::builder(testing::setup(octoii::machine::Host::default()))
         .unwrap()
         .extension(siphon_base::BaseExtension::default())
         .extension(siphon_git::GitExtension {
@@ -229,8 +226,7 @@ async fn worktree_bases_and_plans_are_read_only_and_keep_fixed_commits() {
     let root = folder.path().canonicalize().unwrap();
     let managed = root.join("managed");
     git(&root, &["init"]);
-    let beak = Beak::new().unwrap();
-    let node = Octoii::builder(&beak, testing::setup(octoii::machine::Host::default()))
+    let node = Octoii::builder(testing::setup(octoii::machine::Host::default()))
         .unwrap()
         .extension(siphon_base::BaseExtension::default())
         .extension(siphon_git::GitExtension {

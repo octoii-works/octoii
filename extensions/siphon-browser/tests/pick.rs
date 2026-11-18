@@ -3,7 +3,7 @@
 
 use octoii::Octoii;
 use octoii::protocol::Scope;
-use octoii::testing::{self, Beak, Client};
+use octoii::testing::{self, Client};
 use octoii::threads::files;
 use serde_json::{Value, json};
 use siphon_browser::BrowserExtension;
@@ -14,7 +14,6 @@ const HEIGHT: u32 = 300;
 
 struct Fixture {
     _folder: tempfile::TempDir,
-    _beak: Beak,
     siphon: Octoii,
     client: Client,
     thread: String,
@@ -44,8 +43,7 @@ impl Fixture {
             hidden: vec![kept.clone()],
             ..octoii::machine::Host::default()
         };
-        let beak = Beak::new().expect("Beak");
-        let siphon = Octoii::builder(&beak, testing::setup(machine))
+        let siphon = Octoii::builder(testing::setup(machine))
             .expect("built")
             .extension(siphon_base::BaseExtension::default())
             .extension(BrowserExtension {
@@ -84,7 +82,6 @@ impl Fixture {
             .await;
         Some(Self {
             _folder: folder,
-            _beak: beak,
             siphon,
             client,
             thread,

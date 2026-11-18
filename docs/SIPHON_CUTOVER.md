@@ -17,16 +17,18 @@ the cutover.
 
 - The product Git tree contains one private `siphon` submodule. Its `beak/` directory is ordinary source in
   the private repo. Cargo metadata resolves 20 product packages. `octoii` and `octoii-node` both declare
-  direct path dependencies on Beak and Siphon Runtime. The product CI reads the gitlink, checks out the
-  private repo with `SIPHON_DEPLOY_KEY`, and tests all three source workspaces.
+  direct normal path dependencies on Beak and Siphon Runtime. These are four direct dependencies across two
+  packages. The macOS ARM64 product graph resolves 11 private source packages. The product graph has no
+  dependency on `octoii-siphon-lib`. Product CI reads the gitlink, checks out the private repo with
+  `SIPHON_DEPLOY_KEY`, and tests all three source workspaces.
 - The local public wrapper at `0528bc3` and development ABI 4 cover storage writes, retained snapshots, fibers,
   host request callbacks, directory reads, indexed label queries, metadata changes, the commit journal,
   Fiber records, and reopen. The product still needs streaming, person replies, and machine operations. The wrapper's
   build reads a local archive and verifies the ABI, target, and hash. It rejects native linking outside macOS.
   Native binary consumers have run on macOS ARM64.
-- The public default branch is `ee0b752` and the release list is empty. The crates.io lookup for
-  `octoii-siphon-lib` returns 404. The product therefore has no published artifact to switch to yet.
-  [GitHub releases](https://github.com/octoii-works/octoii-siphon-lib/releases) · [crates.io lookup](https://crates.io/api/v1/crates/octoii-siphon-lib)
+- The GitHub release list was empty and the crates.io sparse index returned 404 on 2026-11-18. The SDK
+  currently links a local artifact.
+  [GitHub releases](https://api.github.com/repos/octoii-works/octoii-siphon-lib/releases) · [crates.io index](https://index.crates.io/oc/to/octoii-siphon-lib)
 
 ## Remove the old contracts and close the source boundary
 
@@ -85,6 +87,19 @@ in Octoii and its extensions.
 
 Each private implementation batch lists its exact files and technical dependency before approval under
 `AGENTS.md`. Product code uses the new API as each public capability is adopted.
+
+## Remaining cutover work
+
+| Work | Completion condition |
+| --- | --- |
+| Writes and Fiber lifecycle | Finish volume IDs, runtime time, sealing and expiration. Expose the phase and batch operations the product uses for mail, waits, removal, termination, reaping and usage counters. |
+| Runtime events and requests | Carry commit notifications, exact request identities, person replies, stream replay, closure, and cancellation through the binary. Exercise these while reopening and shutting down. |
+| Machine capabilities | Move namespaces, file views, restricted commands, terminal I/O and coprocess channels behind the native SDK. Bring each supported platform up to the same ownership and permission contract. |
+| Product adoption | Build Octoii and Node against a local binary candidate. Migrate startup registration and host callbacks, then verify real turns, approval, workspace tools, stop, and reopen. |
+| Distribution and source removal | Publish matching verified archives and the SDK for macOS, Windows and Linux. A clean product clone must build and pass CI with public inputs. The same change removes the gitlink and private checkout credentials. |
+
+The product builder opens Beak on the current host executor. Node startup and the builder's extension-test
+callers pass Octoii configuration. Node access still reads and writes session records through the source runtime.
 
 ## Fiber label and volume format batch
 
@@ -297,6 +312,24 @@ outcome before and after reaping becomes available. The archived binary exports 
 as its single Fiber record reader. On macOS ARM64, 36 Siphon tests, three C consumers, 17 standalone Rust
 SDK tests, and 257 Octoii tests passed. The two external Octoii tests were ignored. Strict Clippy passed
 for all affected packages.
+
+## Volume IDs and retention
+
+Octoii allocates IDs from the volume both between turns and inside a Fiber phase. Node uses the runtime clock
+when expiring pairing links and sessions. Thread logs seal files and schedule old segments to expire. Expose
+these operations through the existing runtime, phase and changes handles. Expiration takes an optional instant
+in milliseconds. Setting an expiration or clearing it is part of the existing atomic batch.
+
+Proposed scope
+
+| Repository | Files | Change |
+| --- | --- | --- |
+| Private Siphon | `crates/siphon-ffi/src/{changes,runtime,fiber}.rs`, `crates/siphon-ffi/include/siphon.h`, `crates/siphon-ffi/tests/c/{lifecycle,fiber}.c` | Bind runtime and phase ID allocation, runtime time, sealing, and expiration. |
+| Public SDK | `src/{lib,sys,fiber}.rs`, `include/siphon.h`, `tests/{storage,fiber}.rs` | Wrap the existing handles and verify IDs, sealed writes, and expiration changes against the archive. |
+
+The binary owns the committed ID sequence, time source and file mutation transaction. Acceptance covers
+runtime and phase IDs from one volume, reopening, close and callback safety, sealed file refusal, and setting
+and clearing expiration on retained snapshots.
 
 ## Completion checks
 

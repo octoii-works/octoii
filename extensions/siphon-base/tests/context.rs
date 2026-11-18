@@ -1,5 +1,5 @@
 //! Base reads final runtime configuration even when it is registered before product extensions.
-use octoii::testing::{self, Beak};
+use octoii::testing;
 use octoii::threads::{Config, Mode, NewThread};
 use octoii::{Extension, Octoii, Registrar};
 use siphon_base::BaseExtension;
@@ -29,8 +29,7 @@ async fn base_reads_late_registered_folders_and_tracks_extension_settings() {
     std::fs::create_dir(&user).unwrap();
     std::fs::write(user.join("AGENTS.md"), "USER_INSTRUCTION").unwrap();
     std::fs::write(workspace.join("AGENTS.md"), "PROJECT_INSTRUCTION").unwrap();
-    let beak = Beak::new().unwrap();
-    let siphon = Octoii::builder(&beak, testing::setup(octoii::machine::Host::default()))
+    let siphon = Octoii::builder(testing::setup(octoii::machine::Host::default()))
         .unwrap()
         .extension(BaseExtension { config: Some(user) })
         .extension(WorkspaceNotes(workspace.join("notes")))

@@ -171,16 +171,16 @@ impl std::fmt::Debug for Setup {
 }
 
 impl Octoii {
-    /// Octoii to be built on `beak` as `setup` says, its volume opened, with its own tools, fibers, methods and
+    /// Octoii to be built as `setup` says, its volume opened, with its own tools, fibers, methods and
     /// topics; its extensions next.
     ///
     /// # Errors
-    /// The volume's failure, as another holding its directory.
+    /// The host executor or volume cannot be opened.
     ///
     /// # Panics
     /// Never as an id is minted for a model's answer: Beak mints one at any time, going on into the next millisecond
     /// past one's ids, till the year 10889.
-    pub fn builder(beak: &Beak, setup: Setup) -> beak::Result<Building> {
+    pub fn builder(setup: Setup) -> beak::Result<Building> {
         let Setup {
             machine,
             sign_in,
@@ -190,7 +190,8 @@ impl Octoii {
             catalogue,
             options,
         } = setup;
-        let (kernel, events) = options.open(beak)?;
+        let beak = Beak::new()?;
+        let (kernel, events) = options.open(&beak)?;
         let (minting, minted_at, clock) = (kernel.clone(), Arc::clone(&options.clock), Arc::clone(&options.clock));
         let network = Network {
             credentials: Arc::clone(&credentials),
@@ -449,13 +450,9 @@ mod base_tests {
 
     #[tokio::test]
     async fn starting_requires_exactly_one_base_extension() {
-        let beak = Beak::new().unwrap();
-        let missing = Octoii::builder(&beak, testing::setup(Host::default()))
-            .unwrap()
-            .start()
-            .unwrap_err();
+        let missing = Octoii::builder(testing::setup(Host::default())).unwrap().start().unwrap_err();
         assert!(missing.reason.contains("found 0"));
-        let duplicate = Octoii::builder(&beak, testing::setup(Host::default()))
+        let duplicate = Octoii::builder(testing::setup(Host::default()))
             .unwrap()
             .extension(Base)
             .extension(Base)
@@ -490,8 +487,7 @@ mod base_tests {
                 },
             )],
         ] {
-            let beak = Beak::new().unwrap();
-            let mut building = Octoii::builder(&beak, testing::setup(Host::default())).unwrap().extension(Base);
+            let mut building = Octoii::builder(testing::setup(Host::default())).unwrap().extension(Base);
             for (owner, prompts) in registrations {
                 building.builder.registrar(owner).prompts(prompts);
             }

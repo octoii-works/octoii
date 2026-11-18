@@ -7,12 +7,11 @@ use std::time::Duration;
 use crate::protocol::Scope;
 use crate::testing::{self, Client};
 use crate::{Caller, Extension, Lagged, Octoii, Registrar, Subscription};
-use beak::Beak;
 use serde_json::{Value, json};
 
-fn siphon(beak: &Beak) -> Octoii {
+fn siphon() -> Octoii {
     let setup = testing::setup(crate::machine::Host::default());
-    Octoii::builder(beak, setup)
+    Octoii::builder(setup)
         .expect("built")
         .extension(TestBase)
         .extension(Echo)
@@ -115,8 +114,7 @@ fn welcome_of(siphon: &crate::Octoii, scopes: &[&str]) -> serde_json::Value {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_client_is_welcomed_its_calls_checked_and_answered() {
-    let beak = Beak::new().expect("Beak");
-    let siphon = siphon(&beak);
+    let siphon = siphon();
     let mut reader = Client::connect(&siphon, vec![Scope::ThreadsRead], 64);
     let welcome = reader.message().await;
     assert_eq!(welcome, welcome_of(&siphon, &["threads.read"]));
@@ -215,8 +213,7 @@ async fn a_client_is_welcomed_its_calls_checked_and_answered() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_subscription_its_client_does_not_keep_up_with_lags_and_is_made_again_from_where_it_stood() {
-    let beak = Beak::new().expect("Beak");
-    let siphon = siphon(&beak);
+    let siphon = siphon();
     let mut client = Client::connect(&siphon, ALL.to_vec(), 4);
     client.message().await;
     let id = client.call("threads.create", json!({ "config": {}, "key": "k1" })).await;
@@ -267,8 +264,7 @@ async fn a_subscription_its_client_does_not_keep_up_with_lags_and_is_made_again_
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_extension_s_methods_and_topics_are_the_protocol_s_beside_siphon_s() {
-    let beak = Beak::new().expect("Beak");
-    let siphon = siphon(&beak);
+    let siphon = siphon();
     let mut client = Client::connect(&siphon, ALL.to_vec(), 64);
     client.message().await;
     let id = client.call("echo.say", json!({ "words": "hi" })).await;
@@ -313,8 +309,7 @@ async fn a_extension_s_methods_and_topics_are_the_protocol_s_beside_siphon_s() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn an_extension_switched_off_answers_nothing_till_it_is_switched_on() {
-    let beak = Beak::new().expect("Beak");
-    let siphon = siphon(&beak);
+    let siphon = siphon();
     let mut client = Client::connect(
         &siphon,
         vec![Scope::ThreadsRead, Scope::ThreadsOperate, Scope::TerminalsOperate],
@@ -339,8 +334,7 @@ async fn an_extension_switched_off_answers_nothing_till_it_is_switched_on() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn what_a_project_was_granted_is_listed_and_taken_back_in_part() {
-    let beak = Beak::new().expect("Beak");
-    let siphon = siphon(&beak);
+    let siphon = siphon();
     let granted = crate::tools::permissions::Grants {
         commands: vec!["git push *".into(), "cargo test *".into()],
         paths: vec!["/work/app/docs/**".into()],
@@ -366,8 +360,7 @@ async fn what_a_project_was_granted_is_listed_and_taken_back_in_part() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_thread_goes_on_at_a_time_as_its_status_tells_and_its_window_is_told_part_by_part() {
-    let beak = Beak::new().expect("Beak");
-    let siphon = siphon(&beak);
+    let siphon = siphon();
     let mut client = Client::connect(&siphon, ALL.to_vec(), 64);
     client.message().await;
     let id = client.call("threads.create", json!({ "config": {}, "key": "k1" })).await;

@@ -2,7 +2,7 @@
 use octoii::{
     Octoii,
     protocol::Scope,
-    testing::{self, Beak, Client},
+    testing::{self, Client},
 };
 use serde_json::{Value, json};
 use std::path::Path;
@@ -32,8 +32,8 @@ fn repository(root: &Path) {
     git(root, &["commit", "-m", "base"]);
 }
 
-fn node(beak: &Beak) -> Octoii {
-    Octoii::builder(beak, testing::setup(octoii::machine::Host::default()))
+fn node() -> Octoii {
+    Octoii::builder(testing::setup(octoii::machine::Host::default()))
         .unwrap()
         .extension(siphon_base::BaseExtension::default())
         .extension(siphon_git::GitExtension {
@@ -68,8 +68,7 @@ async fn accepted_input_waits_and_duplicate_preparation_releases_the_same_thread
     let root = folder.path().canonicalize().unwrap();
     repository(&root);
     let destination = root.join("task");
-    let beak = Beak::new().unwrap();
-    let node = node(&beak);
+    let node = node();
     let mut client = client(&node, vec![Scope::GitOperate, Scope::ThreadsOperate, Scope::ThreadsRead]).await;
     let asked = accept(&root, &destination);
     let accepted = call(&mut client, "git.start", asked.clone()).await;
@@ -106,8 +105,7 @@ async fn existing_worktree_is_inspected_but_never_adopted_or_cleaned_up() {
     let destination = root.join("task");
     git(&root, &["worktree", "add", "-b", "task", destination.to_str().unwrap(), "HEAD"]);
     std::fs::write(destination.join("keep"), "other work").unwrap();
-    let beak = Beak::new().unwrap();
-    let node = node(&beak);
+    let node = node();
     let mut client = client(&node, vec![Scope::GitOperate, Scope::ThreadsOperate, Scope::ThreadsRead]).await;
     let accepted = call(&mut client, "git.start", accept(&root, &destination)).await;
     let thread = &accepted["thread"];
@@ -148,8 +146,7 @@ async fn starting_requires_both_git_and_thread_operation_permissions() {
     let folder = tempfile::tempdir().unwrap();
     let root = folder.path().canonicalize().unwrap();
     repository(&root);
-    let beak = Beak::new().unwrap();
-    let node = node(&beak);
+    let node = node();
     for scopes in [vec![Scope::ThreadsOperate], vec![Scope::GitOperate]] {
         let mut client = client(&node, scopes).await;
         let id = client.call("git.start", accept(&root, &root.join("task"))).await;
@@ -170,11 +167,10 @@ async fn reopening_keeps_the_request_and_retry_requires_the_saved_token() {
     git(&root, &["branch", "task"]);
     let destination = root.join("task");
     let storage = tempfile::tempdir().unwrap();
-    let beak = Beak::new().unwrap();
     let open = || {
         let mut setup = testing::setup(octoii::machine::Host::default());
         setup.options.directory = Some(storage.path().to_owned());
-        Octoii::builder(&beak, setup)
+        Octoii::builder(setup)
             .unwrap()
             .extension(siphon_base::BaseExtension::default())
             .extension(siphon_git::GitExtension {
@@ -244,8 +240,7 @@ async fn independent_tasks_preserve_dirty_source_and_worktrees_after_thread_dele
     std::fs::write(root.join("tracked"), "uncommitted source").unwrap();
     std::fs::write(root.join("source-only"), "not committed").unwrap();
     let before = git(&root, &["status", "--porcelain"]);
-    let beak = Beak::new().unwrap();
-    let node = node(&beak);
+    let node = node();
     let mut client = client(&node, vec![Scope::GitOperate, Scope::ThreadsOperate, Scope::ThreadsRead]).await;
     let mut tasks = Vec::new();
     for name in ["first", "second"] {
@@ -290,8 +285,7 @@ async fn deleting_pending_task_rejects_late_preparation_and_acceptance_replay() 
     let root = folder.path().canonicalize().unwrap();
     repository(&root);
     let destination = root.join("task");
-    let beak = Beak::new().unwrap();
-    let node = node(&beak);
+    let node = node();
     let mut client = client(&node, vec![Scope::GitOperate, Scope::ThreadsOperate, Scope::ThreadsRead]).await;
     let request = accept(&root, &destination);
     let accepted = call(&mut client, "git.start", request.clone()).await;
