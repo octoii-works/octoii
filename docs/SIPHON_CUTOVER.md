@@ -92,7 +92,7 @@ Each private implementation batch lists its exact files and technical dependency
 | Work | Completion condition |
 | --- | --- |
 | Machine capabilities | Move namespaces and views, then restricted commands and terminal and coprocess I/O behind the native SDK. Bring each supported platform up to the same ownership and permission contract. |
-| Product adoption | Build Octoii and Node against a local binary candidate. Migrate startup registration and host callbacks, then verify real turns, approval, workspace tools, stop, and reopen. |
+| Product adoption | Give host callbacks access to the active runtime during startup. Build Octoii and Node against a local binary candidate and verify real turns, approval, workspace tools, stop, and reopen. |
 | Distribution and source removal | Publish matching verified archives and the SDK for macOS, Windows and Linux. A clean product clone must build and pass CI with public inputs. The same change removes the gitlink and private checkout credentials. |
 
 The product builder opens Beak on the current host executor. Node uses the product API for startup,
@@ -477,9 +477,18 @@ The binary interface should expose those namespace capabilities and execute comm
 namespace. Siphon owns the namespace and command handles. Terminal and coprocess operations keep
 the existing command lifecycle, cancellation and shutdown contract.
 
-The current link and test pipeline covers macOS ARM64. Beak has macOS and Linux command confinement.
-On Windows its restricted command and terminal paths are unsupported. Windows acceptance needs its
-own implementation and execution tests before the product depends on a Windows binary.
+Model, review, prompt gathering, and tool handlers also use the active runtime while they answer a
+request. Runtime access must be available with the delivery even when a Fiber runs before `open`
+returns to the application. Retaining an old delivery must leave volume close and reopen possible.
+
+Private commit `20d804f` uses the same seek and bounded read on each freshly opened host file on all
+platforms. A ranged write uses the file's cursor and writes the full input. This removes the Unix-only
+file methods from the namespace without changing how it opens or confines host paths.
+
+Strict Clippy for the Siphon workspace passed when targeting Linux ARM64 and Windows x64 MSVC.
+The link and execution pipeline currently runs on macOS, and local native verification used ARM64.
+Linux needs the packaged library and execution tests. Windows also needs command confinement and
+terminal support, which Beak currently rejects on that platform.
 
 ## Completion checks
 
