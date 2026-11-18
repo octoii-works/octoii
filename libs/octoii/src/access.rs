@@ -6,10 +6,10 @@
 
 use std::time::Duration;
 
+use crate::protocol::Scope;
 use base64::Engine as _;
 use beak::{Range, Snapshot};
 use bytes::Bytes;
-use octoii::protocol::Scope;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use siphon_runtime::{Changes, Runtime};
@@ -92,10 +92,16 @@ pub enum Refused {
     NoSuch,
     #[error("the system gave no random bytes: {0}")]
     Random(String),
-    #[error(transparent)]
-    Beak(#[from] beak::Error),
+    #[error("{0}")]
+    Volume(String),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
+}
+
+impl From<beak::Error> for Refused {
+    fn from(error: beak::Error) -> Self {
+        Self::Volume(error.to_string())
+    }
 }
 
 /// The access, on Octoii's runtime.
@@ -159,7 +165,7 @@ fn millis(lasts: Duration) -> i64 {
 
 impl Access {
     #[must_use]
-    pub fn new(runtime: Runtime) -> Self {
+    pub(crate) fn new(runtime: Runtime) -> Self {
         Self { runtime }
     }
 

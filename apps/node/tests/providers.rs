@@ -84,5 +84,5 @@ async fn the_person_manages_providers_keys_and_accounts() {
     );
     let unknown = asked(&mut client, "providers.sign-in", json!({ "provider": "nowhere" })).await;
     assert_eq!(unknown["error"]["code"], "no_such_provider");
-    siphon.runtime.close().await;
+    siphon.close().await;
 }

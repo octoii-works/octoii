@@ -7,9 +7,9 @@ use std::io::Cursor;
 use bytes::Bytes;
 use http_body_util::{BodyExt as _, Full};
 use hyper::Method;
+use octoii::access::Access;
 use octoii::protocol::{Machine, Scope};
 use octoii::threads::NewThread;
-use octoii_node::access::Access;
 use octoii_node::home::Home;
 use octoii_node::http::{self, Node};
 use serde_json::Value;
@@ -62,7 +62,7 @@ async fn a_thread_s_files_are_sent_kept_and_given_back_to_a_session_that_may() {
     let home = Home::at(folder.path());
     home.prepare().expect("a Home");
     let siphon = octoii_node::serve::siphon(&home, octoii::providers::SignInSetup::default()).expect("Octoii");
-    let access = Access::new(siphon.runtime.clone());
+    let access = siphon.access();
     let thread = siphon.threads.create(&NewThread::default(), "k1").await.expect("a thread");
     let other = siphon.threads.create(&NewThread::default(), "k2").await.expect("a thread");
     let address = served(&siphon, &access).await;
@@ -152,5 +152,5 @@ async fn a_thread_s_files_are_sent_kept_and_given_back_to_a_session_that_may() {
         .await
         .0;
     assert_eq!(refused, 403, "a session that may not read files reads none of the machine's");
-    siphon.runtime.close().await;
+    siphon.close().await;
 }

@@ -111,7 +111,7 @@ async fn a_browser_and_a_program_reach_the_node_by_the_sessions_its_commands_mak
     assert_eq!(welcome["event"], "welcome");
     assert_eq!(
         welcome["scopes"],
-        json!(octoii_node::access::ALL),
+        json!(octoii::access::ALL),
         "a link made by the person grants everything"
     );
 

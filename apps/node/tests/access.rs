@@ -1,7 +1,7 @@
 //! The access on the volume: a link redeemed once for a session its credential holds; that credential, wrong in a
 //! byte, holds nothing.
 
-use octoii_node::access::{self, Access, Holder};
+use octoii::access::{self, Holder};
 use octoii_node::home::Home;
 
 #[tokio::test(flavor = "multi_thread")]
@@ -10,7 +10,7 @@ async fn a_link_pairs_once_and_a_credential_holds_only_its_own_session() {
     let home = Home::at(folder.path());
     home.prepare().expect("a Home");
     let siphon = octoii_node::serve::siphon(&home, octoii::providers::SignInSetup::default()).expect("Octoii");
-    let access = Access::new(siphon.runtime.clone());
+    let access = siphon.access();
     let link = access
         .link(Some("phone".into()), access::ALL.to_vec(), access::LINK_LASTS)
         .await
@@ -29,7 +29,7 @@ async fn a_link_pairs_once_and_a_credential_holds_only_its_own_session() {
         access.held(&wrong).expect("read").is_none(),
         "a secret wrong in a byte holds nothing"
     );
-    siphon.runtime.close().await;
+    siphon.close().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -39,18 +39,18 @@ async fn stored_scopes_do_not_gain_new_git_permission() {
     let home = Home::at(folder.path());
     home.prepare().unwrap();
     let siphon = octoii_node::serve::siphon(&home, octoii::providers::SignInSetup::default()).unwrap();
-    let access = Access::new(siphon.runtime.clone());
+    let access = siphon.access();
     let scopes: Vec<_> = access::ALL.iter().copied().filter(|scope| *scope != Scope::GitOperate).collect();
     let link = access
         .link(Some("existing client".into()), scopes.clone(), access::LINK_LASTS)
         .await
         .unwrap();
     let session = access.redeem(&link.credential, Holder::Bearer).await.unwrap();
-    siphon.runtime.close().await;
+    siphon.close().await;
     drop(access);
     drop(siphon);
     let siphon = octoii_node::serve::siphon(&home, octoii::providers::SignInSetup::default()).unwrap();
-    let access = Access::new(siphon.runtime.clone());
+    let access = siphon.access();
     assert_eq!(access.held(&session.credential).unwrap().unwrap().scopes, scopes);
-    siphon.runtime.close().await;
+    siphon.close().await;
 }

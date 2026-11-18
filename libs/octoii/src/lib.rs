@@ -5,6 +5,7 @@
 //! compacts it; the extensions a host builds Octoii with; the protocol a client speaks, and its connection — started as
 //! with the fibers that run a thread's processes and the handlers that answer their requests.
 
+pub mod access;
 pub(crate) mod accounts;
 pub mod agent;
 pub mod connection;
@@ -24,6 +25,7 @@ pub mod trust;
 pub mod volume;
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::agent::{
@@ -48,7 +50,7 @@ pub use extension::{Caller, Extension, Full, Lagged, Registrar, Sink, Subscripti
 pub use kept::{Ends, Kept};
 
 /// What Octoii is built on: the machine its work is done on; the host's credentials
-/// and where the models' requests go, the host's providers and the catalogue of models; and the volume's options. The
+/// and where the models' requests go, the host's providers and the catalogue of models; and the volume's directory. The
 /// ids the models' answers are given are the volume's, and their clock the runtime's.
 pub struct Setup {
     pub machine: Host,
@@ -57,7 +59,8 @@ pub struct Setup {
     pub transport: Arc<dyn Transport>,
     pub providers: Vec<Provider>,
     pub catalogue: Vec<Model>,
-    pub options: Options,
+    /// The persistent volume directory. None uses memory.
+    pub directory: Option<PathBuf>,
 }
 
 /// Octoii, started: the machine its work is done on, its runtime, its threads, the models they ask — reached with the
@@ -78,6 +81,17 @@ pub struct Octoii {
 }
 
 impl Octoii {
+    /// The sessions and pairing links stored in this product volume.
+    #[must_use]
+    pub fn access(&self) -> access::Access {
+        access::Access::new(self.runtime.clone())
+    }
+
+    /// Stops the product's execution and waits for it to close.
+    pub async fn close(&self) {
+        self.runtime.close().await;
+    }
+
     /// The volume through Octoii's public operations, without exposing its storage implementation.
     #[must_use]
     pub fn volume(&self) -> crate::volume::Volume {
@@ -188,9 +202,13 @@ impl Octoii {
             transport,
             providers,
             catalogue,
-            options,
+            directory,
         } = setup;
         let beak = Beak::new()?;
+        let options = Options {
+            directory,
+            ..Options::default()
+        };
         let (kernel, events) = options.open(&beak)?;
         let (minting, minted_at, clock) = (kernel.clone(), Arc::clone(&options.clock), Arc::clone(&options.clock));
         let network = Network {

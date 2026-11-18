@@ -22,7 +22,7 @@ async fn the_client_s_typescript_is_what_the_node_s_siphon_and_extensions_make()
     let building = octoii_node::serve::building(&home, octoii::providers::SignInSetup::default()).expect("Octoii");
     let siphon = octoii_node::pairing::with_access(building, links).start().expect("started");
     let made = octoii::protocol::typescript(siphon.sets());
-    siphon.runtime.close().await;
+    siphon.close().await;
     if std::env::var_os("UPDATE_EXPECT").is_some() {
         std::fs::write(MODULE, &made).expect("written");
         return;

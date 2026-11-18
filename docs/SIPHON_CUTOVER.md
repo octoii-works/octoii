@@ -16,10 +16,9 @@ the cutover.
 ## Current evidence
 
 - The product Git tree contains one private `siphon` submodule. Its `beak/` directory is ordinary source in
-  the private repo. Cargo metadata resolves 20 product packages. `octoii` and `octoii-node` both declare
-  direct normal path dependencies on Beak and Siphon Runtime. These are four direct dependencies across two
-  packages. The macOS ARM64 product graph resolves 11 private source packages. The product graph has no
-  dependency on `octoii-siphon-lib`. Product CI reads the gitlink, checks out the private repo with
+  the private repo. Cargo metadata resolves 20 product packages. `octoii` declares the two remaining direct
+  path dependencies on Beak and Siphon Runtime. The macOS ARM64 product graph resolves 11 private source
+  packages. The product graph has no dependency on `octoii-siphon-lib`. Product CI reads the gitlink, checks out the private repo with
   `SIPHON_DEPLOY_KEY`, and tests all three source workspaces.
 - The local public wrapper at `227fe4f` and development ABI 4 cover storage writes, retained snapshots, fibers,
   host request callbacks, directory reads, indexed label queries, metadata changes, the commit journal,
@@ -40,7 +39,7 @@ the cutover.
 | Streams | B2.2c.2 bound live output, replay and close to the exact request. The client accepts increasing offsets with gaps and resets live state on resubscribe. | Expose the stream contract through the public SDK. |
 | Octoii settings and sub-threads | Settings readers and writers reject a disabled list containing `base`. Sub-thread creation and metadata require a kind. | The tool schema, metadata reads, and settings reads and writes enforce these requirements. |
 | Thread startup claims | The claim fingerprint includes the variant of every input part. | Replays must match the current fingerprint for text and attachments. |
-| Raw kernel access | Octoii opens Beak before starting Siphon, puts `Kernel` in the extension registrar, and uses `Runtime::kernel()` for commands, namespaces and IDs. Browser, Claude Code and Terminals take command handles during registration. Node still uses native snapshots and changes for sessions. | Register callbacks and assemble extension configuration through the public runtime builder. Give services typed volume, ID and machine capabilities before any resumed work can call them. Node and extensions use Octoii's product interfaces. Retire the raw kernel setup path after its callers move. |
+| Raw kernel access | Octoii opens Beak before starting Siphon, puts `Kernel` in the extension registrar, and uses `Runtime::kernel()` for commands, namespaces and IDs. Browser, Claude Code and Terminals take command handles during registration. | Register callbacks and assemble extension configuration through the public runtime builder. Give services typed volume, ID and machine capabilities before any resumed work can call them. Retire the raw kernel setup path after its callers move. |
 
 The inspected Beak root, directory, change and process decoders accept a single format at each decoder.
 Fiber version checks hold an incompatible process before running its code. Reopen of the confirmed log prefix,
@@ -97,8 +96,9 @@ Each private implementation batch lists its exact files and technical dependency
 | Product adoption | Build Octoii and Node against a local binary candidate. Migrate startup registration and host callbacks, then verify real turns, approval, workspace tools, stop, and reopen. |
 | Distribution and source removal | Publish matching verified archives and the SDK for macOS, Windows and Linux. A clean product clone must build and pass CI with public inputs. The same change removes the gitlink and private checkout credentials. |
 
-The product builder opens Beak on the current host executor. Node startup and the builder's extension-test
-callers pass Octoii configuration. Node access still reads and writes session records through the source runtime.
+The product builder opens Beak on the current host executor. Node uses the product API for startup,
+session storage, pairing and shutdown. Its build and test manifests have dropped both direct private
+dependencies. The Octoii product library owns the atomic transactions for issuing a session and redeeming a link.
 
 ## Fiber label and volume format batch
 
@@ -389,6 +389,26 @@ waking a phase, consumption becoming visible after commit, refusal of a wrong cr
 of a reserved answer slot. The phase test also sends mail through its own batch. On macOS ARM64, 36 Siphon
 tests, three C consumers, 21 standalone Rust SDK tests and 257 Octoii tests passed. The two external Octoii
 tests were ignored. Strict Clippy passed for all three workspaces.
+
+## Commit notifications
+
+Octoii needs a commit watch to wake its subscriptions and pending startup operations. Register the watch
+on the binary runtime and return the initial sequence and subsequent latest committed sequences. The
+snapshot journal gives the actual changes and detects a history gap. A notification can coalesce commits.
+
+The C callback takes a sequence value and a context owned by the registration. Dropping the watch cancels
+it. Closing the runtime ends the watch and releases its context. The Rust SDK returns an owned watch with
+an asynchronous `changed` operation. Its caller can read the current sequence and follow the journal.
+
+Proposed scope
+
+| Repository | Files | Change |
+| --- | --- | --- |
+| Private Siphon | `crates/siphon-ffi/src/runtime.rs`, `crates/siphon-ffi/include/siphon.h`, `crates/siphon-ffi/tests/c/lifecycle.c` | Expose the native committed watch with context release and cancellation. |
+| Public SDK | `Cargo.toml`, `src/{lib,sys}.rs`, `include/siphon.h`, `tests/storage.rs` | Bind the watch, enable Tokio sync for the owned receiver, and verify commit, cancel and close. |
+
+The binary runtime owns the durable commit signal. Verify the initial sequence, a successful commit, a
+rejected transaction, independent cancellation, and closure of the receiver at shutdown.
 
 ## Completion checks
 

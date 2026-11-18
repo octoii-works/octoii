@@ -23,13 +23,11 @@ use siphon_git::GitExtension;
 use siphon_mcp::McpExtension;
 use siphon_memory::MemoryExtension;
 use siphon_question::QuestionExtension;
-use siphon_runtime::Options;
 use siphon_skills::SkillsExtension;
 use siphon_terminals::TerminalsExtension;
 use siphon_thread::ThreadExtension;
 use siphon_web_search::WebSearchExtension;
 
-use crate::access::Access;
 use crate::control::{self, Control};
 use crate::credentials::Credstore;
 use crate::home::Home;
@@ -113,10 +111,7 @@ pub fn building(home: &Home, sign_in: SignInSetup) -> anyhow::Result<octoii::Bui
         transport: Arc::new(octoii_ai::transport::Network::default()),
         providers,
         catalogue: octoii_ai::catalogue::bundled(),
-        options: Options {
-            directory: Some(home.volume()),
-            ..Options::default()
-        },
+        directory: Some(home.volume()),
     };
     let browser = BrowserExtension {
         program: None,
@@ -206,7 +201,7 @@ pub async fn serve_until(served: Served, stop: impl Future<Output = ()> + Send +
     std::fs::create_dir_all(&workspace).with_context(|| format!("the folder of the threads of none, {}", workspace.display()))?;
     let node = Node {
         siphon: siphon.clone(),
-        access: Access::new(siphon.runtime.clone()),
+        access: siphon.access(),
         machine: Machine::of(gethostname::gethostname().to_string_lossy().into_owned(), &siphon.machine),
         origins: vec![loopback.clone(), format!("http://localhost:{port}")],
         cookie: http::cookie_of(port),
@@ -240,7 +235,7 @@ pub async fn serve_until(served: Served, stop: impl Future<Output = ()> + Send +
     let (served, controlled) = tokio::join!(loopback_served.into_future(), control_served.into_future());
     let _ = std::fs::remove_file(&socket);
     tunnel.close().await;
-    siphon.runtime.close().await;
+    siphon.close().await;
     served.context("the loopback")?;
     controlled.context("the control socket")?;
     Ok(())

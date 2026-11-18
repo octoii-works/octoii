@@ -3,7 +3,6 @@ use axum::http::StatusCode;
 use http_body_util::BodyExt as _;
 use octoii::protocol::{Machine, Scope};
 use octoii_node::{
-    access::Access,
     home::Home,
     http::{self, Node},
 };
@@ -26,7 +25,7 @@ impl TestNode {
         let home = Home::at(folder.path());
         home.prepare().unwrap();
         let siphon = octoii_node::serve::siphon(&home, octoii::providers::SignInSetup::default()).unwrap();
-        let access = Access::new(siphon.runtime.clone());
+        let access = siphon.access();
         let writer = access
             .issue(None, vec![Scope::ThreadsOperate, Scope::ThreadsRead, Scope::GitOperate])
             .await
@@ -76,7 +75,7 @@ impl TestNode {
     async fn close(self) {
         self.server.abort();
         let _ = self.server.await;
-        self.siphon.runtime.close().await;
+        self.siphon.close().await;
     }
 }
 

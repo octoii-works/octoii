@@ -84,7 +84,7 @@ async fn what_the_model_is_told() {
         },
         ..NewThread::default()
     };
-    let key = siphon.runtime.new_id().expect("an id");
+    let key = siphon.volume().new_id().expect("an id");
     let id = siphon.threads.create(&new, &key).await.expect("a thread");
     let told = siphon.told(&id).await.expect("told");
     assert_eq!(told.sections.first().map(|(name, _)| name.as_str()), Some("base"));
@@ -107,7 +107,7 @@ async fn an_extension_switched_off_tells_the_model_nothing() {
         },
         ..NewThread::default()
     };
-    let key = siphon.runtime.new_id().expect("an id");
+    let key = siphon.volume().new_id().expect("an id");
     let id = siphon.threads.create(&new, &key).await.expect("a thread");
     let names = |told: &octoii::agent::Told| -> Vec<String> {
         told.tools
@@ -131,7 +131,11 @@ async fn an_extension_switched_off_tells_the_model_nothing() {
         }),
         device: None,
     };
-    octoii::settings::set(&siphon.runtime, "a-session", &change).await.expect("set");
+    let mut client = octoii::testing::Client::connect(&siphon, vec![octoii::protocol::Scope::ThreadsOperate], 8);
+    client.message().await;
+    let call = client.call("settings.set", serde_json::to_value(change).expect("settings")).await;
+    let answer = client.answer(&call).await;
+    assert!(answer.get("result").is_some(), "{answer}");
     let told = siphon.told(&id).await.expect("told");
     let environment = told
         .sections
@@ -160,13 +164,13 @@ async fn product_context_does_not_grant_subthread_tools() {
     let home = Home::at(folder.path().join("home"));
     home.prepare().unwrap();
     let siphon = octoii_node::serve::siphon(&home, octoii::providers::SignInSetup::default()).unwrap();
-    let key = siphon.runtime.new_id().unwrap();
+    let key = siphon.volume().new_id().unwrap();
     let parent = siphon.threads.create(&NewThread::default(), &key).await.unwrap();
     for kind in [
         octoii::threads::SubThreadKind::Explorer,
         octoii::threads::SubThreadKind::GeneralPurpose,
     ] {
-        let key = siphon.runtime.new_id().unwrap();
+        let key = siphon.volume().new_id().unwrap();
         let child = siphon
             .threads
             .create(

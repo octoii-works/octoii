@@ -9,7 +9,7 @@ use octoii::{Building, HostCaller};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::access::{self, Access, AccessEntry, Refused};
+use octoii::access::{self, Access, AccessEntry, Refused};
 
 /// Where the web app is served to a device that reaches the node through the tunnel.
 pub const APP: &str = "https://app.octoii.com";
@@ -116,7 +116,7 @@ fn failed(error: &Refused) -> Error {
 }
 
 async fn answered(links: &Links, caller: &HostCaller, method: Method) -> Result<serde_json::Value, Error> {
-    let access = Access::new(caller.siphon.runtime.clone());
+    let access = caller.siphon.access();
     let json = |value: serde_json::Result<serde_json::Value>| {
         value.map_err(|error| Error {
             code: "failed".into(),

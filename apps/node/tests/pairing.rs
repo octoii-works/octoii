@@ -1,9 +1,9 @@
 //! The node's access as its own methods of the protocol: the sessions and links listed, a link made that pairs a client
 //! once, a session revoked — and a session that may only read the access makes no link.
 
+use octoii::access::Holder;
 use octoii::protocol::Scope;
 use octoii::testing::Client;
-use octoii_node::access::{Access, Holder};
 use octoii_node::home::Home;
 use octoii_node::pairing::{Links, with_access};
 use serde_json::{Value, json};
@@ -28,7 +28,7 @@ async fn the_access_is_listed_paired_and_revoked_through_the_protocol() {
     };
     let building = octoii_node::serve::building(&home, octoii::providers::SignInSetup::default()).expect("Octoii");
     let siphon = with_access(building, links).start().expect("started");
-    let access = Access::new(siphon.runtime.clone());
+    let access = siphon.access();
     let program = access
         .issue(Some("script".into()), vec![Scope::ThreadsRead])
         .await
@@ -63,5 +63,5 @@ async fn the_access_is_listed_paired_and_revoked_through_the_protocol() {
     let mut reader = Client::connect(&siphon, vec![Scope::AccessRead], 64);
     reader.message().await;
     assert_eq!(asked(&mut reader, "access.pair", json!({})).await["error"]["code"], "forbidden");
-    siphon.runtime.close().await;
+    siphon.close().await;
 }

@@ -169,7 +169,7 @@ async fn reopening_keeps_the_request_and_retry_requires_the_saved_token() {
     let storage = tempfile::tempdir().unwrap();
     let open = || {
         let mut setup = testing::setup(octoii::machine::Host::default());
-        setup.options.directory = Some(storage.path().to_owned());
+        setup.directory = Some(storage.path().to_owned());
         Octoii::builder(setup)
             .unwrap()
             .extension(siphon_base::BaseExtension::default())

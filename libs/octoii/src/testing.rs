@@ -53,7 +53,7 @@ pub fn setup(machine: crate::machine::Host) -> Setup {
         transport: Arc::new(octoii_ai::transport::Network::default()),
         providers: Vec::new(),
         catalogue: Vec::new(),
-        options: Options::default(),
+        directory: None,
     }
 }
 

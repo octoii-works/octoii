@@ -5,8 +5,8 @@
 use ::http::Request;
 use bytes::Bytes;
 use net::test_utils::run_relay_server;
+use octoii::access;
 use octoii::protocol::Machine;
-use octoii_node::access::{self, Access};
 use octoii_node::home::Home;
 use octoii_node::http::{self, Node};
 use octoii_tunnel::{CaTlsConfig, EndpointAddr, Message, PeerError, SecretKey, Tunnel};
@@ -44,7 +44,7 @@ async fn a_device_pairs_through_the_tunnel_and_speaks_the_protocol_by_its_bearer
     let home = Home::at(folder.path());
     home.prepare().expect("a Home");
     let siphon = octoii_node::serve::siphon(&home, octoii::providers::SignInSetup::default()).expect("Octoii");
-    let access = Access::new(siphon.runtime.clone());
+    let access = siphon.access();
     let node = Node {
         siphon: siphon.clone(),
         access: access.clone(),
@@ -93,11 +93,11 @@ async fn a_device_pairs_through_the_tunnel_and_speaks_the_protocol_by_its_bearer
 
     let welcome = welcomed(&peer, Some(credential)).await.expect("welcomed");
     assert_eq!(welcome["event"], "welcome");
-    assert_eq!(welcome["scopes"], json!(octoii_node::access::ALL));
+    assert_eq!(welcome["scopes"], json!(octoii::access::ALL));
     let session = access.held(credential).expect("read").expect("its session");
     assert_eq!(session.holder, Some(access::Holder::Bearer));
     assert_eq!(welcome["session"].as_str(), Some(session.id.as_str()));
     device.close().await;
     machine.close().await;
-    siphon.runtime.close().await;
+    siphon.close().await;
 }

@@ -12,9 +12,11 @@ workspace = true
 
 [dependencies]
 anyhow = "1.0.104"
+base64 = "0.23.1"
 beak.workspace = true
 bytes = "1.12.1"
 futures = "0.3.34"
+getrandom = "0.4.3"
 globset = "0.4.21"
 grep-matcher = "0.1.9"
 grep-regex = "0.1.14"

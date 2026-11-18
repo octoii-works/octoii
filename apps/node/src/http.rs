@@ -24,7 +24,7 @@ use serde::Deserialize;
 use tokio::sync::mpsc;
 use tower_http::services::{ServeDir, ServeFile};
 
-use crate::access::{self, Access, AccessEntry, Holder};
+use octoii::access::{self, Access, AccessEntry, Holder};
 
 /// The cookie a browser holds its session at the node of the loopback port `port` in: a browser keeps one set of
 /// cookies for a host whatever its port, so each node on the machine names its own.

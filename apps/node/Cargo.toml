@@ -18,12 +18,10 @@ path = "src/main.rs"
 anyhow = "1.0.104"
 axum = { version = "0.8.9", features = ["ws", "macros", "multipart"] }
 base64 = "0.23.1"
-beak.workspace = true
 bytes = "1.12.1"
 clap = { version = "4.6.7", features = ["derive", "env"] }
 futures-util = "0.3.34"
 gethostname = "1.1.0"
-getrandom = "0.4.3"
 http-body-util = "0.1.5"
 hyper = { version = "1.12.0", features = ["client", "http1"] }
 hyper-util = { version = "0.1.21", features = ["tokio"] }
@@ -48,7 +46,6 @@ siphon-question.workspace = true
 siphon-skills.workspace = true
 siphon-thread.workspace = true
 siphon-web-search.workspace = true
-siphon-runtime.workspace = true
 siphon-terminals.workspace = true
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "net", "signal", "fs", "time"] }
