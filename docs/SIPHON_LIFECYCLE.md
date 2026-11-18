@@ -151,7 +151,7 @@ those waits and can still end a process that has no progress. Verify first admis
 grace while waiting on a child, and a normal completion racing stop. Run the linked C scenario with its reply
 held until the first stop phase has registered its wait.
 
-Proposed private scope, relative to `devxiyang/octoii-siphon`:
+Confirmed private scope, relative to `devxiyang/octoii-siphon`:
 
 | Files | Change |
 | --- | --- |
@@ -162,6 +162,13 @@ Proposed private scope, relative to `devxiyang/octoii-siphon`:
 
 Only Beak can validate and release its run admission or decide when a sleeping stop phase is runnable.
 The storage encoding and the public Siphon ABI need no change for this repair.
+
+Private commit `9fe5c4c`. The linked C regression withheld the answer until the first stop wait was
+committed and another process had finished. The old archive re-entered the stop phase before the answer;
+the new archive waited for the answer and then committed the partial result. The scheduler also verifies
+that grace remains due while a child is still running and that the last descendant wakes its stopping
+ancestor across a directory. On macOS ARM64, all 148 Beak tests, 53 Siphon tests, three linked C consumers,
+and 13 public Rust consumer tests passed, along with strict Clippy and Octoii's library and dependency checks.
 
 ## R06: make the transaction boundary authoritative for execution
 
@@ -190,6 +197,26 @@ Implement this in dependency order:
    stored result and queued answers only when the failed commit is known to be unapplied. A terminal fault
    stops the runtime and is available to the host through its next operation. Retained snapshots are still
    snapshots of their last confirmed state.
+
+### R06a: prepare the tree and scheduler together
+
+The tree prepares its change set, pending root and indexes once. Give the scheduler a read-only view of that
+prepared state so it can resolve the process, removal and expiry updates before the device commit. After the
+device accepts the commit, apply these updates in memory, consume ready work and publish the same commit
+and notices through the existing Volume writer lock. Keep ready work queued if preparation or the write fails.
+This is an incremental update of the affected paths. It does not clone the scheduler's live table.
+
+Proposed private scope, relative to `devxiyang/octoii-siphon`:
+
+| Files | Change |
+| --- | --- |
+| `beak/crates/beak-tree/src/{lib.rs,tree.rs,tree/transaction.rs}` | Provide the prepared transaction view to the scheduler. Keep direct tree commits on the same prepare and persist path. |
+| `beak/crates/beak-process/src/scheduler.rs`, `beak/crates/beak-process/tests/scheduler.rs` | Prepare the affected scheduler state before persistence, apply it without device reads after success, and preserve ready work on failure. Verify that a journal read fault cannot lose a committed admission. |
+| `beak/crates/beak-volume/tests/volume.rs` | Inject a failed reservation commit and verify that it neither publishes nor consumes the wake, then verify successful reservation without a new wake. |
+
+Extensions receive commits after this boundary. They cannot preserve the scheduler's ready work or prevent a
+post-commit journal read from failing. Leave storage error classification and runtime retries to the next two
+R06 changes.
 
 ## Command cleanup and binary streaming
 
