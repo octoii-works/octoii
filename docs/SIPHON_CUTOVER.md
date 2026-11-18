@@ -7,7 +7,7 @@ Siphon repository owns Beak, the runtime, the native ABI implementation, and its
 Siphon package owns the typed Rust interface and distribution of the corresponding binaries. Octoii owns
 agent behavior, extensions, permissions policy, node composition, and the client protocol.
 
-Each release uses one current contract at every boundary. Change the type, writer, reader, and callers together.
+Development and releases use one current contract at every boundary. Change the type, writer, reader, and callers together.
 Require the current volume format, the exact native ABI and target, and the current client protocol at their
 entry points. An unsupported version gives a clear error before runtime startup or state mutation. Keep fault recovery
 for valid state in the current format. Validate a newly initialized volume and its subsequent reopen as part of
@@ -31,11 +31,12 @@ the cutover.
 
 | Area | Observed behavior | Cutover action |
 | --- | --- | --- |
-| Beak request recovery | `beak-process/src/scheduler.rs` empties occupied answer slots on reopen to repair mail written by the old rules. The current request transaction opens an empty slot and reserves it for the exact reply. | Remove the old-state repair. Verify current-format wait recovery and retelling. Reject a broken slot invariant before dispatch. |
+| Beak request recovery | The scheduler requires an empty answer slot for each pending request before it resumes fibers. | Valid requests are retold by their committed identities. A conflict rejects reopen before the scheduler writes a recovery commit. |
 | Fiber persistence | Previous revisions used `system.program` and the `"program"` checkpoint spelling for a Fiber. | Completed in the Fiber label and volume format batch below. Beak uses `system.fiber`, Octoii reads the typed process record, and the new format is checked at open. |
 | Person replies | B2.2c.2 replaced address-based replies with the exact committed identity. Siphon reads the prompt and schema from one snapshot, then validates that identity again in the reply transaction. | Expose the same typed query and answer through the public SDK. |
 | Streams | B2.2c.2 bound live output, replay and close to the exact request. The client accepts increasing offsets with gaps and resets live state on resubscribe. | Expose the stream contract through the public SDK. |
-| Octoii persisted settings and threads | A child missing its kind becomes General Purpose. A stored disabled-extension list silently filters out `base`. Both historical cases have explicit regression tests. | Require a child kind and validate the mandatory base extension on persisted reads and writes. Keep the current creation defaults for fields that are optional by contract. |
+| Octoii settings and sub-threads | Settings readers and writers reject a disabled list containing `base`. Sub-thread creation and metadata require a kind. | The tool schema, metadata reads, and settings reads and writes enforce these requirements. |
+| Thread startup claims | The claim fingerprint includes the variant of every input part. | Replays must match the current fingerprint for text and attachments. |
 | Raw kernel access | Octoii opens Beak before starting Siphon, puts `Kernel` in the extension registrar, and uses `Runtime::kernel()` for commands, namespaces and IDs. Browser, Claude Code and Terminals take command handles during registration. Node accesses native snapshots and changes for files and sessions. | Register callbacks and assemble extension configuration through the public runtime builder. Give services typed volume, ID and machine capabilities before any resumed work can call them. Node and extensions use Octoii's product interfaces. Retire the raw kernel setup path after its callers move. |
 
 The inspected Beak root, directory, change and process decoders accept a single format at each decoder.
@@ -48,8 +49,8 @@ in Octoii and its extensions.
 
 1. **Settle the current format.**
    [B2.2c.2](SIPHON_LIFECYCLE.md#b22c2-bind-streams-and-browser-replies-to-request-identity) migrated Siphon,
-   Node and client source consumers to the exact request identity. Remove the remaining confirmed legacy
-   behaviors in scoped batches before freezing the public contract and storage format.
+   Node and client source consumers to the exact request identity. The product settings and metadata batch
+   and the request slot recovery batch enforce the current contracts described below.
 2. **Fill the public SDK gaps from actual callers.** Extend the C declarations and safe Rust wrapper together.
    Group the work around capabilities the product already needs:
 
@@ -120,6 +121,41 @@ regression uses `system.fiber` after reopen, and the Octoii checkpoint regressio
 On macOS ARM64, Beak passed 164 tests, Siphon passed 30, and Octoii passed 105 library tests with one
 live model test ignored. Three standalone C consumers and 13 public Rust consumer tests passed against
 the ABI 4 archive. Formatting, scoped strict Clippy, Node's all-target check and the dependency check passed.
+
+## Product settings, sub-thread metadata, and startup claims
+
+Both the settings reader and writer validate the disabled-extension list. A list containing `base` is invalid.
+A stored sub-thread must declare its scope explicitly. Its parent metadata requires the kind, and a missing or
+unknown kind stops the read before tool selection. The `delegate` tool requires a kind for its `start` action.
+Startup claims hash tagged text and attachment parts. A replay must match the current request fingerprint.
+
+The Octoii workspace passed 256 tests on macOS ARM64. The external model and Claude Code tests were ignored.
+The real Node acceptance script verified replies, restart with a pending approval, and stream replay after
+disconnect.
+
+## Request slot recovery batch
+
+Every pending request reserves an empty slot for its answer. On scheduler open, validate that slot against the
+recovered snapshot. If the slot is occupied, the scheduler refuses to open and reports the path before restarting
+admitted fibers or delivering notices. A valid pending request is retold with its committed identity. Creating a
+new request under a reused key consumes the previous reply as part of the request transaction.
+
+Confirmed private scope, relative to `devxiyang/octoii-siphon`
+
+| Files | Change |
+| --- | --- |
+| `beak/crates/beak-process/src/scheduler.rs` | Validate pending answer slots before recovery commits and retell valid requests by identity. |
+| `beak/crates/beak-process/src/lib.rs` | Add an occupied-slot error with the slot path. The existing volume and runtime error path carries it to the caller. |
+| `beak/crates/beak-process/src/commit.rs` | Keep answer-slot clearing private to the transaction that creates a request. |
+| `beak/crates/beak-process/tests/scheduler.rs` | Replace the legacy repair case with refusal before a recovery commit, and verify retelling on a valid reopen. |
+
+The scheduler owns recovered state before the volume publishes notices. Extensions enter after this boundary.
+
+Private commit `3486103`. A current-format reopen retells a pending request without adding a recovery commit
+when no fiber was admitted. With an admitted fiber and an occupied slot, open returns the slot path. Reading the
+same underlying device confirms that both the commit sequence and the conflicting data are intact.
+On macOS ARM64, Beak passed 165 tests and Siphon passed 33. The three C consumers and 13 public Rust tests
+passed against the ABI 4 archive.
 
 ## Completion checks
 

@@ -55,8 +55,7 @@ pub enum DelegateArgs {
         task: String,
         /// A short title shown to the person.
         title: Option<String>,
-        /// Explorer is read-only; `general_purpose` inherits the parent's tools and mode.
-        #[serde(default)]
+        /// Choose `explorer` for read-only work or `general_purpose` to inherit the parent's tools and mode.
         kind: SubThreadKind,
         /// Return at once and report completion to the parent instead of waiting.
         #[serde(default)]
@@ -110,7 +109,7 @@ pub struct DelegateTool;
 impl Tool for DelegateTool {
     const NAME: &'static str = "delegate";
     const REACHES_THREADS: bool = true;
-    const DESCRIPTION: &'static str = "Start a sub-thread task or send more work to one of your existing sub-threads. By default, wait for its final answer; background returns its id immediately and reports completion later. Its kind cannot change.";
+    const DESCRIPTION: &'static str = "Start a sub-thread of a chosen kind or send work to one you have. Wait for its final answer by default. Background work returns its id and reports completion later.";
     type Args = DelegateArgs;
 
     fn output_schema() -> Option<serde_json::Value> {
@@ -209,7 +208,7 @@ mod tests {
         let schema = schemars::schema_for!(DelegateArgs).to_value();
         let validator = jsonschema::validator_for(&schema).unwrap();
         for value in [
-            json!({"action": "start", "task": "read"}),
+            json!({"action": "start", "task": "work", "kind": "general_purpose"}),
             json!({"action": "start", "task": "read", "kind": "explorer", "background": true}),
             json!({"action": "send", "thread": "child", "task": "continue"}),
         ] {
@@ -218,7 +217,8 @@ mod tests {
         }
         for value in [
             json!({"task": "implicit start"}),
-            json!({"action": "start", "thread": "child", "task": "mixed"}),
+            json!({"action": "start", "task": "missing kind"}),
+            json!({"action": "start", "thread": "child", "task": "mixed", "kind": "explorer"}),
             json!({"action": "send", "task": "missing thread"}),
             json!({"action": "send", "thread": "child", "task": "upgrade", "kind": "general_purpose"}),
             json!({"action": "send", "thread": "child", "task": "rename", "title": "new title"}),

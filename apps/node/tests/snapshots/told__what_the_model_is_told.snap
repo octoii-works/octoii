@@ -50,7 +50,7 @@ Use :page{id=<id>} for an inline reference, or ::page{id=<id>} on its own line f
 
 === section delegate
 Use `delegate` only when available and the person asks for delegation, sub-agents or parallel work. Use `thread` for a new conversation the person requests.
-Sub-threads do not see this conversation: supply all needed context in the task. general_purpose inherits tools and mode; explorer is read-only. Neither kind may delegate or reach other threads.
+Supply the task's context because the sub-thread cannot see this conversation. Choose `explorer` for read-only work or `general_purpose` to inherit your tools and mode. Neither kind may delegate or reach other threads.
 Several delegate calls in one reply run concurrently. Background work reports completion by message; do not poll for it. The person can see and steer sub-threads. Check their changes before reporting completion; their answers alone are not verification.
 
 === section files
@@ -817,7 +817,7 @@ Control the thread's current browser page. One action per call; action parameter
 }
 
 === tool delegate
-Start a sub-thread task or send more work to one of your existing sub-threads. By default, wait for its final answer; background returns its id immediately and reports completion later. Its kind cannot change.
+Start a sub-thread of a chosen kind or send work to one you have. Wait for its final answer by default. Background work returns its id and reports completion later.
 --- parameters
 {
   "$defs": {
@@ -846,8 +846,7 @@ Start a sub-thread task or send more work to one of your existing sub-threads. B
         },
         "kind": {
           "$ref": "#/$defs/SubThreadKind",
-          "default": "general_purpose",
-          "description": "Explorer is read-only; `general_purpose` inherits the parent's tools and mode."
+          "description": "Choose `explorer` for read-only work or `general_purpose` to inherit the parent's tools and mode."
         },
         "task": {
           "description": "Everything the new sub-thread needs; it does not see this conversation.",
@@ -863,7 +862,8 @@ Start a sub-thread task or send more work to one of your existing sub-threads. B
       },
       "required": [
         "action",
-        "task"
+        "task",
+        "kind"
       ],
       "type": "object"
     },

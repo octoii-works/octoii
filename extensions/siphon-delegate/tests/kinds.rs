@@ -67,17 +67,27 @@ async fn called(calling: &Calling, folder: &std::path::Path, key: &str, tool: &s
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn creation_defaults_to_general_and_explorer_continuation_never_upgrades() {
+async fn creation_requires_a_kind_and_explorer_continuation_never_upgrades() {
     let beak = Beak::new().unwrap();
     let first = calling(&beak);
     let folder = tempfile::tempdir().unwrap();
     let workspace = folder.path().canonicalize().unwrap();
+    let missing = called(
+        &first,
+        &workspace,
+        "missing",
+        "delegate",
+        json!({ "action": "start", "task": "work" }),
+    )
+    .await;
+    assert_eq!(missing.status, CallStatus::InvalidArguments);
+    assert!(missing.text.contains("kind"), "{}", missing.text);
     let general = called(
         &first,
         &workspace,
         "general",
         "delegate",
-        json!({ "action": "start", "task": "work" }),
+        json!({ "action": "start", "task": "work", "kind": "general_purpose" }),
     )
     .await;
     assert_eq!(general.status, CallStatus::Ok, "{}", general.text);

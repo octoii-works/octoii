@@ -461,7 +461,8 @@ Use the existing directory creation sequence as the generation. Posting a replac
 directory and opens its answer slot empty, within the same transaction. Beak's pending request reserves the
 slot for its matching answer. A plain mail to a reserved slot receives a refusal, and ordinary mail to other
 slots keeps its existing semantics. During reopen, reconstruct identities from the existing directory data.
-Use the same slot rule to resolve a recovered pending request with old mail at its address before retelling it.
+The scheduler checks each answer slot before retelling its request. An occupied slot rejects reopen.
+[Request slot recovery](SIPHON_CUTOVER.md#request-slot-recovery-batch)
 
 Use the existing final-view notice preparation. Close a previously committed identity if it no longer matches
 the final state. Deliver the final instance at most once per address, in staged publication order, and carry

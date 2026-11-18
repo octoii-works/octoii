@@ -790,7 +790,7 @@ async fn sub_thread_kinds_survive_configuration_changes_and_reopening() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn legacy_sub_threads_are_general_purpose_and_invalid_kinds_are_refused() {
+async fn missing_and_invalid_sub_thread_kinds_are_refused() {
     let beak = Beak::new().unwrap();
     let threads = threads(&beak, Idle);
     let new = NewThread {
@@ -802,14 +802,15 @@ async fn legacy_sub_threads_are_general_purpose_and_invalid_kinds_are_refused() 
         ..person(Config::default())
     };
     let id = threads.create(&new, "child").await.unwrap();
+    let volume = crate::volume::Volume {
+        runtime: threads.runtime().clone(),
+    };
     let annotation = Bytes::from_static(crate::threads::thread::SUB_THREAD_KIND_ANNOTATION.as_bytes());
     let mut changes = siphon_runtime::Changes::new();
     changes.meta(crate::threads::thread::path(&id), Vec::new(), vec![(annotation.clone(), None)]);
     threads.runtime().commit(changes).await.unwrap();
-    assert_eq!(
-        threads.listed(&id).unwrap().parent.unwrap().kind,
-        crate::threads::SubThreadKind::GeneralPurpose
-    );
+    assert!(matches!(threads.listed(&id), Err(crate::threads::Error::MissingSubThreadKind)));
+    assert!(crate::agent::parent_of(&volume, &id).is_err());
     let mut changes = siphon_runtime::Changes::new();
     changes.meta(
         crate::threads::thread::path(&id),
@@ -817,10 +818,7 @@ async fn legacy_sub_threads_are_general_purpose_and_invalid_kinds_are_refused() 
         vec![(annotation, Some(Bytes::from_static(b"\"invalid\"")))],
     );
     threads.runtime().commit(changes).await.unwrap();
-    assert!(threads.listed(&id).is_err());
-    let volume = crate::volume::Volume {
-        runtime: threads.runtime().clone(),
-    };
+    assert!(matches!(threads.listed(&id), Err(crate::threads::Error::Json(_))));
     assert!(crate::agent::parent_of(&volume, &id).is_err());
     threads.runtime().close().await;
 }
@@ -981,6 +979,37 @@ fn startup_volume(beak: &Beak, options: Options) -> crate::volume::Volume {
     crate::volume::Volume {
         runtime: Runtime::builder().fiber(crate::agent::ThreadFiber).start(beak, options).unwrap(),
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn startup_refuses_a_claim_without_input_part_discriminants() {
+    use sha2::{Digest, Sha256};
+
+    let beak = Beak::new().unwrap();
+    let volume = startup_volume(&beak, Options::default());
+    let new = person(Config::default());
+    let request = startup_request();
+    let content = [InputContent::text("prepare")];
+    let parts: Vec<_> = content.iter().cloned().map(Into::into).collect();
+    let (thread, _) = volume
+        .prepare_thread(&new, parts.clone(), request.clone(), "current-claim")
+        .await
+        .unwrap();
+
+    let fingerprint: [u8; 32] = Sha256::digest(serde_json::to_vec(&(&new, content, &request)).unwrap()).into();
+    let record = serde_json::json!({ "thread": thread, "fingerprint": fingerprint });
+    let path = Bytes::from_static(b"siphon.start/claim");
+    let mut changes = siphon_runtime::Changes::new();
+    changes.write(path.clone(), serde_json::to_vec(&record).unwrap()).seal(path);
+    volume.runtime.commit(changes).await.unwrap();
+
+    let error = volume.prepare_thread(&new, parts, request, "claim").await.unwrap_err();
+    assert!(matches!(
+        error.downcast_ref::<crate::threads::Error>(),
+        Some(crate::threads::Error::Start(_))
+    ));
+    assert_eq!(crate::threads::list(&volume).unwrap().len(), 1);
+    volume.runtime.close().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]

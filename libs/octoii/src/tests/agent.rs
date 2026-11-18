@@ -836,7 +836,7 @@ async fn a_task_delegated_is_worked_on_by_a_sub_thread_and_what_it_said_last_giv
         Ok(vec![calls(
             "c1",
             "delegate",
-            &serde_json::json!({ "task": "say done", "title": "Helper" }),
+            &serde_json::json!({ "task": "say done", "title": "Helper", "kind": "general_purpose" }),
         )]),
         Ok(vec![says("all done")]),
     ]);
@@ -902,7 +902,7 @@ async fn a_task_delegated_in_the_background_is_answered_at_once_and_its_end_deli
         Ok(vec![calls(
             "c1",
             "delegate",
-            &serde_json::json!({ "task": "say done", "background": true }),
+            &serde_json::json!({ "task": "say done", "background": true, "kind": "general_purpose" }),
         )]),
         Ok(vec![says("started it")]),
         Ok(vec![says("noted")]),
@@ -1192,13 +1192,13 @@ impl crate::tools::Tool for DelegateTool {
     ) -> impl std::future::Future<Output = Result<crate::tools::Told, crate::tools::Refusal>> + Send {
         std::future::ready((|| {
             let mut plan = crate::tools::Plan::default();
-            let child = match args.thread {
-                Some(named) => named,
-                None => plan.spawn(
-                    &context.volume(),
-                    args.title,
-                    crate::tools::Spawned::SubThread(args.kind.unwrap_or_default()),
-                )?,
+            let child = if let Some(named) = args.thread {
+                named
+            } else {
+                let kind = args
+                    .kind
+                    .ok_or_else(|| crate::tools::Refusal("choose a sub-thread kind".to_owned()))?;
+                plan.spawn(&context.volume(), args.title, crate::tools::Spawned::SubThread(kind))?
             };
             let report = if args.background {
                 crate::tools::Report::Inbox

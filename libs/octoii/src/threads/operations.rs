@@ -42,6 +42,8 @@ pub struct NewThread {
 pub enum Error {
     #[error("no such thread")]
     NoSuchThread,
+    #[error("a sub-thread must record its kind")]
+    MissingSubThreadKind,
     #[error("{0}")]
     Start(String),
     #[error(transparent)]

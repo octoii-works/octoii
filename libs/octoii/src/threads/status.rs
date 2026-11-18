@@ -158,29 +158,26 @@ pub struct Parent {
 }
 
 /// A sub-thread's fixed scope, chosen when it is created and retained for every later task.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, ts_rs::TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, ts_rs::TS)]
 #[serde(rename_all = "snake_case")]
 pub enum SubThreadKind {
     Explorer,
-    #[default]
     GeneralPurpose,
 }
 
 impl Parent {
-    /// Reads the immutable parent metadata; sub-threads created before kinds were introduced are general purpose.
-    pub(crate) fn of(directory: &Directory) -> serde_json::Result<Option<Self>> {
+    /// Reads the sub-thread's immutable parent metadata and required kind.
+    pub(crate) fn of(directory: &Directory) -> Result<Option<Self>, Error> {
         let Some(thread) = text(directory.label(PARENT_LABEL.as_bytes())) else {
             return Ok(None);
         };
         let kind = directory
             .annotation(SUB_THREAD_KIND_ANNOTATION.as_bytes())
-            .map(|value| serde_json::from_slice(value))
-            .transpose()?
-            .unwrap_or_default();
+            .ok_or(Error::MissingSubThreadKind)?;
         Ok(Some(Self {
             thread,
             call: text(directory.annotation(PARENT_CALL_ANNOTATION.as_bytes())).unwrap_or_default(),
-            kind,
+            kind: serde_json::from_slice(kind)?,
         }))
     }
 }

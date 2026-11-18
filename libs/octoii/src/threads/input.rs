@@ -25,9 +25,9 @@ impl From<InputContent> for InputPart {
     }
 }
 
-// Content retains its ordinary serialization; adding attachments does not change existing content-only claims.
+/// What the startup claim hashes for each input part, including its variant.
 #[derive(Serialize)]
-#[serde(untagged)]
+#[serde(rename_all = "snake_case")]
 enum Identity<'a> {
     Content(&'a InputContent),
     Attachment {

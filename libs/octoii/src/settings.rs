@@ -4,6 +4,7 @@
 //! its client's own words, `siphon.settings/devices/<session>.json`, which Octoii reads none of, changed as a JSON merge
 //! patch (RFC 7396) changes a document. Each change is one commit, so whoever follows the volume hears of it.
 
+use crate::agent::{CORE, gather::BASE};
 use crate::threads::Mode;
 use beak::{Directory, Snapshot};
 use bytes::Bytes;
@@ -79,7 +80,7 @@ pub struct SettingsChange {
     pub device: Option<serde_json::Value>,
 }
 
-/// Why settings were not set.
+/// Why reading or writing settings failed.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("the base extension cannot be disabled")]
@@ -108,31 +109,36 @@ fn annotation<T: serde::de::DeserializeOwned>(directory: &Directory, name: &str)
 /// The environment's settings: the defaults where none was set.
 ///
 /// # Errors
-/// The volume's failure; an annotation not the JSON of its setting.
+/// The volume's failure, a malformed annotation, or a list that disables the base extension.
 pub fn environment(snapshot: &Snapshot) -> Result<Environment, Error> {
     let defaults = Environment::default();
     let Some(directory) = snapshot.stat(DIRECTORY.as_bytes())?.and_then(|entry| entry.directory) else {
         return Ok(defaults);
     };
+    let disabled_extensions: Vec<String> = annotation(&directory, DISABLED_EXTENSIONS)?.unwrap_or_default();
+    validate_disabled_extensions(&disabled_extensions)?;
     Ok(Environment {
         thread_mode: annotation(&directory, THREAD_MODE)?.unwrap_or(defaults.thread_mode),
         favorite_models: annotation(&directory, FAVORITE_MODELS)?.unwrap_or_default(),
         review_model: annotation(&directory, REVIEW_MODEL)?.flatten(),
         history_retention_days: annotation(&directory, HISTORY_RETENTION)?.unwrap_or(defaults.history_retention_days),
-        disabled_extensions: annotation::<Vec<String>>(&directory, DISABLED_EXTENSIONS)?
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|name| name != "base")
-            .collect(),
+        disabled_extensions,
     })
 }
 
 /// Whether what the extension `extension` brought is switched on, as the environment's settings in `snapshot` say:
-/// Octoii's own, `core`, always is.
+/// `core` and `base` are required.
 #[must_use]
 pub(crate) fn switched_on(snapshot: &Snapshot, extension: &str) -> bool {
-    (extension == crate::agent::CORE || extension == "base")
+    matches!(extension, CORE | BASE)
         || environment(snapshot).is_ok_and(|settings| !settings.disabled_extensions.iter().any(|off| off == extension))
+}
+
+fn validate_disabled_extensions(extensions: &[String]) -> Result<(), Error> {
+    if extensions.iter().any(|name| name == BASE) {
+        return Err(Error::RequiredExtension);
+    }
+    Ok(())
 }
 
 /// The file of the settings of the device that holds `session`.
@@ -183,9 +189,7 @@ fn annotations(change: &EnvironmentChange) -> Result<Vec<Named>, Error> {
         out.push(named(HISTORY_RETENTION, json(days)?));
     }
     if let Some(extensions) = &change.disabled_extensions {
-        if extensions.iter().any(|name| name == "base") {
-            return Err(Error::RequiredExtension);
-        }
+        validate_disabled_extensions(extensions)?;
         out.push(named(DISABLED_EXTENSIONS, json(extensions)?));
     }
     Ok(out)
@@ -195,8 +199,7 @@ fn annotations(change: &EnvironmentChange) -> Result<Vec<Named>, Error> {
 /// commit.
 ///
 /// # Errors
-/// `NotAnObject` or `TooLarge` for a device's settings that would be so; `Nothing` for a change of nothing; the
-/// commit's failure.
+/// A change that disables `base`, invalid device settings, an empty change, or the commit's failure.
 pub async fn set(runtime: &Runtime, session: &str, change: &SettingsChange) -> Result<(), Error> {
     let mut changes = Changes::new();
     changes.mkdir(Bytes::from_static(DIRECTORY.as_bytes()));
@@ -241,23 +244,28 @@ pub fn forget(snapshot: &Snapshot, changes: &mut Changes, session: &str) -> Resu
 }
 
 #[cfg(test)]
-mod base_tests {
+mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn base_cannot_be_disabled_even_by_an_old_stored_setting() {
+    async fn disabling_base_is_rejected_on_write_and_read() {
         let beak = beak::Beak::new().unwrap();
         let runtime = Runtime::builder().start(&beak, siphon_runtime::Options::default()).unwrap();
-        let change = SettingsChange {
+        let disable = |extension: &str| SettingsChange {
             environment: Some(EnvironmentChange {
-                disabled_extensions: Some(vec!["base".into()]),
+                disabled_extensions: Some(vec![extension.into()]),
                 ..EnvironmentChange::default()
             }),
             device: None,
         };
-        assert!(matches!(set(&runtime, "test", &change).await, Err(Error::RequiredExtension)));
+        assert!(matches!(set(&runtime, "test", &disable(BASE)).await, Err(Error::RequiredExtension)));
+        set(&runtime, "test", &disable("git")).await.unwrap();
+        let snapshot = runtime.snapshot().unwrap();
+        assert_eq!(environment(&snapshot).unwrap().disabled_extensions, ["git"]);
+        assert!(switched_on(&snapshot, BASE));
+        assert!(!switched_on(&snapshot, "git"));
+
         let mut changes = Changes::new();
-        changes.mkdir(Bytes::from_static(DIRECTORY.as_bytes()));
         changes.meta(
             Bytes::from_static(DIRECTORY.as_bytes()),
             Vec::new(),
@@ -267,10 +275,7 @@ mod base_tests {
             )],
         );
         runtime.commit(changes).await.unwrap();
-        let snapshot = runtime.snapshot().unwrap();
-        assert_eq!(environment(&snapshot).unwrap().disabled_extensions, vec!["git"]);
-        assert!(switched_on(&snapshot, "base"));
-        assert!(!switched_on(&snapshot, "git"));
+        assert!(matches!(environment(&runtime.snapshot().unwrap()), Err(Error::RequiredExtension)));
         runtime.close().await;
     }
 }
