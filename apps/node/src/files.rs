@@ -15,7 +15,6 @@ use octoii::protocol::Scope;
 use octoii::threads::files;
 use octoii_tunnel::Remote;
 use serde::Deserialize;
-use siphon_runtime::Changes;
 
 use crate::http::{Denied, Node, session};
 
@@ -65,19 +64,11 @@ pub(crate) async fn sent(
         .get(header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
         .ok_or_else(|| Denied(StatusCode::BAD_REQUEST, "a file says what it is by its Content-Type".into()))?;
-    let runtime = &node.siphon.runtime;
-    let snapshot = runtime
-        .snapshot()
-        .map_err(|error| Denied(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
-    let mut changes = Changes::new();
-    let file = files::keep_given(&snapshot, &mut changes, &thread, &body, media_type, named.name.as_deref())
-        .map_err(|error| Denied(StatusCode::UNPROCESSABLE_ENTITY, error.to_string()))?;
-    if !changes.is_empty() {
-        runtime
-            .commit(changes)
-            .await
-            .map_err(|error| Denied(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
-    }
+    let file = node
+        .siphon
+        .volume()
+        .keep_attachment(&thread, &body, media_type, named.name.as_deref())
+        .await?;
     Ok(axum::Json(file).into_response())
 }
 
@@ -97,18 +88,26 @@ pub(crate) async fn kept(
         Scope::ThreadsRead,
         &thread,
     )?;
-    let snapshot = node
+    let bytes = node
         .siphon
-        .runtime
-        .snapshot()
-        .map_err(|error| Denied(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
-    let bytes = files::read(&snapshot, &thread, &format!("sha256:{hash}"))
-        .map_err(|error| Denied(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?
+        .volume()
+        .read_file(&thread, &format!("sha256:{hash}"))?
         .ok_or_else(|| Denied(StatusCode::NOT_FOUND, "no such file".into()))?;
     let media_type = octoii::machine::media_type(&bytes).unwrap_or("application/octet-stream");
     let picture = asked.width_max.zip(asked.height_max);
     // What a reference names never changes.
     pictured(media_type, &bytes, picture, "private, max-age=31536000, immutable")
+}
+
+impl From<files::Refused> for Denied {
+    fn from(error: files::Refused) -> Self {
+        let status = match error {
+            files::Refused::NoSuchThread => StatusCode::NOT_FOUND,
+            files::Refused::Image(_) | files::Refused::TooLarge => StatusCode::UNPROCESSABLE_ENTITY,
+            files::Refused::Beak(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        };
+        Self(status, error.to_string())
+    }
 }
 
 /// `bytes` of `media_type` as a response — an image fitted to `picture`, its widest and its tallest, where one is

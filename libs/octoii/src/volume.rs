@@ -188,6 +188,34 @@ impl Volume {
         Ok(kept)
     }
 
+    /// Keeps an attachment in a thread. Images are fitted for the model and other files keep their original bytes.
+    ///
+    /// # Errors
+    /// A missing thread, an invalid or oversized attachment, or a volume failure.
+    pub async fn keep_attachment(
+        &self,
+        thread: &str,
+        bytes: &[u8],
+        media_type: &str,
+        name: Option<&str>,
+    ) -> std::result::Result<FileRef, files::Refused> {
+        let snapshot = self.file_snapshot(thread)?;
+        let mut changes = Changes::new();
+        let file = files::keep_given(&snapshot, &mut changes, thread, bytes, media_type, name)?;
+        if !changes.is_empty() {
+            self.runtime.commit(changes).await?;
+        }
+        Ok(file)
+    }
+
+    /// Reads file bytes by the reference kept in this thread.
+    ///
+    /// # Errors
+    /// A missing thread or a volume failure.
+    pub fn read_file(&self, thread: &str, reference: &str) -> std::result::Result<Option<Bytes>, files::Refused> {
+        Ok(files::read(&self.file_snapshot(thread)?, thread, reference)?)
+    }
+
     fn file_snapshot(&self, thread: &str) -> std::result::Result<Snapshot, files::Refused> {
         let snapshot = self.snapshot()?;
         let exists = snapshot

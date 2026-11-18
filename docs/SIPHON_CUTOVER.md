@@ -37,7 +37,7 @@ the cutover.
 | Streams | B2.2c.2 bound live output, replay and close to the exact request. The client accepts increasing offsets with gaps and resets live state on resubscribe. | Expose the stream contract through the public SDK. |
 | Octoii settings and sub-threads | Settings readers and writers reject a disabled list containing `base`. Sub-thread creation and metadata require a kind. | The tool schema, metadata reads, and settings reads and writes enforce these requirements. |
 | Thread startup claims | The claim fingerprint includes the variant of every input part. | Replays must match the current fingerprint for text and attachments. |
-| Raw kernel access | Octoii opens Beak before starting Siphon, puts `Kernel` in the extension registrar, and uses `Runtime::kernel()` for commands, namespaces and IDs. Browser, Claude Code and Terminals take command handles during registration. Node accesses native snapshots and changes for files and sessions. | Register callbacks and assemble extension configuration through the public runtime builder. Give services typed volume, ID and machine capabilities before any resumed work can call them. Node and extensions use Octoii's product interfaces. Retire the raw kernel setup path after its callers move. |
+| Raw kernel access | Octoii opens Beak before starting Siphon, puts `Kernel` in the extension registrar, and uses `Runtime::kernel()` for commands, namespaces and IDs. Browser, Claude Code and Terminals take command handles during registration. Node still uses native snapshots and changes for sessions. | Register callbacks and assemble extension configuration through the public runtime builder. Give services typed volume, ID and machine capabilities before any resumed work can call them. Node and extensions use Octoii's product interfaces. Retire the raw kernel setup path after its callers move. |
 
 The inspected Beak root, directory, change and process decoders accept a single format at each decoder.
 Fiber version checks hold an incompatible process before running its code. Reopen of the confirmed log prefix,
@@ -156,6 +156,37 @@ when no fiber was admitted. With an admitted fiber and an occupied slot, open re
 same underlying device confirms that both the commit sequence and the conflicting data are intact.
 On macOS ARM64, Beak passed 165 tests and Siphon passed 33. The three C consumers and 13 public Rust tests
 passed against the ABI 4 archive.
+
+## Snapshot directory reads
+
+The Node attachment routes load and keep thread files through Octoii's `Volume`. Image fitting and
+content-addressed storage use the same primitives as attachments accepted with a thread's first input.
+
+Octoii reads volume entries to find threads, load their configuration and settings, page their inboxes,
+and serve attached files. The native snapshot already reads file bytes. Add `stat` for one entry and
+`list` for a directory page. Both retained snapshots and the snapshot borrowed during a Fiber phase use
+the same read interface.
+
+The C boundary sends an entry through a synchronous visitor. A visit borrows the entry name, file attributes,
+and optional directory metadata for the duration of the callback. Labels and annotations use byte slices.
+The Rust SDK copies results into owned entries. List options carry the prefix, optional exclusive cursor,
+direction, and limit. Missing paths return the existing missing status. A present empty directory returns
+success with zero visits. The transfer exposes no Beak handles or storage encoding.
+
+Proposed scope
+
+| Repository | Files | Change |
+| --- | --- | --- |
+| Private Siphon | `crates/siphon-ffi/src/snapshot.rs`, `crates/siphon-ffi/include/siphon.h`, `crates/siphon-ffi/tests/c/lifecycle.c` | Expose the two snapshot calls and test the borrowed entry data and pagination against the binary. |
+| Public SDK | `src/{lib,sys,fiber,snapshot}.rs`, `include/siphon.h`, `tests/{storage,fiber}.rs` | Bind the C calls, keep snapshot reads together in `snapshot.rs`, and test owned results from both retained and phase snapshots. |
+
+The private FFI already holds the immutable snapshot. Only it can implement these reads through a linked binary.
+An extension cannot supply the missing symbols. Verify an empty result and a missing path, raw byte names,
+directory labels and annotations, forward and reverse pagination, and results retained after the runtime closes.
+Index queries, journal cursors, and additional write primitives are separate batches.
+
+The private workflow compares both headers and builds a public consumer at a pinned commit. Advance that
+pin to the verified SDK commit when preparing the matching revisions for publication.
 
 ## Completion checks
 

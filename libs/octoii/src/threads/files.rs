@@ -62,7 +62,7 @@ pub fn path(id: &str, reference: &str) -> Option<Bytes> {
 ///
 /// # Errors
 /// The volume's failure, reading what is kept.
-pub fn keep(snapshot: &Snapshot, changes: &mut Changes, id: &str, bytes: Bytes) -> beak::Result<String> {
+pub(crate) fn keep(snapshot: &Snapshot, changes: &mut Changes, id: &str, bytes: Bytes) -> beak::Result<String> {
     let reference = reference_of(&bytes);
     let at = path(id, &reference).unwrap_or_default();
     if snapshot.stat(&at)?.is_none() {
@@ -89,7 +89,7 @@ pub enum Refused {
 ///
 /// # Errors
 /// An image that cannot be read, or fits no bounds; the volume's failure, reading what is kept.
-pub fn keep_image(
+pub(crate) fn keep_image(
     snapshot: &Snapshot,
     changes: &mut Changes,
     id: &str,
@@ -111,7 +111,7 @@ pub fn keep_image(
 ///
 /// # Errors
 /// `TooLarge`; an image that cannot be read; the volume's failure, reading what is kept.
-pub fn keep_given(
+pub(crate) fn keep_given(
     snapshot: &Snapshot,
     changes: &mut Changes,
     id: &str,
