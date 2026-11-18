@@ -63,13 +63,13 @@ pub struct Setup {
     pub directory: Option<PathBuf>,
 }
 
-/// Octoii, started: the machine its work is done on, its runtime, its threads, the models they ask — reached with the
+/// Octoii, started: the machine its work is done on, its threads, the models they ask — reached with the
 /// host's providers, the credentials kept, and how a sign-in comes back — the sign-ins begun, and the protocol's
 /// methods and topics as Octoii and its extensions brought them.
 #[derive(Clone)]
 pub struct Octoii {
     pub machine: Host,
-    pub runtime: Runtime,
+    runtime: Runtime,
     pub threads: Threads<ThreadFiber>,
     pub models: Arc<Models>,
     pub credentials: Arc<dyn Credentials>,

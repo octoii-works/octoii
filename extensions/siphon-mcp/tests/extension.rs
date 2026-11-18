@@ -70,7 +70,7 @@ async fn servers_are_listed_as_they_stand_and_a_project_s_trusted_by_the_person(
         .filter_map(|server| server["name"].as_str())
         .collect();
     assert_eq!(running, ["mine", "theirs"], "the project's trusted, beside the person's own");
-    siphon.runtime.close().await;
+    siphon.close().await;
 }
 
 struct SpawnExplorer;

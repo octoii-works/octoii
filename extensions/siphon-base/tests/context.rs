@@ -1,4 +1,5 @@
 //! Base reads final runtime configuration even when it is registered before product extensions.
+use octoii::protocol::Scope;
 use octoii::testing;
 use octoii::threads::{Config, Mode, NewThread};
 use octoii::{Extension, Octoii, Registrar};
@@ -35,7 +36,7 @@ async fn base_reads_late_registered_folders_and_tracks_extension_settings() {
         .extension(WorkspaceNotes(workspace.join("notes")))
         .start()
         .unwrap();
-    let key = siphon.runtime.new_id().unwrap();
+    let key = siphon.volume().new_id().unwrap();
     let id = siphon
         .threads
         .create(
@@ -71,8 +72,12 @@ async fn base_reads_late_registered_folders_and_tracks_extension_settings() {
         }),
         device: None,
     };
-    octoii::settings::set(&siphon.runtime, "test", &change).await.unwrap();
+    let mut client = testing::Client::connect(&siphon, vec![Scope::ThreadsOperate], 8);
+    client.message().await;
+    let call = client.call("settings.set", serde_json::to_value(change).unwrap()).await;
+    let answer = client.answer(&call).await;
+    assert!(answer.get("result").is_some(), "{answer}");
     let told = siphon.told(&id).await.unwrap();
     assert!(!told.sections[2].1.contains("notes folder:"));
-    siphon.runtime.close().await;
+    siphon.close().await;
 }

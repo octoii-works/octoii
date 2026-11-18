@@ -111,7 +111,7 @@ impl Fixture {
     }
 
     async fn close(self) {
-        self.siphon.runtime.close().await;
+        self.siphon.close().await;
     }
 }
 
@@ -194,7 +194,7 @@ async fn a_pick_dispatches_no_click_ignores_unrelated_dom_changes_and_keeps_its_
     assert!((retina.viewport.scale - 2.0).abs() < f64::EPSILON);
     assert!((retina.element.rect.x - 40.0).abs() < 0.5 && (retina.element.rect.width - 160.0).abs() < 0.5);
 
-    let snapshot = fixture.siphon.runtime.snapshot().expect("a snapshot");
+    let snapshot = fixture.siphon.volume().snapshot().expect("a snapshot");
     let bytes = files::read(&snapshot, &fixture.thread, &picked.screenshot.reference)
         .expect("the saved screenshot")
         .expect("its bytes");
@@ -205,7 +205,7 @@ async fn a_pick_dispatches_no_click_ignores_unrelated_dom_changes_and_keeps_its_
     assert_eq!(after_close["error"]["code"], "no_such_page");
     assert_eq!(
         files::read(
-            &fixture.siphon.runtime.snapshot().expect("a snapshot"),
+            &fixture.siphon.volume().snapshot().expect("a snapshot"),
             &fixture.thread,
             &picked.screenshot.reference
         )

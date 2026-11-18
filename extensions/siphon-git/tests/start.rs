@@ -94,7 +94,7 @@ async fn accepted_input_waits_and_duplicate_preparation_releases_the_same_thread
     assert_eq!(std::fs::read_to_string(destination.join("tracked")).unwrap(), "original");
     let listed = call(&mut client, "threads.list", json!({})).await;
     assert_eq!(listed["threads"][0]["config"]["workspace"], destination.to_str().unwrap());
-    node.runtime.close().await;
+    node.close().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -138,7 +138,7 @@ async fn existing_worktree_is_inspected_but_never_adopted_or_cleaned_up() {
     )
     .await;
     assert_eq!(stopped["start"]["state"]["state"], "cancelled");
-    node.runtime.close().await;
+    node.close().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -156,7 +156,7 @@ async fn starting_requires_both_git_and_thread_operation_permissions() {
     let mut client = client(&node, vec![Scope::ThreadsRead]).await;
     assert_eq!(call(&mut client, "threads.list", json!({})).await["threads"], json!([]));
     assert!(!root.join("task").exists());
-    node.runtime.close().await;
+    node.close().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -191,7 +191,7 @@ async fn reopening_keeps_the_request_and_retry_requires_the_saved_token() {
                     let mut connection = client(&first, scopes.clone()).await;
                     let accepted = call(&mut connection, "git.start", request.clone()).await;
                     drop(connection);
-                    first.runtime.close().await;
+                    first.close().await;
                     accepted
                 })
             })
@@ -229,7 +229,7 @@ async fn reopening_keeps_the_request_and_retry_requires_the_saved_token() {
         .await;
     assert!(!after.answer(&stale).await["error"].is_null());
     assert_eq!(std::fs::read_to_string(destination.join("tracked")).unwrap(), "original");
-    second.runtime.close().await;
+    second.close().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -276,7 +276,7 @@ async fn independent_tasks_preserve_dirty_source_and_worktrees_after_thread_dele
     assert_eq!(git(&root, &["worktree", "list", "--porcelain"]).matches("worktree ").count(), 3);
     assert_eq!(std::fs::read_to_string(tasks[0].1.join("tracked")).unwrap(), "first");
     assert_eq!(std::fs::read_to_string(tasks[1].1.join("tracked")).unwrap(), "second");
-    node.runtime.close().await;
+    node.close().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -300,5 +300,5 @@ async fn deleting_pending_task_rejects_late_preparation_and_acceptance_replay() 
     assert!(!destination.exists());
     assert_eq!(git(&root, &["branch", "--list", "task"]), "");
     assert_eq!(call(&mut client, "threads.list", json!({})).await["threads"], json!([]));
-    node.runtime.close().await;
+    node.close().await;
 }

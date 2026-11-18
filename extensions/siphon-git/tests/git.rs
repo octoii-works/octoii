@@ -148,7 +148,7 @@ async fn git_tells_a_repository_s_changes_patches_versions_and_commits() {
         )
         .await;
     assert_eq!(client.answer(&id).await["error"]["code"], "no_repository");
-    siphon.runtime.close().await;
+    siphon.close().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -217,7 +217,7 @@ async fn worktree_rpc_requires_git_permission_and_checks_out_the_requested_base(
     let id = writer.call("git.create-worktree", params).await;
     assert!(!writer.answer(&id).await["error"].is_null());
     assert_eq!(std::fs::read_to_string(destination.join("keep.txt")).unwrap(), "keep me\n");
-    siphon.runtime.close().await;
+    siphon.close().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -303,5 +303,5 @@ async fn worktree_bases_and_plans_are_read_only_and_keep_fixed_commits() {
     let source = asked(&mut client, "git.repository", json!({"path":root})).await;
     assert_eq!(source["repository"]["head"], commit);
     assert!(source["repository"]["branch"].is_null());
-    node.runtime.close().await;
+    node.close().await;
 }

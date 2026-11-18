@@ -88,7 +88,7 @@ async fn the_person_browses_the_machine_s_files_as_git_sees_them() {
     reader.message().await;
     let id = reader.call("files.list", json!({ "path": root, "limit": 10 })).await;
     assert_eq!(reader.answer(&id).await["error"]["code"], "forbidden");
-    siphon.runtime.close().await;
+    siphon.close().await;
 }
 
 struct TestBase;

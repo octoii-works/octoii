@@ -31,9 +31,9 @@ Future, trait object or unwind may cross the ABI directly. Concrete ABI details 
 4. B4: publish tested binaries and wrapper, switch the product to the published crate and remove its
    Siphon source submodule. Validate from a clean checkout without private repository credentials.
 
-Each core implementation batch requires a concrete file list and separate confirmation. B1 permission
-is not permission for an arbitrary ABI or new runtime implementation. Do not introduce another
-Thread/Run/Job lifecycle or export every existing low-level API just to make compilation pass.
+The owner authorized continued changes to Siphon and its embedded Beak workspace on 2026-11-18.
+For each batch, document the mechanism being changed and verify it against the public consumer.
+Keep a single execution lifecycle and expose the operations needed at the binary boundary.
 
 ## B1 scope — implemented
 

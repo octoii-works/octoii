@@ -93,5 +93,5 @@ async fn a_terminal_is_opened_drawn_and_told_as_it_writes_each_piece_once() {
     client
         .event(&listed, |event| event["event"] == "terminals" && event["terminals"] == json!([]))
         .await;
-    siphon.runtime.close().await;
+    siphon.close().await;
 }

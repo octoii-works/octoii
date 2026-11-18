@@ -5998,6 +5998,7 @@ version = "0.0.1"
 dependencies = [
  "anyhow",
  "octoii",
+ "serde_json",
  "tempfile",
  "tokio",
 ]

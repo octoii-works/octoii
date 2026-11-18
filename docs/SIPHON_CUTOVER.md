@@ -91,7 +91,7 @@ Each private implementation batch lists its exact files and technical dependency
 
 | Work | Completion condition |
 | --- | --- |
-| Runtime events and requests | Carry exact request identities, person replies, stream replay, closure, and cancellation through the binary. Commit notifications have a verified binary watch. Exercise the request paths while reopening and shutting down. |
+| Runtime events and requests | Carry person replies, stream replay, closure, and cancellation through the binary. Host deliveries carry exact request identities and commit notifications have a verified binary watch. Exercise the request paths while reopening and shutting down. |
 | Machine capabilities | Move namespaces, file views, restricted commands, terminal I/O and coprocess channels behind the native SDK. Bring each supported platform up to the same ownership and permission contract. |
 | Product adoption | Build Octoii and Node against a local binary candidate. Migrate startup registration and host callbacks, then verify real turns, approval, workspace tools, stop, and reopen. |
 | Distribution and source removal | Publish matching verified archives and the SDK for macOS, Windows and Linux. A clean product clone must build and pass CI with public inputs. The same change removes the gitlink and private checkout credentials. |
@@ -99,6 +99,7 @@ Each private implementation batch lists its exact files and technical dependency
 The product builder opens Beak on the current host executor. Node uses the product API for startup,
 session storage, pairing and shutdown. Its build and test manifests have dropped both direct private
 dependencies. The Octoii product library owns the atomic transactions for issuing a session and redeeming a link.
+The product runtime handle is private. Integration tests use the product lifecycle, volume and protocol.
 
 ## Fiber label and volume format batch
 
@@ -414,6 +415,29 @@ registration, callback reentry refusal, and independent cancellation. The Rust S
 sequence, progress after successful commits, no notification after a rejected transaction, journal
 visibility, and receiver closure at shutdown. On macOS ARM64, 36 Siphon tests, three independent C
 consumers, and 22 standalone Rust SDK tests passed. Strict Clippy passed for Siphon and the SDK.
+
+## Host request identity
+
+Pass the identity already stored by the runtime when delivering a host request. It consists of the
+Fiber path and creation sequence, and the request's byte key and creation sequence. The host can
+retain this identity and compare it with a later observation of the same request. The reply handle
+continues to belong to the specific delivery.
+
+Confirmed scope
+
+| Repository | Files | Change |
+| --- | --- | --- |
+| Private Siphon | `crates/siphon-ffi/src/request.rs`, `crates/siphon-ffi/include/siphon.h`, `crates/siphon-ffi/tests/{request.rs,c/request.c}` | Pass the exact identity to the host callback and verify both sequences in a C consumer. |
+| Public SDK | `src/{lib,sys,request}.rs`, `include/siphon.h`, `tests/request.rs` | Replace the separate delivery path and key with an owned `RequestId`. Verify request identity alongside the existing answer and cancellation behavior. |
+
+Both sequence values come from the transaction that recorded the Fiber and its request. An extension
+cannot reconstruct them from the path and key alone, which can both be reused.
+
+Private commit `bb6b171` and public SDK commit `d05e1f0`. The binary consumer verifies that two
+requests in one Fiber share the same Fiber creation sequence and have distinct request creation
+sequences. The Rust SDK checks that the creation sequence matches the snapshot's Fiber record.
+On macOS ARM64, strict Clippy, 36 Siphon tests, three C consumers, and 22 standalone SDK tests passed.
+The Octoii workspace passed strict Clippy and 257 tests, with two external tests ignored.
 
 ## Completion checks
 

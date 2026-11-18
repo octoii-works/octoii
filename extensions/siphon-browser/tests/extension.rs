@@ -89,5 +89,5 @@ async fn a_page_is_opened_listed_painted_and_worked_by_the_person() {
     let id = client.call("browser.close", json!({ "page": page })).await;
     client.answer(&id).await;
     client.event(&pages, |event| event["pages"] == json!([])).await;
-    siphon.runtime.close().await;
+    siphon.close().await;
 }
