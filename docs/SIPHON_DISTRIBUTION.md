@@ -1,7 +1,7 @@
 # Siphon 闭源边界与分发方案
 
-2026-11-18 更新：AI 已发布为 crates.io 的 octoii-ai 0.0.2；主仓库移除 AI submodule，改为公开包依赖。
-Siphon 仍以私有源码 submodule 接入，公开二进制接口仓库属于后续阶段。现状见 [SOURCE_REPOSITORIES.md](SOURCE_REPOSITORIES.md)。
+AI 已发布为 crates.io 的 octoii-ai 0.0.2，主仓库已改用公开包。Siphon 仍以私有源码 submodule 接入，
+公开接口仓库已建立。当前发布状态和源码切换顺序见 [SIPHON_CUTOVER.md](SIPHON_CUTOVER.md)。
 
 2026-11-17。用户已同意“执行与持久化内核闭源，Octoii、产品扩展与界面保持开放”的方向。
 本文是基于当前代码的边界盘点与实施提案，不表示迁仓库、改许可证、拆包或发布已获确认或已完成。
@@ -14,9 +14,8 @@ Siphon 仍以私有源码 submodule 接入，公开二进制接口仓库属于�
 
 ## 最新实施顺序
 
-2026-11-17：用户确认 Siphon 只保留核心机制，且不依赖 AI。实际拆分改按
-[SIPHON_EXTRACTION.md](SIPHON_EXTRACTION.md) 推进；本页较早的 S1–S7 顺序不再是当前执行顺序。
-新的首批核心范围仍需单独确认，不能沿用目录迁移的授权。
+[SIPHON_CUTOVER.md](SIPHON_CUTOVER.md) 统筹当前契约清理、公开接口、三平台分发与源码移除。
+早期拆分过程见 [SIPHON_EXTRACTION.md](SIPHON_EXTRACTION.md)。下文 S1–S7 记录早期设计。
 
 ## 目标
 

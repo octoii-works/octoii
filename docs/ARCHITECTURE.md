@@ -58,6 +58,9 @@ not introduce a dynamic plugin loader or change execution behavior.
 
 The proposed closed Siphon implementation and public Octoii/extension boundary, including current coupling and
 binary distribution prerequisites, is documented in [SIPHON_DISTRIBUTION.md](SIPHON_DISTRIBUTION.md).
+The [cutover plan](SIPHON_CUTOVER.md) sets the order for replacing the source dependency with the public package.
+Each release uses one current volume format, native ABI and client protocol. Update their callers together and
+reject unsupported versions at the corresponding entry points.
 Siphon uses a pinned submodule and AI uses a public registry package; interface convergence remains separate work.
 Moved kernel files retain the existing core-stability review intent; moving directories is not permission to change
 runtime behavior without the separately scoped confirmation. AGENTS.md is unchanged.

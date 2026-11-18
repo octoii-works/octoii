@@ -3,6 +3,10 @@
 2026-11-18. Agreed goal: Octoii depends on the published octoii-siphon-lib library and public
 octoii-ai package; building and running Octoii requires no private source access.
 
+The [current cutover plan](SIPHON_CUTOVER.md) combines the request and stream migration, removal of legacy
+contracts, public distribution, and the product's source removal. Completed batches below record their
+implementation and verification.
+
 ## Repository ownership
 
 - devxiyang/octoii-siphon (private): Beak source and Siphon mechanisms, their tests, binary build pipeline.

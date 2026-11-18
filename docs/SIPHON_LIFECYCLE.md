@@ -508,3 +508,5 @@ for matching tool calls and timeline entries. Carry the exact identity through s
 pending form state, and the answer submitted by the client. After verifying those source paths together,
 expose the verified stream and human answer interfaces through the public binary. Reuse Cargo compilation
 data under the [local verification cache policy](../CONTRIBUTING.md#local-verification-cleanup).
+The [cutover plan](SIPHON_CUTOVER.md) schedules this work alongside the remaining public capabilities,
+platform artifacts, and removal of the product's private source dependency.
