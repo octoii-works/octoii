@@ -6,9 +6,9 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use beak::{FileKind, Status};
 use ignore::Match;
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
+use octoii_siphon_lib::{FileKind, Status};
 
 use crate::machine::files::Error;
 use crate::machine::namespace::{Machine, inside};
@@ -192,7 +192,7 @@ impl Machine {
     fn walk_folder(&self, folder: &str, mut rules: Vec<Arc<Gitignore>>, walked: &mut Walked) -> Result<(), Error> {
         let entries = match self.entries(folder) {
             Ok(entries) => entries,
-            Err(Error::Beak(error)) if error.status == Status::Denied => {
+            Err(Error::Beak(error)) if error.status() == Status::Denied => {
                 walked.denied.push(folder.to_owned());
                 return Ok(());
             }

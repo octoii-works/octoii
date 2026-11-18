@@ -223,7 +223,11 @@ async fn shown(context: &Context, name: &str, read: Read) -> Result<Vec<InputCon
         Read::Directory { entries, from, total, .. } => {
             let mut out = String::new();
             for entry in &entries {
-                let slash = if entry.kind == beak::FileKind::Directory { "/" } else { "" };
+                let slash = if entry.kind == octoii_siphon_lib::FileKind::Directory {
+                    "/"
+                } else {
+                    ""
+                };
                 let _ = writeln!(out, "{}{slash}", String::from_utf8_lossy(&entry.name));
             }
             let last = from + entries.len().saturating_sub(1);

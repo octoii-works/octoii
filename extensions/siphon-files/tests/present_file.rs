@@ -2,7 +2,7 @@
 //! source disappears, and failed calls that never return a resource.
 
 use octoii::machine::Base;
-use octoii::testing::{Beak, Called, Calling};
+use octoii::testing::{Called, Calling};
 use octoii::threads::files;
 use octoii::tools::{CallStatus, Effect, Tool, Tools};
 use octoii_ai::vocabulary::InputContent;
@@ -64,8 +64,7 @@ async fn presented_files_keep_original_bytes_and_committed_results_remain_readab
     for (name, bytes, _) in &originals {
         std::fs::write(workspace.join(name), bytes).expect("written");
     }
-    let beak = Beak::new().expect("Beak");
-    let calling = Calling::start(&beak, |tools| tools.with(PresentFileTool));
+    let calling = Calling::start(|tools| tools.with(PresentFileTool));
     let arguments: Vec<_> = originals
         .iter()
         .map(|(name, _, _)| json!({ "path": name, "title": "Verification result" }))
@@ -117,8 +116,7 @@ async fn failed_presentations_return_no_success_resource_or_title() {
     let workspace = folder.path().canonicalize().expect("its real path");
     let large = std::fs::File::create(workspace.join("large.bin")).expect("a file");
     large.set_len(files::BYTES_MAX as u64 + 1).expect("too large");
-    let beak = Beak::new().expect("Beak");
-    let calling = Calling::start(&beak, |tools| tools.with(PresentFileTool));
+    let calling = Calling::start(|tools| tools.with(PresentFileTool));
     let results = called(
         &calling,
         "failed",
@@ -158,8 +156,7 @@ async fn html_keeps_local_image_bytes_after_both_source_files_disappear() {
     let source = "<!doctype html><title>Report</title><img src=\"assets/icon.svg\">";
     std::fs::write(workspace.join("reports/assets/icon.svg"), image).expect("image");
     std::fs::write(workspace.join("reports/report.html"), source).expect("HTML");
-    let beak = Beak::new().expect("Beak");
-    let calling = Calling::start(&beak, |tools| tools.with(PresentFileTool));
+    let calling = Calling::start(|tools| tools.with(PresentFileTool));
     let results = called(&calling, "html", &workspace, vec![json!({ "path": "reports/report.html" })]).await;
     let result = &results[0];
     assert_eq!(result.status, CallStatus::Ok, "{}", result.text);
@@ -190,8 +187,7 @@ async fn an_invalid_local_image_never_produces_a_stored_html_resource() {
     let workspace = folder.path().canonicalize().expect("its real path");
     std::fs::write(workspace.join("secret.png"), "API_KEY=private").expect("renamed secret");
     std::fs::write(workspace.join("report.html"), "<img src='secret.png'>").expect("HTML");
-    let beak = Beak::new().expect("Beak");
-    let calling = Calling::start(&beak, |tools| tools.with(PresentFileTool));
+    let calling = Calling::start(|tools| tools.with(PresentFileTool));
     let results = called(&calling, "invalid-image", &workspace, vec![json!({ "path": "report.html" })]).await;
     assert_eq!(results[0].status, CallStatus::ToolError, "{}", results[0].text);
     assert!(results[0].text.contains("supported image bytes"), "{}", results[0].text);

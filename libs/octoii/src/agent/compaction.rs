@@ -10,10 +10,10 @@
 use crate::threads::log::{self, Writer};
 use crate::threads::window::{self, FROM_ANNOTATION};
 use crate::threads::{Config, Entry, Window, thread};
-use beak::layout;
 use bytes::Bytes;
+use octoii_siphon_lib::Batch;
+use octoii_siphon_lib::{Answer, Ending, Fiber, Run, Wait};
 use serde::{Deserialize, Serialize};
-use siphon_runtime::{Answer, Changes, Ending, Fiber, Run, Wait};
 
 use crate::agent::gather::Gather;
 use crate::agent::model::ModelRequest;
@@ -142,7 +142,7 @@ impl CompactFiber {
 /// The path of the compaction of the thread `id`.
 #[must_use]
 pub fn path(id: &str) -> Bytes {
-    layout::process(&thread::main(id), CompactFiber::KEY.as_bytes())
+    octoii_siphon_lib::process_path(&thread::main(id), CompactFiber::KEY.as_bytes())
 }
 
 /// Adds to `changes` the compaction of the thread `id` started, where it is not running — one that ended reaped as it
@@ -150,8 +150,8 @@ pub fn path(id: &str) -> Bytes {
 ///
 /// # Errors
 /// The volume's failure.
-pub fn start(snapshot: &beak::Snapshot, changes: &mut Changes, id: &str) -> anyhow::Result<()> {
-    match snapshot.record(&path(id))? {
+pub fn start(snapshot: &octoii_siphon_lib::Snapshot, changes: &mut Batch<'_>, id: &str) -> anyhow::Result<()> {
+    match snapshot.fiber(&path(id))? {
         Some(record) if !crate::volume::reapable(&record) => return Ok(()),
         Some(_) => {
             changes.reap(path(id));
@@ -214,7 +214,7 @@ fn recapped(run: &mut Run<'_>, id: &str, key: String, cut: Cut) -> anyhow::Resul
         let wait = Wait::new().mail(key.clone());
         return Ok(Ending::Wait(CompactState::Recapping { key, cut }, wait));
     };
-    run.take_mail(&key);
+    run.take_mail(&key)?;
     let response = match answer {
         Answer::Given(response) => response,
         Answer::Interrupted => return Ok(Ending::Fail("the recap was cut off".into())),
@@ -268,7 +268,7 @@ fn compacted(
         };
         return Ok(Ending::Wait(state, Wait::new().mail(key.to_owned())));
     };
-    run.take_mail(key);
+    run.take_mail(key)?;
     let told: Told = match answer {
         Answer::Given(told) => told,
         Answer::Interrupted => return Ok(Ending::Fail("gathering what the model is told was cut off".into())),

@@ -25,6 +25,16 @@ it needs.
 - **Keep it to one change**, written like the code around it, within the rules of [AGENTS.md](AGENTS.md): clear names,
   small functions, the simplest design that works, and nothing built before it is needed.
 
+## Native build dependency
+
+The Rust workspace links the released native library for its locked SDK version. Install that
+library before building or testing Cargo targets from the repository.
+
+```sh
+export SIPHON_LIB_DIR="$(python3 tools/install-siphon.py)"
+cargo build --locked -p octoii-node
+```
+
 ## Local verification cleanup
 
 Reuse Cargo's intermediate build cache. For an isolated verification run, keep `CARGO_BUILD_BUILD_DIR` stable
@@ -35,10 +45,11 @@ From the Octoii checkout root, for example:
 (
   run_dir="$(mktemp -d)" || exit 1
   trap 'rm -rf -- "$run_dir"' EXIT
+  export SIPHON_LIB_DIR="$(python3 tools/install-siphon.py)"
   export CARGO_BUILD_BUILD_DIR="$PWD/target/local-cache/{workspace-path-hash}"
   export CARGO_TARGET_DIR="$run_dir/target"
   export TMPDIR="$run_dir"
-  cargo test --locked --manifest-path siphon/Cargo.toml -p siphon-runtime
+  cargo test --locked -p octoii
 )
 ```
 

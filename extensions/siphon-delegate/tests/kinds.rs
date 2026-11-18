@@ -1,6 +1,6 @@
 //! Kind is fixed at creation and checked against the thread's metadata on every continuation.
 
-use octoii::testing::{Beak, Called, Calling};
+use octoii::testing::{Called, Calling};
 use octoii::tools::{CallStatus, Context, Effect, Refusal, Told, Tool};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -50,8 +50,8 @@ impl Tool for Inspect {
     }
 }
 
-fn calling(beak: &Beak) -> Calling {
-    Calling::start(beak, |tools| tools.with(Dispatch).with(Inspect))
+fn calling() -> Calling {
+    Calling::start(|tools| tools.with(Dispatch).with(Inspect))
 }
 
 async fn called(calling: &Calling, folder: &std::path::Path, key: &str, tool: &str, args: Value) -> Called {
@@ -68,8 +68,7 @@ async fn called(calling: &Calling, folder: &std::path::Path, key: &str, tool: &s
 
 #[tokio::test(flavor = "multi_thread")]
 async fn creation_requires_a_kind_and_explorer_continuation_never_upgrades() {
-    let beak = Beak::new().unwrap();
-    let first = calling(&beak);
+    let first = calling();
     let folder = tempfile::tempdir().unwrap();
     let workspace = folder.path().canonicalize().unwrap();
     let missing = called(

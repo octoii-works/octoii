@@ -3,8 +3,8 @@
 //! `inotify` wakes a reader for what it watches alone. Where the journal no longer holds every commit since, its
 //! reader is told so, and reads its topic whole again.
 
-use beak::Snapshot;
 use bytes::Bytes;
+use octoii_siphon_lib::Snapshot;
 
 /// How many change sets a reader takes from the journal at a time.
 const SETS_AT_ONCE: usize = 256;
@@ -23,28 +23,28 @@ pub(crate) enum Since {
 
 impl Followed {
     /// A reader standing where `snapshot` stands.
-    pub(crate) fn at(snapshot: &Snapshot) -> Self {
-        Self { seen: snapshot.seq() }
+    pub(crate) fn at(snapshot: &Snapshot) -> octoii_siphon_lib::Result<Self> {
+        Ok(Self {
+            seen: snapshot.sequence()?,
+        })
     }
 
     /// What the commits after where it stood, through `snapshot`'s, changed — it standing after them.
     ///
     /// # Errors
     /// The volume's failure.
-    pub(crate) fn since(&mut self, snapshot: &Snapshot) -> beak::Result<Since> {
-        let latest = snapshot.seq();
+    pub(crate) fn since(&mut self, snapshot: &Snapshot) -> octoii_siphon_lib::Result<Since> {
+        let latest = snapshot.sequence()?;
         let mut through = self.seen;
         let mut paths = Vec::new();
         while through < latest {
-            let journal = snapshot.journal(through, SETS_AT_ONCE, &[])?;
+            let journal = snapshot.journal(through, SETS_AT_ONCE)?;
             if journal.missed || journal.through <= through {
                 self.seen = latest;
                 return Ok(Since::Missed);
             }
             for set in journal.change_sets {
-                paths.extend(set.changes.into_iter().map(|changed| match changed {
-                    beak::Changed::Deleted { path } | beak::Changed::Written { path, .. } => path,
-                }));
+                paths.extend(set.paths);
             }
             through = journal.through;
         }

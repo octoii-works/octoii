@@ -40,36 +40,17 @@ jobs:
       - run: bun run test:node
 
   rust:
-    # Fork PRs have no access to the private kernel or its read-only deploy key.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    # Siphon, source-built Beak, extensions and the node on macOS: formatted,
-    # linted and tested; then the client tested against the node itself, which needs the program built.
     runs-on: macos-15
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - name: Read pinned Siphon commit
-        id: dependencies
-        run: |
-          echo "siphon=$(git rev-parse HEAD:siphon)" >> "$GITHUB_OUTPUT"
-      - name: Checkout private Siphon
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          repository: devxiyang/octoii-siphon
-          ref: ${{ steps.dependencies.outputs.siphon }}
-          path: siphon
-          ssh-key: ${{ secrets.SIPHON_DEPLOY_KEY }}
-          persist-credentials: false
       - run: rustup toolchain install
       - uses: ./.github/actions/setup-bun
-      - run: cargo fmt --manifest-path siphon/beak/Cargo.toml --all --check
-      - run: cargo clippy --manifest-path siphon/beak/Cargo.toml --locked --workspace --all-targets -- -D warnings
-      - run: cargo test --manifest-path siphon/beak/Cargo.toml --locked --workspace
+      - name: Install the published native library
+        run: echo "SIPHON_LIB_DIR=$(python3 tools/install-siphon.py)" >> "$GITHUB_ENV"
       - run: cargo fmt --all --check
-      - run: cargo fmt --manifest-path siphon/Cargo.toml --all --check
+      - run: cargo fetch --locked
       - run: python3 tools/check-rust-layers.py
-      - run: cargo clippy --manifest-path siphon/Cargo.toml --locked --workspace --all-targets -- -D warnings
       - run: cargo clippy --locked --workspace --all-targets -- -D warnings
-      - run: cargo test --manifest-path siphon/Cargo.toml --locked --workspace
       - run: cargo test --locked --workspace
       - run: bun run --filter ./packages/client test:against-node

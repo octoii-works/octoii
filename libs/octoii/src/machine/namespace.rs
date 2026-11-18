@@ -6,8 +6,8 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use beak::{CommandEvent, Exec, FileSystem, Kernel, LabelView, Namespace, Spec, Stdio};
 use bytes::{Bytes, BytesMut};
+use octoii_siphon_lib::{CommandEvent, Exec, Namespace, RuntimeHandle, Spec, Stdio};
 use tokio_util::sync::CancellationToken;
 
 use crate::machine::paths::Base;
@@ -87,7 +87,7 @@ pub struct ThreadsView<'a> {
 #[derive(Debug)]
 pub struct Machine {
     pub(crate) namespace: Namespace,
-    pub(crate) kernel: Kernel,
+    pub(crate) runtime: RuntimeHandle,
     pub base: Base,
     pub(crate) excludes: Option<PathBuf>,
 }
@@ -104,7 +104,7 @@ pub enum RunError {
     #[error("it was stopped")]
     Stopped,
     #[error(transparent)]
-    Beak(#[from] beak::Error),
+    Beak(#[from] octoii_siphon_lib::Error),
 }
 
 /// A program to run to its end: its arguments, the program first, a bare name looked for along the machine's `PATH`;
@@ -147,7 +147,7 @@ impl Program {
 /// How a program ran: how it ended, what it wrote to its output, whole, and the head and tail of its errors.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ran {
-    pub exit: beak::Exit,
+    pub exit: octoii_siphon_lib::Exit,
     pub output: Bytes,
     pub errors: Bytes,
 }
@@ -158,30 +158,29 @@ impl Machine {
     ///
     /// # Errors
     /// Beak's failure to make or mount the namespace.
-    pub fn open(kernel: &Kernel, host: &Host, base: Base, writes: &Writes, threads: Option<ThreadsView<'_>>) -> beak::Result<Self> {
+    pub fn open(
+        runtime: &RuntimeHandle,
+        host: &Host,
+        base: Base,
+        writes: &Writes,
+        threads: Option<ThreadsView<'_>>,
+    ) -> octoii_siphon_lib::Result<Self> {
         let namespace = Namespace::new()?;
-        namespace.mount("", &FileSystem::Host("/"), *writes == Writes::Anywhere)?;
+        namespace.mount_host("", "/", *writes == Writes::Anywhere)?;
         if let Writes::Within(places) = writes {
             for place in places {
-                namespace.mount(&inside(place), &FileSystem::Host(&place.to_string_lossy()), true)?;
+                namespace.mount_host(&inside(place), &place.to_string_lossy(), true)?;
             }
         }
         for place in &host.hidden {
-            namespace.mount(&inside(place), &FileSystem::Inaccessible, false)?;
+            namespace.hide(&inside(place))?;
         }
         if let (Some(view), Some(folder)) = (threads, &host.threads) {
-            let label = FileSystem::Label {
-                kernel,
-                kind: view.kind,
-                label: view.label,
-                view: LabelView::AnyValue,
-                under: b"",
-            };
-            namespace.mount(&inside(folder), &label, false)?;
+            namespace.mount_labels(runtime, &inside(folder), view.kind, view.label, b"")?;
         }
         Ok(Self {
             namespace,
-            kernel: kernel.clone(),
+            runtime: runtime.clone(),
             base,
             excludes: host.excludes.clone(),
         })
@@ -204,9 +203,8 @@ impl Machine {
     ///
     /// # Errors
     /// Beak's failure to mount it.
-    pub fn bind(&self, place: &Path) -> beak::Result<()> {
-        self.namespace
-            .mount(&inside(place), &FileSystem::Host(&place.to_string_lossy()), true)
+    pub fn bind(&self, place: &Path) -> octoii_siphon_lib::Result<()> {
+        self.namespace.mount_host(&inside(place), &place.to_string_lossy(), true)
     }
 
     /// The namespace the machine is reached through.
@@ -237,10 +235,10 @@ impl Machine {
         tokio::pin!(deadline);
         let exit = loop {
             tokio::select! {
-                event = events.next() => match event {
+                event = events.next() => match event? {
                     Some(CommandEvent::Output(bytes)) => {
                         if output.len() + bytes.len() > program.output_max {
-                            command.signal(beak::Signal::Kill)?;
+                            command.signal(octoii_siphon_lib::Signal::Kill)?;
                             return Err(RunError::OutputTooLarge(program.output_max));
                         }
                         output.extend_from_slice(&bytes);
@@ -250,11 +248,11 @@ impl Machine {
                     None => return Err(RunError::Stopped),
                 },
                 () = &mut deadline => {
-                    command.signal(beak::Signal::Kill)?;
+                    command.signal(octoii_siphon_lib::Signal::Kill)?;
                     return Err(RunError::TimedOut(program.timeout));
                 }
                 () = cancelled.cancelled() => {
-                    command.signal(beak::Signal::Kill)?;
+                    command.signal(octoii_siphon_lib::Signal::Kill)?;
                     return Err(RunError::Stopped);
                 }
             }
@@ -273,9 +271,14 @@ impl Machine {
 
 impl Machine {
     /// Starts the command `spec` describes at `time`, held to what the namespace reaches, recorded under `under`.
-    pub(crate) fn spawn(&self, time: i64, under: &[u8], spec: &Spec) -> Result<(beak::Command, beak::CommandEvents), RunError> {
-        self.kernel.spawn(time, under, &self.namespace, spec).map_err(|error| {
-            if error.status == beak::Status::MissingProgram {
+    pub(crate) fn spawn(
+        &self,
+        time: i64,
+        under: &[u8],
+        spec: &Spec,
+    ) -> Result<(octoii_siphon_lib::Command, octoii_siphon_lib::CommandEvents), RunError> {
+        self.runtime.spawn(time, under, &self.namespace, spec).map_err(|error| {
+            if error.status() == octoii_siphon_lib::Status::MissingProgram {
                 let program = match &spec.exec {
                     Exec::Argv(argv) => argv.first().cloned().unwrap_or_default(),
                     Exec::Shell(line) => line.clone(),

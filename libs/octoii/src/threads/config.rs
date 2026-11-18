@@ -3,11 +3,11 @@
 //! change of it is logged where it took effect, each field it changed from what it was to what it is, so the log tells
 //! what changed and who changed it.
 
-use beak::Directory;
 use bytes::Bytes;
 use octoii_ai::vocabulary::ReasoningEffort;
+use octoii_siphon_lib::Directory;
+use octoii_siphon_lib::Named;
 use serde::{Deserialize, Serialize};
-use siphon_runtime::Named;
 
 /// How a thread's calls go ahead: in `default`, what goes beyond the workspace and the sandbox asks the person; in
 /// `auto`, what would ask is judged by a second model, the person asked where it doubts; in `full-access`, everything.

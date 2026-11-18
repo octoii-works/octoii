@@ -28,8 +28,8 @@ impl Credentials for Nothing {
 #[ignore = "reaches the person's own Claude Code"]
 async fn the_persons_own_claude_code_tells_how_it_stands_and_what_it_offers() {
     let folder = tempfile::tempdir().expect("a folder");
-    let beak = octoii::testing::Beak::new().expect("Beak");
-    let commands = octoii::testing::commands(&beak);
+    let fixture = octoii::testing::Runtime::memory().expect("Runtime");
+    let commands = octoii::testing::commands(&fixture);
     let home = std::env::home_dir();
     let place = Place {
         commands,

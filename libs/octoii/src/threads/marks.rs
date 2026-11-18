@@ -3,10 +3,10 @@
 //! finds the threads kept either way; the times are annotations; a snooze is a name in the directory that goes at its
 //! time, so the journal tells of its end as it ends.
 
-use beak::{Directory, Entry};
 use bytes::Bytes;
+use octoii_siphon_lib::{Batch, Named};
+use octoii_siphon_lib::{Directory, Entry};
 use serde::{Deserialize, Serialize};
-use siphon_runtime::{Changes, Named};
 
 use crate::threads::thread::{self, ARCHIVED_LABEL, PINNED_LABEL};
 
@@ -78,7 +78,7 @@ impl Marks {
 
 impl MarksChange {
     /// Adds what makes this change of the thread `id`, snoozed now as `snoozed`, to `changes`, at `now`.
-    pub(crate) fn add(&self, changes: &mut Changes, id: &str, snoozed: bool, now: i64) {
+    pub(crate) fn add(&self, changes: &mut Batch<'_>, id: &str, snoozed: bool, now: i64) {
         let flag = |name: &'static str, on: bool| (Bytes::from_static(name.as_bytes()), Some(thread::flag(on)));
         let labels: Vec<Named> = [
             self.pinned.map(|on| flag(PINNED_LABEL, on)),

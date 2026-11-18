@@ -13,7 +13,6 @@ workspace = true
 [dependencies]
 anyhow = "1.0.104"
 base64 = "0.23.1"
-beak.workspace = true
 bytes = "1.12.1"
 futures = "0.3.34"
 getrandom = "0.4.3"
@@ -26,6 +25,7 @@ json-patch = "5.0.0"
 jsonschema = { version = "0.61.1", default-features = false }
 nucleo-matcher = "0.3.1"
 octoii-ai.workspace = true
+octoii-siphon-lib.workspace = true
 rayon = "1.12.0"
 schemars = "1.2.3"
 serde = { version = "1.0.229", features = ["derive"] }
@@ -33,7 +33,6 @@ serde_json = { version = "1.0.154", features = ["raw_value"] }
 serde_with = "3.24.0"
 sha2 = "0.11.1"
 siphon-image.workspace = true
-siphon-runtime.workspace = true
 siphon-script.workspace = true
 siphon-shell.workspace = true
 siphon-text.workspace = true

@@ -6,8 +6,8 @@
 use crate::threads::inbox::{self, Ended, Inbound, Joins};
 use crate::threads::thread;
 use octoii_ai::vocabulary::InputContent;
+use octoii_siphon_lib::{Ending, Fiber, Run, Wait};
 use serde::{Deserialize, Serialize};
-use siphon_runtime::{Ending, Fiber, Run, Wait};
 
 /// A task given to a sub-thread, waited on: the thread that gave it, the sub-thread, and the task, by its id in the
 /// sub-thread's inbox, which is also the key of the mail that tells how the turn that took it ended.
@@ -42,13 +42,13 @@ pub fn how(ended: Option<&Ended>) -> String {
 ///
 /// # Errors
 /// The volume's failure.
-pub fn directory_of(run: &Run<'_>, id: &str) -> anyhow::Result<Option<beak::Directory>> {
+pub fn directory_of(run: &Run<'_>, id: &str) -> anyhow::Result<Option<octoii_siphon_lib::Directory>> {
     Ok(run.snapshot().stat(&thread::path(id))?.and_then(|entry| entry.directory))
 }
 
 /// The label `name` of `directory`; none where it has none.
 #[must_use]
-pub fn label(directory: &beak::Directory, name: &str) -> Option<String> {
+pub fn label(directory: &octoii_siphon_lib::Directory, name: &str) -> Option<String> {
     directory
         .label(name.as_bytes())
         .filter(|value| !value.is_empty())

@@ -5,10 +5,10 @@
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
-use beak::Snapshot;
 use bytes::Bytes;
+use octoii_siphon_lib::Changes;
+use octoii_siphon_lib::Snapshot;
 use sha2::{Digest, Sha256};
-use siphon_runtime::Changes;
 
 use crate::tools::permissions::Grants;
 
@@ -68,7 +68,7 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
 ///
 /// # Errors
 /// The volume's failure.
-pub fn annotation(snapshot: &Snapshot, folder: &str, name: &str) -> beak::Result<Option<Bytes>> {
+pub fn annotation(snapshot: &Snapshot, folder: &str, name: &str) -> octoii_siphon_lib::Result<Option<Bytes>> {
     let directory = snapshot.stat(&path(folder))?.and_then(|entry| entry.directory);
     Ok(directory.and_then(|directory| directory.annotation(name.as_bytes()).cloned()))
 }
@@ -78,7 +78,7 @@ pub fn annotation(snapshot: &Snapshot, folder: &str, name: &str) -> beak::Result
 ///
 /// # Errors
 /// The volume's failure.
-pub fn annotate(snapshot: &Snapshot, folder: &str, name: &str, value: Bytes) -> beak::Result<Changes> {
+pub fn annotate(snapshot: &Snapshot, folder: &str, name: &str, value: Bytes) -> octoii_siphon_lib::Result<Changes> {
     let mut changes = Changes::new();
     let project = path(folder);
     if snapshot.stat(&project)?.is_none() {
@@ -124,10 +124,10 @@ pub struct Granted {
 /// The volume's failure; grants not as Octoii writes them.
 pub fn all_grants(snapshot: &Snapshot) -> anyhow::Result<Vec<Granted>> {
     let prefix = format!("{KIND}:");
-    let range = beak::Range {
+    let range = octoii_siphon_lib::Range {
         prefix: prefix.as_bytes(),
         limit: usize::MAX,
-        ..beak::Range::default()
+        ..octoii_siphon_lib::Range::default()
     };
     let mut out = Vec::new();
     for entry in snapshot.list(b"", &range)?.unwrap_or_default() {

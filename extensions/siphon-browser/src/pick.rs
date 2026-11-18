@@ -197,9 +197,9 @@ pub(crate) async fn pick(browser: &Browser, caller: &Caller, request: PickElemen
     let document = Document::read(&attached).await?;
     document.matches_request(&request, view.size)?;
     let node = node_at(&attached, &document.frame, point).await?;
+    let captured_at = caller.volume().now_ms().map_err(|error| failed(&BrowserError::from(error)))?;
     let resolved = call(&attached, "DOM.resolveNode", json!({ "backendNodeId": node })).await?;
     let object = string(&resolved["object"]["objectId"])?;
-    let captured_at = caller.volume().now_ms();
     let captured = capture(&page, &attached, document, node, &object, point).await;
     // The resolved object is local to this capture, including every refusal after it was obtained.
     let _ = call(&attached, "Runtime.releaseObject", json!({ "objectId": object })).await;

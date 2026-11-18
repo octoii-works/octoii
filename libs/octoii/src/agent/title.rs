@@ -7,8 +7,8 @@
 
 use crate::threads::inbox::{self, Inbound};
 use crate::threads::{Config, ConfigChange, Entry, Window, thread};
+use octoii_siphon_lib::{Answer, Ending, Fiber, Run, Wait};
 use serde::{Deserialize, Serialize};
-use siphon_runtime::{Answer, Ending, Fiber, Run, Wait};
 
 use crate::agent::model::ModelRequest;
 use crate::agent::turn::charge;
@@ -59,7 +59,7 @@ impl Fiber for TitleFiber {
         let Some(answer) = run.answer::<ModelRequest>(&key)? else {
             return Ok(Ending::Wait(key.clone(), Wait::new().mail(key)));
         };
-        run.take_mail(&key);
+        run.take_mail(&key)?;
         let Answer::Given(response) = answer else {
             return Ok(Ending::Done(None));
         };

@@ -5,9 +5,9 @@
 
 use crate::threads::inbox::{self, Inbound, Joins};
 use crate::threads::{Entry, Window, thread};
-use beak::Snapshot;
+use octoii_siphon_lib::Snapshot;
+use octoii_siphon_lib::{Batch, Ending, Fiber, Run, Wait};
 use serde::{Deserialize, Serialize};
-use siphon_runtime::{Changes, Ending, Fiber, Run, Wait};
 
 /// The person's word it goes on with.
 pub const WORD: &str = "Continue where you stopped: the account's usage limit has reset.";
@@ -52,7 +52,7 @@ pub enum ArmError {
     #[error("a resume is armed for the thread already")]
     Armed,
     #[error(transparent)]
-    Beak(#[from] beak::Error),
+    Beak(#[from] octoii_siphon_lib::Error),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
 }
@@ -61,9 +61,9 @@ pub enum ArmError {
 ///
 /// # Errors
 /// `Armed` while a prior Fiber remains active or is still exiting, or the volume's failure.
-pub fn arm(snapshot: &Snapshot, changes: &mut Changes, input: &ResumeInput) -> Result<(), ArmError> {
-    let path = beak::layout::process(&thread::main(&input.thread), ResumeFiber::KEY.as_bytes());
-    match snapshot.record(&path)? {
+pub fn arm(snapshot: &Snapshot, changes: &mut Batch<'_>, input: &ResumeInput) -> Result<(), ArmError> {
+    let path = octoii_siphon_lib::process_path(&thread::main(&input.thread), ResumeFiber::KEY.as_bytes());
+    match snapshot.fiber(&path)? {
         Some(record) if !crate::volume::reapable(&record) => return Err(ArmError::Armed),
         Some(_) => {
             changes.reap(path);
@@ -75,8 +75,11 @@ pub fn arm(snapshot: &Snapshot, changes: &mut Changes, input: &ResumeInput) -> R
 }
 
 /// Adds to `changes` the resume of the thread `id` let go of, where one is armed.
-pub fn disarm(changes: &mut Changes, id: &str) {
-    changes.force_remove(beak::layout::process(&thread::main(id), ResumeFiber::KEY.as_bytes()), None);
+pub fn disarm(changes: &mut Batch<'_>, id: &str) {
+    changes.force_remove(
+        octoii_siphon_lib::process_path(&thread::main(id), ResumeFiber::KEY.as_bytes()),
+        None,
+    );
 }
 
 impl Fiber for ResumeFiber {

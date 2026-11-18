@@ -1,7 +1,5 @@
 //! Bounded pages of a thread's history from one fixed snapshot.
 
-use beak::Snapshot;
-
 use super::log::{self, Cursor, Entry};
 use super::thread;
 use crate::volume::Volume;
@@ -9,7 +7,7 @@ use crate::volume::Volume;
 /// A thread's history as it stood when opened. Pages remain consistent while new entries arrive.
 #[derive(Debug)]
 pub struct History {
-    snapshot: std::sync::Arc<Snapshot>,
+    snapshot: std::sync::Arc<octoii_siphon_lib::OwnedSnapshot>,
     thread: String,
 }
 
@@ -83,7 +81,7 @@ impl History {
 /// Entries from newest to oldest, buffered a small part of one segment at a time.
 #[derive(Debug)]
 pub struct Entries {
-    snapshot: std::sync::Arc<Snapshot>,
+    snapshot: std::sync::Arc<octoii_siphon_lib::OwnedSnapshot>,
     thread: String,
     segments: Vec<(String, u64)>,
     lines: Vec<bytes::Bytes>,
@@ -122,7 +120,7 @@ impl Entries {
                 let start = end.saturating_sub(budget);
                 let bytes = self
                     .snapshot
-                    .read(&log::segment(&self.thread, segment), start, *end - start)?
+                    .read_range(&log::segment(&self.thread, segment), start, *end - start)?
                     .ok_or_else(|| anyhow::anyhow!("missing history segment {segment}"))?;
                 let skip = if start == 0 {
                     Some(0)

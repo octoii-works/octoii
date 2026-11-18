@@ -6,16 +6,12 @@ use std::time::Duration;
 
 use crate::machine::paths::Base;
 use crate::machine::{EditOutcome, GrepOptions, Host, Machine, Program, Read, ReadOptions, RunError, Writes};
-use beak::{Beak, Kernel, Options};
+use octoii_siphon_lib::Runtime;
 use siphon_text::Edit;
 use tokio_util::sync::CancellationToken;
 
-fn kernel(beak: &Beak) -> Kernel {
-    Kernel::open(beak, &Options::default()).expect("a kernel").0
-}
-
 /// A machine working in a fresh folder, by its real path, and the folder.
-fn machine(kernel: &Kernel, host: &Host) -> (Machine, tempfile::TempDir, PathBuf) {
+fn machine(runtime: &Runtime, host: &Host) -> (Machine, tempfile::TempDir, PathBuf) {
     let folder = tempfile::tempdir().expect("a folder");
     let workspace = folder.path().canonicalize().expect("its real path");
     let base = Base {
@@ -23,7 +19,7 @@ fn machine(kernel: &Kernel, host: &Host) -> (Machine, tempfile::TempDir, PathBuf
         home: Some(PathBuf::from("/home/me")),
     };
     (
-        Machine::open(kernel, host, base, &Writes::Anywhere, None).expect("opened"),
+        Machine::open(runtime, host, base, &Writes::Anywhere, None).expect("opened"),
         folder,
         workspace,
     )
@@ -60,9 +56,9 @@ fn a_path_names_one_place_whatever_its_spelling_and_is_shown_back_as_the_model_w
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_file_is_written_read_a_page_at_a_time_and_edited_as_it_held_its_text() {
-    let beak = Beak::new().expect("Beak");
-    let kernel = kernel(&beak);
-    let (machine, _folder, workspace) = machine(&kernel, &Host::default());
+    let runtime = Runtime::memory().expect("a runtime");
+
+    let (machine, _folder, workspace) = machine(&runtime, &Host::default());
     let path = machine.path("deep/down/notes.txt");
     let made = machine.write(&path, "one\ntwo\nthree\n", "deep/down/notes.txt").expect("written");
     assert!(made.created);
@@ -133,7 +129,7 @@ fn write(root: &Path, path: &str, text: &str) {
 
 /// A repository whose ignore files leave out its build, its logs, a generated file, a local folder and the person's
 /// secrets: the machine working in it, and what holds its folders.
-fn repository(kernel: &Kernel) -> (Machine, [tempfile::TempDir; 2]) {
+fn repository(runtime: &Runtime) -> (Machine, [tempfile::TempDir; 2]) {
     let excludes = tempfile::tempdir().expect("a folder");
     let personal = excludes.path().canonicalize().expect("its real path").join("ignore");
     std::fs::write(&personal, "*.secret\n").expect("written");
@@ -141,7 +137,7 @@ fn repository(kernel: &Kernel) -> (Machine, [tempfile::TempDir; 2]) {
         excludes: Some(personal),
         ..Host::default()
     };
-    let (machine, folder, root) = machine(kernel, &host);
+    let (machine, folder, root) = machine(runtime, &host);
     write(&root, ".git/info/exclude", "local/\n");
     write(&root, ".gitignore", "target/\n*.log\n");
     write(&root, "src/main.rs", "fn main() {\n    println!(\"hello\");\n}\n");
@@ -159,9 +155,9 @@ fn repository(kernel: &Kernel) -> (Machine, [tempfile::TempDir; 2]) {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_walk_leaves_out_what_ignore_files_name_and_glob_pages_what_is_left_the_newest_first() {
-    let beak = Beak::new().expect("Beak");
-    let kernel = kernel(&beak);
-    let (machine, _folders) = repository(&kernel);
+    let runtime = Runtime::memory().expect("a runtime");
+
+    let (machine, _folders) = repository(&runtime);
     let shown = |paths: &[String]| paths.iter().map(|path| machine.shown(path)).collect::<Vec<_>>();
     let walked = machine.walk(&machine.path("")).expect("walked");
     assert_eq!(
@@ -184,9 +180,9 @@ async fn a_walk_leaves_out_what_ignore_files_name_and_glob_pages_what_is_left_th
 
 #[tokio::test(flavor = "multi_thread")]
 async fn grep_pages_its_matches_in_order_by_path_with_their_context_and_passes_binary_files_over() {
-    let beak = Beak::new().expect("Beak");
-    let kernel = kernel(&beak);
-    let (machine, _folders) = repository(&kernel);
+    let runtime = Runtime::memory().expect("a runtime");
+
+    let (machine, _folders) = repository(&runtime);
     let options = GrepOptions {
         context: 1,
         glob: Some("*.rs".into()),
@@ -253,8 +249,8 @@ fn default_grep() -> GrepOptions {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_program_runs_to_its_end_and_what_the_host_hides_is_denied() {
-    let beak = Beak::new().expect("Beak");
-    let kernel = kernel(&beak);
+    let runtime = Runtime::memory().expect("a runtime");
+
     let hidden = tempfile::tempdir().expect("a folder");
     let hidden_place = hidden.path().canonicalize().expect("its real path");
     std::fs::write(hidden_place.join("key"), "secret").expect("written");
@@ -262,7 +258,7 @@ async fn a_program_runs_to_its_end_and_what_the_host_hides_is_denied() {
         hidden: vec![hidden_place.clone()],
         ..Host::default()
     };
-    let (machine, _folder, workspace) = machine(&kernel, &host);
+    let (machine, _folder, workspace) = machine(&runtime, &host);
     let never = CancellationToken::new();
     let echo = Program::new(
         vec!["sh".into(), "-c".into(), "printf out; printf err >&2; exit 3".into()],
@@ -271,7 +267,7 @@ async fn a_program_runs_to_its_end_and_what_the_host_hides_is_denied() {
     let ran = machine.run(1_000, b"", &echo, &never).await.expect("ran");
     assert_eq!(
         (ran.exit, &ran.output[..], &ran.errors[..]),
-        (beak::Exit::Code(3), &b"out"[..], &b"err"[..])
+        (octoii_siphon_lib::Exit::Code(3), &b"out"[..], &b"err"[..])
     );
     let missing = Program::new(vec!["no-such-program-anywhere".into()], &workspace);
     assert!(matches!(
@@ -292,8 +288,8 @@ async fn a_program_runs_to_its_end_and_what_the_host_hides_is_denied() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn work_held_to_its_workspace_writes_there_and_reads_everywhere_else() {
-    let beak = Beak::new().expect("Beak");
-    let kernel = kernel(&beak);
+    let runtime = Runtime::memory().expect("a runtime");
+
     let (workspace_folder, outside_folder) = (tempfile::tempdir().expect("a folder"), tempfile::tempdir().expect("a folder"));
     let workspace = workspace_folder.path().canonicalize().expect("its real path");
     let outside = outside_folder.path().canonicalize().expect("its real path");
@@ -302,7 +298,7 @@ async fn work_held_to_its_workspace_writes_there_and_reads_everywhere_else() {
         workspace: workspace.clone(),
         home: None,
     };
-    let machine = Machine::open(&kernel, &Host::default(), base, &Writes::Within(vec![workspace.clone()]), None).expect("opened");
+    let machine = Machine::open(&runtime, &Host::default(), base, &Writes::Within(vec![workspace.clone()]), None).expect("opened");
     machine
         .write(&machine.path("made.txt"), "here", "made.txt")
         .expect("written within");
@@ -320,9 +316,9 @@ async fn work_held_to_its_workspace_writes_there_and_reads_everywhere_else() {
     let ran = machine
         .run(1_000, b"", &Program::new(vec!["sh".into(), "-c".into(), line], &workspace), &never)
         .await;
-    if beak::machine_confines() {
+    if octoii_siphon_lib::machine_confines() {
         let ran = ran.expect("ran");
-        assert_ne!(ran.exit, beak::Exit::Code(0), "its command held to the workspace");
+        assert_ne!(ran.exit, octoii_siphon_lib::Exit::Code(0), "its command held to the workspace");
         assert_eq!(std::fs::read_to_string(outside.join("notes.txt")).expect("read"), "kept");
         assert!(workspace.join("made-too.txt").exists());
     }
@@ -332,9 +328,9 @@ async fn work_held_to_its_workspace_writes_there_and_reads_everywhere_else() {
 async fn a_coprocess_reads_what_it_is_given_answers_on_its_output_keeps_its_errors_and_ends_as_its_input_closes() {
     use tokio::io::{AsyncBufReadExt as _, AsyncReadExt as _, AsyncWriteExt as _, BufReader};
 
-    let beak = Beak::new().expect("Beak");
-    let kernel = kernel(&beak);
-    let (machine, _folder, workspace) = machine(&kernel, &Host::default());
+    let runtime = Runtime::memory().expect("a runtime");
+
+    let (machine, _folder, workspace) = machine(&runtime, &Host::default());
     let argv = vec![
         "sh".into(),
         "-c".into(),
@@ -367,9 +363,9 @@ async fn a_coprocess_reads_what_it_is_given_answers_on_its_output_keeps_its_erro
 async fn a_coprocess_given_its_variables_alone_runs_with_those_alone() {
     use tokio::io::AsyncReadExt as _;
 
-    let beak = Beak::new().expect("Beak");
-    let kernel = kernel(&beak);
-    let (machine, _folder, workspace) = machine(&kernel, &Host::default());
+    let runtime = Runtime::memory().expect("a runtime");
+
+    let (machine, _folder, workspace) = machine(&runtime, &Host::default());
     let argv = vec!["/bin/sh".into(), "-c".into(), "printf '%s|%s' \"$WORD\" \"${HOME-none}\"".into()];
     let only = crate::machine::Variables::Only(vec![("WORD".into(), "alone".into())]);
     let mut coprocess = machine.coprocess(1_000, b"", argv, &workspace, only).expect("started");
@@ -382,8 +378,8 @@ async fn a_coprocess_given_its_variables_alone_runs_with_those_alone() {
 async fn a_folder_bound_back_over_what_the_host_hides_is_reached_by_a_command_and_the_rest_is_not() {
     use tokio::io::AsyncReadExt as _;
 
-    let beak = Beak::new().expect("Beak");
-    let kernel = kernel(&beak);
+    let runtime = Runtime::memory().expect("a runtime");
+
     let kept = tempfile::tempdir().expect("a folder");
     let kept = kept.path().canonicalize().expect("its real path");
     let own = kept.join("extension");
@@ -393,7 +389,7 @@ async fn a_folder_bound_back_over_what_the_host_hides_is_reached_by_a_command_an
         hidden: vec![kept.clone()],
         ..Host::default()
     };
-    let (machine, _folder, workspace) = machine(&kernel, &host);
+    let (machine, _folder, workspace) = machine(&runtime, &host);
     machine.bind(&own).expect("bound");
     let line = format!(
         "printf x > '{}/made' && printf ok; cat '{}/secret' 2>/dev/null || printf ' hidden'",
@@ -406,15 +402,22 @@ async fn a_folder_bound_back_over_what_the_host_hides_is_reached_by_a_command_an
         .expect("started");
     let mut told = String::new();
     coprocess.stdout.read_to_string(&mut told).await.expect("read");
-    assert_eq!(told, if beak::machine_confines() { "ok hidden" } else { "oks" });
+    assert_eq!(
+        told,
+        if octoii_siphon_lib::machine_confines() {
+            "ok hidden"
+        } else {
+            "oks"
+        }
+    );
     assert!(own.join("made").is_file(), "its own folder written");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_path_at_which_nothing_is_is_told_the_nearest_folder_and_the_names_like_it() {
-    let beak = Beak::new().expect("Beak");
-    let kernel = kernel(&beak);
-    let (machine, _folder, workspace) = machine(&kernel, &Host::default());
+    let runtime = Runtime::memory().expect("a runtime");
+
+    let (machine, _folder, workspace) = machine(&runtime, &Host::default());
     std::fs::create_dir_all(workspace.join("src")).expect("a folder");
     for name in ["main.rs", "lib.rs", "Mainly.txt", "other.md"] {
         std::fs::write(workspace.join("src").join(name), "").expect("a file");

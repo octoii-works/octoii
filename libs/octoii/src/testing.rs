@@ -10,14 +10,13 @@ use bytes::Bytes;
 use octoii_ai::host::{Credential, Credentials, Unavailable};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use siphon_runtime::Options;
 use tokio::sync::mpsc;
 
 use crate::connection::{Access, Outgoing, serve};
 use crate::{Octoii, Setup};
 
 /// Beak, which a test opens for what it starts: Octoii, calls, commands.
-pub use beak::Beak;
+pub use octoii_siphon_lib::Runtime;
 
 /// Explicit instructions for runtime tests; production instructions belong to the base extension.
 pub const PROMPTS: crate::agent::Prompts = crate::agent::Prompts {
@@ -179,7 +178,7 @@ pub struct Called {
 /// exec'd by Octoii's own tools and those a test adds, a script's calls too; the person's trust asked as Octoii asks it.
 #[derive(Debug)]
 pub struct Calling {
-    runtime: siphon_runtime::Runtime,
+    runtime: octoii_siphon_lib::Runtime,
 }
 
 /// What the caller of a test's calls is started with: where they work, the tools of <catalog>, and the calls.
@@ -195,7 +194,7 @@ struct Caller {
     tools: crate::tools::Tools,
 }
 
-impl siphon_runtime::Fiber for Caller {
+impl octoii_siphon_lib::Fiber for Caller {
     const KIND: &'static str = "siphon.testing.caller";
     type Input = Asking;
     type Checkpoint = crate::tools::Calls;
@@ -203,10 +202,10 @@ impl siphon_runtime::Fiber for Caller {
 
     fn run(
         &self,
-        run: &mut siphon_runtime::Run<'_>,
+        run: &mut octoii_siphon_lib::Run<'_>,
         input: Asking,
         checkpoint: Option<crate::tools::Calls>,
-    ) -> anyhow::Result<siphon_runtime::Ending<crate::tools::Calls, Vec<Called>>> {
+    ) -> anyhow::Result<octoii_siphon_lib::Ending<crate::tools::Calls, Vec<Called>>> {
         let mut calls = match checkpoint {
             Some(calls) => calls,
             None => crate::tools::Calls::new(run, input.calls.clone())?,
@@ -225,12 +224,12 @@ impl siphon_runtime::Fiber for Caller {
             base: &base,
             project: None,
             places: &[],
-            confines: beak::machine_confines(),
+            confines: octoii_siphon_lib::machine_confines(),
         };
         if let Some(wait) = calls.advance(run, &setting)? {
-            return Ok(siphon_runtime::Ending::Wait(calls, wait));
+            return Ok(octoii_siphon_lib::Ending::Wait(calls, wait));
         }
-        Ok(siphon_runtime::Ending::Done(calls.0.into_iter().map(called).collect()))
+        Ok(octoii_siphon_lib::Ending::Done(calls.0.into_iter().map(called).collect()))
     }
 }
 
@@ -279,27 +278,35 @@ impl Calling {
     /// # Panics
     /// Where the volume cannot be opened.
     #[must_use]
-    pub fn start(beak: &beak::Beak, add: impl FnOnce(crate::tools::Tools) -> crate::tools::Tools) -> Self {
+    pub fn start(add: impl FnOnce(crate::tools::Tools) -> crate::tools::Tools) -> Self {
         let tools = add(crate::tools::Tools::new()
             .with(crate::tools::ReadTool)
             .with(crate::tools::WriteTool)
             .with(crate::tools::ShellTool)
             .with(crate::tools::ExecuteTool));
         let execs = tools.clone();
-        let runtime = siphon_runtime::Runtime::builder()
+        let mut builder = octoii_siphon_lib::Builder::new().expect("a builder");
+        builder
             .fiber(Caller { tools: tools.clone() })
+            .expect("caller registered")
             .fiber(crate::tools::ScriptFiber {
                 tools,
                 primitives: Arc::new(crate::agent::ThreadPrimitives),
             })
+            .expect("script registered")
             .fiber(crate::trust::TrustFiber)
+            .expect("trust registered")
             .ask_person::<crate::trust::Trust>()
-            .handle(move |asked: siphon_runtime::Asked<crate::tools::Exec>| {
-                let tools = execs.clone();
-                async move { crate::tools::answer_exec(&tools, &crate::machine::Host::default(), asked).await }
-            })
-            .start(beak, Options::default())
-            .expect("started");
+            .expect("person request registered")
+            .handle(
+                &tokio::runtime::Handle::current(),
+                move |asked: octoii_siphon_lib::Asked<crate::tools::Exec>| {
+                    let tools = execs.clone();
+                    async move { crate::tools::answer_exec(&tools, &crate::machine::Host::default(), asked).await }
+                },
+            )
+            .expect("handler registered");
+        let runtime = builder.memory().expect("started");
         Self { runtime }
     }
 
@@ -316,18 +323,18 @@ impl Calling {
         calls: Vec<(String, String, String)>,
     ) -> Vec<Called> {
         let asking = Asking { workspace, catalog, calls };
-        let mut changes = siphon_runtime::Changes::new();
+        let mut changes = octoii_siphon_lib::Changes::new();
         changes
             .mkdir(crate::threads::thread::path("t1"))
             .mkdir(crate::threads::inbox::path("t1"));
         changes.start::<Caller>(Bytes::new(), key, &asking).expect("an input");
         self.runtime.commit(changes).await.expect("started");
-        let path = beak::layout::process(b"", key.as_bytes());
-        let mut committed = self.runtime.committed();
+        let path = octoii_siphon_lib::process_path(b"", key.as_bytes());
+        let mut committed = self.runtime.committed().expect("a commit watch");
         let waiting = async {
             loop {
-                let record = self.runtime.snapshot().expect("a snapshot").record(&path).expect("a record");
-                if let Some(beak::Outcome::Completed(Some(result))) = record.and_then(|record| record.outcome) {
+                let record = self.runtime.snapshot().expect("a snapshot").fiber(&path).expect("a record");
+                if let Some(octoii_siphon_lib::Outcome::Completed(Some(result))) = record.and_then(|record| record.outcome) {
                     return serde_json::from_slice(&result).expect("what it came to");
                 }
                 committed.changed().await.expect("the runtime runs");
@@ -342,9 +349,10 @@ impl Calling {
 /// # Panics
 /// Where the kernel cannot be opened.
 #[must_use]
-pub fn commands(beak: &beak::Beak) -> crate::machine::Commands {
-    let (kernel, _) = beak::Kernel::open(beak, &beak::Options::default()).expect("a kernel");
-    crate::machine::Commands { kernel }
+pub fn commands(runtime: &Runtime) -> crate::machine::Commands {
+    crate::machine::Commands {
+        runtime: runtime.runtime_handle(),
+    }
 }
 
 impl Calling {
@@ -352,7 +360,7 @@ impl Calling {
     #[must_use]
     pub fn volume(&self) -> crate::volume::Volume {
         crate::volume::Volume {
-            runtime: self.runtime.clone(),
+            runtime: self.runtime.runtime_handle(),
         }
     }
 
@@ -363,13 +371,13 @@ impl Calling {
     /// Where the volume fails, or it is not asked and decided in 10 s each.
     pub async fn decide(&self, trust: &crate::trust::Trust, trusted: bool) {
         let key = crate::trust::TrustFiber::KEY.as_bytes();
-        let mut changes = siphon_runtime::Changes::new();
+        let mut changes = octoii_siphon_lib::Changes::new();
         changes
             .start::<crate::trust::TrustFiber>(Bytes::new(), crate::trust::TrustFiber::KEY, trust)
             .expect("an input");
         self.runtime.commit(changes).await.expect("started");
-        let process = beak::layout::process(b"", key);
-        let mut committed = self.runtime.committed();
+        let process = octoii_siphon_lib::process_path(b"", key);
+        let mut committed = self.runtime.committed().expect("a commit watch");
         let asked = async {
             loop {
                 let snapshot = self.runtime.snapshot().expect("a snapshot");
@@ -378,7 +386,7 @@ impl Calling {
                     .person_requests(&snapshot, &process)
                     .expect("prompts")
                     .into_iter()
-                    .find(|prompt| prompt.id.key.as_ref() == key)
+                    .find(|prompt| prompt.id.key.as_slice() == key)
                 {
                     return prompt.id;
                 }
@@ -408,7 +416,14 @@ impl Calling {
     }
 
     /// Ends the calls' runtime.
+    ///
+    /// # Panics
+    /// The runtime or its shutdown task failed.
     pub async fn close(&self) {
-        self.runtime.close().await;
+        let runtime = self.runtime.clone();
+        tokio::task::spawn_blocking(move || runtime.close())
+            .await
+            .expect("shutdown task finished")
+            .expect("closed");
     }
 }

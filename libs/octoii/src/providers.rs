@@ -10,7 +10,7 @@ use crate::protocol::siphon::{Connects, CredentialKind, ProviderShown};
 use octoii_ai::driver::{Connection, SignInAttempt, SignInOptions};
 use octoii_ai::host::{Credential, Credentials};
 use octoii_ai::models::{Models, Provider};
-use siphon_runtime::Runtime;
+use octoii_siphon_lib::RuntimeHandle;
 
 use crate::Octoii;
 use tokio::sync::{mpsc, oneshot};
@@ -37,7 +37,7 @@ pub enum Refused {
     #[error(transparent)]
     Accounts(#[from] crate::accounts::Error),
     #[error(transparent)]
-    Beak(#[from] beak::Error),
+    Beak(#[from] octoii_siphon_lib::Error),
 }
 
 /// What the task that holds the sign-ins begun is asked.
@@ -116,7 +116,7 @@ fn provider(models: &Models, id: &str) -> Result<Provider, Refused> {
 ///
 /// # Errors
 /// The volume's failure.
-pub(crate) fn shown(runtime: &Runtime, models: &Models, credentials: &dyn Credentials) -> Result<Vec<ProviderShown>, Refused> {
+pub(crate) fn shown(runtime: &RuntimeHandle, models: &Models, credentials: &dyn Credentials) -> Result<Vec<ProviderShown>, Refused> {
     let snapshot = runtime.snapshot()?;
     let accounts = crate::accounts::accounts(&snapshot)?;
     let mut out = Vec::new();

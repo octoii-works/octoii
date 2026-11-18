@@ -2,8 +2,8 @@
 //! threads by project, by parent and by how the person keeps them, annotated with how it runs and how it stands; in
 //! it its inbox, its log and its main process.
 
-use beak::{Directory, layout};
 use bytes::Bytes;
+use octoii_siphon_lib::Directory;
 
 use crate::volume::Snapshot;
 
@@ -54,7 +54,7 @@ pub fn path(id: &str) -> Bytes {
 ///
 /// # Errors
 /// The volume's failure.
-pub(crate) fn directory(snapshot: &Snapshot, id: &str) -> beak::Result<Option<Directory>> {
+pub(crate) fn directory(snapshot: &Snapshot, id: &str) -> octoii_siphon_lib::Result<Option<Directory>> {
     Ok(snapshot
         .stat(&path(id))?
         .and_then(|entry| entry.directory)
@@ -63,7 +63,7 @@ pub(crate) fn directory(snapshot: &Snapshot, id: &str) -> beak::Result<Option<Di
 
 /// Whether removal of the directory is already in progress.
 pub(crate) fn removing(directory: &Directory) -> bool {
-    directory.label(layout::REMOVING_LABEL).is_some_and(|value| value == "true")
+    directory.removing
 }
 
 /// The id of the thread whose directory, or anything in it, is at `path`; none for a path outside every thread.
@@ -77,7 +77,7 @@ pub fn id_of(path: &[u8]) -> Option<&str> {
 /// The thread's main process.
 #[must_use]
 pub fn main(id: &str) -> Bytes {
-    layout::process(&path(id), MAIN_KEY.as_bytes())
+    octoii_siphon_lib::process_path(&path(id), MAIN_KEY.as_bytes())
 }
 
 /// `name` within the thread `id`'s directory.
@@ -96,7 +96,7 @@ pub(crate) fn flag(on: bool) -> Bytes {
 ///
 /// # Errors
 /// The volume's failure or unreadable startup state.
-pub fn stop_turn(snapshot: &Snapshot, changes: &mut siphon_runtime::Changes, id: &str) -> Result<(), super::operations::Error> {
+pub fn stop_turn(snapshot: &Snapshot, changes: &mut octoii_siphon_lib::Batch<'_>, id: &str) -> Result<(), super::operations::Error> {
     if let Some(directory) = snapshot.stat(&path(id))?.and_then(|entry| entry.directory)
         && let Some(start) = super::Start::of(&directory)?
         && matches!(start.state, super::StartState::Pending | super::StartState::Failed { .. })
@@ -109,19 +109,8 @@ pub fn stop_turn(snapshot: &Snapshot, changes: &mut siphon_runtime::Changes, id:
         changes.write(super::start::command_path(id, "0-stop"), serde_json::to_vec(&command)?);
     }
     let main = main(id);
-    let under = beak::Range {
-        prefix: layout::PROCESS_KIND,
-        limit: usize::MAX,
-        ..beak::Range::default()
-    };
-    for child in snapshot.list(&main, &under)?.unwrap_or_default() {
-        let path: Bytes = [&main[..], b"/", &child.name[..]].concat().into();
-        if snapshot
-            .record(&path)?
-            .is_some_and(|record| record.kind.as_ref() == TURN_KIND.as_bytes())
-        {
-            changes.signal(path, beak::Signal::Terminate, Some(Bytes::from_static(b"stopped")));
-        }
+    for path in snapshot.fibers(&main, TURN_KIND.as_bytes())? {
+        changes.signal(path, octoii_siphon_lib::Signal::Terminate, Some(Bytes::from_static(b"stopped")));
     }
     Ok(())
 }

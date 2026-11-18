@@ -8,11 +8,11 @@ use std::time::Duration;
 
 use crate::protocol::Scope;
 use base64::Engine as _;
-use beak::{Range, Snapshot};
 use bytes::Bytes;
+use octoii_siphon_lib::{Batch, Changes, RuntimeHandle};
+use octoii_siphon_lib::{Range, Snapshot};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use siphon_runtime::{Changes, Runtime};
 
 /// The kinds of the directories of sessions and of links.
 const SESSION_KIND: &str = "octoii.session";
@@ -98,8 +98,8 @@ pub enum Refused {
     Json(#[from] serde_json::Error),
 }
 
-impl From<beak::Error> for Refused {
-    fn from(error: beak::Error) -> Self {
+impl From<octoii_siphon_lib::Error> for Refused {
+    fn from(error: octoii_siphon_lib::Error) -> Self {
         Self::Volume(error.to_string())
     }
 }
@@ -107,7 +107,7 @@ impl From<beak::Error> for Refused {
 /// The access, on Octoii's runtime.
 #[derive(Debug, Clone)]
 pub struct Access {
-    runtime: Runtime,
+    runtime: RuntimeHandle,
 }
 
 /// The SHA-256 of `secret`, in hex.
@@ -165,12 +165,12 @@ fn millis(lasts: Duration) -> i64 {
 
 impl Access {
     #[must_use]
-    pub(crate) fn new(runtime: Runtime) -> Self {
+    pub(crate) fn new(runtime: RuntimeHandle) -> Self {
         Self { runtime }
     }
 
     /// The directory of `kind` made with `changes`, keeping `kept`: its id, and its credential.
-    fn made(&self, changes: &mut Changes, kind: &str, kept: &mut Kept) -> Result<(String, String), Refused> {
+    fn made(&self, changes: &mut Batch<'_>, kind: &str, kept: &mut Kept) -> Result<(String, String), Refused> {
         let id = self.runtime.new_id()?;
         let secret = secret()?;
         kept.digest = digest(&secret);
@@ -188,7 +188,7 @@ impl Access {
     /// # Errors
     /// The volume's failure.
     pub async fn link(&self, label: Option<String>, scopes: Vec<Scope>, lasts: Duration) -> Result<Made, Refused> {
-        let now = self.runtime.now_ms();
+        let now = self.runtime.now_ms()?;
         let mut kept = Kept {
             digest: String::new(),
             scopes,
@@ -207,8 +207,8 @@ impl Access {
     }
 
     /// A session with `scopes`, labelled `label`, its client holding it as `holder` — made with `changes`.
-    fn session(&self, changes: &mut Changes, scopes: Vec<Scope>, label: Option<String>, holder: Holder) -> Result<Made, Refused> {
-        let now = self.runtime.now_ms();
+    fn session(&self, changes: &mut Batch<'_>, scopes: Vec<Scope>, label: Option<String>, holder: Holder) -> Result<Made, Refused> {
+        let now = self.runtime.now_ms()?;
         let mut kept = Kept {
             digest: String::new(),
             scopes,
@@ -243,8 +243,8 @@ impl Access {
     pub async fn redeem(&self, credential: &str, holder: Holder) -> Result<Made, Refused> {
         let (id, secret) = credential.split_once('.').ok_or(Refused::NoSuchLink)?;
         let link = path(LINK_KIND, id);
-        let kept = kept(&self.runtime.snapshot()?, &link)?.ok_or(Refused::NoSuchLink)?;
-        if !same(&kept.digest, &digest(secret)) || kept.expires_at <= self.runtime.now_ms() {
+        let kept = kept(&*self.runtime.snapshot()?, &link)?.ok_or(Refused::NoSuchLink)?;
+        if !same(&kept.digest, &digest(secret)) || kept.expires_at <= self.runtime.now_ms()? {
             return Err(Refused::NoSuchLink);
         }
         let mut changes = Changes::new();
@@ -263,10 +263,10 @@ impl Access {
         let Some((id, secret)) = credential.split_once('.') else {
             return Ok(None);
         };
-        let Some(kept) = kept(&self.runtime.snapshot()?, &path(SESSION_KIND, id))? else {
+        let Some(kept) = kept(&*self.runtime.snapshot()?, &path(SESSION_KIND, id))? else {
             return Ok(None);
         };
-        let live = same(&kept.digest, &digest(secret)) && kept.expires_at > self.runtime.now_ms();
+        let live = same(&kept.digest, &digest(secret)) && kept.expires_at > self.runtime.now_ms()?;
         Ok(live.then(|| shown(id, &kept)))
     }
 
@@ -275,7 +275,7 @@ impl Access {
     /// # Errors
     /// The volume's failure.
     pub fn list(&self) -> Result<(Vec<AccessEntry>, Vec<AccessEntry>), Refused> {
-        let now = self.runtime.now_ms();
+        let now = self.runtime.now_ms()?;
         let live = |all: Vec<(String, Kept)>| {
             all.into_iter()
                 .filter(|(_, kept)| kept.expires_at > now)

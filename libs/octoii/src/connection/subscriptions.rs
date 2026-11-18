@@ -8,8 +8,8 @@ use std::collections::{BTreeSet, HashMap};
 use crate::protocol::siphon::{Settings, SiphonEvent, SiphonTopic, request_token};
 use crate::threads::{Listed, Status, log, thread};
 use bytes::Bytes;
+use octoii_siphon_lib::StreamEvent;
 use serde_json::json;
-use siphon_runtime::StreamEvent;
 
 use super::journal::{Followed, Since, is_at_or_under};
 use crate::Octoii;
@@ -40,9 +40,13 @@ pub(crate) async fn told(subscription: Subscription, topic: SiphonTopic) -> Resu
 /// closing, ends it.
 async fn thread_told(subscription: &Subscription, thread: &str, cursor: &mut Option<log::Cursor>) -> Result<(), Full> {
     let (siphon, sink) = (&subscription.caller.siphon, &subscription.sink);
-    let mut committed = siphon.runtime.committed();
-    let mut streams = siphon.runtime.follow(thread);
-    let Ok(mut followed) = siphon.runtime.snapshot().map(|snapshot| Followed::at(&snapshot)) else {
+    let Ok(mut committed) = siphon.runtime.committed() else {
+        return Ok(());
+    };
+    let Ok(mut streams) = siphon.runtime.follow(thread) else {
+        return Ok(());
+    };
+    let Ok(mut followed) = siphon.runtime.snapshot().and_then(|snapshot| Followed::at(&snapshot)) else {
         return Ok(());
     };
     let own = thread::path(thread);
@@ -82,7 +86,7 @@ async fn thread_told(subscription: &Subscription, thread: &str, cursor: &mut Opt
                     }
                 }
                 event = streams.next() => {
-                    let Some(event) = event else { return Ok(()) };
+                    let Ok(Some(event)) = event else { return Ok(()) };
                     let subscription = sink.id().to_owned();
                     let event = match event {
                         StreamEvent::Reset => SiphonEvent::StreamsReset { subscription },
@@ -141,13 +145,16 @@ fn entries_told(subscription: &Subscription, thread: &str, cursor: &mut Option<l
 /// it deleted gone — all of them read again where the journal no longer holds every commit since.
 async fn threads_told(subscription: &Subscription) -> Result<(), Full> {
     let (siphon, sink) = (&subscription.caller.siphon, &subscription.sink);
-    let mut committed = siphon.runtime.committed();
+    let Ok(mut committed) = siphon.runtime.committed() else {
+        return Ok(());
+    };
     let (mut followed, all) = {
         let Ok(snapshot) = siphon.runtime.snapshot() else { return Ok(()) };
         let Ok(all) = siphon.threads.list_at(&snapshot) else {
             return Ok(());
         };
-        (Followed::at(&snapshot), all)
+        let Ok(followed) = Followed::at(&snapshot) else { return Ok(()) };
+        (followed, all)
     };
     let mut shown: HashMap<String, Listed> = all.iter().map(|listed| (listed.id.clone(), listed.clone())).collect();
     sink.offer(&SiphonEvent::Threads {
@@ -213,8 +220,10 @@ fn threads_changed(
 /// changed either.
 async fn settings_told(subscription: &Subscription) -> Result<(), Full> {
     let (context, sink) = (&subscription.caller, &subscription.sink);
-    let mut committed = context.siphon.runtime.committed();
-    let Ok(mut followed) = context.siphon.runtime.snapshot().map(|snapshot| Followed::at(&snapshot)) else {
+    let Ok(mut committed) = context.siphon.runtime.committed() else {
+        return Ok(());
+    };
+    let Ok(mut followed) = context.siphon.runtime.snapshot().and_then(|snapshot| Followed::at(&snapshot)) else {
         return Ok(());
     };
     let Ok(device_file) = crate::settings::device_file(&context.session) else {

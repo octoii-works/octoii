@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use octoii::machine::Host;
-use octoii::testing::Beak;
+use octoii::testing::Runtime;
 use siphon_terminals::{Error, Event, Running, Size, Terminals};
 
 const SIZE: Size = Size { rows: 24, cols: 80 };
@@ -25,8 +25,8 @@ async fn until(events: &mut tokio::sync::broadcast::Receiver<Event>, done: impl 
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_terminal_runs_the_person_s_shell_in_its_folder_numbered_in_its_thread_till_its_shell_ends() {
-    let beak = Beak::new().expect("Beak");
-    let commands = octoii::testing::commands(&beak);
+    let fixture = Runtime::memory().expect("Runtime");
+    let commands = octoii::testing::commands(&fixture);
     let folder = tempfile::tempdir().expect("a folder");
     let cwd = folder.path().canonicalize().expect("its real path");
     let host = Host {
@@ -102,8 +102,8 @@ async fn a_terminal_runs_the_person_s_shell_in_its_folder_numbered_in_its_thread
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_command_line_the_model_runs_tells_its_end_with_its_screen_and_one_closed_tells_none() {
-    let beak = Beak::new().expect("Beak");
-    let commands = octoii::testing::commands(&beak);
+    let fixture = Runtime::memory().expect("Runtime");
+    let commands = octoii::testing::commands(&fixture);
     let folder = tempfile::tempdir().expect("a folder");
     let cwd = folder.path().canonicalize().expect("its real path");
     let host = Host {
@@ -163,8 +163,8 @@ async fn a_command_line_the_model_runs_tells_its_end_with_its_screen_and_one_clo
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_terminal_closed_ends_what_it_runs_though_it_hangs_up_on_nothing() {
-    let beak = Beak::new().expect("Beak");
-    let commands = octoii::testing::commands(&beak);
+    let fixture = Runtime::memory().expect("Runtime");
+    let commands = octoii::testing::commands(&fixture);
     let folder = tempfile::tempdir().expect("a folder");
     let cwd = folder.path().canonicalize().expect("its real path");
     let host = Host {

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check workspace dependency boundaries using Cargo's resolved manifest metadata."""
+"""Check Octoii's dependency layers and the public runtime boundary."""
 
 import json
 from pathlib import Path
@@ -8,84 +8,60 @@ import sys
 
 ROOT = Path(__file__).resolve().parent.parent
 FOUNDATION = {"siphon-script", "siphon-shell", "siphon-text", "siphon-image"}
+PRIVATE = {"beak", "siphon-ffi", "siphon-runtime"}
+REGISTRY = "registry+https://github.com/rust-lang/crates.io-index"
 
 
-def layer(path):
-    relative = path.relative_to(ROOT)
-    if relative.parts[:2] == ("siphon", "beak"):
-        return "kernel"
-    if relative.parts[:2] == ("siphon", "crates"):
-        return "core"
-    if relative.parts[0] == "libs":
-        return "core"
-    if relative.parts[0] in {"extensions", "apps"}:
-        return relative.parts[0]
-    raise ValueError(f"Unclassified workspace package: {relative}")
+def layer(package):
+    path = Path(package["manifest_path"]).resolve().relative_to(ROOT)
+    if path.parts[0] in {"libs", "extensions", "apps"}:
+        return path.parts[0]
+    raise ValueError(f"Unclassified workspace package: {path}")
 
 
 def allowed(source, target):
-    name, source_layer = source
-    dependency, target_layer = target
+    source_layer, target_layer = layer(source), layer(target)
     if source_layer == "apps":
         return target_layer != "apps"
-    if source_layer == "kernel":
-        return target_layer == "kernel"
     if source_layer == "extensions":
-        return target_layer == "extensions" or dependency == "octoii"
-    if name in FOUNDATION:
-        return dependency in FOUNDATION
-    if name == "siphon-ffi":
-        return dependency in {"beak", "siphon-runtime"}
-    if name == "siphon-runtime":
-        return dependency == "beak"
-    if name == "octoii":
-        return target_layer in {"core", "kernel"}
-    raise ValueError(f"Core package needs a dependency rule: {name}")
+        return target_layer == "extensions" or target["name"] == "octoii"
+    if source["name"] in FOUNDATION:
+        return target["name"] in FOUNDATION
+    if source["name"] == "octoii":
+        return target["name"] in FOUNDATION
+    raise ValueError(f"Product library needs a dependency rule: {source['name']}")
 
 
 def main():
-    packages_by_path = {}
-    for manifest in [ROOT / "Cargo.toml", ROOT / "siphon/Cargo.toml", ROOT / "siphon/beak/Cargo.toml"]:
-        result = subprocess.run(
-            ["cargo", "metadata", "--manifest-path", str(manifest), "--format-version", "1", "--no-deps", "--locked", "--offline"],
-            cwd=ROOT, check=True, capture_output=True, text=True,
-        )
-        metadata = json.loads(result.stdout)
-        members = set(metadata["workspace_members"])
-        for package in metadata["packages"]:
-            if package["id"] in members:
-                packages_by_path[Path(package["manifest_path"]).resolve()] = package
-    packages = list(packages_by_path.values())
-    identities = {}
-    for package in packages:
-        path = Path(package["manifest_path"]).resolve().parent
-        identity = (package["name"], layer(path))
-        if identity[1] == "core" and identity[0] not in FOUNDATION | {"octoii", "siphon-runtime", "siphon-ffi"}:
-            raise ValueError(f"Core package needs a dependency rule: {identity[0]}")
-        identities[path] = identity
+    result = subprocess.run(
+        ["cargo", "metadata", "--locked", "--offline", "--format-version", "1"],
+        cwd=ROOT, check=True, capture_output=True, text=True,
+    )
+    metadata = json.loads(result.stdout)
+    members = set(metadata["workspace_members"])
+    packages = [package for package in metadata["packages"] if package["id"] in members]
+    local = {Path(package["manifest_path"]).resolve().parent: package for package in packages}
     violations = []
+    for package in metadata["packages"]:
+        if package["name"] in PRIVATE or package["name"].startswith("beak-"):
+            violations.append(f"Private source present in the resolved graph: {package['name']}")
     for package in packages:
-        source = identities[Path(package["manifest_path"]).resolve().parent]
-        private_source = Path(package["manifest_path"]).resolve().is_relative_to(ROOT / "siphon")
-        # Cargo includes normal, dev, build, optional and target-specific declarations here.
+        source = package["name"]
+        # Includes build, development, optional and target-specific dependencies.
         for dependency in package["dependencies"]:
-            if dependency["name"] == "octoii-ai":
-                if private_source or dependency.get("source") != "registry+https://github.com/rust-lang/crates.io-index":
-                    violations.append(f"{source[0]} -> octoii-ai (only product crates may use the crates.io package)")
-                continue
-            if "path" not in dependency:
-                continue
-            path = Path(dependency["path"]).resolve()
-            target = identities.get(path)
-            escapes_private = private_source and not path.is_relative_to(ROOT / "siphon")
-            if target is None or escapes_private or not allowed(source, target):
-                target_name = target[0] if target else str(path)
-                kind = dependency["kind"] or "normal"
-                condition = dependency["target"] or "all targets"
-                violations.append(f"{source[0]} -> {target_name} ({kind}, {condition})")
+            name = dependency["name"]
+            if name == "octoii-siphon-lib":
+                if source != "octoii" or dependency.get("source") != REGISTRY:
+                    violations.append(f"{source} -> {name} (only Octoii may use the published SDK)")
+            if name == "octoii-ai" and dependency.get("source") != REGISTRY:
+                violations.append(f"{source} -> {name} (use the published AI package)")
+            if "path" in dependency:
+                target = local.get(Path(dependency["path"]).resolve())
+                if target is None or not allowed(package, target):
+                    violations.append(f"{source} -> {name} ({dependency['kind'] or 'normal'})")
     if violations:
         sys.exit("Forbidden Rust dependencies:\n" + "\n".join(violations))
-    print(f"Rust dependency boundaries passed ({len(packages)} packages).")
+    print(f"Rust dependency boundaries passed ({len(packages)} product packages).")
 
 
 if __name__ == "__main__":

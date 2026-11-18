@@ -5,10 +5,10 @@
 
 use std::fmt::Write as _;
 
-use beak::Snapshot;
 use bytes::Bytes;
+use octoii_siphon_lib::Batch;
+use octoii_siphon_lib::Snapshot;
 use sha2::{Digest, Sha256};
-use siphon_runtime::Changes;
 
 use crate::threads::thread;
 
@@ -62,7 +62,7 @@ pub fn path(id: &str, reference: &str) -> Option<Bytes> {
 ///
 /// # Errors
 /// The volume's failure, reading what is kept.
-pub(crate) fn keep(snapshot: &Snapshot, changes: &mut Changes, id: &str, bytes: Bytes) -> beak::Result<String> {
+pub(crate) fn keep(snapshot: &Snapshot, changes: &mut Batch<'_>, id: &str, bytes: Bytes) -> octoii_siphon_lib::Result<String> {
     let reference = reference_of(&bytes);
     let at = path(id, &reference).unwrap_or_default();
     if snapshot.stat(&at)?.is_none() {
@@ -81,7 +81,7 @@ pub enum Refused {
     #[error("the image: {0}")]
     Image(#[from] siphon_image::Error),
     #[error(transparent)]
-    Beak(#[from] beak::Error),
+    Beak(#[from] octoii_siphon_lib::Error),
 }
 
 /// Keeps the image `bytes`, named `name`, in the thread `id` with `changes`, fitted to what every model reads: what
@@ -91,7 +91,7 @@ pub enum Refused {
 /// An image that cannot be read, or fits no bounds; the volume's failure, reading what is kept.
 pub(crate) fn keep_image(
     snapshot: &Snapshot,
-    changes: &mut Changes,
+    changes: &mut Batch<'_>,
     id: &str,
     bytes: &[u8],
     name: Option<&str>,
@@ -113,7 +113,7 @@ pub(crate) fn keep_image(
 /// `TooLarge`; an image that cannot be read; the volume's failure, reading what is kept.
 pub(crate) fn keep_given(
     snapshot: &Snapshot,
-    changes: &mut Changes,
+    changes: &mut Batch<'_>,
     id: &str,
     bytes: &[u8],
     media_type: &str,
@@ -137,16 +137,16 @@ pub(crate) fn keep_given(
 ///
 /// # Errors
 /// The volume's failure.
-pub fn read(snapshot: &Snapshot, id: &str, reference: &str) -> beak::Result<Option<Bytes>> {
+pub fn read(snapshot: &Snapshot, id: &str, reference: &str) -> octoii_siphon_lib::Result<Option<Bytes>> {
     let Some(at) = path(id, reference) else { return Ok(None) };
-    snapshot.read(&at, 0, u64::MAX)
+    snapshot.read_range(&at, 0, u64::MAX)
 }
 
 /// The files of the thread `thread`, as a model request of its conversation reads them: each by its reference, from
 /// the volume as it is.
 #[derive(Debug, Clone)]
 pub struct OfThread {
-    pub runtime: siphon_runtime::Runtime,
+    pub runtime: octoii_siphon_lib::RuntimeHandle,
     pub thread: String,
 }
 

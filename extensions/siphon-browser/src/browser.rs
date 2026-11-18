@@ -625,7 +625,7 @@ impl Owner {
 
     async fn open(&mut self, thread: String, url: Option<String>, size: Size) -> Result<String, BrowserError> {
         let cdp = self.cdp().await?;
-        let id = self.host.commands.new_id(now_ms())?;
+        let id = self.host.commands.new_id()?;
         self.pages.push(Page {
             id: id.clone(),
             thread: thread.clone(),
@@ -988,7 +988,7 @@ impl Owner {
             && !self.pages.iter().any(|page| page.target.as_deref() == Some(target.as_str()))
             && let Some((thread, size)) = opened_by
         {
-            let Ok(id) = self.host.commands.new_id(now_ms()) else { return };
+            let Ok(id) = self.host.commands.new_id() else { return };
             self.pages.push(Page {
                 id,
                 thread,

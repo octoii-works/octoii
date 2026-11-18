@@ -8,11 +8,10 @@ use crate::machine::Host;
 use crate::machine::paths::Base;
 use crate::tools::permissions::Writes;
 use crate::tools::{Context, EditTool, Effect, GlobTool, GrepTool, ReadTool, ShellTool, Tools, WriteTool};
-use beak::Beak;
 use bytes::Bytes;
 use octoii_ai::vocabulary::InputContent;
+use octoii_siphon_lib::{Changes, Runtime};
 use serde_json::json;
-use siphon_runtime::{Changes, Options, Runtime};
 use tokio_util::sync::CancellationToken;
 
 fn tools() -> Tools {
@@ -26,8 +25,8 @@ fn tools() -> Tools {
 }
 
 /// A context working in a fresh folder for the thread `t1`, writing as `writes` says; the folder held.
-async fn context(beak: &Beak, writes: Writes) -> (Context, tempfile::TempDir) {
-    let runtime = Runtime::builder().start(beak, Options::default()).expect("started");
+async fn context(writes: Writes) -> (Runtime, Context, tempfile::TempDir) {
+    let runtime = octoii_siphon_lib::Runtime::memory().expect("started");
     let mut changes = Changes::new();
     changes.mkdir(crate::threads::thread::path("t1"));
     runtime.commit(changes).await.expect("a thread's directory");
@@ -40,12 +39,11 @@ async fn context(beak: &Beak, writes: Writes) -> (Context, tempfile::TempDir) {
         base: Base { workspace, home: None },
         writes,
         places: Vec::new(),
-        kernel: runtime.kernel().clone(),
         host: Host::default(),
-        runtime,
+        runtime: runtime.runtime_handle(),
         cancelled: CancellationToken::new(),
     };
-    (context, folder)
+    (runtime, context, folder)
 }
 
 async fn exec(tools: &Tools, context: &Context, name: &str, arguments: serde_json::Value) -> Result<String, String> {
@@ -64,8 +62,7 @@ async fn exec(tools: &Tools, context: &Context, name: &str, arguments: serde_jso
 
 #[tokio::test(flavor = "multi_thread")]
 async fn files_are_written_edited_read_a_page_at_a_time_and_found() {
-    let beak = Beak::new().expect("Beak");
-    let (context, _folder) = context(&beak, Writes::Workspace).await;
+    let (_owner, context, _folder) = context(Writes::Workspace).await;
     let tools = tools();
     let lines = "line 1\nline 2\nline 3\nline 4\nline 5\n";
     assert_eq!(
@@ -119,8 +116,7 @@ async fn files_are_written_edited_read_a_page_at_a_time_and_found() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn an_image_read_is_shown_as_an_image_kept_in_its_thread() {
-    let beak = Beak::new().expect("Beak");
-    let (context, _folder) = context(&beak, Writes::Workspace).await;
+    let (_owner, context, _folder) = context(Writes::Workspace).await;
     let mut png = Vec::new();
     image::RgbImage::from_pixel(64, 32, image::Rgb([200, 10, 10]))
         .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
@@ -142,8 +138,7 @@ async fn an_image_read_is_shown_as_an_image_kept_in_its_thread() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_command_line_runs_in_the_workspace_held_there_and_tells_how_it_ended() {
-    let beak = Beak::new().expect("Beak");
-    let (context, _folder) = context(&beak, Writes::Workspace).await;
+    let (_owner, context, _folder) = context(Writes::Workspace).await;
     let tools = tools();
     let ran = exec(
         &tools,
@@ -159,7 +154,7 @@ async fn a_command_line_runs_in_the_workspace_held_there_and_tells_how_it_ended(
         .await
         .expect("ran");
     assert_eq!(slow, "<system-reminder>its 1 s ran out; it was ended</system-reminder>");
-    if beak::machine_confines() {
+    if octoii_siphon_lib::machine_confines() {
         let outside = tempfile::tempdir().expect("a folder");
         let target = outside.path().canonicalize().expect("its real path").join("x");
         let held = exec(
@@ -191,8 +186,7 @@ async fn a_command_line_runs_in_the_workspace_held_there_and_tells_how_it_ended(
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_call_writes_the_places_it_is_given_and_a_command_its_scratchpad_as_its_tmpdir() {
-    let beak = Beak::new().expect("Beak");
-    let (mut context, _folder) = context(&beak, Writes::Workspace).await;
+    let (_owner, mut context, _folder) = context(Writes::Workspace).await;
     let kept = tempfile::tempdir().expect("a folder");
     let kept = kept.path().canonicalize().expect("its real path");
     context.host.memory = Some(kept.join("memory"));
@@ -241,8 +235,7 @@ fn the_tools_are_told_with_their_schemas_and_a_call_s_arguments_checked_against_
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_command_a_write_and_a_read_tell_what_they_did_typed_beside_what_the_model_reads() {
-    let beak = Beak::new().expect("Beak");
-    let (context, _folder) = context(&beak, Writes::Workspace).await;
+    let (_owner, context, _folder) = context(Writes::Workspace).await;
     let structured_content = |name: &'static str, arguments: serde_json::Value| {
         let context = context.clone();
         async move {
@@ -278,8 +271,7 @@ async fn a_command_a_write_and_a_read_tell_what_they_did_typed_beside_what_the_m
 
 #[tokio::test(flavor = "multi_thread")]
 async fn search_data_preserves_context_clipping_binary_counts_and_pagination() {
-    let beak = Beak::new().expect("Beak");
-    let (context, _folder) = context(&beak, Writes::Workspace).await;
+    let (owner, context, _folder) = context(Writes::Workspace).await;
     let tools = tools();
     let odd_path = "a:3: name.txt";
     std::fs::write(
@@ -323,13 +315,12 @@ async fn search_data_preserves_context_clipping_binary_counts_and_pagination() {
         .expect("data");
     assert_eq!(last["files"][0]["lines"][0]["number"], 251);
     assert!(last["next"].is_null());
-    context.runtime.close().await;
+    owner.close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn glob_data_pages_without_losing_or_repeating_paths() {
-    let beak = Beak::new().expect("Beak");
-    let (context, _folder) = context(&beak, Writes::Workspace).await;
+    let (owner, context, _folder) = context(Writes::Workspace).await;
     for number in 0..201 {
         std::fs::write(context.base.workspace.join(format!("{number}.txt")), "").expect("file");
     }
@@ -351,5 +342,5 @@ async fn glob_data_pages_without_losing_or_repeating_paths() {
     assert_eq!(last["files"].as_array().expect("paths").len(), 1);
     assert!(last["next"].is_null());
     assert!(!first["files"].as_array().expect("paths").contains(&last["files"][0]));
-    context.runtime.close().await;
+    owner.close().expect("closed");
 }

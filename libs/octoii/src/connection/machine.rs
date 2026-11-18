@@ -42,9 +42,9 @@ pub(super) fn list(siphon: &Octoii, asked: &ListFolder) -> Result<FolderPage, Er
         .map(|entry| FolderEntry {
             name: entry.name,
             kind: match entry.kind {
-                beak::FileKind::Directory => FileKind::Directory,
-                beak::FileKind::File => FileKind::File,
-                beak::FileKind::Link => FileKind::Link,
+                octoii_siphon_lib::FileKind::Directory => FileKind::Directory,
+                octoii_siphon_lib::FileKind::File => FileKind::File,
+                octoii_siphon_lib::FileKind::Link => FileKind::Link,
             },
             ignored: entry.ignored,
         })

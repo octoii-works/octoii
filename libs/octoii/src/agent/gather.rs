@@ -13,8 +13,8 @@ use crate::tools::Tools;
 use crate::tools::projects::Place;
 use octoii_ai::models::Models;
 use octoii_ai::vocabulary::Tool;
+use octoii_siphon_lib::{Asked, Request, RuntimeHandle, Unanswered};
 use serde::{Deserialize, Serialize};
-use siphon_runtime::{Asked, Request, Runtime, Unanswered};
 
 use crate::agent::told::Told;
 
@@ -141,7 +141,7 @@ fn runs(model: &octoii_ai::catalogue::Model, native: &Tool) -> bool {
 ///
 /// # Errors
 /// The volume's failure; a thread's settings not as Octoii writes them.
-pub async fn gathered(sources: &Sources, runtime: &Runtime, id: &str) -> anyhow::Result<Told> {
+pub async fn gathered(sources: &Sources, runtime: &RuntimeHandle, id: &str) -> anyhow::Result<Told> {
     let snapshot = runtime.snapshot()?;
     let directory = snapshot
         .stat(&thread::path(id))?

@@ -7,8 +7,8 @@ use crate::threads::inbox::Joins;
 use crate::threads::log::Cursor;
 use crate::threads::{Config, ConfigChange, Entry, Listed, MarksChange, Status};
 use octoii_ai::vocabulary::InputContent;
+use octoii_siphon_lib::RequestId;
 use serde::{Deserialize, Serialize};
-use siphon_runtime::RequestId;
 use ts_rs::TS;
 
 use crate::protocol::{Nothing, Scope};
@@ -167,9 +167,9 @@ pub(crate) fn request_token(id: &RequestId) -> String {
 pub(crate) fn request_id(token: &str) -> Option<RequestId> {
     let (process, started, key, created_seq): (Vec<u8>, u64, Vec<u8>, u64) = serde_json::from_str(token).ok()?;
     Some(RequestId {
-        process: process.into(),
+        process,
         started,
-        key: key.into(),
+        key,
         created_seq,
     })
 }
@@ -504,9 +504,9 @@ mod tests {
     #[test]
     fn request_tokens_preserve_bytes_and_full_sequence_numbers() {
         let id = RequestId {
-            process: bytes::Bytes::from_static(b"/threads/a/\xff"),
+            process: b"/threads/a/\xff".to_vec(),
             started: u64::MAX - 2,
-            key: bytes::Bytes::from_static(b"\xfe\0"),
+            key: b"\xfe\0".to_vec(),
             created_seq: u64::MAX,
         };
         let encoded = serde_json::to_string(&request_token(&id)).unwrap();

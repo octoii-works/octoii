@@ -20,8 +20,8 @@ use crate::tools::{Calls, Setting, State, Tools};
 use octoii_ai::vocabulary::{
     Failure, FailureKind, FunctionCallOutput, Incomplete, InputContent, Item, ItemStatus, Response, ResponseStatus,
 };
+use octoii_siphon_lib::{Answer, Ending, Fiber, Retries, Run, Wait};
 use serde::{Deserialize, Serialize};
-use siphon_runtime::{Answer, Ending, Fiber, Retries, Run, Wait};
 
 use crate::agent::compaction;
 use crate::agent::model::ModelRequest;
@@ -91,11 +91,13 @@ pub type Ended = Option<Failure>;
 
 impl Fiber for TurnFiber {
     const KIND: &'static str = crate::threads::thread::TURN_KIND;
-    const STOP_HANDLER: bool = true;
-    const RETRIES: Retries = Retries {
-        count: 3,
-        delay_min_ms: 1_000,
-        delay_max_ms: 10_000,
+    const OPTIONS: octoii_siphon_lib::Options = octoii_siphon_lib::Options {
+        stop_handler: true,
+        retries: Retries {
+            count: 3,
+            delay_min_ms: 1_000,
+            delay_max_ms: 10_000,
+        },
     };
     type Input = TurnInput;
     type Checkpoint = TurnState;
@@ -118,7 +120,7 @@ impl Fiber for TurnFiber {
 /// Has the thread's window compacted — its compaction started where it is not running — and sleeps on it: not the
 /// turn's own process, it is waited on by its record's changes.
 fn compact(run: &mut Run<'_>, id: &str, attempt: u32) -> anyhow::Result<Ending<TurnState, Ended>> {
-    let mut started = siphon_runtime::Changes::new();
+    let mut started = octoii_siphon_lib::Changes::new();
     compaction::start(run.snapshot(), &mut started, id)?;
     run.changes.extend(started);
     Ok(Ending::Wait(
@@ -129,18 +131,18 @@ fn compact(run: &mut Run<'_>, id: &str, attempt: u32) -> anyhow::Result<Ending<T
 
 /// The thread's compaction ended: the model asked on the window it began; the turn fails as it failed.
 fn compaction_ended(run: &Run<'_>, id: &str, attempt: u32) -> anyhow::Result<Ending<TurnState, Ended>> {
-    let record = run.snapshot().record(&compaction::path(id))?;
+    let record = run.snapshot().fiber(&compaction::path(id))?;
     match record.and_then(|record| record.outcome) {
         None => Ok(Ending::Wait(
             TurnState::Compacting { attempt },
             Wait::new().change(compaction::path(id)),
         )),
-        Some(beak::Outcome::Completed(_)) => Ok(Ending::Next(TurnState::Asking { attempt, compacted: true })),
-        Some(beak::Outcome::Failed { error, .. }) => Ok(Ending::Fail(format!(
+        Some(octoii_siphon_lib::Outcome::Completed(_)) => Ok(Ending::Next(TurnState::Asking { attempt, compacted: true })),
+        Some(octoii_siphon_lib::Outcome::Failed { error, .. }) => Ok(Ending::Fail(format!(
             "its window could not be compacted: {}",
             String::from_utf8_lossy(&error.unwrap_or_default())
         ))),
-        Some(beak::Outcome::Stopped { .. }) => Ok(Ending::Fail("its window's compaction was stopped".into())),
+        Some(octoii_siphon_lib::Outcome::Stopped { .. }) => Ok(Ending::Fail("its window's compaction was stopped".into())),
     }
 }
 
@@ -200,7 +202,7 @@ impl TurnFiber {
             };
             return Ok(Ending::Wait(state, wait));
         };
-        run.take_mail(key);
+        run.take_mail(key)?;
         let response = match answer {
             Answer::Given(response) => response,
             Answer::Interrupted => return Ok(Ending::Next(TurnState::Asking { attempt, compacted })),
@@ -280,7 +282,7 @@ impl TurnFiber {
             base: &base,
             project: Some(&project),
             places: &places,
-            confines: beak::machine_confines(),
+            confines: octoii_siphon_lib::machine_confines(),
         };
         let wait = calls.advance(run, &setting)?;
         let mut writer = Writer::open(run.snapshot(), &input.thread)?;
@@ -311,7 +313,7 @@ impl TurnFiber {
                     let wait = Wait::new().mail(key.clone());
                     return Ok(Ending::Wait(TurnState::Asked { key, attempt, compacted }, wait));
                 };
-                run.take_mail(&key);
+                run.take_mail(&key)?;
                 let Answer::Given(response) = answer else {
                     return Ok(Ending::Stopped(None));
                 };
@@ -354,7 +356,7 @@ impl TurnFiber {
                     base: &base,
                     project: None,
                     places: &[],
-                    confines: beak::machine_confines(),
+                    confines: octoii_siphon_lib::machine_confines(),
                 };
                 let wait = calls.stop(run, &setting)?;
                 let appended = append_results(run, &mut writer, &input.thread, &calls, appended)?;
@@ -369,7 +371,7 @@ impl TurnFiber {
 
 /// Each call `response` made — cut off as it was written or not — keyed by an id made now, in the order the model made
 /// them.
-fn keyed(run: &Run<'_>, response: &Response) -> beak::Result<Vec<CallKey>> {
+fn keyed(run: &Run<'_>, response: &Response) -> octoii_siphon_lib::Result<Vec<CallKey>> {
     let mut keys = Vec::new();
     for item in &response.output {
         let Item::FunctionCall(call) = item else { continue };
@@ -529,7 +531,7 @@ fn keep_used_up(run: &mut Run<'_>, response: &Response) -> anyhow::Result<()> {
         reset_at_ms,
         window_minutes: failure.window_minutes,
     };
-    let mut kept = siphon_runtime::Changes::new();
+    let mut kept = octoii_siphon_lib::Changes::new();
     crate::accounts::keep_used_up(run.snapshot(), &mut kept, crate::accounts::provider_of(&response.model), used_up)?;
     run.changes.extend(kept);
     Ok(())

@@ -2,6 +2,7 @@
 //! the model is told at once cut to its head and its newest tail, the whole kept in its thread's `outputs/<call>.txt`,
 //! read back through the threads view where the host exposes it.
 
+use octoii_siphon_lib::Batch;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -10,7 +11,7 @@ use crate::machine::paths::Base;
 use crate::threads::thread;
 use bytes::Bytes;
 use octoii_ai::vocabulary::InputContent;
-use siphon_runtime::{Asked, Changes, Unanswered};
+use octoii_siphon_lib::{Asked, Unanswered};
 
 use crate::tools::requests::Exec;
 use crate::tools::told::Told;
@@ -27,7 +28,7 @@ pub async fn answer_exec(tools: &Tools, host: &Host, asked: Asked<Exec>) -> Resu
     let exec = asked.payload;
     let context = Context {
         thread: exec.thread,
-        process: asked.id.process,
+        process: asked.id.process.into(),
         call: exec.call,
         base: Base {
             workspace: PathBuf::from(&exec.workspace),
@@ -35,7 +36,6 @@ pub async fn answer_exec(tools: &Tools, host: &Host, asked: Asked<Exec>) -> Resu
         },
         writes: exec.writes,
         places: exec.places,
-        kernel: asked.runtime.kernel().clone(),
         host: host.clone(),
         runtime: asked.runtime,
         cancelled: asked.cancelled,
@@ -49,7 +49,7 @@ pub async fn answer_exec(tools: &Tools, host: &Host, asked: Asked<Exec>) -> Resu
 /// `given` as the model is told it: its text, past `TEXT_CHARS_MAX`, cut to its head and its newest tail, the whole kept
 /// in its thread's outputs and named.
 pub(super) fn bounded(
-    changes: &mut Changes,
+    changes: &mut Batch<'_>,
     thread: &str,
     call: &str,
     threads: Option<&Path>,
@@ -91,7 +91,7 @@ pub(super) fn bounded(
 }
 
 /// Keeps `whole` with the call's result: where the model reads it through the threads view, where the host exposes one.
-fn keep(changes: &mut Changes, thread: &str, call: &str, threads: Option<&Path>, whole: Bytes) -> Option<String> {
+fn keep(changes: &mut Batch<'_>, thread: &str, call: &str, threads: Option<&Path>, whole: Bytes) -> Option<String> {
     let outputs = thread::within(thread, "outputs");
     let file = format!("{call}.txt");
     changes

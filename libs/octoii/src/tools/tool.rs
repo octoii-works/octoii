@@ -10,12 +10,11 @@ use std::sync::Arc;
 
 use crate::machine::paths::Base;
 use crate::machine::{Host, Machine};
-use beak::Kernel;
 use bytes::Bytes;
 use octoii_ai::vocabulary::{FileRef, ImageDetail, InputContent};
+use octoii_siphon_lib::{Batch, RuntimeHandle};
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
-use siphon_runtime::{Changes, Runtime};
 use tokio_util::sync::CancellationToken;
 
 use crate::threads::inbox::Ended;
@@ -44,9 +43,9 @@ pub struct Finished {
 }
 
 impl Finished {
-    fn of(outcome: &beak::Outcome) -> Self {
+    fn of(outcome: &octoii_siphon_lib::Outcome) -> Self {
         Self {
-            status: if matches!(outcome, beak::Outcome::Completed(_)) {
+            status: if matches!(outcome, octoii_siphon_lib::Outcome::Completed(_)) {
                 CallStatus::Ok
             } else {
                 CallStatus::ToolError
@@ -69,9 +68,8 @@ pub struct Context {
     pub writes: Writes,
     /// The places beside the workspace its work writes as freely.
     pub places: Vec<PathBuf>,
-    pub(crate) kernel: Kernel,
     pub host: Host,
-    pub(crate) runtime: Runtime,
+    pub(crate) runtime: RuntimeHandle,
     pub cancelled: CancellationToken,
 }
 
@@ -91,7 +89,7 @@ impl Context {
     /// Beak's failure to open its namespace.
     pub fn machine(&self) -> Result<Machine, Refusal> {
         Machine::open(
-            &self.kernel,
+            &self.runtime,
             &self.host,
             self.base.clone(),
             &self.writes_of(),
@@ -230,12 +228,12 @@ pub trait Tool: Send + Sync + 'static {
 
     /// For a tool that runs as a program of its own: adds to `changes` the start of its process for a call with
     /// `args`, keyed `key`, under `parent`, the caller, its calls weighed as `setting` says; none for a tool exec'd.
-    fn start(&self, _: &mut Changes, _: &Bytes, _: &str, _: &Self::Args, _: &Setting<'_>) -> Option<serde_json::Result<()>> {
+    fn start(&self, _: &mut Batch<'_>, _: &Bytes, _: &str, _: &Self::Args, _: &Setting<'_>) -> Option<octoii_siphon_lib::Result<()>> {
         None
     }
 
     /// For a tool that runs as a program: what its process's end tells, as an exec of it tells it.
-    fn finished(&self, outcome: &beak::Outcome) -> Finished {
+    fn finished(&self, outcome: &octoii_siphon_lib::Outcome) -> Finished {
         Finished::of(outcome)
     }
 
@@ -300,13 +298,13 @@ trait Erased: Send + Sync {
     fn answered(&self, arguments: &serde_json::Value, answer: serde_json::Value) -> Told;
     fn start(
         &self,
-        changes: &mut Changes,
+        changes: &mut Batch<'_>,
         parent: &Bytes,
         key: &str,
         arguments: &serde_json::Value,
         setting: &Setting<'_>,
-    ) -> Option<serde_json::Result<()>>;
-    fn finished(&self, outcome: &beak::Outcome) -> Finished;
+    ) -> Option<octoii_siphon_lib::Result<()>>;
+    fn finished(&self, outcome: &octoii_siphon_lib::Outcome) -> Finished;
     fn awaited(&self, arguments: &serde_json::Value, thread: &str, ended: Option<&Ended>) -> Told;
 }
 
@@ -334,17 +332,17 @@ impl<T: Tool> Erased for T {
 
     fn start(
         &self,
-        changes: &mut Changes,
+        changes: &mut Batch<'_>,
         parent: &Bytes,
         key: &str,
         arguments: &serde_json::Value,
         setting: &Setting<'_>,
-    ) -> Option<serde_json::Result<()>> {
+    ) -> Option<octoii_siphon_lib::Result<()>> {
         let args: T::Args = serde_json::from_value(arguments.clone()).ok()?;
         Tool::start(self, changes, parent, key, &args, setting)
     }
 
-    fn finished(&self, outcome: &beak::Outcome) -> Finished {
+    fn finished(&self, outcome: &octoii_siphon_lib::Outcome) -> Finished {
         Tool::finished(self, outcome)
     }
 
@@ -534,13 +532,13 @@ impl Tools {
     /// where its tool runs as a program; none where it is exec'd.
     pub fn start(
         &self,
-        changes: &mut Changes,
+        changes: &mut Batch<'_>,
         parent: &Bytes,
         key: &str,
         name: &str,
         arguments: &serde_json::Value,
         setting: &Setting<'_>,
-    ) -> Option<serde_json::Result<()>> {
+    ) -> Option<octoii_siphon_lib::Result<()>> {
         self.entries.get(name)?.tool.start(changes, parent, key, arguments, setting)
     }
 
@@ -556,7 +554,7 @@ impl Tools {
 
     /// What the end `outcome` of the process of a call of `name` tells.
     #[must_use]
-    pub fn finished(&self, name: &str, outcome: &beak::Outcome) -> Finished {
+    pub fn finished(&self, name: &str, outcome: &octoii_siphon_lib::Outcome) -> Finished {
         self.entries
             .get(name)
             .map_or_else(|| Finished::of(outcome), |entry| entry.tool.finished(outcome))

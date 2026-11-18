@@ -7,12 +7,11 @@
 use std::sync::Arc;
 
 use crate::threads::Window;
-use bytes::Bytes;
 use octoii_ai::models::Models;
 use octoii_ai::stream::{Event, Part};
 use octoii_ai::vocabulary::{Item, Response};
+use octoii_siphon_lib::{Asked, Request, Unanswered};
 use serde::{Deserialize, Serialize};
-use siphon_runtime::{Asked, Request, Unanswered};
 
 use crate::agent::render;
 
@@ -90,7 +89,7 @@ pub async fn answer_model(models: &Arc<Models>, asked: Asked<ModelRequest>) -> R
         if request.instruction.is_none()
             && let Ok(data) = serde_json::to_vec(&told)
         {
-            asked.publish(&request.thread, Bytes::from(data));
+            let _ = asked.publish(&request.thread, &data);
         }
     }
 }

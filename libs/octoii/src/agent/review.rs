@@ -13,8 +13,8 @@ use crate::tools::{Judgment, Review};
 use octoii_ai::models::Models;
 use octoii_ai::stream::Event;
 use octoii_ai::vocabulary::{Format, InputContent, Item, Message, Request, ResponseStatus};
+use octoii_siphon_lib::{Asked, Unanswered};
 use serde::Deserialize;
-use siphon_runtime::{Asked, Unanswered};
 
 /// The most bytes of the thread's transcript the judge reads; past them the oldest are left out, but the person's first
 /// words.

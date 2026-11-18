@@ -5,7 +5,7 @@
 use std::time::Duration;
 
 use octoii::machine::{Base, Host, Machine, Writes};
-use octoii::testing::Beak;
+use octoii::testing::Runtime;
 use serde_json::json;
 use siphon_browser::{Action, Browser, BrowserHost, Change, Outcome, Place, Refusal, Size};
 
@@ -126,7 +126,7 @@ async fn serve() -> String {
 
 /// A browser running its commands on a kernel of its own, its profile and downloads in folders of the test's; none where the machine has
 /// no browser.
-fn browser(beak: &Beak, profile: &std::path::Path, downloads: &std::path::Path) -> Option<Browser> {
+fn browser(fixture: &Runtime, profile: &std::path::Path, downloads: &std::path::Path) -> Option<Browser> {
     let found = [
         "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
         "/usr/bin/google-chrome",
@@ -138,7 +138,7 @@ fn browser(beak: &Beak, profile: &std::path::Path, downloads: &std::path::Path) 
         eprintln!("no browser on this machine");
         return None;
     }
-    let commands = octoii::testing::commands(beak);
+    let commands = octoii::testing::commands(fixture);
     Some(Browser::start(BrowserHost {
         commands,
         machine: Host {
@@ -151,8 +151,8 @@ fn browser(beak: &Beak, profile: &std::path::Path, downloads: &std::path::Path) 
     }))
 }
 
-fn machine(beak: &Beak, workspace: &std::path::Path) -> Machine {
-    octoii::testing::commands(beak)
+fn machine(fixture: &Runtime, workspace: &std::path::Path) -> Machine {
+    octoii::testing::commands(fixture)
         .open(
             &Host::default(),
             Base {
@@ -181,10 +181,10 @@ fn ref_in(reading: &str, role: &str, name: &str) -> String {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn text_actions_replace_insert_clear_and_press_without_implicit_submission() {
-    let beak = Beak::new().expect("Beak");
+    let fixture = Runtime::memory().expect("Runtime");
     let (profile, downloads) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
-    let machine = machine(&beak, profile.path());
-    let Some(browser) = browser(&beak, profile.path(), downloads.path()) else {
+    let machine = machine(&fixture, profile.path());
+    let Some(browser) = browser(&fixture, profile.path(), downloads.path()) else {
         return;
     };
     act(&browser, &machine, json!({"action": "open", "url": serve().await}))
@@ -256,10 +256,10 @@ async fn text_actions_replace_insert_clear_and_press_without_implicit_submission
 
 #[tokio::test(flavor = "multi_thread")]
 async fn the_agent_opens_reads_fills_and_submits_a_form_and_the_person_sees_it_painted() {
-    let beak = Beak::new().expect("Beak");
+    let fixture = Runtime::memory().expect("Runtime");
     let (profile, downloads) = (tempfile::tempdir().expect("a folder"), tempfile::tempdir().expect("a folder"));
-    let machine = machine(&beak, profile.path());
-    let Some(browser) = browser(&beak, profile.path(), downloads.path()) else {
+    let machine = machine(&fixture, profile.path());
+    let Some(browser) = browser(&fixture, profile.path(), downloads.path()) else {
         return;
     };
     let mut events = browser.events();
@@ -327,10 +327,10 @@ async fn the_agent_opens_reads_fills_and_submits_a_form_and_the_person_sees_it_p
 
 #[tokio::test(flavor = "multi_thread")]
 async fn resizing_a_page_tells_its_thread_the_view_that_matches_the_new_frame() {
-    let beak = Beak::new().expect("Beak");
+    let fixture = Runtime::memory().expect("Runtime");
     let (profile, downloads) = (tempfile::tempdir().expect("a folder"), tempfile::tempdir().expect("a folder"));
-    let machine = machine(&beak, profile.path());
-    let Some(browser) = browser(&beak, profile.path(), downloads.path()) else {
+    let machine = machine(&fixture, profile.path());
+    let Some(browser) = browser(&fixture, profile.path(), downloads.path()) else {
         return;
     };
     let opened = act(&browser, &machine, json!({ "action": "open", "url": serve().await }))
@@ -388,10 +388,10 @@ async fn resizing_a_page_tells_its_thread_the_view_that_matches_the_new_frame() 
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_covered_element_is_refused_a_dialog_is_answered_and_the_page_goes_back_through_its_history() {
-    let beak = Beak::new().expect("Beak");
+    let fixture = Runtime::memory().expect("Runtime");
     let (profile, downloads) = (tempfile::tempdir().expect("a folder"), tempfile::tempdir().expect("a folder"));
-    let machine = machine(&beak, profile.path());
-    let Some(browser) = browser(&beak, profile.path(), downloads.path()) else {
+    let machine = machine(&fixture, profile.path());
+    let Some(browser) = browser(&fixture, profile.path(), downloads.path()) else {
         return;
     };
     let address = serve().await;
@@ -473,10 +473,10 @@ async fn a_covered_element_is_refused_a_dialog_is_answered_and_the_page_goes_bac
 
 #[tokio::test(flavor = "multi_thread")]
 async fn tabs_are_the_thread_s_its_console_and_downloads_are_told_and_cdp_reaches_the_page() {
-    let beak = Beak::new().expect("Beak");
+    let fixture = Runtime::memory().expect("Runtime");
     let (profile, downloads) = (tempfile::tempdir().expect("a folder"), tempfile::tempdir().expect("a folder"));
-    let machine = machine(&beak, profile.path());
-    let Some(browser) = browser(&beak, profile.path(), downloads.path()) else {
+    let machine = machine(&fixture, profile.path());
+    let Some(browser) = browser(&fixture, profile.path(), downloads.path()) else {
         return;
     };
     let address = serve().await;
@@ -541,10 +541,10 @@ async fn tabs_are_the_thread_s_its_console_and_downloads_are_told_and_cdp_reache
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_script_runs_inside_a_frame_of_another_site_s_process() {
-    let beak = Beak::new().expect("Beak");
+    let fixture = Runtime::memory().expect("Runtime");
     let (profile, downloads) = (tempfile::tempdir().expect("a folder"), tempfile::tempdir().expect("a folder"));
-    let machine = machine(&beak, profile.path());
-    let Some(browser) = browser(&beak, profile.path(), downloads.path()) else {
+    let machine = machine(&fixture, profile.path());
+    let Some(browser) = browser(&fixture, profile.path(), downloads.path()) else {
         return;
     };
     let address = serve().await;
@@ -577,10 +577,10 @@ async fn a_script_runs_inside_a_frame_of_another_site_s_process() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn an_http_html_preview_loads_inside_an_opaque_sandbox_and_runs_isolated_scripts() {
-    let beak = Beak::new().expect("Beak");
+    let fixture = Runtime::memory().expect("Runtime");
     let (profile, downloads) = (tempfile::tempdir().expect("a folder"), tempfile::tempdir().expect("a folder"));
-    let machine = machine(&beak, profile.path());
-    let Some(browser) = browser(&beak, profile.path(), downloads.path()) else {
+    let machine = machine(&fixture, profile.path());
+    let Some(browser) = browser(&fixture, profile.path(), downloads.path()) else {
         return;
     };
     let address = serve().await;
@@ -644,10 +644,10 @@ async fn an_http_html_preview_loads_inside_an_opaque_sandbox_and_runs_isolated_s
 
 #[tokio::test(flavor = "multi_thread")]
 async fn an_html_preview_changes_theme_in_place_and_its_height_shrinks_after_interaction() {
-    let beak = Beak::new().expect("Beak");
+    let fixture = Runtime::memory().expect("Runtime");
     let (profile, downloads) = (tempfile::tempdir().expect("a folder"), tempfile::tempdir().expect("a folder"));
-    let machine = machine(&beak, profile.path());
-    let Some(browser) = browser(&beak, profile.path(), downloads.path()) else {
+    let machine = machine(&fixture, profile.path());
+    let Some(browser) = browser(&fixture, profile.path(), downloads.path()) else {
         return;
     };
     let address = serve().await;
@@ -745,10 +745,10 @@ async fn an_html_preview_changes_theme_in_place_and_its_height_shrinks_after_int
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_local_html_preview_is_isolated_painted_clicked_and_its_console_is_read() {
-    let beak = Beak::new().expect("Beak");
+    let fixture = Runtime::memory().expect("Runtime");
     let (profile, downloads) = (tempfile::tempdir().expect("a folder"), tempfile::tempdir().expect("a folder"));
-    let machine = machine(&beak, profile.path());
-    let Some(browser) = browser(&beak, profile.path(), downloads.path()) else {
+    let machine = machine(&fixture, profile.path());
+    let Some(browser) = browser(&fixture, profile.path(), downloads.path()) else {
         return;
     };
     let address = serve().await;

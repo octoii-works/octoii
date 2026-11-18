@@ -7,8 +7,8 @@
 use crate::machine::paths::Base;
 use crate::threads::{CallKey, CallStatus, Mode, Parent, thread};
 use octoii_ai::vocabulary::InputContent;
+use octoii_siphon_lib::{Answer, Run, Wait};
 use serde::{Deserialize, Serialize};
-use siphon_runtime::{Answer, Run, Wait};
 
 use crate::tools::effect::{Effect, Line};
 use crate::tools::permissions::{Bounds, Grants, Verdict, Writes, patterns_of, weigh};
@@ -178,7 +178,7 @@ impl Calls {
     ///
     /// # Errors
     /// Past the last id there is.
-    pub fn new(run: &Run<'_>, made: Vec<(String, String, String)>) -> beak::Result<Self> {
+    pub fn new(run: &Run<'_>, made: Vec<(String, String, String)>) -> octoii_siphon_lib::Result<Self> {
         let mut keyed = Vec::with_capacity(made.len());
         for (call_id, tool, arguments) in made {
             keyed.push((
@@ -297,7 +297,7 @@ impl Calls {
                 let Some(answer) = run.answer::<Permission>(&key)? else {
                     return Ok(());
                 };
-                run.take_mail(&key);
+                run.take_mail(&key)?;
                 match answer {
                     Answer::Given(Decision::Allow { always }) => {
                         if always && let Some(folder) = setting.project {
@@ -324,7 +324,7 @@ impl Calls {
             State::Judging => {
                 let key = format!("{}.review", call.key);
                 let Some(answer) = run.answer::<Review>(&key)? else { return Ok(()) };
-                run.take_mail(&key);
+                run.take_mail(&key)?;
                 if let Answer::Given(Judgment { usage: Some(used), .. }) = &answer {
                     let process = bytes::Bytes::copy_from_slice(run.path());
                     run.changes.charge(process, crate::threads::ThreadUsage::counters_of(used));
@@ -341,7 +341,7 @@ impl Calls {
                 let Some(answer) = run.answer::<Asks>(&call.key)? else {
                     return Ok(());
                 };
-                run.take_mail(&call.key);
+                run.take_mail(&call.key)?;
                 match answer {
                     Answer::Given(given) => result(
                         CallStatus::Ok,
@@ -355,7 +355,7 @@ impl Calls {
                 let Some(answer) = run.answer::<Exec>(&call.key)? else {
                     return Ok(());
                 };
-                run.take_mail(&call.key);
+                run.take_mail(&call.key)?;
                 match answer {
                     Answer::Given(told) => planned(run, setting, &call.key, told)?,
                     Answer::Failed(words) => ended(CallStatus::ToolError, words),
@@ -367,10 +367,10 @@ impl Calls {
                 None => return Ok(()),
             },
             State::Fiber => {
-                let process = beak::layout::process(run.path(), call.key.as_bytes());
+                let process = octoii_siphon_lib::process_path(run.path(), call.key.as_bytes());
                 let Some(outcome) = run
                     .snapshot()
-                    .record(&process)?
+                    .fiber(&process)?
                     .filter(crate::volume::reapable)
                     .and_then(|record| record.outcome)
                 else {
@@ -418,7 +418,8 @@ impl Calls {
                 State::Judging => Some(format!("{}.review", call.key)),
                 State::Running => Some(call.key.clone()),
                 State::Fiber => {
-                    run.changes.remove(beak::layout::process(run.path(), call.key.as_bytes()), None);
+                    run.changes
+                        .remove(octoii_siphon_lib::process_path(run.path(), call.key.as_bytes()), None);
                     None
                 }
                 State::Awaiting(ref awaited) => {
@@ -428,8 +429,8 @@ impl Calls {
                 _ => None,
             };
             if let Some(key) = request {
-                run.changes.delete(beak::layout::request(run.path(), key.as_bytes()));
-                run.take_mail(&key);
+                run.cancel_request(&key)?;
+                run.take_mail(&key)?;
             }
             let refusal = ended(
                 CallStatus::Unavailable,

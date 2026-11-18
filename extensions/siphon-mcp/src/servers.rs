@@ -137,7 +137,7 @@ impl Servers {
     /// # Errors
     /// The volume's failure.
     pub async fn catalog(&self, volume: &Volume, place: &Place) -> octoii::volume::Result<Catalog> {
-        let found = self.configured(&volume.snapshot()?, place, &host_variable)?;
+        let found = self.configured(&*volume.snapshot()?, place, &host_variable)?;
         let listing = found.configured.servers.iter().map(|server| async move {
             let peer = self.peer(server, volume).await?;
             peer.list_all_tools().await.map_err(|error| error.to_string())
@@ -374,7 +374,13 @@ async fn connect(volume: Volume, host: Host, server: Server) -> Result<Connectio
             let mut argv = vec![command.clone()];
             argv.extend(args.iter().cloned());
             let coprocess = machine
-                .coprocess(volume.now_ms(), b"", argv, cwd, Variables::Over(env.clone()))
+                .coprocess(
+                    volume.now_ms().map_err(|error| error.to_string())?,
+                    b"",
+                    argv,
+                    cwd,
+                    Variables::Over(env.clone()),
+                )
                 .map_err(|error| error.to_string())?;
             let serving = ().serve((coprocess.stdout, coprocess.stdin));
             match tokio::time::timeout(CONNECTING_MAX, serving).await {

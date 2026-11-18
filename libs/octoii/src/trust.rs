@@ -7,11 +7,11 @@
 //! answered — recording what they decided — or once the decision is made otherwise, as another thread asked it. The
 //! person may decide unasked as well, or decide again.
 
-use beak::Snapshot;
 use bytes::Bytes;
+use octoii_siphon_lib::Snapshot;
+use octoii_siphon_lib::{Answer, AskedOfPerson, Changes, Ending, Fiber, Request, Run, Wait};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use siphon_runtime::{Answer, AskedOfPerson, Changes, Ending, Fiber, Request, Run, Wait};
 
 use crate::threads::thread;
 use crate::tools::projects;
@@ -47,7 +47,11 @@ impl Request for Trust {
     type Answer = Trusted;
 }
 
-impl AskedOfPerson for Trust {}
+impl AskedOfPerson for Trust {
+    fn answer_schema(&self) -> serde_json::Value {
+        schemars::schema_for!(Self::Answer).to_value()
+    }
+}
 
 /// A decision, as the annotation keeps it.
 #[derive(Debug, Serialize, Deserialize)]
@@ -67,7 +71,7 @@ pub fn digest(bytes: &[u8]) -> String {
 ///
 /// # Errors
 /// The volume's failure.
-pub fn decided(snapshot: &Snapshot, folder: &str, digest: &str) -> beak::Result<Option<bool>> {
+pub fn decided(snapshot: &Snapshot, folder: &str, digest: &str) -> octoii_siphon_lib::Result<Option<bool>> {
     let kept = projects::annotation(snapshot, folder, ANNOTATION)?;
     let decision = kept.and_then(|kept| serde_json::from_slice::<Decision>(&kept).ok());
     Ok(decision
@@ -80,7 +84,7 @@ pub fn decided(snapshot: &Snapshot, folder: &str, digest: &str) -> beak::Result<
 ///
 /// # Errors
 /// The volume's failure.
-pub fn decide(snapshot: &Snapshot, folder: &str, digest: &str, trusted: bool) -> beak::Result<Changes> {
+pub fn decide(snapshot: &Snapshot, folder: &str, digest: &str, trusted: bool) -> octoii_siphon_lib::Result<Changes> {
     let decision = Decision {
         digest: digest.to_owned(),
         trusted,
@@ -116,7 +120,7 @@ impl Fiber for TrustFiber {
         let Some(answer) = run.answer::<Trust>(Self::KEY)? else {
             return Ok(Ending::Wait((), wait));
         };
-        run.take_mail(Self::KEY);
+        run.take_mail(Self::KEY)?;
         if let Answer::Given(Trusted { trusted }) = answer {
             let decision = decide(run.snapshot(), &trust.folder, &trust.digest, trusted)?;
             run.changes.extend(decision);
@@ -132,8 +136,8 @@ impl Fiber for TrustFiber {
 /// The volume's failure.
 pub async fn ask(volume: &crate::volume::Volume, thread: &str, trust: &Trust) -> anyhow::Result<()> {
     let main = thread::main(thread);
-    let asking = beak::layout::process(&main, TrustFiber::KEY.as_bytes());
-    if volume.snapshot()?.record(&asking)?.is_some() {
+    let asking = octoii_siphon_lib::process_path(&main, TrustFiber::KEY.as_bytes());
+    if volume.snapshot()?.fiber(&asking)?.is_some() {
         return Ok(());
     }
     let mut changes = Changes::new();

@@ -12,9 +12,9 @@ use crate::machine::paths::Base;
 use crate::threads::{Mode, Parent, SubThreadKind, thread};
 use bytes::Bytes;
 use octoii_ai::vocabulary::InputContent;
+use octoii_siphon_lib::{Batch, Ending, Fiber, Run};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use siphon_runtime::{Changes, Ending, Fiber, Run};
 use siphon_script::{Host, Limits, Progress, Script};
 
 use crate::threads::CallStatus;
@@ -127,12 +127,12 @@ impl Tool for ExecuteTool {
 
     fn start(
         &self,
-        changes: &mut Changes,
+        changes: &mut Batch<'_>,
         parent: &Bytes,
         key: &str,
         args: &ExecuteArgs,
         setting: &Setting<'_>,
-    ) -> Option<serde_json::Result<()>> {
+    ) -> Option<octoii_siphon_lib::Result<()>> {
         let input = ScriptInput {
             thread: setting.thread.to_owned(),
             threads: setting.threads.map(std::path::Path::to_owned),
@@ -148,9 +148,9 @@ impl Tool for ExecuteTool {
         Some(changes.start::<ScriptFiber>(parent.clone(), key, &input).map(|_| ()))
     }
 
-    fn finished(&self, outcome: &beak::Outcome) -> Finished {
+    fn finished(&self, outcome: &octoii_siphon_lib::Outcome) -> Finished {
         let read = match outcome {
-            beak::Outcome::Completed(Some(result)) => serde_json::from_slice::<ScriptOutput>(result).ok(),
+            octoii_siphon_lib::Outcome::Completed(Some(result)) => serde_json::from_slice::<ScriptOutput>(result).ok(),
             _ => None,
         };
         let Some(output) = read else {

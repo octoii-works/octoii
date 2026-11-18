@@ -4,10 +4,10 @@
 //! again within the day, as a client sends one again after its connection was lost, is answered with what it gave,
 //! not done again.
 
-use beak::Snapshot;
 use bytes::Bytes;
+use octoii_siphon_lib::Batch;
+use octoii_siphon_lib::Snapshot;
 use serde::{Deserialize, Serialize};
-use siphon_runtime::Changes;
 
 /// The directory the keys of the last day are kept in.
 pub const DIRECTORY: &str = "siphon.idempotency";
@@ -35,7 +35,7 @@ pub enum Error {
     #[error("an idempotency key is 1 to {KEY_BYTES_MAX} letters, digits, '.', '_' or '-'")]
     InvalidKey,
     #[error(transparent)]
-    Beak(#[from] beak::Error),
+    Beak(#[from] octoii_siphon_lib::Error),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
 }
@@ -56,7 +56,7 @@ pub fn done_before(snapshot: &Snapshot, key: &str, method: &str, thread: Option<
     if !valid {
         return Err(Error::InvalidKey);
     }
-    let Some(bytes) = snapshot.read(&file(key), 0, u64::MAX)? else {
+    let Some(bytes) = snapshot.read_range(&file(key), 0, u64::MAX)? else {
         return Ok(None);
     };
     let done: Done = serde_json::from_slice(&bytes)?;
@@ -70,7 +70,7 @@ pub fn done_before(snapshot: &Snapshot, key: &str, method: &str, thread: Option<
 ///
 /// # Errors
 /// What cannot be written as JSON.
-pub fn record(changes: &mut Changes, key: &str, done: &Done, now: i64) -> serde_json::Result<()> {
+pub fn record(changes: &mut Batch<'_>, key: &str, done: &Done, now: i64) -> serde_json::Result<()> {
     changes
         .mkdir(Bytes::from_static(DIRECTORY.as_bytes()))
         .write(file(key), serde_json::to_vec(done)?)

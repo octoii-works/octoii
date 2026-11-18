@@ -8,14 +8,13 @@ use crate::agent::{CompactFiber, Gather, ModelRequest, Sources, ThreadFiber, Tit
 use crate::machine::Host as Machine;
 use crate::threads::{Config, Mode, NewThread, Threads, Turn};
 use crate::tools::{EditTool, Exec, ExecuteTool, GlobTool, GrepTool, ReadTool, ScriptFiber, ShellTool, Tools, WriteTool, answer_exec};
-use beak::Beak;
 use bytes::Bytes;
 use octoii_ai::catalogue;
 use octoii_ai::drivers::OPENROUTER;
 use octoii_ai::host::{Credential, Credentials, Files, NoSuchFile, Unavailable};
 use octoii_ai::models::{Host, Models, Provider};
 use octoii_ai::vocabulary::InputContent;
-use siphon_runtime::{Asked, Options, Runtime};
+use octoii_siphon_lib::{Asked, Runtime};
 
 /// The key in the environment, as the host's credentials.
 struct Environment;
@@ -71,7 +70,7 @@ fn new_id() -> String {
     )
 }
 
-fn runtime(beak: &Beak, models: &Arc<Models>) -> Runtime {
+fn runtime(models: &Arc<Models>) -> Runtime {
     let inner = Tools::new()
         .with(ReadTool)
         .with(WriteTool)
@@ -89,47 +88,57 @@ fn runtime(beak: &Beak, models: &Arc<Models>) -> Runtime {
     };
     let execs = tools.clone();
     let answering = Arc::clone(models);
-    Runtime::builder()
-        .fiber(ThreadFiber)
-        .fiber(TurnFiber {
-            tools,
-            machine: crate::machine::Host::default(),
-            models: Arc::clone(models),
-            writables: Vec::new(),
-        })
-        .fiber(ScriptFiber {
-            tools: inner,
-            primitives: std::sync::Arc::new(crate::agent::ThreadPrimitives),
-        })
-        .fiber(TitleFiber {
-            instruction: crate::testing::PROMPTS.title,
-        })
-        .fiber(CompactFiber {
-            instruction: crate::testing::PROMPTS.recap,
-        })
-        .handle(move |asked: Asked<Gather>| {
-            let sources = sources.clone();
-            async move { answer_gather(&sources, asked).await }
-        })
-        .handle(move |asked: Asked<ModelRequest>| {
-            let models = Arc::clone(&answering);
-            async move { answer_model(&models, asked).await }
-        })
-        .handle(move |asked: Asked<Exec>| {
-            let tools = execs.clone();
-            async move { answer_exec(&tools, &Machine::default(), asked).await }
-        })
-        .start(beak, Options::default())
-        .expect("started")
+    {
+        let mut builder = octoii_siphon_lib::Builder::new().expect("a builder");
+        builder
+            .fiber(ThreadFiber)
+            .expect("registered")
+            .fiber(TurnFiber {
+                tools,
+                machine: crate::machine::Host::default(),
+                models: Arc::clone(models),
+                writables: Vec::new(),
+            })
+            .expect("registered")
+            .fiber(ScriptFiber {
+                tools: inner,
+                primitives: std::sync::Arc::new(crate::agent::ThreadPrimitives),
+            })
+            .expect("registered")
+            .fiber(TitleFiber {
+                instruction: crate::testing::PROMPTS.title,
+            })
+            .expect("registered")
+            .fiber(CompactFiber {
+                instruction: crate::testing::PROMPTS.recap,
+            })
+            .expect("registered")
+            .handle(&tokio::runtime::Handle::current(), move |asked: Asked<Gather>| {
+                let sources = sources.clone();
+                async move { answer_gather(&sources, asked).await }
+            })
+            .expect("registered")
+            .handle(&tokio::runtime::Handle::current(), move |asked: Asked<ModelRequest>| {
+                let models = Arc::clone(&answering);
+                async move { answer_model(&models, asked).await }
+            })
+            .expect("registered")
+            .handle(&tokio::runtime::Handle::current(), move |asked: Asked<Exec>| {
+                let tools = execs.clone();
+                async move { answer_exec(&tools, &Machine::default(), asked).await }
+            })
+            .expect("registered");
+        crate::tests::open_runtime(builder, None)
+    }
+    .expect("started")
 }
 
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "asks a real model, with the key in the environment"]
 async fn the_agent_reads_a_file_and_writes_what_it_found() {
-    let beak = Beak::new().expect("Beak");
     let models = models();
-    let runtime = runtime(&beak, &models);
-    let threads = Threads::<ThreadFiber>::new(runtime.clone());
+    let runtime = runtime(&models);
+    let threads = Threads::<ThreadFiber>::new(runtime.runtime_handle());
     let folder = tempfile::tempdir().expect("a folder");
     let workspace = folder.path().canonicalize().expect("its real path");
     std::fs::write(workspace.join("notes.txt"), "The answer is 21.\n").expect("written");
@@ -149,7 +158,7 @@ async fn the_agent_reads_a_file_and_writes_what_it_found() {
         .deliver(&id, "person", vec![InputContent::text(asked)], "d1")
         .await
         .expect("delivered");
-    let mut committed = runtime.committed();
+    let mut committed = runtime.committed().expect("a commit watch");
     let ended = async {
         loop {
             let turn = threads.listed(&id).expect("listed").status.turn;
@@ -170,13 +179,13 @@ async fn the_agent_reads_a_file_and_writes_what_it_found() {
         }
     };
     let titled = tokio::time::timeout(Duration::from_mins(1), titled).await.is_ok();
-    let titling = beak::layout::process(&crate::threads::thread::main(&id), TitleFiber::KEY.as_bytes());
+    let titling = octoii_siphon_lib::process_path(&crate::threads::thread::main(&id), TitleFiber::KEY.as_bytes());
     eprintln!(
         "the title process: {:?}",
         runtime
             .snapshot()
             .expect("a snapshot")
-            .record(&titling)
+            .fiber(&titling)
             .expect("read")
             .map(|record| record.outcome)
     );
@@ -185,5 +194,5 @@ async fn the_agent_reads_a_file_and_writes_what_it_found() {
     assert_eq!(turn, Turn::Replied);
     assert!(titled, "titled");
     assert_eq!(std::fs::read_to_string(workspace.join("result.txt")).expect("written").trim(), "42");
-    runtime.close().await;
+    runtime.close().expect("closed");
 }

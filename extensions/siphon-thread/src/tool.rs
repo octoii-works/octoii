@@ -339,7 +339,7 @@ fn planned(context: &Context, action: ThreadAction) -> Result<Told, Refusal> {
             (notice(&thread, "was unarchived"), ThreadResult::Unarchived { thread })
         }
         ThreadAction::Snooze { thread, until } => {
-            let until = snoozed_until(&until, context.volume().now_ms())?;
+            let until = snoozed_until(&until, context.volume().now_ms().map_err(|error| Refusal(error.to_string()))?)?;
             plan.mark(
                 &thread,
                 MarksChange {

@@ -6,10 +6,10 @@
 
 use crate::agent::{CORE, gather::BASE};
 use crate::threads::Mode;
-use beak::{Directory, Snapshot};
 use bytes::Bytes;
+use octoii_siphon_lib::{Batch, Changes, Named, RuntimeHandle};
+use octoii_siphon_lib::{Directory, Snapshot};
 use serde::{Deserialize, Serialize};
-use siphon_runtime::{Changes, Named, Runtime};
 
 /// The directory the settings are kept in.
 pub const DIRECTORY: &str = "siphon.settings";
@@ -94,7 +94,7 @@ pub enum Error {
     #[error("the change changes nothing")]
     Nothing,
     #[error(transparent)]
-    Beak(#[from] beak::Error),
+    Beak(#[from] octoii_siphon_lib::Error),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
 }
@@ -162,7 +162,7 @@ pub fn device_file(session: &str) -> Result<Bytes, Error> {
 /// # Errors
 /// `InvalidSession`; the volume's failure; a document that is not JSON.
 pub fn device(snapshot: &Snapshot, session: &str) -> Result<serde_json::Value, Error> {
-    match snapshot.read(&device_file(session)?, 0, u64::MAX)? {
+    match snapshot.read_range(&device_file(session)?, 0, u64::MAX)? {
         Some(bytes) => Ok(serde_json::from_slice(&bytes)?),
         None => Ok(serde_json::Value::Object(serde_json::Map::new())),
     }
@@ -200,7 +200,7 @@ fn annotations(change: &EnvironmentChange) -> Result<Vec<Named>, Error> {
 ///
 /// # Errors
 /// A change that disables `base`, invalid device settings, an empty change, or the commit's failure.
-pub async fn set(runtime: &Runtime, session: &str, change: &SettingsChange) -> Result<(), Error> {
+pub async fn set(runtime: &RuntimeHandle, session: &str, change: &SettingsChange) -> Result<(), Error> {
     let mut changes = Changes::new();
     changes.mkdir(Bytes::from_static(DIRECTORY.as_bytes()));
     let mut sets_any = false;
@@ -210,7 +210,7 @@ pub async fn set(runtime: &Runtime, session: &str, change: &SettingsChange) -> R
         changes.meta(Bytes::from_static(DIRECTORY.as_bytes()), Vec::new(), annotations);
     }
     if let Some(patch) = &change.device {
-        let mut document = device(&runtime.snapshot()?, session)?;
+        let mut document = device(&*runtime.snapshot()?, session)?;
         json_patch::merge(&mut document, patch);
         if !document.is_object() {
             return Err(Error::NotAnObject);
@@ -235,7 +235,7 @@ pub async fn set(runtime: &Runtime, session: &str, change: &SettingsChange) -> R
 ///
 /// # Errors
 /// `InvalidSession`; the volume's failure.
-pub fn forget(snapshot: &Snapshot, changes: &mut Changes, session: &str) -> Result<(), Error> {
+pub fn forget(snapshot: &Snapshot, changes: &mut Batch<'_>, session: &str) -> Result<(), Error> {
     let file = device_file(session)?;
     if snapshot.stat(&file)?.is_some() {
         changes.delete(file);
@@ -249,8 +249,7 @@ mod tests {
 
     #[tokio::test]
     async fn disabling_base_is_rejected_on_write_and_read() {
-        let beak = beak::Beak::new().unwrap();
-        let runtime = Runtime::builder().start(&beak, siphon_runtime::Options::default()).unwrap();
+        let runtime = octoii_siphon_lib::Runtime::memory().unwrap();
         let disable = |extension: &str| SettingsChange {
             environment: Some(EnvironmentChange {
                 disabled_extensions: Some(vec![extension.into()]),
@@ -276,6 +275,6 @@ mod tests {
         );
         runtime.commit(changes).await.unwrap();
         assert!(matches!(environment(&runtime.snapshot().unwrap()), Err(Error::RequiredExtension)));
-        runtime.close().await;
+        runtime.close().unwrap();
     }
 }

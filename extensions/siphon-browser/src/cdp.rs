@@ -122,15 +122,15 @@ async fn own(command: Command, mut told: CommandEvents, mut calls: mpsc::Unbound
                 waiting.insert(id, call.reply);
             }
             event = told.next() => match event {
-                Some(CommandEvent::Output(bytes)) => {
+                Ok(Some(CommandEvent::Output(bytes))) => {
                     unended.extend_from_slice(&bytes);
                     while let Some(end) = unended.iter().position(|&byte| byte == 0) {
                         let message = unended.split_to(end + 1);
                         handle(&message[..end], &mut waiting, &events);
                     }
                 }
-                Some(CommandEvent::Title(_)) => {}
-                Some(CommandEvent::Exit(_)) | None => break,
+                Ok(Some(CommandEvent::Title(_))) => {}
+                Ok(Some(CommandEvent::Exit(_)) | None) | Err(_) => break,
             },
         }
     }

@@ -13,7 +13,6 @@ use crate::agent::{
 use crate::machine::Host as Machine;
 use crate::threads::{CallStatus, Config, Entry, Mode, NewThread, Outcome, Threads, Turn};
 use crate::tools::{Asks, Exec, ExecuteTool, Permission, ReadTool, Review, ScriptFiber, ShellTool, Tools, WriteTool, answer_exec};
-use beak::Beak;
 use bytes::Bytes;
 use futures::future::BoxFuture;
 use octoii_ai::catalogue::{Features, InputLimits, Model};
@@ -25,7 +24,7 @@ use octoii_ai::vocabulary::{
     Failure, FailureKind, FunctionCall, Incomplete, InputContent, Item, Message, OutputContent, Request, Response, ResponseStatus, Tool,
     Usage,
 };
-use siphon_runtime::{Asked, Options, Runtime};
+use octoii_siphon_lib::{Asked, Runtime};
 
 /// What a scripted reply says to stand for one its output limit cut off.
 const CUT_OFF: &str = "cut off";
@@ -190,7 +189,7 @@ fn models(script: &Arc<Script>) -> Arc<Models> {
     Arc::new(Models::new(host, vec![provider], vec![model]))
 }
 
-fn runtime(beak: &Beak, script: &Arc<Script>) -> Runtime {
+fn runtime(script: &Arc<Script>) -> Runtime {
     let inner = Tools::new().with(ReadTool).with(WriteTool).with(ShellTool);
     let tools = inner.clone().with(ExecuteTool).with(DelegateTool).with(ThreadTool);
     let models = models(script);
@@ -202,49 +201,65 @@ fn runtime(beak: &Beak, script: &Arc<Script>) -> Runtime {
         models: Arc::clone(&models),
     };
     let execs = tools.clone();
-    Runtime::builder()
-        .fiber(ThreadFiber)
-        .fiber(TurnFiber {
-            tools,
-            machine: crate::machine::Host::default(),
-            models: Arc::clone(&models),
-            writables: Vec::new(),
-        })
-        .fiber(ScriptFiber {
-            tools: inner,
-            primitives: std::sync::Arc::new(crate::agent::ThreadPrimitives),
-        })
-        .fiber(TitleFiber {
-            instruction: crate::testing::PROMPTS.title,
-        })
-        .fiber(crate::agent::CompactFiber {
-            instruction: crate::testing::PROMPTS.recap,
-        })
-        .fiber(DelegatedFiber)
-        .fiber(crate::agent::ResumeFiber)
-        .handle(move |asked: Asked<Gather>| {
-            let sources = sources.clone();
-            async move { answer_gather(&sources, asked).await }
-        })
-        .handle({
-            let models = Arc::clone(&models);
-            move |asked: Asked<ModelRequest>| {
+    {
+        let mut builder = octoii_siphon_lib::Builder::new().expect("a builder");
+        builder
+            .fiber(ThreadFiber)
+            .expect("registered")
+            .fiber(TurnFiber {
+                tools,
+                machine: crate::machine::Host::default(),
+                models: Arc::clone(&models),
+                writables: Vec::new(),
+            })
+            .expect("registered")
+            .fiber(ScriptFiber {
+                tools: inner,
+                primitives: std::sync::Arc::new(crate::agent::ThreadPrimitives),
+            })
+            .expect("registered")
+            .fiber(TitleFiber {
+                instruction: crate::testing::PROMPTS.title,
+            })
+            .expect("registered")
+            .fiber(crate::agent::CompactFiber {
+                instruction: crate::testing::PROMPTS.recap,
+            })
+            .expect("registered")
+            .fiber(DelegatedFiber)
+            .expect("registered")
+            .fiber(crate::agent::ResumeFiber)
+            .expect("registered")
+            .handle(&tokio::runtime::Handle::current(), move |asked: Asked<Gather>| {
+                let sources = sources.clone();
+                async move { answer_gather(&sources, asked).await }
+            })
+            .expect("registered")
+            .handle(&tokio::runtime::Handle::current(), {
                 let models = Arc::clone(&models);
-                async move { answer_model(&models, asked).await }
-            }
-        })
-        .handle(move |asked: Asked<Review>| {
-            let models = Arc::clone(&models);
-            async move { answer_review(&models, crate::testing::PROMPTS.review, asked).await }
-        })
-        .handle(move |asked: Asked<Exec>| {
-            let tools = execs.clone();
-            async move { answer_exec(&tools, &Machine::default(), asked).await }
-        })
-        .ask_person::<Permission>()
-        .ask_person::<Asks>()
-        .start(beak, Options::default())
-        .expect("started")
+                move |asked: Asked<ModelRequest>| {
+                    let models = Arc::clone(&models);
+                    async move { answer_model(&models, asked).await }
+                }
+            })
+            .expect("registered")
+            .handle(&tokio::runtime::Handle::current(), move |asked: Asked<Review>| {
+                let models = Arc::clone(&models);
+                async move { answer_review(&models, crate::testing::PROMPTS.review, asked).await }
+            })
+            .expect("registered")
+            .handle(&tokio::runtime::Handle::current(), move |asked: Asked<Exec>| {
+                let tools = execs.clone();
+                async move { answer_exec(&tools, &Machine::default(), asked).await }
+            })
+            .expect("registered")
+            .ask_person::<Permission>()
+            .expect("registered")
+            .ask_person::<Asks>()
+            .expect("registered");
+        crate::tests::open_runtime(builder, None)
+    }
+    .expect("started")
 }
 
 fn script(replies: Vec<Result<Vec<Item>, Failure>>) -> Arc<Script> {
@@ -298,7 +313,7 @@ async fn made(threads: &Threads<ThreadFiber>, workspace: &std::path::Path, mode:
 
 /// Waits till the thread `id`'s turn stands as `turn`.
 async fn until(threads: &Threads<ThreadFiber>, id: &str, turn: Turn) {
-    let mut committed = threads.runtime().committed();
+    let mut committed = threads.runtime().committed().expect("a commit watch");
     let waiting = async {
         while threads.listed(id).expect("listed").status.turn != turn {
             committed.changed().await.expect("the runtime runs");
@@ -356,10 +371,10 @@ impl crate::tools::Toolset for Catalogue {
 #[tokio::test(flavor = "multi_thread")]
 async fn gathered_tools_catalogue_and_native_search_follow_the_fixed_sub_thread_kind() {
     use crate::threads::{Parent, SubThreadKind};
-    let beak = Beak::new().unwrap();
+
     let script = script(Vec::new());
-    let runtime = runtime(&beak, &script);
-    let threads = Threads::<ThreadFiber>::new(runtime.clone());
+    let runtime = runtime(&script);
+    let threads = Threads::<ThreadFiber>::new(runtime.runtime_handle());
     let (_folder, workspace) = folder();
     let sources = Sources {
         tools: Tools::new()
@@ -422,7 +437,7 @@ async fn gathered_tools_catalogue_and_native_search_follow_the_fixed_sub_thread_
             assert!(told.tools.contains(&Tool::WebSearch));
         }
     }
-    runtime.close().await;
+    runtime.close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -435,9 +450,9 @@ async fn a_turn_takes_on_the_calls_its_replies_make_and_asks_again_till_one_call
         )]),
         Ok(vec![says("written")]),
     ]);
-    let beak = Beak::new().expect("Beak");
-    let runtime = runtime(&beak, &script);
-    let threads = Threads::<ThreadFiber>::new(runtime.clone());
+
+    let runtime = runtime(&script);
+    let threads = Threads::<ThreadFiber>::new(runtime.runtime_handle());
     let (_folder, workspace) = folder();
     let id = thread(&threads, &workspace).await;
     threads
@@ -446,7 +461,7 @@ async fn a_turn_takes_on_the_calls_its_replies_make_and_asks_again_till_one_call
         .expect("delivered");
     until(&threads, &id, Turn::Replied).await;
     assert_eq!(std::fs::read_to_string(workspace.join("a.txt")).expect("written"), "hello\n");
-    let mut titled = threads.runtime().committed();
+    let mut titled = threads.runtime().committed().expect("a commit watch");
     tokio::time::timeout(Duration::from_secs(10), async {
         while threads.listed(&id).expect("listed").config.title.is_none() {
             titled.changed().await.expect("the runtime runs");
@@ -500,7 +515,7 @@ async fn a_turn_takes_on_the_calls_its_replies_make_and_asks_again_till_one_call
         (30, 15, 300),
         "the turn's two requests and the title's"
     );
-    runtime.close().await;
+    runtime.close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -515,9 +530,9 @@ async fn a_folder_s_instructions_a_read_comes_upon_are_given_once_a_window() {
         )]),
         Ok(vec![says("read")]),
     ]);
-    let beak = Beak::new().expect("Beak");
-    let runtime = runtime(&beak, &script);
-    let threads = Threads::<ThreadFiber>::new(runtime.clone());
+
+    let runtime = runtime(&script);
+    let threads = Threads::<ThreadFiber>::new(runtime.runtime_handle());
     let (_folder, workspace) = folder();
     std::fs::create_dir_all(workspace.join("pkg")).expect("a folder");
     std::fs::write(workspace.join("pkg/AGENTS.md"), "Tabs, not spaces.\n").expect("its instructions");
@@ -564,15 +579,15 @@ async fn a_folder_s_instructions_a_read_comes_upon_are_given_once_a_window() {
         "a script's read gives the instructions it came upon with the script's result: {}",
         outputs[2]
     );
-    runtime.close().await;
+    runtime.close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_reply_its_output_limit_cut_off_is_told_to_go_on_once() {
     let script = script(vec![Ok(vec![says(CUT_OFF)]), Ok(vec![says(CUT_OFF)])]);
-    let beak = Beak::new().expect("Beak");
-    let runtime = runtime(&beak, &script);
-    let threads = Threads::<ThreadFiber>::new(runtime.clone());
+
+    let runtime = runtime(&script);
+    let threads = Threads::<ThreadFiber>::new(runtime.runtime_handle());
     let (_folder, workspace) = folder();
     let id = thread(&threads, &workspace).await;
     threads
@@ -587,7 +602,7 @@ async fn a_reply_its_output_limit_cut_off_is_told_to_go_on_once() {
         "told to go on as a system reminder: {:?}",
         asked[1].input.last()
     );
-    runtime.close().await;
+    runtime.close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -595,9 +610,9 @@ async fn a_failure_that_may_pass_is_kept_and_the_model_asked_again() {
     let mut failure = Failure::new(FailureKind::Server, "overloaded");
     failure.retry_after_ms = Some(10);
     let script = script(vec![Err(failure), Ok(vec![says("there")])]);
-    let beak = Beak::new().expect("Beak");
-    let runtime = runtime(&beak, &script);
-    let threads = Threads::<ThreadFiber>::new(runtime.clone());
+
+    let runtime = runtime(&script);
+    let threads = Threads::<ThreadFiber>::new(runtime.runtime_handle());
     let (_folder, workspace) = folder();
     let id = thread(&threads, &workspace).await;
     threads
@@ -611,7 +626,7 @@ async fn a_failure_that_may_pass_is_kept_and_the_model_asked_again() {
     );
     assert!(matches!(&all[4], Entry::Reply { .. }));
     assert_eq!(script.asked.lock().expect("held").len(), 2);
-    runtime.close().await;
+    runtime.close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -621,9 +636,9 @@ async fn a_quota_used_up_ends_the_turn_with_the_failure_and_the_next_before_it_a
     failure.reset_at_ms = Some(reset_at_ms);
     failure.window_minutes = Some(10_080);
     let script = script(vec![Err(failure)]);
-    let beak = Beak::new().expect("Beak");
-    let runtime = runtime(&beak, &script);
-    let threads = Threads::<ThreadFiber>::new(runtime.clone());
+
+    let runtime = runtime(&script);
+    let threads = Threads::<ThreadFiber>::new(runtime.runtime_handle());
     let (_folder, workspace) = folder();
     let id = thread(&threads, &workspace).await;
     threads
@@ -663,7 +678,7 @@ async fn a_quota_used_up_ends_the_turn_with_the_failure_and_the_next_before_it_a
     let failure = failure.expect("the quota used up still");
     assert_eq!((failure.kind, failure.reset_at_ms), (FailureKind::Quota, Some(reset_at_ms)));
     assert_eq!(script.asked.lock().expect("held").len(), 1, "the model asked once");
-    runtime.close().await;
+    runtime.close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -672,16 +687,16 @@ async fn a_stop_ends_the_turn_with_every_call_it_made_answered() {
         calls("c1", "shell", &serde_json::json!({ "command": "sleep 30" })),
         calls("c2", "write", &serde_json::json!({ "path": "never.txt", "content": "x" })),
     ])]);
-    let beak = Beak::new().expect("Beak");
-    let runtime = runtime(&beak, &script);
-    let threads = Threads::<ThreadFiber>::new(runtime.clone());
+
+    let runtime = runtime(&script);
+    let threads = Threads::<ThreadFiber>::new(runtime.runtime_handle());
     let (_folder, workspace) = folder();
     let id = thread(&threads, &workspace).await;
     threads
         .deliver(&id, "person", vec![InputContent::text("wait")], "d1")
         .await
         .expect("delivered");
-    let mut committed = runtime.committed();
+    let mut committed = runtime.committed().expect("a commit watch");
     tokio::time::timeout(Duration::from_secs(10), async {
         while !entries(&threads, &id).iter().any(|entry| matches!(entry, Entry::Reply { .. })) {
             committed.changed().await.expect("the runtime runs");
@@ -713,7 +728,7 @@ async fn a_stop_ends_the_turn_with_every_call_it_made_answered() {
         ),
         "{all:?}"
     );
-    runtime.close().await;
+    runtime.close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -725,8 +740,8 @@ async fn in_auto_a_call_that_would_ask_is_judged_by_the_model_the_environment_na
         ]),
         Ok(vec![says("done")]),
     ]);
-    let beak = Beak::new().expect("Beak");
-    let runtime = runtime(&beak, &script);
+
+    let runtime = runtime(&script);
     let change = crate::settings::SettingsChange {
         environment: Some(crate::settings::EnvironmentChange {
             review_model: Some(Some("test/m".into())),
@@ -735,7 +750,7 @@ async fn in_auto_a_call_that_would_ask_is_judged_by_the_model_the_environment_na
         device: None,
     };
     crate::settings::set(&runtime, "s", &change).await.expect("set");
-    let threads = Threads::<ThreadFiber>::new(runtime.clone());
+    let threads = Threads::<ThreadFiber>::new(runtime.runtime_handle());
     let (_folder, workspace) = folder();
     std::fs::create_dir(workspace.join("build")).expect("a folder");
     let id = made(&threads, &workspace, Mode::Auto).await;
@@ -755,15 +770,15 @@ async fn in_auto_a_call_that_would_ask_is_judged_by_the_model_the_environment_na
     assert!(results[0].1.contains("blocked: it removes files"));
     assert_eq!(results[1].0, CallStatus::Ok, "{results:?}");
     assert!(workspace.join("build").exists() && workspace.join("out.txt").exists());
-    runtime.close().await;
+    runtime.close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_window_too_full_for_its_next_request_is_compacted_and_the_model_asked_on_the_new_one() {
     let script = script(vec![Ok(vec![says("hello")]), Ok(vec![says("read it")])]);
-    let beak = Beak::new().expect("Beak");
-    let runtime = runtime(&beak, &script);
-    let threads = Threads::<ThreadFiber>::new(runtime.clone());
+
+    let runtime = runtime(&script);
+    let threads = Threads::<ThreadFiber>::new(runtime.runtime_handle());
     let (_folder, workspace) = folder();
     let id = thread(&threads, &workspace).await;
     threads
@@ -776,7 +791,7 @@ async fn a_window_too_full_for_its_next_request_is_compacted_and_the_model_asked
         .deliver(&id, "person", vec![InputContent::text(long.clone())], "d2")
         .await
         .expect("delivered");
-    let mut committed = runtime.committed();
+    let mut committed = runtime.committed().expect("a commit watch");
     tokio::time::timeout(Duration::from_secs(20), async {
         while entries(&threads, &id)
             .iter()
@@ -817,7 +832,7 @@ async fn a_window_too_full_for_its_next_request_is_compacted_and_the_model_asked
         2,
         "no implicit environment or conversation before the cut is sent"
     );
-    runtime.close().await;
+    runtime.close().expect("closed");
 }
 
 /// The threads made, but `except`, by their ids.
@@ -845,9 +860,9 @@ async fn a_task_delegated_is_worked_on_by_a_sub_thread_and_what_it_said_last_giv
         .lock()
         .expect("held")
         .push(("say done".into(), vec![says("the child is done")]));
-    let beak = Beak::new().expect("Beak");
-    let runtime = runtime(&beak, &script);
-    let threads = Threads::<ThreadFiber>::new(runtime.clone());
+
+    let runtime = runtime(&script);
+    let threads = Threads::<ThreadFiber>::new(runtime.runtime_handle());
     let (_folder, workspace) = folder();
     let id = thread(&threads, &workspace).await;
     threads
@@ -893,7 +908,7 @@ async fn a_task_delegated_is_worked_on_by_a_sub_thread_and_what_it_said_last_giv
     };
     assert!(text.starts_with("the child is done\n<system-reminder>sub-thread "), "{text}");
     assert!(text.contains(&child.id) && text.contains("finished"), "{text}");
-    runtime.close().await;
+    runtime.close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -912,16 +927,16 @@ async fn a_task_delegated_in_the_background_is_answered_at_once_and_its_end_deli
         .lock()
         .expect("held")
         .push(("say done".into(), vec![says("the child is done")]));
-    let beak = Beak::new().expect("Beak");
-    let runtime = runtime(&beak, &script);
-    let threads = Threads::<ThreadFiber>::new(runtime.clone());
+
+    let runtime = runtime(&script);
+    let threads = Threads::<ThreadFiber>::new(runtime.runtime_handle());
     let (_folder, workspace) = folder();
     let id = thread(&threads, &workspace).await;
     threads
         .deliver(&id, "person", vec![InputContent::text("delegate it")], "d1")
         .await
         .expect("delivered");
-    let mut committed = runtime.committed();
+    let mut committed = runtime.committed().expect("a commit watch");
     tokio::time::timeout(Duration::from_secs(20), async {
         while entries(&threads, &id)
             .iter()
@@ -948,7 +963,7 @@ async fn a_task_delegated_in_the_background_is_answered_at_once_and_its_end_deli
         _ => None,
     });
     assert!(first.expect("a result").contains("is working on it in the background"));
-    runtime.close().await;
+    runtime.close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -962,9 +977,9 @@ async fn an_input_queued_while_a_turn_works_waits_for_it_to_end_and_begins_the_n
         .lock()
         .expect("held")
         .push(("and then this".into(), vec![says("this too")]));
-    let beak = Beak::new().expect("Beak");
-    let runtime = runtime(&beak, &script);
-    let threads = Threads::<ThreadFiber>::new(runtime.clone());
+
+    let runtime = runtime(&script);
+    let threads = Threads::<ThreadFiber>::new(runtime.runtime_handle());
     let (_folder, workspace) = folder();
     let id = thread(&threads, &workspace).await;
     threads
@@ -976,7 +991,7 @@ async fn an_input_queued_while_a_turn_works_waits_for_it_to_end_and_begins_the_n
         .queue(&id, "person", vec![InputContent::text("and then this")], "d2")
         .await
         .expect("queued");
-    let mut committed = runtime.committed();
+    let mut committed = runtime.committed().expect("a commit watch");
     tokio::time::timeout(Duration::from_secs(20), async {
         while entries(&threads, &id)
             .iter()
@@ -1002,7 +1017,7 @@ async fn an_input_queued_while_a_turn_works_waits_for_it_to_end_and_begins_the_n
         ["input", "end", "input", "end"],
         "the queued input begins the next turn, steering none"
     );
-    runtime.close().await;
+    runtime.close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1021,16 +1036,16 @@ async fn a_thread_started_by_another_takes_its_message_and_its_end_is_told_back(
         .lock()
         .expect("held")
         .push(("say hi".into(), vec![says("hi there")]));
-    let beak = Beak::new().expect("Beak");
-    let runtime = runtime(&beak, &script);
-    let threads = Threads::<ThreadFiber>::new(runtime.clone());
+
+    let runtime = runtime(&script);
+    let threads = Threads::<ThreadFiber>::new(runtime.runtime_handle());
     let (_folder, workspace) = folder();
     let id = thread(&threads, &workspace).await;
     threads
         .deliver(&id, "person", vec![InputContent::text("start a thread")], "d1")
         .await
         .expect("delivered");
-    let mut committed = runtime.committed();
+    let mut committed = runtime.committed().expect("a commit watch");
     tokio::time::timeout(Duration::from_secs(20), async {
         while entries(&threads, &id)
             .iter()
@@ -1061,16 +1076,15 @@ async fn a_thread_started_by_another_takes_its_message_and_its_end_is_told_back(
     let told = told.expect("its end told back");
     assert!(matches!(&told[0], InputContent::InputText { text } if text.contains("which you sent a message, finished")));
     assert_eq!(told[1], InputContent::text("hi there"));
-    runtime.close().await;
+    runtime.close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_thread_sends_no_message_to_one_whose_mode_reaches_further() {
-    let beak = Beak::new().expect("Beak");
     let (_folder, workspace) = folder();
     let script = script(vec![Ok(vec![says("could not")])]);
-    let runtime = runtime(&beak, &script);
-    let threads = Threads::<ThreadFiber>::new(runtime.clone());
+    let runtime = runtime(&script);
+    let threads = Threads::<ThreadFiber>::new(runtime.runtime_handle());
     let further = made(&threads, &workspace, Mode::FullAccess).await;
     script.replies.lock().expect("held").push_front(Ok(vec![calls(
         "c1",
@@ -1096,14 +1110,14 @@ async fn a_thread_sends_no_message_to_one_whose_mode_reaches_further() {
             .all(|entry| !matches!(entry, Entry::Input { .. })),
         "nothing reached it"
     );
-    runtime.close().await;
+    runtime.close().expect("closed");
 }
 
 /// Arms the resume of the thread `id` to go on `after` from now.
 async fn arm(runtime: &Runtime, id: &str, after: i64) {
     let snapshot = runtime.snapshot().expect("a snapshot");
-    let input = crate::agent::ResumeInput::now(&snapshot, id, runtime.now_ms() + after, "person").expect("read");
-    let mut changes = siphon_runtime::Changes::new();
+    let input = crate::agent::ResumeInput::now(&snapshot, id, runtime.now_ms().expect("time") + after, "person").expect("read");
+    let mut changes = octoii_siphon_lib::Changes::new();
     crate::agent::resume::arm(&snapshot, &mut changes, &input).expect("armed");
     runtime.commit(changes).await.expect("committed");
 }
@@ -1124,9 +1138,9 @@ fn words_given(threads: &Threads<ThreadFiber>, id: &str) -> Vec<String> {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_resume_goes_on_at_its_time_unless_the_person_went_on_first() {
     let script = script(vec![Ok(vec![says("going on")]), Ok(vec![says("as you said")])]);
-    let beak = Beak::new().expect("Beak");
-    let runtime = runtime(&beak, &script);
-    let threads = Threads::<ThreadFiber>::new(runtime.clone());
+
+    let runtime = runtime(&script);
+    let threads = Threads::<ThreadFiber>::new(runtime.runtime_handle());
     let (_folder, workspace) = folder();
     let id = thread(&threads, &workspace).await;
     arm(&runtime, &id, 300).await;
@@ -1140,13 +1154,13 @@ async fn a_resume_goes_on_at_its_time_unless_the_person_went_on_first() {
         .await
         .expect("delivered");
     until(&threads, &other, Turn::Replied).await;
-    let resume = beak::layout::process(&crate::threads::thread::main(&other), crate::agent::ResumeFiber::KEY.as_bytes());
-    let mut committed = runtime.committed();
+    let resume = octoii_siphon_lib::process_path(&crate::threads::thread::main(&other), crate::agent::ResumeFiber::KEY.as_bytes());
+    let mut committed = runtime.committed().expect("a commit watch");
     tokio::time::timeout(Duration::from_secs(10), async {
         while runtime
             .snapshot()
             .expect("a snapshot")
-            .record(&resume)
+            .fiber(&resume)
             .expect("read")
             .and_then(|record| record.outcome)
             .is_none()
@@ -1157,7 +1171,7 @@ async fn a_resume_goes_on_at_its_time_unless_the_person_went_on_first() {
     .await
     .expect("ended in time");
     assert_eq!(words_given(&threads, &other), ["myself"]);
-    runtime.close().await;
+    runtime.close().expect("closed");
 }
 
 /// `delegate` as the delegate extension has it, for these tests: a task planned for a sub-thread of the call — a new
@@ -1305,12 +1319,14 @@ impl crate::tools::Tool for ThreadTool {
 #[tokio::test(flavor = "multi_thread")]
 async fn startup_gate_holds_all_input_until_the_final_workspace_is_bound() {
     use crate::threads::{StartRequest, StartWorkspace};
-    let beak = Beak::new().unwrap();
+
     let script = Arc::new(Script::default());
     script.replies.lock().unwrap().push_back(Ok(vec![says("done")]));
-    let runtime = runtime(&beak, &script);
-    let volume = crate::volume::Volume { runtime: runtime.clone() };
-    let threads = Threads::<ThreadFiber>::new(runtime.clone());
+    let runtime = runtime(&script);
+    let volume = crate::volume::Volume {
+        runtime: runtime.runtime_handle(),
+    };
+    let threads = Threads::<ThreadFiber>::new(runtime.runtime_handle());
     let folder = tempfile::tempdir().unwrap();
     let workspace = folder.path().canonicalize().unwrap().to_string_lossy().into_owned();
     let new = NewThread {
@@ -1401,65 +1417,68 @@ async fn startup_gate_holds_all_input_until_the_final_workspace_is_bound() {
     assert_eq!(script.asked.lock().unwrap().len(), 1);
     volume.finish_thread_start(&id, &retried.token, directory).await.unwrap();
     assert_eq!(script.asked.lock().unwrap().len(), 1);
-    runtime.close().await;
+    runtime.close().expect("closed");
 }
 
 #[tokio::test]
 async fn compaction_keeps_its_slot_while_descendants_are_exiting() {
     use crate::agent::compaction;
     use crate::threads::thread;
-    use beak::{Change, Ending, FiberSpec, Kernel, Options};
+    struct Family;
+    impl octoii_siphon_lib::Fiber for Family {
+        const KIND: &'static str = "test.family";
+        type Input = bool;
+        type Checkpoint = ();
+        type Output = ();
 
-    const KIND: &[u8] = b"test.family";
-    fn start<'a>(parent: &'a [u8], key: &'a [u8]) -> Change<'a> {
-        Change::Start {
-            parent,
-            key,
-            kind: KIND,
-            version: 1,
-            input: b"null",
-            checkpoint: b"",
-            priority: 0,
-            namespace: None,
+        fn run(
+            &self,
+            _: &mut octoii_siphon_lib::Run<'_>,
+            finish: bool,
+            _: Option<()>,
+        ) -> anyhow::Result<octoii_siphon_lib::Ending<(), ()>> {
+            Ok(if finish {
+                octoii_siphon_lib::Ending::Done(())
+            } else {
+                octoii_siphon_lib::Ending::Wait((), octoii_siphon_lib::Wait::new().deadline(i64::MAX))
+            })
         }
     }
 
-    let beak = beak::Beak::new().unwrap();
-    let (kernel, _) = Kernel::open(&beak, &Options::default()).unwrap();
-    kernel
-        .register(
-            KIND,
-            FiberSpec {
-                version: 1,
-                stop_handler: false,
-                retries: 0,
-                retry_delay_min_ms: 0,
-                retry_delay_max_ms: 0,
-            },
-        )
-        .unwrap();
+    let mut builder = octoii_siphon_lib::Builder::new().unwrap();
+    builder.fiber(Family).unwrap();
+    let runtime = builder.memory().unwrap();
     let id = "test";
     let directory = thread::path(id);
     let main = thread::main(id);
     let compact = compaction::path(id);
-    kernel
-        .commit(
-            10,
-            &[
-                Change::Mkdir { path: &directory },
-                start(&directory, thread::MAIN_KEY.as_bytes()),
-                start(&main, thread::COMPACTION_KEY.as_bytes()),
-                start(&compact, b"child"),
-            ],
-        )
+    let mut changes = octoii_siphon_lib::Changes::new();
+    changes
+        .mkdir(&directory)
+        .start::<Family>(&directory, thread::MAIN_KEY, &false)
+        .unwrap()
+        .start::<Family>(&main, thread::COMPACTION_KEY, &true)
+        .unwrap()
+        .start::<Family>(&compact, "child", &false)
         .unwrap();
-    let run = kernel.runnable(11).unwrap().into_iter().find(|run| run.path == compact).unwrap();
-    kernel.finish(12, &run, 0, &Ending::Done(b"null"), &[]).unwrap();
-    let snapshot = kernel.snapshot().unwrap();
-    let record = snapshot.record(&compact).unwrap().unwrap();
-    assert_eq!(record.state, beak::ProcessState::Exiting);
-    assert!(record.outcome.is_some());
-    let mut changes = siphon_runtime::Changes::new();
+    let mut committed = runtime.committed().unwrap();
+    runtime.commit(changes).await.unwrap();
+    let snapshot = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let snapshot = runtime.snapshot().unwrap();
+            if snapshot
+                .fiber(&compact)
+                .unwrap()
+                .is_some_and(|record| record.outcome.is_some() && !record.reapable)
+            {
+                break snapshot;
+            }
+            committed.changed().await.unwrap();
+        }
+    })
+    .await
+    .expect("the compaction records its result before its child exits");
+    let mut changes = octoii_siphon_lib::Changes::new();
     compaction::start(&snapshot, &mut changes, id).unwrap();
     assert!(changes.is_empty(), "the compaction still holds its slot");
 }

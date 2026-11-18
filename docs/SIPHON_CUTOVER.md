@@ -13,21 +13,21 @@ entry points. An unsupported version gives a clear error before runtime startup 
 for valid state in the current format. Validate a newly initialized volume and its subsequent reopen as part of
 the cutover.
 
-## Current evidence
+## Product boundary
 
-- The product Git tree contains one private `siphon` submodule. Its `beak/` directory is ordinary source in
-  the private repo. Cargo metadata resolves 20 product packages. `octoii` declares the two remaining direct
-  path dependencies on Beak and Siphon Runtime. The macOS ARM64 product graph resolves 11 private source
-  packages. The product graph has no dependency on `octoii-siphon-lib`. Product CI reads the gitlink, checks out the private repo with
-  `SIPHON_DEPLOY_KEY`, and tests all three source workspaces.
-- The local public wrapper at `fa96d9e` and development ABI 4 cover storage writes, retained snapshots, fibers,
-  exact host request IDs, person requests, request streams, directory reads, indexed label queries, metadata changes, the commit journal,
-  commit notifications, Fiber records and lifecycle changes, ordinary mail, volume IDs, time, file retention,
-  and reopen. The wrapper builds from a local archive and verifies the ABI, target, and hash. It rejects native
-  linking outside macOS. Native binary consumers have run on macOS ARM64.
-- The GitHub release list was empty and the crates.io sparse index returned 404 on 2026-11-18. The SDK
-  currently links a local artifact.
-  [GitHub releases](https://api.github.com/repos/octoii-works/octoii-siphon-lib/releases) · [crates.io index](https://index.crates.io/oc/to/octoii-siphon-lib)
+Octoii builds through the public `octoii-siphon-lib` SDK. Its Cargo graph uses the typed
+interface for snapshots, transactions, fibers, host requests, person replies, streams and
+machine operations. The dependency check rejects Beak and Siphon implementation packages
+in the resolved graph. CI installs the public archive for the locked SDK version.
+
+The private Siphon repository owns its Beak workspace and builds the native archives. The
+SDK crate carries the target and checksums of each matching distribution. The product has
+no private checkout dependency or deploy key.
+
+The published SDK is version `0.0.1`. Its four native archives passed the private native
+pipeline's C and Rust consumer checks. [Cargo package](https://crates.io/crates/octoii-siphon-lib/0.0.1) ·
+[Binary release](https://github.com/octoii-works/octoii-siphon-lib/releases/tag/v0.0.1)
+
 
 ## Remove the old contracts and close the source boundary
 
@@ -69,9 +69,8 @@ in Octoii and its extensions.
 3. **Build and verify distribution in parallel with the SDK work.** Private CI builds platform archives and
    hands verified artifacts to a clean consumer job. Start native link checks with the current development
    interface as the SDK expands. Required targets are macOS ARM64 and x64, Windows x64 MSVC, and Linux x64
-   GNU. The current Windows implementation reports unsupported for restricted commands, terminals and the
-   descriptor channel. Provide the required platform implementations and test them with the same ownership and
-   permission contract. Declare minimum OS and libc versions from the native jobs.
+   GNU. Windows validates the portable volume and Fiber contract. Restricted commands, terminals and the
+   descriptor channel use the macOS and Linux backends.
 
    Release the wrapper and artifacts together. Pin the artifact version, ABI, target and checksum in the
    published wrapper's release metadata. Isolate private symbols and test a standalone C consumer and Rust
@@ -84,21 +83,16 @@ in Octoii and its extensions.
    private workspaces exist. The private repo continues to build and test Siphon and Beak. Product CI builds
    and tests its real clients with public registry dependencies and release artifacts.
 
-Each private implementation batch lists its exact files and technical dependency before approval under
-`AGENTS.md`. Product code uses the new API as each public capability is adopted.
+## Cutover acceptance
 
-## Remaining cutover work
-
-| Work | Completion condition |
-| --- | --- |
-| Machine capabilities | Move namespaces and views, then restricted commands and terminal and coprocess I/O behind the native SDK. Bring each supported platform up to the same ownership and permission contract. |
-| Product adoption | Give host callbacks access to the active runtime during startup. Build Octoii and Node against a local binary candidate and verify real turns, approval, workspace tools, stop, and reopen. |
-| Distribution and source removal | Publish matching verified archives and the SDK for macOS, Windows and Linux. A clean product clone must build and pass CI with public inputs. The same change removes the gitlink and private checkout credentials. |
-
-The product builder opens Beak on the current host executor. Node uses the product API for startup,
-session storage, pairing and shutdown. Its build and test manifests have dropped both direct private
-dependencies. The Octoii product library owns the atomic transactions for issuing a session and redeeming a link.
-The product runtime handle is private. Integration tests use the product lifecycle, volume and protocol.
+- The product worktree passed 257 Rust tests with two optional external tests ignored.
+- The client passed nine tests against a real Node. The macOS desktop package built and its
+  embedded Node ran.
+- The manifest installer and Cargo build verify the published target archive. The Rust
+  dependency check examines normal, development, build and target-specific dependencies.
+- Restricted commands, terminals and descriptor channels use the platform backends that
+  implement them. Windows currently exposes the portable storage and execution interfaces
+  and reports unsupported for these machine features.
 
 ## Fiber label and volume format batch
 
@@ -473,7 +467,7 @@ ARM64, strict Clippy, 36 Siphon tests, three C consumers, and 24 standalone SDK 
 
 Octoii's file and command tools already operate through a configured namespace. The product decides
 which host folders to mount, which paths to hide, and which read-only views of the volume to show.
-The binary interface should expose those namespace capabilities and execute commands within the same
+The public interface exposes those namespace capabilities and executes commands within the same
 namespace. Siphon owns the namespace and command handles. Terminal and coprocess operations keep
 the existing command lifecycle, cancellation and shutdown contract.
 

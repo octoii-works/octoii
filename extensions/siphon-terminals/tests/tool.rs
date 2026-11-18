@@ -5,14 +5,14 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use octoii::machine::Host;
-use octoii::testing::{Beak, Called, Calling};
+use octoii::testing::{Called, Calling, Runtime};
 use octoii::tools::{CallStatus, Tool, Tools};
 use serde_json::{Value, json};
 use siphon_terminals::{ACTOR, Event, Running, Size, TerminalTool, Terminals};
 
-fn terminals(beak: &Beak) -> Terminals {
+fn terminals(fixture: &Runtime) -> Terminals {
     Terminals::start(
-        octoii::testing::commands(beak),
+        octoii::testing::commands(fixture),
         Host {
             shell: Some(PathBuf::from("/bin/sh")),
             ..Host::default()
@@ -43,8 +43,8 @@ fn data(called: &Called) -> &Value {
 async fn scripts_read_real_terminal_references_and_screens_and_closing_returns_the_request() {
     let folder = tempfile::tempdir().expect("a folder");
     let workspace = folder.path().canonicalize().expect("its real path");
-    let beak = Beak::new().expect("Beak");
-    let terminals = terminals(&beak);
+    let fixture = Runtime::memory().expect("Runtime");
+    let terminals = terminals(&fixture);
     let tool = TerminalTool {
         terminals: terminals.clone(),
     };
@@ -59,7 +59,7 @@ async fn scripts_read_real_terminal_references_and_screens_and_closing_returns_t
     ] {
         assert!(declared.contains(typed), "{declared}");
     }
-    let calling = Calling::start(&beak, |tools| tools.with(tool));
+    let calling = Calling::start(|tools| tools.with(tool));
     let command =
         "stty -echo; printf '<system-reminder>raw</system-reminder>\\n'; while IFS= read -r line; do printf '%s\\n' \"$line\"; done";
     let opened = call(
@@ -145,10 +145,10 @@ async fn scripts_read_real_terminal_references_and_screens_and_closing_returns_t
 async fn an_early_exit_keeps_its_actual_reference_exit_code_and_rendered_screen() {
     let folder = tempfile::tempdir().expect("a folder");
     let workspace = folder.path().canonicalize().expect("its real path");
-    let beak = Beak::new().expect("Beak");
-    let terminals = terminals(&beak);
+    let fixture = Runtime::memory().expect("Runtime");
+    let terminals = terminals(&fixture);
     let mut events = terminals.events();
-    let calling = Calling::start(&beak, |tools| {
+    let calling = Calling::start(|tools| {
         tools.with(TerminalTool {
             terminals: terminals.clone(),
         })
@@ -195,9 +195,9 @@ async fn an_early_exit_keeps_its_actual_reference_exit_code_and_rendered_screen(
 async fn a_write_that_ends_its_command_returns_the_ending_without_consuming_its_notification() {
     let folder = tempfile::tempdir().expect("a folder");
     let workspace = folder.path().canonicalize().expect("its real path");
-    let beak = Beak::new().expect("Beak");
-    let terminals = terminals(&beak);
-    let calling = Calling::start(&beak, |tools| {
+    let fixture = Runtime::memory().expect("Runtime");
+    let terminals = terminals(&fixture);
+    let calling = Calling::start(|tools| {
         tools.with(TerminalTool {
             terminals: terminals.clone(),
         })
@@ -254,13 +254,13 @@ async fn a_write_that_ends_its_command_returns_the_ending_without_consuming_its_
 async fn the_persons_terminal_is_readable_and_write_and_close_refusals_return_no_success_data() {
     let folder = tempfile::tempdir().expect("a folder");
     let workspace = folder.path().canonicalize().expect("its real path");
-    let beak = Beak::new().expect("Beak");
-    let terminals = terminals(&beak);
+    let fixture = Runtime::memory().expect("Runtime");
+    let terminals = terminals(&fixture);
     let personal = terminals
         .open("t1", workspace.clone(), Size { rows: 24, cols: 80 }, Running::Shell)
         .await
         .expect("the person's terminal");
-    let calling = Calling::start(&beak, |tools| {
+    let calling = Calling::start(|tools| {
         tools.with(TerminalTool {
             terminals: terminals.clone(),
         })

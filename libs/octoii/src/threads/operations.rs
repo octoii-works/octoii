@@ -3,11 +3,11 @@
 
 use std::marker::PhantomData;
 
-use beak::{Query, Range};
 use bytes::Bytes;
 use octoii_ai::vocabulary::InputContent;
+use octoii_siphon_lib::{Batch, Changes, Fiber, RuntimeHandle};
+use octoii_siphon_lib::{Query, Range};
 use serde::{Deserialize, Serialize};
-use siphon_runtime::{Changes, Fiber, NotGiven, Runtime};
 
 use crate::protocol::siphon::request_id;
 use crate::threads::config::{Config, ConfigChange};
@@ -49,11 +49,11 @@ pub enum Error {
     #[error(transparent)]
     Idempotency(#[from] idempotency::Error),
     #[error(transparent)]
-    NotGiven(#[from] NotGiven),
+    NotGiven(octoii_siphon_lib::Error),
     #[error(transparent)]
     Log(#[from] log::Error),
     #[error(transparent)]
-    Beak(#[from] beak::Error),
+    Beak(#[from] octoii_siphon_lib::Error),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
     #[error(transparent)]
@@ -63,13 +63,13 @@ pub enum Error {
 /// The threads, on a runtime whose fiber `M` runs each thread's main process.
 #[derive(Debug, Clone)]
 pub struct Threads<M> {
-    runtime: Runtime,
+    runtime: RuntimeHandle,
     main: PhantomData<fn(M)>,
 }
 
 impl<M> Threads<M> {
     #[must_use]
-    pub fn new(runtime: Runtime) -> Self {
+    pub fn new(runtime: RuntimeHandle) -> Self {
         Self {
             runtime,
             main: PhantomData,
@@ -77,7 +77,7 @@ impl<M> Threads<M> {
     }
 
     #[must_use]
-    pub fn runtime(&self) -> &Runtime {
+    pub fn runtime(&self) -> &RuntimeHandle {
         &self.runtime
     }
 }
@@ -89,7 +89,7 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
     /// # Errors
     /// As the key says; the commit's failure.
     pub async fn create(&self, new: &NewThread, key: &str) -> Result<String, Error> {
-        if let Some(done) = idempotency::done_before(&self.runtime.snapshot()?, key, "threads.create", None)? {
+        if let Some(done) = idempotency::done_before(&*self.runtime.snapshot()?, key, "threads.create", None)? {
             return Ok(done.result);
         }
         let id = self.runtime.new_id()?;
@@ -100,7 +100,7 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
             thread: None,
             result: id.clone(),
         };
-        idempotency::record(&mut changes, key, &done, self.runtime.now_ms())?;
+        idempotency::record(&mut changes, key, &done, self.runtime.now_ms()?)?;
         self.runtime.commit(changes).await?;
         Ok(id)
     }
@@ -117,7 +117,7 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
         request: super::StartRequest,
         key: &str,
     ) -> Result<(String, super::Start), Error> {
-        idempotency::done_before(&self.runtime.snapshot()?, key, "threads.prepare", None)?;
+        idempotency::done_before(&*self.runtime.snapshot()?, key, "threads.prepare", None)?;
         if request.owner.trim().is_empty() || content.is_empty() {
             return Err(Error::Start("preparation requires an owner and initial input".into()));
         }
@@ -126,7 +126,7 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
             fingerprint: super::input::fingerprint(new, &content, &request)?,
             thread: self.runtime.new_id()?,
         };
-        if let Some(bytes) = self.runtime.snapshot()?.read(&path, 0, u64::MAX)? {
+        if let Some(bytes) = self.runtime.snapshot()?.read_range(&path, 0, u64::MAX)? {
             return self.claimed(&bytes, &claim);
         }
         let start = super::Start {
@@ -138,7 +138,7 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
         let mut changes = Changes::new();
         Self::made(&mut changes, &claim.thread, &self.runtime.new_id()?, new)?;
         super::start::made(&mut changes, &claim.thread, &start)?;
-        let content = super::input::keep(&self.runtime.snapshot()?, &mut changes, &claim.thread, content)?;
+        let content = super::input::keep(&*self.runtime.snapshot()?, &mut changes, &claim.thread, content)?;
         inbox::put(
             &mut changes,
             &claim.thread,
@@ -155,7 +155,7 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
             .write(path.clone(), serde_json::to_vec(&claim)?)
             .seal(path.clone());
         if let Err(error) = self.runtime.commit(changes).await {
-            if let Some(bytes) = self.runtime.snapshot()?.read(&path, 0, u64::MAX)? {
+            if let Some(bytes) = self.runtime.snapshot()?.read_range(&path, 0, u64::MAX)? {
                 return self.claimed(&bytes, &claim);
             }
             return Err(error.into());
@@ -192,17 +192,17 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
         };
         let mut changes = Changes::new();
         changes.write(super::start::command_path(id, &key), serde_json::to_vec(&command)?);
-        Self::revive(&self.runtime.snapshot()?, &mut changes, id)?;
-        let mut committed = self.runtime.committed();
+        Self::revive(&*self.runtime.snapshot()?, &mut changes, id)?;
+        let mut committed = self.runtime.committed()?;
         self.runtime.commit(changes).await?;
         loop {
             let snapshot = self.runtime.snapshot()?;
-            if let Some(bytes) = snapshot.read(&super::start::result_path(id, &key), 0, u64::MAX)? {
+            if let Some(bytes) = snapshot.read_range(&super::start::result_path(id, &key), 0, u64::MAX)? {
                 let result: Result<super::Start, String> = serde_json::from_slice(&bytes)?;
                 return result.map_err(Error::Start);
             }
             thread::directory(&snapshot, id)?.ok_or(Error::NoSuchThread)?;
-            if snapshot.record(&thread::main(id))?.is_some_and(|record| record.outcome.is_some()) {
+            if snapshot.fiber(&thread::main(id))?.is_some_and(|record| record.outcome.is_some()) {
                 return Err(Error::Start("thread process ended before startup completed".into()));
             }
             committed
@@ -219,7 +219,7 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
     ///
     /// # Errors
     /// What cannot be written as JSON.
-    pub fn made(changes: &mut Changes, id: &str, entry: &str, new: &NewThread) -> Result<(), Error> {
+    pub fn made(changes: &mut Batch<'_>, id: &str, entry: &str, new: &NewThread) -> Result<(), Error> {
         let path = thread::path(id);
         let named = |name: &'static str, value: Option<&str>| {
             (
@@ -262,16 +262,16 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
     }
 
     /// The thread `id`'s directory, as it stands; none for one being removed, gone as its processes end.
-    fn directory(&self, id: &str) -> Result<beak::Directory, Error> {
-        thread::directory(&self.runtime.snapshot()?, id)?.ok_or(Error::NoSuchThread)
+    fn directory(&self, id: &str) -> Result<octoii_siphon_lib::Directory, Error> {
+        thread::directory(&*self.runtime.snapshot()?, id)?.ok_or(Error::NoSuchThread)
     }
 
     /// Adds to `changes` `inbound` delivered to the thread `id`, its main process started again where it had ended: its
     /// id in the inbox.
-    fn put(&self, id: &str, inbound: &Inbound, changes: &mut Changes) -> Result<String, Error> {
+    fn put(&self, id: &str, inbound: &Inbound, changes: &mut Batch<'_>) -> Result<String, Error> {
         let delivery = self.runtime.new_id()?;
         inbox::put(changes, id, &delivery, inbound)?;
-        Self::revive(&self.runtime.snapshot()?, changes, id)?;
+        Self::revive(&*self.runtime.snapshot()?, changes, id)?;
         Ok(delivery)
     }
 
@@ -280,9 +280,9 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
     ///
     /// # Errors
     /// The volume's failure; what cannot be written as JSON.
-    pub fn revive(snapshot: &beak::Snapshot, changes: &mut Changes, id: &str) -> Result<(), Error> {
+    pub fn revive(snapshot: &octoii_siphon_lib::Snapshot, changes: &mut Batch<'_>, id: &str) -> Result<(), Error> {
         let main = thread::main(id);
-        match snapshot.record(&main)? {
+        match snapshot.fiber(&main)? {
             Some(record) if !crate::volume::reapable(&record) => return Ok(()),
             Some(_) => {
                 changes.reap(main);
@@ -315,7 +315,7 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
     /// Delivers `content`, `actor`'s input, to the thread `id`, to join its work as `joins` says, once for `key`.
     async fn put_input(&self, id: &str, actor: &str, content: Vec<InputContent>, joins: Joins, key: &str) -> Result<String, Error> {
         self.directory(id)?;
-        if let Some(done) = idempotency::done_before(&self.runtime.snapshot()?, key, "threads.deliver", Some(id))? {
+        if let Some(done) = idempotency::done_before(&*self.runtime.snapshot()?, key, "threads.deliver", Some(id))? {
             return Ok(done.result);
         }
         let mut changes = Changes::new();
@@ -331,7 +331,7 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
             thread: Some(id.to_owned()),
             result: delivery.clone(),
         };
-        idempotency::record(&mut changes, key, &done, self.runtime.now_ms())?;
+        idempotency::record(&mut changes, key, &done, self.runtime.now_ms()?)?;
         self.runtime.commit(changes).await?;
         Ok(delivery)
     }
@@ -364,7 +364,7 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
         self.directory(id)?;
         let snoozed = self.runtime.snapshot()?.stat(&thread::within(id, SNOOZE_NAME))?.is_some();
         let mut changes = Changes::new();
-        change.add(&mut changes, id, snoozed, self.runtime.now_ms());
+        change.add(&mut changes, id, snoozed, self.runtime.now_ms()?);
         if !changes.is_empty() {
             self.runtime.commit(changes).await?;
         }
@@ -379,7 +379,7 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
     pub async fn withdraw(&self, id: &str, delivery: &str) -> Result<bool, Error> {
         let snapshot = self.runtime.snapshot()?;
         let file = inbox::file(id, delivery);
-        let Some(bytes) = snapshot.read(&file, 0, u64::MAX)? else {
+        let Some(bytes) = snapshot.read_range(&file, 0, u64::MAX)? else {
             return Ok(false);
         };
         let mut changes = Changes::new();
@@ -462,8 +462,13 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
         self.directory(id)?;
         let request = request_id(token)
             .filter(|request| thread::id_of(&request.process) == Some(id))
-            .ok_or(NotGiven::NoSuchRequest)?;
-        self.runtime.answer(&request, answer).await?;
+            .ok_or_else(|| {
+                Error::NotGiven(octoii_siphon_lib::Error::new(
+                    octoii_siphon_lib::Status::NotFound,
+                    "no such request waits",
+                ))
+            })?;
+        self.runtime.answer(&request, answer).await.map_err(Error::NotGiven)?;
         Ok(())
     }
 
@@ -472,10 +477,10 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
     /// # Errors
     /// `NoSuchThread`; the volume's failure.
     pub fn listed(&self, id: &str) -> Result<Listed, Error> {
-        self.listed_at(&self.runtime.snapshot()?, id)
+        self.listed_at(&*self.runtime.snapshot()?, id)
     }
 
-    pub(crate) fn listed_at(&self, snapshot: &beak::Snapshot, id: &str) -> Result<Listed, Error> {
+    pub(crate) fn listed_at(&self, snapshot: &octoii_siphon_lib::Snapshot, id: &str) -> Result<Listed, Error> {
         let directory = thread::directory(snapshot, id)?.ok_or(Error::NoSuchThread)?;
         status::listed(&self.runtime, snapshot, id, &directory)
     }
@@ -485,10 +490,10 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
     /// # Errors
     /// The volume's failure.
     pub fn list(&self) -> Result<Vec<Listed>, Error> {
-        self.list_at(&self.runtime.snapshot()?)
+        self.list_at(&*self.runtime.snapshot()?)
     }
 
-    pub(crate) fn list_at(&self, snapshot: &beak::Snapshot) -> Result<Vec<Listed>, Error> {
+    pub(crate) fn list_at(&self, snapshot: &octoii_siphon_lib::Snapshot) -> Result<Vec<Listed>, Error> {
         listed_all(&self.runtime, snapshot)
     }
 }
@@ -499,11 +504,11 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
 /// # Errors
 /// The volume's failure; a directory not as Octoii writes it.
 pub fn list(volume: &crate::volume::Volume) -> anyhow::Result<Vec<Listed>> {
-    Ok(listed_all(&volume.runtime, &volume.snapshot()?)?)
+    Ok(listed_all(&volume.runtime, &*volume.snapshot()?)?)
 }
 
 /// Every thread the snapshot holds, as a list shows it, in the order they were made.
-fn listed_all(runtime: &Runtime, snapshot: &beak::Snapshot) -> Result<Vec<Listed>, Error> {
+fn listed_all(runtime: &RuntimeHandle, snapshot: &octoii_siphon_lib::Snapshot) -> Result<Vec<Listed>, Error> {
     let prefix = format!("{KIND}:");
     let range = Range {
         prefix: prefix.as_bytes(),

@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 
-use beak::Snapshot;
+use octoii_siphon_lib::Snapshot;
 
 use crate::machine::Host;
 
@@ -41,10 +41,10 @@ impl WritableFolders {
         Self(Arc::new(OnceLock::new()))
     }
 
-    pub(crate) fn finish(&self, folders: Vec<Writable>) -> beak::Result<()> {
-        self.0.set(folders).map_err(|_| beak::Error {
-            status: beak::Status::Invalid,
-            reason: "writable folders already finalized".into(),
+    pub(crate) fn finish(&self, folders: Vec<Writable>) -> octoii_siphon_lib::Result<()> {
+        self.0.set(folders).map_err(|_| octoii_siphon_lib::Error {
+            code: octoii_siphon_lib::Status::Invalid as u32,
+            message: "writable folders already finalized".into(),
         })
     }
 
@@ -52,10 +52,10 @@ impl WritableFolders {
     ///
     /// # Errors
     /// Octoii has not started, or the volume could not be read.
-    pub fn read(&self, volume: &crate::volume::Volume) -> beak::Result<Vec<Writable>> {
-        let folders = self.0.get().ok_or_else(|| beak::Error {
-            status: beak::Status::Invalid,
-            reason: "writable folders are not finalized until Octoii starts".into(),
+    pub fn read(&self, volume: &crate::volume::Volume) -> octoii_siphon_lib::Result<Vec<Writable>> {
+        let folders = self.0.get().ok_or_else(|| octoii_siphon_lib::Error {
+            code: octoii_siphon_lib::Status::Invalid as u32,
+            message: "writable folders are not finalized until Octoii starts".into(),
         })?;
         let snapshot = volume.snapshot()?;
         Ok(on(folders, &snapshot).cloned().collect())

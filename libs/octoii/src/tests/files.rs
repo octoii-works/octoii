@@ -5,23 +5,15 @@ use crate::machine::{Base, Host};
 use crate::threads::files;
 use crate::tools::Context;
 use crate::tools::permissions::Writes;
-use beak::Beak;
 use bytes::Bytes;
-use siphon_runtime::{Changes, Options, Runtime};
+use octoii_siphon_lib::{Changes, Runtime};
 use tokio_util::sync::CancellationToken;
 
-async fn context(beak: &Beak, folder: &std::path::Path) -> Context {
+async fn context(folder: &std::path::Path) -> (Runtime, Context) {
     let workspace = folder.join("workspace");
     std::fs::create_dir(&workspace).expect("a workspace");
-    let runtime = Runtime::builder()
-        .start(
-            beak,
-            Options {
-                directory: Some(folder.join("volume")),
-                ..Options::default()
-            },
-        )
-        .expect("started");
+    let runtime =
+        crate::tests::open_runtime(octoii_siphon_lib::Builder::new().expect("a builder"), Some(folder.join("volume"))).expect("started");
     let mut changes = Changes::new();
     changes.mkdir(crate::threads::thread::path("t1")).meta(
         crate::threads::thread::path("t1"),
@@ -32,26 +24,26 @@ async fn context(beak: &Beak, folder: &std::path::Path) -> Context {
         vec![],
     );
     runtime.commit(changes).await.expect("a thread");
-    Context {
+    let context = Context {
         thread: "t1".into(),
         process: crate::threads::thread::path("t1"),
         call: "c1".into(),
         base: Base { workspace, home: None },
         writes: Writes::Workspace,
         places: Vec::new(),
-        kernel: runtime.kernel().clone(),
         host: Host::default(),
-        runtime,
+        runtime: runtime.runtime_handle(),
         cancelled: CancellationToken::new(),
-    }
+    };
+    (runtime, context)
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn the_public_image_primitive_fits_deduplicates_and_keeps_images_only_in_existing_threads() {
     let folder = tempfile::tempdir().expect("a folder");
     let root = folder.path().canonicalize().expect("its real path");
-    let beak = Beak::new().expect("Beak");
-    let context = context(&beak, &root).await;
+
+    let (owner, context) = context(&root).await;
     let volume = context.volume();
     let mut image = Vec::new();
     image::RgbImage::from_pixel(2048, 2048, image::Rgb([40, 100, 200]))
@@ -75,31 +67,24 @@ async fn the_public_image_primitive_fits_deduplicates_and_keeps_images_only_in_e
         .expect("the saved image")
         .expect("its bytes");
     assert_eq!(file.reference, files::reference_of(&bytes));
-    context.runtime.close().await;
+    owner.close().expect("closed");
     drop(volume);
     drop(context);
-    let reopened = Runtime::builder()
-        .start(
-            &beak,
-            Options {
-                directory: Some(root.join("volume")),
-                ..Options::default()
-            },
-        )
-        .expect("reopened");
+    let reopened =
+        crate::tests::open_runtime(octoii_siphon_lib::Builder::new().expect("a builder"), Some(root.join("volume"))).expect("reopened");
     assert_eq!(
         files::read(&reopened.snapshot().expect("a snapshot"), "t1", &file.reference).expect("the historical image"),
         Some(bytes)
     );
-    reopened.close().await;
+    reopened.close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn namespace_file_ids_distinguish_host_files_from_virtual_volume_files() {
     let folder = tempfile::tempdir().expect("a folder");
     let root = folder.path().canonicalize().expect("its real path");
-    let beak = Beak::new().expect("Beak");
-    let mut context = context(&beak, &root).await;
+
+    let (owner, mut context) = context(&root).await;
     context.host.threads = Some(root.join("threads"));
     let bytes = b"an original file";
     std::fs::write(context.base.workspace.join("original.txt"), bytes).expect("written");
@@ -125,15 +110,15 @@ async fn namespace_file_ids_distinguish_host_files_from_virtual_volume_files() {
             .1,
         bytes.as_slice()
     );
-    context.runtime.close().await;
+    owner.close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn original_files_are_content_addressed_and_survive_source_changes_and_a_reopen() {
     let folder = tempfile::tempdir().expect("a folder");
     let root = folder.path().canonicalize().expect("its real path");
-    let beak = Beak::new().expect("Beak");
-    let context = context(&beak, &root).await;
+
+    let (owner, context) = context(&root).await;
     let mut png = Vec::new();
     image::RgbImage::from_pixel(4096, 2048, image::Rgb([200, 10, 10]))
         .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
@@ -184,9 +169,9 @@ async fn original_files_are_content_addressed_and_survive_source_changes_and_a_r
     let count = snapshot
         .list(
             &crate::threads::thread::within("t1", "files"),
-            &beak::Range {
+            &octoii_siphon_lib::Range {
                 limit: usize::MAX,
-                ..beak::Range::default()
+                ..octoii_siphon_lib::Range::default()
             },
         )
         .expect("files")
@@ -198,18 +183,11 @@ async fn original_files_are_content_addressed_and_survive_source_changes_and_a_r
         "one blob for each distinct content; the two empty files share it"
     );
     drop(snapshot);
-    context.runtime.close().await;
+    owner.close().expect("closed");
     drop(context);
 
-    let reopened = Runtime::builder()
-        .start(
-            &beak,
-            Options {
-                directory: Some(root.join("volume")),
-                ..Options::default()
-            },
-        )
-        .expect("reopened");
+    let reopened =
+        crate::tests::open_runtime(octoii_siphon_lib::Builder::new().expect("a builder"), Some(root.join("volume"))).expect("reopened");
     let snapshot = reopened.snapshot().expect("a snapshot");
     for ((_, bytes, _), file) in originals.iter().zip(&kept) {
         assert_eq!(
@@ -217,15 +195,15 @@ async fn original_files_are_content_addressed_and_survive_source_changes_and_a_r
             Some(Bytes::copy_from_slice(bytes))
         );
     }
-    reopened.close().await;
+    reopened.close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn invalid_missing_hidden_nonregular_oversized_and_unstored_files_are_refused() {
     let folder = tempfile::tempdir().expect("a folder");
     let root = folder.path().canonicalize().expect("its real path");
-    let beak = Beak::new().expect("Beak");
-    let mut context = context(&beak, &root).await;
+
+    let (owner, mut context) = context(&root).await;
     assert_eq!(context.keep_file("").await.expect_err("empty path").0, "invalid file path");
     assert_eq!(context.keep_file("bad\0path").await.expect_err("NUL path").0, "invalid file path");
     assert!(
@@ -276,5 +254,5 @@ async fn invalid_missing_hidden_nonregular_oversized_and_unstored_files_are_refu
         context.keep_file("unkept.txt").await.is_err(),
         "no success when the volume cannot store the file"
     );
-    context.runtime.close().await;
+    owner.close().expect("closed");
 }

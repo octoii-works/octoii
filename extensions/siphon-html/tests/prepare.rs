@@ -2,15 +2,15 @@
 
 use base64::Engine as _;
 use octoii::machine::{Base, Host, Writes};
-use octoii::testing::Beak;
+use octoii::testing::Runtime;
 use siphon_html::{Error, prepare};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn html_text_is_returned_unchanged_and_other_formats_are_refused() {
     let folder = tempfile::tempdir().expect("a folder");
     let root = folder.path().canonicalize().expect("its real path");
-    let beak = Beak::new().expect("Beak");
-    let machine = octoii::testing::commands(&beak)
+    let fixture = Runtime::memory().expect("Runtime");
+    let machine = octoii::testing::commands(&fixture)
         .open(
             &Host::default(),
             Base {
@@ -51,8 +51,8 @@ async fn missing_directories_hidden_files_and_oversized_files_remain_unreadable(
         .expect("a file")
         .set_len(octoii::threads::files::BYTES_MAX as u64 + 1)
         .expect("past the limit");
-    let beak = Beak::new().expect("Beak");
-    let machine = octoii::testing::commands(&beak)
+    let fixture = Runtime::memory().expect("Runtime");
+    let machine = octoii::testing::commands(&fixture)
         .open(
             &Host {
                 hidden: vec![hidden],
@@ -93,8 +93,8 @@ async fn quoted_images_and_css_urls_are_embedded_relative_to_the_source_with_the
         root.display()
     );
     std::fs::write(root.join("reports/report.html"), &source).expect("HTML source");
-    let beak = Beak::new().expect("Beak");
-    let machine = octoii::testing::commands(&beak)
+    let fixture = Runtime::memory().expect("Runtime");
+    let machine = octoii::testing::commands(&fixture)
         .open(
             &Host::default(),
             Base {
@@ -133,8 +133,8 @@ async fn missing_hidden_and_renamed_secret_images_are_refused() {
         "<!DOCTYPE secret [<!-- ]><svg/> -->]><secret>API_KEY=private</secret>",
     )
     .expect("a fake root inside a doctype comment");
-    let beak = Beak::new().expect("Beak");
-    let machine = octoii::testing::commands(&beak)
+    let fixture = Runtime::memory().expect("Runtime");
+    let machine = octoii::testing::commands(&fixture)
         .open(
             &Host {
                 hidden: vec![root.join("private")],
@@ -174,8 +174,8 @@ async fn the_size_limit_counts_base64_expansion_and_every_repeated_image() {
     png[..8].copy_from_slice(b"\x89PNG\r\n\x1a\n");
     std::fs::write(root.join("large.png"), &png).expect("an image below the raw file limit");
     std::fs::write(root.join("report.html"), "<img src='large.png'><img src='large.png'>").expect("HTML");
-    let beak = Beak::new().expect("Beak");
-    let machine = octoii::testing::commands(&beak)
+    let fixture = Runtime::memory().expect("Runtime");
+    let machine = octoii::testing::commands(&fixture)
         .open(
             &Host::default(),
             Base {

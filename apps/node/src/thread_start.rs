@@ -113,7 +113,7 @@ pub(crate) async fn accepted(
     }
     let volume = node.siphon.volume();
     let internal = |error: String| Denied(StatusCode::INTERNAL_SERVER_ERROR, error);
-    let settings = octoii::settings::environment(&volume.snapshot().map_err(|error| internal(error.to_string()))?)
+    let settings = octoii::settings::environment(&*volume.snapshot().map_err(|error| internal(error.to_string()))?)
         .map_err(|error| internal(error.to_string()))?;
     if settings.disabled_extensions.iter().any(|name| name == "git")
         || !node

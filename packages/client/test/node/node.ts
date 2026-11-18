@@ -9,7 +9,13 @@ import { join, resolve } from "node:path";
 import { type Client, type ClientOptions, createClient, type FileRef } from "../../src/index.ts";
 
 /** The program the workspace builds. */
-const PROGRAM = resolve(import.meta.dir, "../../../../target/debug/octoii");
+const PROGRAM = resolve(
+	import.meta.dir,
+	"../../../..",
+	process.env["CARGO_TARGET_DIR"] ?? "target",
+	"debug",
+	process.platform === "win32" ? "octoii.exe" : "octoii",
+);
 
 /** A node a test runs, on its Home and port. */
 export class Node {

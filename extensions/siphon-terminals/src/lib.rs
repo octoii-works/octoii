@@ -394,7 +394,7 @@ impl Owner {
         };
         let now = now_ms();
         let (command, mut events) = self.commands.spawn(now, b"", machine.namespace(), &spec)?;
-        let id = self.commands.new_id(now)?;
+        let id = self.commands.new_id()?;
         let taken: Vec<u32> = self
             .terminals
             .iter()
@@ -406,7 +406,7 @@ impl Owner {
         let messages = self.messages.clone();
         let told = id.clone();
         tokio::spawn(async move {
-            while let Some(event) = events.next().await {
+            while let Ok(Some(event)) = events.next().await {
                 let Some(messages) = messages.upgrade() else { return };
                 let _ = messages.send(Message::Told { id: told.clone(), event });
             }

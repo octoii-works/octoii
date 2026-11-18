@@ -1,8 +1,8 @@
 //! A thread's startup gate. The main process alone changes it, consuming durable control messages before inputs.
-use beak::{Directory, Range, Snapshot};
 use bytes::Bytes;
+use octoii_siphon_lib::{Batch, Run};
+use octoii_siphon_lib::{Directory, Range, Snapshot};
 use serde::{Deserialize, Serialize};
-use siphon_runtime::{Changes, Run};
 
 use super::{
     Config,
@@ -78,7 +78,7 @@ pub(crate) fn result_path(id: &str, key: &str) -> Bytes {
     [results(id).as_ref(), b"/", key.as_bytes()].concat().into()
 }
 
-pub(crate) fn keep(changes: &mut Changes, id: &str, start: &Start) -> serde_json::Result<()> {
+pub(crate) fn keep(changes: &mut Batch<'_>, id: &str, start: &Start) -> serde_json::Result<()> {
     changes.meta(
         thread::path(id),
         vec![],
@@ -87,7 +87,7 @@ pub(crate) fn keep(changes: &mut Changes, id: &str, start: &Start) -> serde_json
     Ok(())
 }
 
-pub(crate) fn made(changes: &mut Changes, id: &str, start: &Start) -> serde_json::Result<()> {
+pub(crate) fn made(changes: &mut Batch<'_>, id: &str, start: &Start) -> serde_json::Result<()> {
     keep(changes, id, start)?;
     changes.mkdir(commands(id)).mkdir(results(id));
     Ok(())
@@ -136,7 +136,7 @@ pub(crate) fn advance(run: &mut Run<'_>, id: &str) -> anyhow::Result<Gate> {
         let path = command_path(id, key);
         let bytes = run
             .snapshot()
-            .read(&path, 0, u64::MAX)?
+            .read_range(&path, 0, u64::MAX)?
             .ok_or_else(|| anyhow::anyhow!("missing startup command"))?;
         let command: Command = serde_json::from_slice(&bytes)?;
         let result = transitioned(&start, command);

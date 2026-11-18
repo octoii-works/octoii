@@ -4,7 +4,7 @@
 //! conversation read back, about an entry found too. Arguments that do not fit are told by the field of the action they
 //! name.
 
-use octoii::testing::{Beak, Called, Calling};
+use octoii::testing::{Called, Calling};
 use octoii::tools::{CallStatus, Tool};
 use serde_json::json;
 use siphon_thread::{ConversationContent, ThreadResult, ThreadStatus, ThreadSummary, ThreadTool};
@@ -25,10 +25,10 @@ struct Turn {
 }
 
 impl Turn {
-    fn start(beak: &Beak) -> Self {
+    fn start() -> Self {
         let folder = tempfile::tempdir().expect("a folder");
         Self {
-            calling: Calling::start(beak, |tools| tools.with(ThreadTool)),
+            calling: Calling::start(|tools| tools.with(ThreadTool)),
             workspace: folder.path().canonicalize().expect("its real path"),
             _folder: folder,
         }
@@ -81,8 +81,7 @@ impl Turn {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn marks_are_explicit_typed_actions_and_the_list_exposes_their_state() {
-    let beak = Beak::new().unwrap();
-    let turn = Turn::start(&beak);
+    let turn = Turn::start();
     let child = turn.greeter().await;
     for (action, expected, pinned, archived) in [
         ("pin", ThreadResult::Pinned { thread: child.clone() }, true, false),
@@ -95,7 +94,7 @@ async fn marks_are_explicit_typed_actions_and_the_list_exposes_their_state() {
         let row = turn.listed(&format!("list-{action}"), &child).await;
         assert_eq!((row.pinned, row.archived), (pinned, archived));
     }
-    let until = turn.calling.volume().now_ms() + 86_400_000;
+    let until = turn.calling.volume().now_ms().unwrap() + 86_400_000;
     let at = jiff::Timestamp::from_millisecond(until).unwrap().to_string();
     let snoozed = turn
         .called("snooze", vec![json!({ "action": "snooze", "thread": child, "until": at })])
@@ -118,8 +117,7 @@ async fn marks_are_explicit_typed_actions_and_the_list_exposes_their_state() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn renaming_oneself_returns_a_title_only_request_and_refuses_empty_titles() {
-    let beak = Beak::new().unwrap();
-    let turn = Turn::start(&beak);
+    let turn = Turn::start();
     let calls = turn
         .called(
             "rename",
@@ -156,8 +154,7 @@ async fn renaming_oneself_returns_a_title_only_request_and_refuses_empty_titles(
 
 #[tokio::test(flavor = "multi_thread")]
 async fn organizing_missing_threads_and_invalid_snooze_times_returns_no_success_data() {
-    let beak = Beak::new().unwrap();
-    let turn = Turn::start(&beak);
+    let turn = Turn::start();
     let calls = turn
         .called(
             "invalid",
@@ -182,8 +179,7 @@ async fn organizing_missing_threads_and_invalid_snooze_times_returns_no_success_
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_thread_started_is_listed_with_the_others_the_most_recently_active_first() {
-    let beak = Beak::new().expect("Beak");
-    let turn = Turn::start(&beak);
+    let turn = Turn::start();
     let greeter = turn.greeter().await;
     let listed = turn.called("k1", vec![json!({ "action": "list" })]).await;
     let text = &listed[0].text;
@@ -228,8 +224,7 @@ async fn a_thread_started_is_listed_with_the_others_the_most_recently_active_fir
 
 #[tokio::test(flavor = "multi_thread")]
 async fn what_was_said_is_found_by_every_keyword_or_any() {
-    let beak = Beak::new().expect("Beak");
-    let turn = Turn::start(&beak);
+    let turn = Turn::start();
     let greeter = turn.greeter().await;
     let found = turn
         .called(
@@ -287,8 +282,7 @@ async fn what_was_said_is_found_by_every_keyword_or_any() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn found_entries_are_read_with_anchors_and_typed_settings() {
-    let beak = Beak::new().expect("Beak");
-    let turn = Turn::start(&beak);
+    let turn = Turn::start();
     let greeter = turn.greeter().await;
     let found = turn.called("find", vec![json!({ "action": "search", "keywords": "GREET" })]).await;
     let ThreadResult::Search { hits, .. } = result(&found[0]) else {
@@ -368,8 +362,7 @@ async fn found_entries_are_read_with_anchors_and_typed_settings() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn search_merges_threads_newest_first_and_pages_without_duplicates() {
-    let beak = Beak::new().unwrap();
-    let turn = Turn::start(&beak);
+    let turn = Turn::start();
     let started = turn
         .called(
             "many",
@@ -433,8 +426,7 @@ async fn search_merges_threads_newest_first_and_pages_without_duplicates() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn messages_and_stop_requests_identify_the_thread_and_delivery_without_reading_reminders() {
-    let beak = Beak::new().unwrap();
-    let turn = Turn::start(&beak);
+    let turn = Turn::start();
     let started = turn.called("start", vec![json!({ "action": "start", "message": "begin" })]).await;
     let ThreadResult::Start {
         thread,
@@ -494,8 +486,7 @@ impl octoii::tools::Tool for CancelledHistory {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_cancelled_history_read_stops_before_touching_a_missing_thread() {
-    let beak = Beak::new().unwrap();
-    let calling = Calling::start(&beak, |tools| tools.with(CancelledHistory));
+    let calling = Calling::start(|tools| tools.with(CancelledHistory));
     let folder = tempfile::tempdir().unwrap();
     let called = calling
         .called(

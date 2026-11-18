@@ -11,8 +11,7 @@ use crate::agent::waiting::{DelegatedFiber, Waiting, directory_of, label};
 use crate::threads::inbox::{self, Inbound, ReplyTo};
 use crate::threads::{Config, ConfigChange, MarksChange, Mode, NewThread, Parent, Threads, thread};
 use crate::tools::{Awaited, Plan, Primitives, Report, Spawned, Step};
-use beak::layout;
-use siphon_runtime::{Changes, Run};
+use octoii_siphon_lib::{Batch, Changes, Run};
 
 /// Delivers `content` from `actor` to the inbox of the thread `thread` at once, outside any call — as a terminal tells
 /// its thread that the command it ran ended: it joins the thread's work at its next step, and no one is told of it.
@@ -168,10 +167,10 @@ impl Primitives for ThreadPrimitives {
 /// effort — titled `title`, with `changes`: a sub-thread of the call `call`, or a thread of the person's.
 #[expect(clippy::too_many_arguments, reason = "a step's fields and the thread it is made like")]
 fn spawn(
-    changes: &mut Changes,
+    changes: &mut Batch<'_>,
     own: &str,
     call: &str,
-    directory: &beak::Directory,
+    directory: &octoii_siphon_lib::Directory,
     id: &str,
     entry: &str,
     title: Option<String>,
@@ -196,7 +195,7 @@ fn spawn(
 }
 
 /// Queues only the title in the existing configuration inbox; the thread's main process applies it.
-fn rename(changes: &mut Changes, own: &str, thread: &str, delivery: &str, title: &str) -> anyhow::Result<()> {
+fn rename(changes: &mut Batch<'_>, own: &str, thread: &str, delivery: &str, title: &str) -> anyhow::Result<()> {
     let inbound = Inbound::Config {
         actor: own.to_owned(),
         change: ConfigChange {
@@ -211,7 +210,7 @@ fn rename(changes: &mut Changes, own: &str, thread: &str, delivery: &str, title:
 /// Applies marks in plan order, including a snooze created or cleared by an earlier step of this same plan.
 fn mark(
     run: &Run<'_>,
-    changes: &mut Changes,
+    changes: &mut Batch<'_>,
     thread: &str,
     change: &MarksChange,
     snoozed: &mut HashMap<String, bool>,
@@ -230,7 +229,12 @@ fn mark(
 
 /// Why the thread whose directory is `directory` may not change `target`: it is not there, or its mode reaches
 /// further than the caller's; none where it may. Sending to oneself is checked by the delivery's own rule.
-fn refused(run: &Run<'_>, directory: &beak::Directory, made: &HashSet<String>, target: &str) -> anyhow::Result<Option<String>> {
+fn refused(
+    run: &Run<'_>,
+    directory: &octoii_siphon_lib::Directory,
+    made: &HashSet<String>,
+    target: &str,
+) -> anyhow::Result<Option<String>> {
     if made.contains(target) {
         return Ok(None);
     }
@@ -255,7 +259,7 @@ fn refused(run: &Run<'_>, directory: &beak::Directory, made: &HashSet<String>, t
 /// inbox; or no one.
 fn reply_to(
     run: &Run<'_>,
-    changes: &mut Changes,
+    changes: &mut Batch<'_>,
     own: &str,
     target: &str,
     delivery: &str,
@@ -265,7 +269,7 @@ fn reply_to(
         Report::None => None,
         Report::Call => Some(ReplyTo {
             process: String::from_utf8_lossy(run.path()).into_owned(),
-            started: run.snapshot().record(run.path())?.map(|record| record.created_seq),
+            started: run.snapshot().fiber(run.path())?.map(|record| record.created_seq),
             key: delivery.to_owned(),
         }),
         Report::Inbox => {
@@ -277,7 +281,7 @@ fn reply_to(
             };
             changes.start::<DelegatedFiber>(thread::main(own), &waiter, &waiting)?;
             Some(ReplyTo {
-                process: String::from_utf8_lossy(&layout::process(&thread::main(own), waiter.as_bytes())).into_owned(),
+                process: String::from_utf8_lossy(&octoii_siphon_lib::process_path(&thread::main(own), waiter.as_bytes())).into_owned(),
                 started: None,
                 key: delivery.to_owned(),
             })

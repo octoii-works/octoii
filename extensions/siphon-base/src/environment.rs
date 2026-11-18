@@ -33,7 +33,7 @@ impl Teller for Environment {
             Ok(Telling {
                 sections: vec![(
                     "environment".into(),
-                    environment(place, &places, mode, octoii::machine::confines(), volume.now_ms()),
+                    environment(place, &places, mode, octoii::machine::confines(), volume.now_ms()?),
                 )],
                 tools: Vec::new(),
             })

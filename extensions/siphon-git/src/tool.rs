@@ -67,7 +67,7 @@ impl Tool for GitTool {
         let git = Git {
             machine: &machine,
             under: &context.process,
-            time: context.volume().now_ms(),
+            time: context.volume().now_ms().map_err(|error| Refusal(error.to_string()))?,
             cancelled: context.cancelled.clone(),
         };
         let folder = &context.base.workspace;

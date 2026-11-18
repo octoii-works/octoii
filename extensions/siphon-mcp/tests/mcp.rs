@@ -5,7 +5,7 @@
 use std::path::{Path, PathBuf};
 
 use octoii::machine::Host;
-use octoii::testing::{Beak, Called, Calling};
+use octoii::testing::{Called, Calling};
 use octoii::tools::CallStatus;
 use octoii::tools::Place;
 use serde_json::json;
@@ -37,9 +37,9 @@ fn home() -> (tempfile::TempDir, PathBuf) {
 }
 
 /// Calls run by Octoii's own tools and the servers' `servers`.
-fn calling(beak: &Beak, servers: &Servers) -> Calling {
+fn calling(servers: &Servers) -> Calling {
     let servers = servers.clone();
-    Calling::start(beak, move |tools| tools.with_toolset(std::sync::Arc::new(servers)))
+    Calling::start(move |tools| tools.with_toolset(std::sync::Arc::new(servers)))
 }
 
 /// What a call came to, as these tests compare it: how it ended, its text, its images, and what it told typed.
@@ -123,8 +123,7 @@ fn a_configuration_names_commands_and_urls_and_says_what_it_could_not_take() {
 async fn the_person_s_servers_tools_are_listed_and_called_as_the_model_s_own() {
     let (_home_folder, home) = home();
     let servers = Servers::start(Host::default(), Some(&home));
-    let beak = Beak::new().expect("Beak");
-    let calling = calling(&beak, &servers);
+    let calling = calling(&servers);
     let volume = calling.volume();
     let (_folder, workspace) = folder();
     let catalog = servers.catalog(&volume, &Place::of(&workspace)).await.expect("a catalog");
@@ -193,8 +192,7 @@ async fn the_person_s_servers_tools_are_listed_and_called_as_the_model_s_own() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_project_s_servers_run_once_the_person_trusts_its_configuration_as_it_is() {
     let servers = Servers::start(Host::default(), None);
-    let beak = Beak::new().expect("Beak");
-    let calling = calling(&beak, &servers);
+    let calling = calling(&servers);
     let volume = calling.volume();
     let (_folder, project) = folder();
     std::fs::create_dir(project.join(".git")).expect("a repository");

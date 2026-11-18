@@ -2,15 +2,15 @@
 //! them from the inbox — from what each was to what it is — inputs taken in the order they came, how the person keeps
 //! them marked on their directory, stopped, deleted with what they delegated, and their log read on a page at a time.
 
+use crate::tests::WithRuntime;
 use std::time::Duration;
 
 use crate::threads::config::{Changed, ConfigChange, ConfigChanged};
 use crate::threads::log::{self, Entry, Writer};
 use crate::threads::{Config, MainInput, MarksChange, Mode, NewThread, Parent, Threads, Turn, inbox};
-use beak::Beak;
 use bytes::Bytes;
 use octoii_ai::vocabulary::{InputContent, ReasoningEffort};
-use siphon_runtime::{Ending, Fiber, Options, Run, Runtime, Wait};
+use octoii_siphon_lib::{Ending, Fiber, Run, Runtime, Wait};
 
 /// A main process that takes its inbox into its log as it changes, and does nothing more.
 struct Taker;
@@ -42,8 +42,16 @@ impl Fiber for Idle {
     }
 }
 
-fn threads<M: Fiber<Input = MainInput>>(beak: &Beak, main: M) -> Threads<M> {
-    Threads::new(Runtime::builder().fiber(main).start(beak, Options::default()).expect("started"))
+fn threads<M: Fiber<Input = MainInput>>(main: M) -> WithRuntime<Threads<M>> {
+    WithRuntime::new(
+        {
+            let mut builder = octoii_siphon_lib::Builder::new().expect("a builder");
+            builder.fiber(main).expect("registered");
+            crate::tests::open_runtime(builder, None)
+        }
+        .expect("started"),
+        Threads::new,
+    )
 }
 
 fn person(config: Config) -> NewThread {
@@ -67,27 +75,35 @@ impl Fiber for ApplyPlan {
     }
 }
 
-fn organizing_threads(beak: &Beak, options: Options) -> Threads<Taker> {
-    Threads::new(Runtime::builder().fiber(Taker).fiber(ApplyPlan).start(beak, options).unwrap())
+fn organizing_threads(directory: Option<std::path::PathBuf>) -> WithRuntime<Threads<Taker>> {
+    WithRuntime::new(
+        {
+            let mut builder = octoii_siphon_lib::Builder::new().expect("a builder");
+            builder.fiber(Taker).expect("registered").fiber(ApplyPlan).expect("registered");
+            crate::tests::open_runtime(builder, directory)
+        }
+        .unwrap(),
+        Threads::new,
+    )
 }
 
 async fn applied(runtime: &Runtime, own: &str, plan: crate::tools::Plan) -> Result<(), String> {
     let key = runtime.new_id().unwrap();
-    let process = beak::layout::process(b"", key.as_bytes());
-    let mut changes = siphon_runtime::Changes::new();
+    let process = octoii_siphon_lib::process_path(b"", key.as_bytes());
+    let mut changes = octoii_siphon_lib::Changes::new();
     changes.start::<ApplyPlan>(Bytes::new(), &key, &(own.to_owned(), plan)).unwrap();
     runtime.commit(changes).await.unwrap();
-    let mut committed = runtime.committed();
+    let mut committed = runtime.committed().expect("a commit watch");
     tokio::time::timeout(Duration::from_secs(10), async {
         loop {
             if let Some(outcome) = runtime
                 .snapshot()
                 .unwrap()
-                .record(&process)
+                .fiber(&process)
                 .unwrap()
                 .and_then(|record| record.outcome)
             {
-                let beak::Outcome::Completed(Some(result)) = outcome else {
+                let octoii_siphon_lib::Outcome::Completed(Some(result)) = outcome else {
                     panic!("the plan failed to run: {outcome:?}")
                 };
                 return serde_json::from_slice(&result).unwrap();
@@ -100,7 +116,7 @@ async fn applied(runtime: &Runtime, own: &str, plan: crate::tools::Plan) -> Resu
 }
 
 async fn inbox_empty(threads: &Threads<Taker>, id: &str) {
-    let mut committed = threads.runtime().committed();
+    let mut committed = threads.runtime().committed().expect("a commit watch");
     tokio::time::timeout(Duration::from_secs(10), async {
         while !threads.listed(id).unwrap().status.inbox.is_empty() {
             committed.changed().await.unwrap();
@@ -112,15 +128,15 @@ async fn inbox_empty(threads: &Threads<Taker>, id: &str) {
 
 /// Establishes an absent main process for revival tests, without waiting for graceful termination.
 async fn force_remove_main(runtime: &Runtime, id: &str) {
-    let mut changes = siphon_runtime::Changes::new();
+    let mut changes = octoii_siphon_lib::Changes::new();
     changes.force_remove(crate::threads::thread::main(id), None);
     runtime.commit(changes).await.unwrap();
-    let mut committed = runtime.committed();
+    let mut committed = runtime.committed().expect("a commit watch");
     tokio::time::timeout(Duration::from_secs(10), async {
         while runtime
             .snapshot()
             .unwrap()
-            .record(&crate::threads::thread::main(id))
+            .fiber(&crate::threads::thread::main(id))
             .unwrap()
             .is_some()
         {
@@ -132,7 +148,7 @@ async fn force_remove_main(runtime: &Runtime, id: &str) {
         let snapshot = runtime.snapshot().unwrap();
         panic!(
             "the main process was not removed: {error}; record={:?}; directory={:?}",
-            snapshot.record(&crate::threads::thread::main(id)).unwrap(),
+            snapshot.fiber(&crate::threads::thread::main(id)).unwrap(),
             snapshot.stat(&crate::threads::thread::main(id)).unwrap()
         );
     });
@@ -141,8 +157,8 @@ async fn force_remove_main(runtime: &Runtime, id: &str) {
 #[tokio::test(flavor = "multi_thread")]
 async fn organizing_plans_reject_higher_mode_missing_targets_and_empty_titles_atomically() {
     use crate::tools::{Plan, Step};
-    let beak = Beak::new().unwrap();
-    let threads = organizing_threads(&beak, Options::default());
+
+    let threads = organizing_threads(None);
     let own = threads.create(&person(Config::default()), "own").await.unwrap();
     let high = threads
         .create(
@@ -155,7 +171,7 @@ async fn organizing_plans_reject_higher_mode_missing_targets_and_empty_titles_at
         .await
         .unwrap();
     let volume = crate::volume::Volume {
-        runtime: threads.runtime().clone(),
+        runtime: threads.runtime().runtime_handle(),
     };
     let mut rename_high = Plan::default();
     rename_high.mark(
@@ -214,14 +230,14 @@ async fn organizing_plans_reject_higher_mode_missing_targets_and_empty_titles_at
         assert_eq!(row.config.title, None);
         assert_eq!(row.status.inbox, []);
     }
-    threads.runtime().close().await;
+    threads.runtime().close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn sub_threads_cannot_apply_organizing_plans() {
     use crate::tools::Plan;
-    let beak = Beak::new().unwrap();
-    let threads = organizing_threads(&beak, Options::default());
+
+    let threads = organizing_threads(None);
     let own = threads.create(&person(Config::default()), "own").await.unwrap();
     for (index, kind) in [
         crate::threads::SubThreadKind::Explorer,
@@ -260,18 +276,18 @@ async fn sub_threads_cannot_apply_organizing_plans() {
         );
         assert!(!threads.listed(&own).unwrap().marks.pinned);
     }
-    threads.runtime().close().await;
+    threads.runtime().close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn marks_do_not_revive_or_stop_work_and_snoozes_follow_plan_order_and_expiry() {
     use crate::tools::Plan;
-    let beak = Beak::new().unwrap();
-    let threads = organizing_threads(&beak, Options::default());
+
+    let threads = organizing_threads(None);
     let own = threads.create(&person(Config::default()), "own").await.unwrap();
     let target = threads.create(&person(Config::default()), "target").await.unwrap();
     force_remove_main(threads.runtime(), &target).await;
-    let until = threads.runtime().now_ms() + 60_000;
+    let until = threads.runtime().now_ms().expect("time") + 60_000;
     let mut plan = Plan::default();
     let change = MarksChange {
         pinned: Some(true),
@@ -288,7 +304,7 @@ async fn marks_do_not_revive_or_stop_work_and_snoozes_follow_plan_order_and_expi
             .runtime()
             .snapshot()
             .unwrap()
-            .record(&crate::threads::thread::main(&target))
+            .fiber(&crate::threads::thread::main(&target))
             .unwrap()
             .is_none()
     );
@@ -297,7 +313,7 @@ async fn marks_do_not_revive_or_stop_work_and_snoozes_follow_plan_order_and_expi
             .runtime()
             .snapshot()
             .unwrap()
-            .record(&crate::threads::thread::main(&own))
+            .fiber(&crate::threads::thread::main(&own))
             .unwrap()
             .unwrap()
             .outcome
@@ -343,7 +359,7 @@ async fn marks_do_not_revive_or_stop_work_and_snoozes_follow_plan_order_and_expi
     expired.mark(
         &own,
         MarksChange {
-            snoozed_until: Some(threads.runtime().now_ms() + 5),
+            snoozed_until: Some(threads.runtime().now_ms().expect("time") + 5),
             ..MarksChange::default()
         },
     );
@@ -352,24 +368,21 @@ async fn marks_do_not_revive_or_stop_work_and_snoozes_follow_plan_order_and_expi
     let own = threads.listed(&own).unwrap();
     assert!(own.marks.pinned);
     assert_eq!(own.marks.snoozed_until, Some(until));
-    threads.runtime().close().await;
+    threads.runtime().close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn an_own_title_request_and_repeated_marks_apply_once_and_survive_reopening() {
     use crate::tools::Plan;
-    let beak = Beak::new().unwrap();
+
     let storage = tempfile::tempdir().unwrap();
-    let options = Options {
-        directory: Some(storage.path().to_owned()),
-        ..Options::default()
-    };
-    let first = organizing_threads(&beak, options.clone());
+    let directory = Some(storage.path().to_owned());
+    let first = organizing_threads(directory.clone());
     let own = first.create(&person(Config::default()), "own").await.unwrap();
     let volume = crate::volume::Volume {
-        runtime: first.runtime().clone(),
+        runtime: first.runtime().runtime_handle(),
     };
-    let until = first.runtime().now_ms() + 60_000;
+    let until = first.runtime().now_ms().expect("time") + 60_000;
     let mut plan = Plan::default();
     plan.rename(&volume, &own, "  Renamed  ").unwrap();
     plan.mark(
@@ -389,27 +402,27 @@ async fn an_own_title_request_and_repeated_marks_apply_once_and_survive_reopenin
     let log = entries(&first, &own, |_| true).await;
     assert_eq!(log.len(), 2, "the repeated title request adds no second configuration change");
     assert!(log.iter().all(|entry| matches!(entry, Entry::Config { .. })));
-    first.runtime().close().await;
+    first.runtime().close().expect("closed");
     drop(volume);
     drop(first);
-    let reopened = organizing_threads(&beak, options);
+    let reopened = organizing_threads(directory);
     let row = reopened.listed(&own).unwrap();
     assert_eq!(row.config.title.as_deref(), Some("Renamed"));
     assert!(row.marks.pinned && row.marks.archived);
     assert_eq!(row.marks.snoozed_until, Some(until));
-    reopened.runtime().close().await;
+    reopened.runtime().close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn rename_and_deliver_revive_a_target_once_and_removing_targets_are_refused() {
     use crate::tools::{Plan, Report};
-    let beak = Beak::new().unwrap();
-    let threads = organizing_threads(&beak, Options::default());
+
+    let threads = organizing_threads(None);
     let own = threads.create(&person(Config::default()), "own").await.unwrap();
     let target = threads.create(&person(Config::default()), "target").await.unwrap();
     force_remove_main(threads.runtime(), &target).await;
     let volume = crate::volume::Volume {
-        runtime: threads.runtime().clone(),
+        runtime: threads.runtime().runtime_handle(),
     };
     let mut plan = Plan::default();
     plan.rename(&volume, &target, "First").unwrap();
@@ -433,13 +446,13 @@ async fn rename_and_deliver_revive_a_target_once_and_removing_targets_are_refuse
         .runtime()
         .snapshot()
         .unwrap()
-        .record(&crate::threads::thread::main(&target))
+        .fiber(&crate::threads::thread::main(&target))
         .unwrap()
         .unwrap();
-    let mut changes = siphon_runtime::Changes::new();
+    let mut changes = octoii_siphon_lib::Changes::new();
     changes.meta(
         crate::threads::thread::path(&target),
-        vec![(Bytes::from_static(beak::layout::REMOVING_LABEL), Some(Bytes::from_static(b"true")))],
+        vec![(Bytes::from_static(b"system.removing"), Some(Bytes::from_static(b"true")))],
         Vec::new(),
     );
     threads.runtime().commit(changes).await.unwrap();
@@ -471,17 +484,17 @@ async fn rename_and_deliver_revive_a_target_once_and_removing_targets_are_refuse
         .runtime()
         .snapshot()
         .unwrap()
-        .record(&crate::threads::thread::main(&target))
+        .fiber(&crate::threads::thread::main(&target))
         .unwrap()
         .unwrap();
     assert_eq!((after.created_seq, after.outcome), (main.created_seq, main.outcome));
-    threads.runtime().close().await;
+    threads.runtime().close().expect("closed");
 }
 
 /// The entries of the log of the thread `id`, once `done` holds of them.
 async fn entries<M>(threads: &Threads<M>, id: &str, done: impl Fn(&[Entry]) -> bool) -> Vec<Entry> {
     let runtime = threads.runtime();
-    let mut committed = runtime.committed();
+    let mut committed = runtime.committed().expect("a commit watch");
     let waiting = async {
         loop {
             let read = log::read_after(&runtime.snapshot().expect("a snapshot"), id, None, u64::MAX).expect("read");
@@ -504,8 +517,7 @@ fn changes_of(entry: &Entry) -> Option<&ConfigChanged> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_thread_is_made_once_for_its_key_its_log_begun_with_how_it_runs() {
-    let beak = Beak::new().expect("Beak");
-    let threads = threads(&beak, Idle);
+    let threads = threads(Idle);
     let config = Config {
         model: Some("openrouter/deepseek".into()),
         title: Some("Plans".into()),
@@ -539,13 +551,12 @@ async fn a_thread_is_made_once_for_its_key_its_log_begun_with_how_it_runs() {
         Err(crate::threads::Error::Idempotency(crate::threads::idempotency::Error::Reused))
     ));
     assert_eq!(threads.list().expect("listed").len(), 1);
-    threads.runtime().close().await;
+    threads.runtime().close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_change_of_how_it_runs_is_logged_where_its_main_process_takes_it_from_what_it_was_to_what_it_is() {
-    let beak = Beak::new().expect("Beak");
-    let threads = threads(&beak, Taker);
+    let threads = threads(Taker);
     let id = threads
         .create(
             &person(Config {
@@ -628,13 +639,12 @@ async fn a_change_of_how_it_runs_is_logged_where_its_main_process_takes_it_from_
             to: None
         })
     );
-    threads.runtime().close().await;
+    threads.runtime().close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn what_waits_in_the_inbox_is_withdrawn_or_stopped_and_how_the_person_keeps_a_thread_is_marked() {
-    let beak = Beak::new().expect("Beak");
-    let threads = threads(&beak, Idle);
+    let threads = threads(Idle);
     let id = threads.create(&person(Config::default()), "k1").await.expect("made");
     let first = threads
         .deliver(&id, "person", vec![InputContent::text("one")], "d1")
@@ -661,7 +671,7 @@ async fn what_waits_in_the_inbox_is_withdrawn_or_stopped_and_how_the_person_keep
     threads.stop(&id, "person").await.expect("stopped");
     let inbox = threads.listed(&id).expect("listed").status.inbox;
     assert_eq!(inbox.len(), 1, "the person's withdrawn, another's kept");
-    let now = threads.runtime().now_ms();
+    let now = threads.runtime().now_ms().expect("time");
     let marks = MarksChange {
         pinned: Some(true),
         snoozed_until: Some(now + 60_000),
@@ -687,13 +697,12 @@ async fn what_waits_in_the_inbox_is_withdrawn_or_stopped_and_how_the_person_keep
         .expect("marked");
     let kept = threads.listed(&id).expect("listed").marks;
     assert_eq!((kept.pinned, kept.snoozed_until), (false, None), "unpinned and woken");
-    threads.runtime().close().await;
+    threads.runtime().close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_thread_is_deleted_with_every_thread_under_it() {
-    let beak = Beak::new().expect("Beak");
-    let threads = threads(&beak, Idle);
+    let threads = threads(Idle);
     let parent = threads.create(&person(Config::default()), "k1").await.expect("made");
     let sub = NewThread {
         parent: Some(Parent {
@@ -728,18 +737,22 @@ async fn a_thread_is_deleted_with_every_thread_under_it() {
     let left: Vec<String> = threads.list().expect("listed").into_iter().map(|listed| listed.id).collect();
     assert_eq!(left, [other]);
     assert!(matches!(threads.listed(&parent), Err(crate::threads::Error::NoSuchThread)));
-    threads.runtime().close().await;
+    threads.runtime().close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn sub_thread_kinds_survive_configuration_changes_and_reopening() {
-    let beak = Beak::new().unwrap();
     let storage = tempfile::tempdir().unwrap();
-    let options = Options {
-        directory: Some(storage.path().to_owned()),
-        ..Options::default()
-    };
-    let first = Threads::<Taker>::new(Runtime::builder().fiber(Taker).start(&beak, options.clone()).unwrap());
+    let directory = Some(storage.path().to_owned());
+    let first = WithRuntime::new(
+        {
+            let mut builder = octoii_siphon_lib::Builder::new().expect("a builder");
+            builder.fiber(Taker).expect("registered");
+            crate::tests::open_runtime(builder, directory.clone())
+        }
+        .unwrap(),
+        Threads::<Taker>::new,
+    );
     let mut children = Vec::new();
     for kind in [
         crate::threads::SubThreadKind::Explorer,
@@ -774,11 +787,19 @@ async fn sub_thread_kinds_survive_configuration_changes_and_reopening() {
         assert_eq!(first.listed(&id).unwrap().parent.unwrap().kind, kind);
         children.push((id, kind));
     }
-    first.runtime().close().await;
+    first.runtime().close().expect("closed");
     drop(first);
-    let reopened = Threads::<Taker>::new(Runtime::builder().fiber(Taker).start(&beak, options).unwrap());
+    let reopened = WithRuntime::new(
+        {
+            let mut builder = octoii_siphon_lib::Builder::new().expect("a builder");
+            builder.fiber(Taker).expect("registered");
+            crate::tests::open_runtime(builder, directory)
+        }
+        .unwrap(),
+        Threads::<Taker>::new,
+    );
     let volume = crate::volume::Volume {
-        runtime: reopened.runtime().clone(),
+        runtime: reopened.runtime().runtime_handle(),
     };
     for (id, kind) in children {
         let parent = crate::agent::parent_of(&volume, &id).unwrap().unwrap();
@@ -786,13 +807,12 @@ async fn sub_thread_kinds_survive_configuration_changes_and_reopening() {
         assert_eq!(parent.thread, "parent");
         assert_eq!(reopened.listed(&id).unwrap().parent, Some(parent));
     }
-    reopened.runtime().close().await;
+    reopened.runtime().close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn missing_and_invalid_sub_thread_kinds_are_refused() {
-    let beak = Beak::new().unwrap();
-    let threads = threads(&beak, Idle);
+    let threads = threads(Idle);
     let new = NewThread {
         parent: Some(Parent {
             thread: "parent".into(),
@@ -803,15 +823,15 @@ async fn missing_and_invalid_sub_thread_kinds_are_refused() {
     };
     let id = threads.create(&new, "child").await.unwrap();
     let volume = crate::volume::Volume {
-        runtime: threads.runtime().clone(),
+        runtime: threads.runtime().runtime_handle(),
     };
     let annotation = Bytes::from_static(crate::threads::thread::SUB_THREAD_KIND_ANNOTATION.as_bytes());
-    let mut changes = siphon_runtime::Changes::new();
+    let mut changes = octoii_siphon_lib::Changes::new();
     changes.meta(crate::threads::thread::path(&id), Vec::new(), vec![(annotation.clone(), None)]);
     threads.runtime().commit(changes).await.unwrap();
     assert!(matches!(threads.listed(&id), Err(crate::threads::Error::MissingSubThreadKind)));
     assert!(crate::agent::parent_of(&volume, &id).is_err());
-    let mut changes = siphon_runtime::Changes::new();
+    let mut changes = octoii_siphon_lib::Changes::new();
     changes.meta(
         crate::threads::thread::path(&id),
         Vec::new(),
@@ -820,13 +840,12 @@ async fn missing_and_invalid_sub_thread_kinds_are_refused() {
     threads.runtime().commit(changes).await.unwrap();
     assert!(matches!(threads.listed(&id), Err(crate::threads::Error::Json(_))));
     assert!(crate::agent::parent_of(&volume, &id).is_err());
-    threads.runtime().close().await;
+    threads.runtime().close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_log_is_read_on_a_page_at_a_time_each_line_once() {
-    let beak = Beak::new().expect("Beak");
-    let threads = threads(&beak, Taker);
+    let threads = threads(Taker);
     let id = threads.create(&person(Config::default()), "k1").await.expect("made");
     for round in 0..20 {
         threads
@@ -872,18 +891,18 @@ async fn a_log_is_read_on_a_page_at_a_time_each_line_once() {
         "the first three, the log's start reached"
     );
     assert_eq!(back(None, 100), (ids.clone(), true), "all of it");
-    threads.runtime().close().await;
+    threads.runtime().close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_thread_s_files_are_read_by_their_reference_as_its_conversation_names_them_and_by_no_other_thread() {
     use octoii_ai::host::Files as _;
-    let beak = Beak::new().expect("Beak");
-    let threads = threads(&beak, Taker);
+
+    let threads = threads(Taker);
     let id = threads.create(&person(Config::default()), "k1").await.expect("made");
     let other = threads.create(&person(Config::default()), "k2").await.expect("made");
     let runtime = threads.runtime();
-    let mut changes = siphon_runtime::Changes::new();
+    let mut changes = octoii_siphon_lib::Changes::new();
     let reference = crate::threads::files::keep(
         &runtime.snapshot().expect("a snapshot"),
         &mut changes,
@@ -893,26 +912,25 @@ async fn a_thread_s_files_are_read_by_their_reference_as_its_conversation_names_
     .expect("kept");
     runtime.commit(changes).await.expect("committed");
     let files = crate::threads::files::OfThread {
-        runtime: runtime.clone(),
+        runtime: runtime.runtime_handle(),
         thread: id,
     };
     assert_eq!(files.read(&reference).expect("read"), Bytes::from_static(b"%PDF"));
     assert!(files.read("sha256:00").is_err(), "a reference of no file kept");
     let elsewhere = crate::threads::files::OfThread {
-        runtime: runtime.clone(),
+        runtime: runtime.runtime_handle(),
         thread: other,
     };
     assert!(elsewhere.read(&reference).is_err(), "another thread's files are not its own");
-    runtime.close().await;
+    runtime.close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn history_pages_cross_segments_and_hold_the_snapshot_they_opened() {
-    let beak = Beak::new().unwrap();
-    let threads = threads(&beak, Idle);
+    let threads = threads(Idle);
     let id = threads.create(&person(Config::default()), "history").await.unwrap();
     let runtime = threads.runtime();
-    let mut changes = siphon_runtime::Changes::new();
+    let mut changes = octoii_siphon_lib::Changes::new();
     changes.delete(log::path(&id));
     changes.mkdir(log::path(&id));
     let entries: Vec<Entry> = (0..150)
@@ -936,7 +954,9 @@ async fn history_pages_cross_segments_and_hold_the_snapshot_they_opened() {
         changes.write(log::segment(&id, &format!("{}.jsonl", chunk[0].id())), bytes);
     }
     runtime.commit(changes).await.unwrap();
-    let volume = crate::volume::Volume { runtime: runtime.clone() };
+    let volume = crate::volume::Volume {
+        runtime: runtime.runtime_handle(),
+    };
     let history = crate::threads::History::open(&volume, &id).unwrap().unwrap();
     assert_eq!(
         history.reverse().unwrap().collect::<anyhow::Result<Vec<_>>>().unwrap(),
@@ -953,7 +973,7 @@ async fn history_pages_cross_segments_and_hold_the_snapshot_they_opened() {
     assert_eq!(history.before(None, 0).unwrap(), Vec::<Entry>::new());
     assert_eq!(history.after(None, 0).unwrap(), Vec::<Entry>::new());
     assert!(crate::threads::History::open(&volume, "missing").unwrap().is_none());
-    let mut changes = siphon_runtime::Changes::new();
+    let mut changes = octoii_siphon_lib::Changes::new();
     changes.delete(log::path(&id));
     runtime.commit(changes).await.unwrap();
     assert_eq!(history.before(None, 60).unwrap(), entries[90..]);
@@ -965,7 +985,7 @@ async fn history_pages_cross_segments_and_hold_the_snapshot_they_opened() {
             .unwrap(),
         Vec::<Entry>::new()
     );
-    runtime.close().await;
+    runtime.close().expect("closed");
 }
 
 fn startup_request() -> crate::threads::StartRequest {
@@ -975,18 +995,19 @@ fn startup_request() -> crate::threads::StartRequest {
     }
 }
 
-fn startup_volume(beak: &Beak, options: Options) -> crate::volume::Volume {
-    crate::volume::Volume {
-        runtime: Runtime::builder().fiber(crate::agent::ThreadFiber).start(beak, options).unwrap(),
-    }
+fn startup_volume(directory: Option<std::path::PathBuf>) -> WithRuntime<crate::volume::Volume> {
+    let mut builder = octoii_siphon_lib::Builder::new().unwrap();
+    builder.fiber(crate::agent::ThreadFiber).unwrap();
+    WithRuntime::new(crate::tests::open_runtime(builder, directory).unwrap(), |runtime| {
+        crate::volume::Volume { runtime }
+    })
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn startup_refuses_a_claim_without_input_part_discriminants() {
     use sha2::{Digest, Sha256};
 
-    let beak = Beak::new().unwrap();
-    let volume = startup_volume(&beak, Options::default());
+    let volume = startup_volume(None);
     let new = person(Config::default());
     let request = startup_request();
     let content = [InputContent::text("prepare")];
@@ -999,7 +1020,7 @@ async fn startup_refuses_a_claim_without_input_part_discriminants() {
     let fingerprint: [u8; 32] = Sha256::digest(serde_json::to_vec(&(&new, content, &request)).unwrap()).into();
     let record = serde_json::json!({ "thread": thread, "fingerprint": fingerprint });
     let path = Bytes::from_static(b"siphon.start/claim");
-    let mut changes = siphon_runtime::Changes::new();
+    let mut changes = octoii_siphon_lib::Changes::new();
     changes.write(path.clone(), serde_json::to_vec(&record).unwrap()).seal(path);
     volume.runtime.commit(changes).await.unwrap();
 
@@ -1009,19 +1030,16 @@ async fn startup_refuses_a_claim_without_input_part_discriminants() {
         Some(crate::threads::Error::Start(_))
     ));
     assert_eq!(crate::threads::list(&volume).unwrap().len(), 1);
-    volume.runtime.close().await;
+    volume.runtime().close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn startup_claim_is_atomic_fenced_and_survives_reopening() {
     use crate::threads::{StartState, StartWorkspace};
-    let beak = Beak::new().unwrap();
+
     let storage = tempfile::tempdir().unwrap();
-    let options = Options {
-        directory: Some(storage.path().to_owned()),
-        ..Options::default()
-    };
-    let volume = startup_volume(&beak, options.clone());
+    let directory = Some(storage.path().to_owned());
+    let volume = startup_volume(directory.clone());
     let new = person(Config::default());
     let inputs = vec![InputContent::text("keep this")];
     let (a, b) = tokio::join!(
@@ -1063,9 +1081,9 @@ async fn startup_claim_is_atomic_fenced_and_survives_reopening() {
     assert_eq!(volume.thread_start(&id).unwrap(), Some(start.clone()));
     let failed = volume.fail_thread_start(&id, &start.token, "checkout failed".into()).await.unwrap();
     assert!(matches!(failed.state, StartState::Failed { .. }));
-    volume.runtime.close().await;
+    volume.runtime().close().expect("closed");
     drop(volume);
-    let volume = startup_volume(&beak, options);
+    let volume = startup_volume(directory);
     assert_eq!(volume.thread_start(&id).unwrap(), Some(failed));
     let listed = crate::threads::list(&volume).unwrap().pop().unwrap();
     assert_eq!(listed.status.inbox.len(), 1);
@@ -1089,14 +1107,14 @@ async fn startup_claim_is_atomic_fenced_and_survives_reopening() {
     assert_eq!(a.unwrap(), b.unwrap());
     assert_eq!(volume.thread_config(&id).unwrap().unwrap().workspace, Some(directory.workspace));
     assert!(volume.retry_thread_start(&id, &retried.token).await.is_err());
-    volume.runtime.close().await;
+    volume.runtime().close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn stopping_or_deleting_preparation_cannot_be_undone_by_a_late_result() {
     use crate::threads::{StartState, StartWorkspace};
-    let beak = Beak::new().unwrap();
-    let volume = startup_volume(&beak, Options::default());
+
+    let volume = startup_volume(None);
     let threads = Threads::<crate::agent::ThreadFiber>::new(volume.runtime.clone());
     let new = person(Config::default());
     let (id, start) = volume
@@ -1120,7 +1138,7 @@ async fn stopping_or_deleting_preparation_cannot_be_undone_by_a_late_result() {
         )
         .await
         .unwrap();
-    let mut changes = siphon_runtime::Changes::new();
+    let mut changes = octoii_siphon_lib::Changes::new();
     crate::threads::thread::stop_turn(&volume.runtime.snapshot().unwrap(), &mut changes, &tool_stopped).unwrap();
     volume.runtime.commit(changes).await.unwrap();
     assert!(
@@ -1145,19 +1163,16 @@ async fn stopping_or_deleting_preparation_cannot_be_undone_by_a_late_result() {
             .await
             .is_err()
     );
-    volume.runtime.close().await;
+    volume.runtime().close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn initial_attachments_commit_with_ordered_input_and_survive_reopening() {
     use crate::threads::{InputPart, files};
-    let beak = Beak::new().unwrap();
+
     let storage = tempfile::tempdir().unwrap();
-    let options = Options {
-        directory: Some(storage.path().to_owned()),
-        ..Options::default()
-    };
-    let volume = startup_volume(&beak, options.clone());
+    let directory = Some(storage.path().to_owned());
+    let volume = startup_volume(directory.clone());
     let mut png = Vec::new();
     image::RgbImage::from_pixel(2048, 2048, image::Rgb([40, 100, 200]))
         .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
@@ -1190,9 +1205,9 @@ async fn initial_attachments_commit_with_ordered_input_and_survive_reopening() {
     let kept = files::read(&volume.snapshot().unwrap(), &id, &file.reference).unwrap().unwrap();
     assert_eq!(files::reference_of(&kept), file.reference);
     let reference = file.reference.clone();
-    volume.runtime.close().await;
+    volume.runtime().close().expect("closed");
     drop(volume);
-    let volume = startup_volume(&beak, options);
+    let volume = startup_volume(directory);
     assert_eq!(files::read(&volume.snapshot().unwrap(), &id, &reference).unwrap(), Some(kept));
     assert_eq!(
         volume
@@ -1212,14 +1227,14 @@ async fn initial_attachments_commit_with_ordered_input_and_survive_reopening() {
             .await
             .is_err()
     );
-    volume.runtime.close().await;
+    volume.runtime().close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn invalid_attachment_rolls_back_every_part_and_pure_attachments_are_accepted() {
     use crate::threads::{InputPart, files};
-    let beak = Beak::new().unwrap();
-    let volume = startup_volume(&beak, Options::default());
+
+    let volume = startup_volume(None);
     let new = person(Config::default());
     let file = InputPart::Attachment {
         bytes: Bytes::from_static(b"saved"),
@@ -1258,5 +1273,5 @@ async fn invalid_attachment_rolls_back_every_part_and_pure_attachments_are_accep
             .await
             .is_err()
     );
-    volume.runtime.close().await;
+    volume.runtime().close().expect("closed");
 }

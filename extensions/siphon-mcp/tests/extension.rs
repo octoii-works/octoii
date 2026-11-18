@@ -4,7 +4,6 @@
 
 use octoii::Octoii;
 use octoii::protocol::Scope;
-use octoii::testing::Beak;
 use octoii::testing::{self, Client};
 use serde_json::{Value, json};
 use siphon_mcp::McpExtension;
@@ -149,8 +148,7 @@ async fn an_explorer_neither_connects_mcp_servers_nor_requests_project_trust() {
     )
     .unwrap();
     let servers = siphon_mcp::Servers::start(octoii::machine::Host::default(), Some(&workspace));
-    let beak = Beak::new().unwrap();
-    let calling = octoii::testing::Calling::start(&beak, |tools| {
+    let calling = octoii::testing::Calling::start(|tools| {
         tools.with(SpawnExplorer).with(ExplorerCatalog {
             servers,
             place: octoii::tools::Place::of(&workspace),

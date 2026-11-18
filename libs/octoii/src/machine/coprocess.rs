@@ -9,9 +9,9 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use beak::{Command, CommandEvent, CommandEvents, Exec, Spec, Stdio};
 use bytes::Bytes;
 use futures::Stream;
+use octoii_siphon_lib::{Command, CommandEvent, CommandEvents, Exec, Spec, Stdio};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio_util::io::StreamReader;
 
@@ -82,10 +82,11 @@ impl Machine {
 fn told(events: CommandEvents) -> Pin<Box<dyn Stream<Item = io::Result<Bytes>> + Send>> {
     Box::pin(futures::stream::unfold(events, |mut events| async move {
         loop {
-            match events.next().await? {
-                CommandEvent::Output(bytes) => return Some((Ok(bytes), events)),
-                CommandEvent::Title(_) => {}
-                CommandEvent::Exit(_) => return None,
+            match events.next().await {
+                Ok(Some(CommandEvent::Output(bytes))) => return Some((Ok(bytes), events)),
+                Ok(Some(CommandEvent::Title(_))) => {}
+                Ok(Some(CommandEvent::Exit(_)) | None) => return None,
+                Err(error) => return Some((Err(io::Error::other(error)), events)),
             }
         }
     }))
@@ -122,7 +123,7 @@ impl Stderr {
     ///
     /// # Errors
     /// None that a command gives.
-    pub fn kept(&self) -> beak::Result<Bytes> {
+    pub fn kept(&self) -> octoii_siphon_lib::Result<Bytes> {
         self.0.output()
     }
 }

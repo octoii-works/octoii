@@ -13,8 +13,8 @@ use std::sync::Arc;
 use crate::machine::Host;
 use crate::protocol::{Error, ExtensionListed, Scope, Set};
 use crate::tools::Tools;
-use beak::Kernel;
 use octoii_ai::models::Provider;
+use octoii_siphon_lib::RuntimeHandle;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use tokio::sync::mpsc::{self, error::TrySendError};
@@ -58,7 +58,7 @@ impl Caller {
     #[must_use]
     pub fn volume(&self) -> crate::volume::Volume {
         crate::volume::Volume {
-            runtime: self.siphon.runtime.clone(),
+            runtime: self.siphon.runtime.runtime_handle(),
         }
     }
 
@@ -79,7 +79,7 @@ impl Caller {
     ///
     /// # Errors
     /// Beak's failure to open its namespace.
-    pub fn person_machine(&self) -> beak::Result<crate::machine::Machine> {
+    pub fn person_machine(&self) -> octoii_siphon_lib::Result<crate::machine::Machine> {
         self.siphon.person_machine()
     }
 }
@@ -190,9 +190,9 @@ impl Sink {
 /// them; the runtime's programs and handlers; the tools, and the extension each came from; the providers; the tellers,
 /// each by its extension; and the methods and topics.
 pub(crate) struct Builder {
-    pub(crate) kernel: Kernel,
+    pub(crate) handle: RuntimeHandle,
     pub(crate) machine: Host,
-    pub(crate) runtime: siphon_runtime::Builder,
+    pub(crate) runtime: octoii_siphon_lib::Builder,
     pub(crate) tools: Tools,
     pub(crate) owners: HashMap<String, String>,
     pub(crate) providers: Vec<Provider>,
@@ -303,7 +303,7 @@ impl Registrar<'_> {
     #[must_use]
     pub fn commands(&self) -> crate::machine::Commands {
         crate::machine::Commands {
-            kernel: self.builder.kernel.clone(),
+            runtime: self.builder.handle.clone(),
         }
     }
 

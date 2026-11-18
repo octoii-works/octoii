@@ -208,7 +208,7 @@ async fn a_client_is_welcomed_its_calls_checked_and_answered() {
     client.answer(&id).await;
     let gone = client.event(&listed, |event| event["event"] == "thread_gone").await.0;
     assert_eq!(gone["thread"].as_str(), Some(thread.as_str()));
-    siphon.runtime.close().await;
+    siphon.runtime.close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -259,7 +259,7 @@ async fn a_subscription_its_client_does_not_keep_up_with_lags_and_is_made_again_
     let titles: Vec<&str> = seen.iter().filter_map(|entry| entry["title"]["to"].as_str()).collect();
     let wanted: Vec<String> = (0..12).map(|round| format!("t{round}")).collect();
     assert_eq!(titles, wanted, "each entry once, in order, across the lag");
-    siphon.runtime.close().await;
+    siphon.runtime.close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -304,7 +304,7 @@ async fn a_extension_s_methods_and_topics_are_the_protocol_s_beside_siphon_s() {
     assert!(typescript.contains("'echo.say': { params: Said; result: Said };"));
     let said = echo::Method::Say(echo::Said { words: "hi".into() });
     assert_eq!(said.name(), "echo.say", "a method is named as its set declares it");
-    siphon.runtime.close().await;
+    siphon.runtime.close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -329,7 +329,7 @@ async fn an_extension_switched_off_answers_nothing_till_it_is_switched_on() {
     client.answer(&id).await;
     let id = client.call("echo.say", json!({ "words": "hi" })).await;
     assert_eq!(client.answer(&id).await["result"], json!({ "words": "hi" }));
-    siphon.runtime.close().await;
+    siphon.runtime.close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -355,7 +355,7 @@ async fn what_a_project_was_granted_is_listed_and_taken_back_in_part() {
     let id = client.call("grants.list", json!({})).await;
     let listed = client.answer(&id).await["result"]["projects"].clone();
     assert_eq!(listed[0]["grants"]["commands"], json!(["cargo test *"]), "taken back in part");
-    siphon.runtime.close().await;
+    siphon.runtime.close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -419,7 +419,7 @@ async fn a_thread_goes_on_at_a_time_as_its_status_tells_and_its_window_is_told_p
         .collect();
     assert!(parts.contains(&"messages"), "{composition}");
     assert!(composition["tokens"].as_u64().is_some_and(|tokens| tokens > 0), "{composition}");
-    siphon.runtime.close().await;
+    siphon.runtime.close().expect("closed");
 }
 
 struct TestBase;

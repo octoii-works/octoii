@@ -93,7 +93,7 @@ async fn answered(caller: &Caller, method: Method, worktrees: &Path) -> Result<s
         _ => caller.person_machine(),
     }
     .map_err(failed)?;
-    let time = volume.now_ms();
+    let time = volume.now_ms().map_err(failed)?;
     volume
         .recorded(RECORD_KIND, |record| async move {
             let git = Git {

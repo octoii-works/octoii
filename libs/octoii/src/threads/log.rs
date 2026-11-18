@@ -5,11 +5,11 @@
 //! its main process, or the turn it runs while it runs — so its ids rise along it and each entry's place is where its
 //! writer put it.
 
-use beak::{Range, Snapshot};
 use bytes::Bytes;
 use octoii_ai::vocabulary::{Failure, FunctionCallOutput, InputContent, ReasoningEffort, Response, Tool};
+use octoii_siphon_lib::Batch;
+use octoii_siphon_lib::{Range, Snapshot};
 use serde::{Deserialize, Serialize};
-use siphon_runtime::Changes;
 
 use crate::threads::config::ConfigChanged;
 use crate::threads::inbox::ReplyTo;
@@ -198,7 +198,7 @@ pub struct Read {
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error(transparent)]
-    Beak(#[from] beak::Error),
+    Beak(#[from] octoii_siphon_lib::Error),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
 }
@@ -219,7 +219,7 @@ pub fn segment(id: &str, segment: &str) -> Bytes {
 ///
 /// # Errors
 /// The volume's failure.
-pub fn segments(snapshot: &Snapshot, id: &str) -> beak::Result<Vec<(String, u64)>> {
+pub fn segments(snapshot: &Snapshot, id: &str) -> octoii_siphon_lib::Result<Vec<(String, u64)>> {
     let range = Range {
         limit: usize::MAX,
         ..Range::default()
@@ -245,7 +245,7 @@ impl Writer {
     ///
     /// # Errors
     /// The volume's failure.
-    pub fn open(snapshot: &Snapshot, id: &str) -> beak::Result<Self> {
+    pub fn open(snapshot: &Snapshot, id: &str) -> octoii_siphon_lib::Result<Self> {
         Ok(Self {
             thread: id.to_owned(),
             last: segments(snapshot, id)?.pop(),
@@ -266,7 +266,7 @@ impl Writer {
     ///
     /// # Errors
     /// An entry that cannot be written as JSON.
-    pub fn append(&mut self, changes: &mut Changes, entry: &Entry) -> serde_json::Result<Address> {
+    pub fn append(&mut self, changes: &mut Batch<'_>, entry: &Entry) -> serde_json::Result<Address> {
         let mut line = serde_json::to_vec(entry)?;
         line.push(b'\n');
         let length = line.len() as u64;
@@ -292,7 +292,7 @@ impl Writer {
 ///
 /// # Errors
 /// The volume's failure.
-pub fn read_after(snapshot: &Snapshot, id: &str, from: Option<&Cursor>, bytes_max: u64) -> beak::Result<Read> {
+pub fn read_after(snapshot: &Snapshot, id: &str, from: Option<&Cursor>, bytes_max: u64) -> octoii_siphon_lib::Result<Read> {
     let all = segments(snapshot, id)?;
     let start = from.map_or(0, |cursor| {
         all.iter().position(|(name, _)| *name == cursor.segment).unwrap_or(all.len())
@@ -335,7 +335,7 @@ pub fn read_after(snapshot: &Snapshot, id: &str, from: Option<&Cursor>, bytes_ma
 ///
 /// # Errors
 /// The volume's failure.
-pub fn end(snapshot: &Snapshot, id: &str) -> beak::Result<Option<Cursor>> {
+pub fn end(snapshot: &Snapshot, id: &str) -> octoii_siphon_lib::Result<Option<Cursor>> {
     Ok(segments(snapshot, id)?.pop().map(|(segment, offset)| Cursor { segment, offset }))
 }
 
@@ -359,7 +359,7 @@ pub fn read_before(snapshot: &Snapshot, id: &str, before: Option<&str>, limit: u
         if before.is_some_and(|before| first >= before) {
             continue;
         }
-        let whole = snapshot.read(&segment(id, name), 0, *length)?.unwrap_or_default();
+        let whole = snapshot.read_range(&segment(id, name), 0, *length)?.unwrap_or_default();
         let mut lines = Vec::new();
         for line in whole.split(|&byte| byte == b'\n').filter(|line| !line.is_empty()) {
             let head: Head<'_> = serde_json::from_slice(line)?;
@@ -381,12 +381,14 @@ pub fn read_before(snapshot: &Snapshot, id: &str, before: Option<&str>, limit: u
 
 /// The whole lines of the segment at `path`, `length` long, from `offset`: about `budget` bytes of them, up to the
 /// last newline within, or the whole line it begins where none ends within.
-fn whole_lines(snapshot: &Snapshot, path: &[u8], offset: u64, length: u64, budget: u64) -> beak::Result<Bytes> {
-    let bytes = snapshot.read(path, offset, budget.max(1).min(length - offset))?.unwrap_or_default();
+fn whole_lines(snapshot: &Snapshot, path: &[u8], offset: u64, length: u64, budget: u64) -> octoii_siphon_lib::Result<Bytes> {
+    let bytes = snapshot
+        .read_range(path, offset, budget.max(1).min(length - offset))?
+        .unwrap_or_default();
     if let Some(end) = bytes.iter().rposition(|&byte| byte == b'\n') {
         return Ok(bytes.slice(..=end));
     }
-    let rest = snapshot.read(path, offset, length - offset)?.unwrap_or_default();
+    let rest = snapshot.read_range(path, offset, length - offset)?.unwrap_or_default();
     let end = rest.iter().position(|&byte| byte == b'\n').map_or(rest.len(), |end| end + 1);
     Ok(rest.slice(..end))
 }
@@ -404,7 +406,7 @@ pub fn cursor_of(snapshot: &Snapshot, id: &str, from: Option<&Cursor>, entry: &s
     let all = segments(snapshot, id)?;
     let start = from.map_or(0, |cursor| all.iter().position(|(name, _)| *name == cursor.segment).unwrap_or(0));
     for (name, _) in all.iter().skip(start) {
-        let bytes = snapshot.read(&segment(id, name), 0, u64::MAX)?.unwrap_or_default();
+        let bytes = snapshot.read_range(&segment(id, name), 0, u64::MAX)?.unwrap_or_default();
         let mut offset = 0;
         for line in bytes.split(|&byte| byte == b'\n') {
             if !line.is_empty() && serde_json::from_slice::<Head>(line)?.id == entry {

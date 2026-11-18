@@ -6,12 +6,12 @@
 //! that goes when the quota is given again, so the limit stands as long as it does.
 
 use crate::threads::idempotency::{self, Done};
-use beak::{Range, Snapshot};
 use bytes::Bytes;
 use octoii_ai::driver::Connection;
 use octoii_ai::models::Provider;
+use octoii_siphon_lib::{Batch, Changes, RuntimeHandle};
+use octoii_siphon_lib::{Range, Snapshot};
 use serde::{Deserialize, Serialize};
-use siphon_runtime::{Changes, Runtime};
 
 /// The kind of a provider's directory.
 pub const KIND: &str = "siphon.provider";
@@ -54,7 +54,7 @@ pub enum Error {
     #[error(transparent)]
     Idempotency(#[from] idempotency::Error),
     #[error(transparent)]
-    Beak(#[from] beak::Error),
+    Beak(#[from] octoii_siphon_lib::Error),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
 }
@@ -77,7 +77,7 @@ fn named(name: &str) -> Result<&str, Error> {
 ///
 /// # Errors
 /// The volume's failure.
-pub fn accounts(snapshot: &Snapshot) -> beak::Result<Vec<Account>> {
+pub fn accounts(snapshot: &Snapshot) -> octoii_siphon_lib::Result<Vec<Account>> {
     let prefix = format!("{KIND}:");
     let range = Range {
         prefix: prefix.as_bytes(),
@@ -123,7 +123,7 @@ pub fn providers(host: &[Provider], accounts: &[Account]) -> Vec<Provider> {
 ///
 /// # Errors
 /// `UnknownProvider`, `TakesNoAccounts`, `InvalidName`; as the key says; the commit's failure.
-pub async fn add(runtime: &Runtime, host: &[Provider], provider: &str, name: &str, key: &str) -> Result<String, Error> {
+pub async fn add(runtime: &RuntimeHandle, host: &[Provider], provider: &str, name: &str, key: &str) -> Result<String, Error> {
     let base = host
         .iter()
         .find(|each| each.id == provider)
@@ -132,7 +132,7 @@ pub async fn add(runtime: &Runtime, host: &[Provider], provider: &str, name: &st
         return Err(Error::TakesNoAccounts);
     }
     let name = named(name)?;
-    if let Some(done) = idempotency::done_before(&runtime.snapshot()?, key, "accounts.add", None)? {
+    if let Some(done) = idempotency::done_before(&*runtime.snapshot()?, key, "accounts.add", None)? {
         return Ok(done.result);
     }
     let id = runtime.new_id()?;
@@ -154,7 +154,7 @@ pub async fn add(runtime: &Runtime, host: &[Provider], provider: &str, name: &st
         thread: None,
         result: id.clone(),
     };
-    idempotency::record(&mut changes, key, &done, runtime.now_ms())?;
+    idempotency::record(&mut changes, key, &done, runtime.now_ms()?)?;
     runtime.commit(changes).await?;
     Ok(id)
 }
@@ -177,9 +177,9 @@ fn account(snapshot: &Snapshot, id: &str) -> Result<Bytes, Error> {
 ///
 /// # Errors
 /// `NoSuchAccount`, `InvalidName`; the commit's failure.
-pub async fn rename(runtime: &Runtime, id: &str, name: &str) -> Result<(), Error> {
+pub async fn rename(runtime: &RuntimeHandle, id: &str, name: &str) -> Result<(), Error> {
     let name = named(name)?;
-    let account = account(&runtime.snapshot()?, id)?;
+    let account = account(&*runtime.snapshot()?, id)?;
     let mut changes = Changes::new();
     changes.meta(
         account,
@@ -197,8 +197,8 @@ pub async fn rename(runtime: &Runtime, id: &str, name: &str) -> Result<(), Error
 ///
 /// # Errors
 /// `NoSuchAccount`; the commit's failure.
-pub async fn remove(runtime: &Runtime, id: &str) -> Result<(), Error> {
-    let account = account(&runtime.snapshot()?, id)?;
+pub async fn remove(runtime: &RuntimeHandle, id: &str) -> Result<(), Error> {
+    let account = account(&*runtime.snapshot()?, id)?;
     let mut changes = Changes::new();
     changes.delete(account);
     runtime.commit(changes).await?;
@@ -215,7 +215,7 @@ fn limit(provider: &str) -> Option<Bytes> {
 ///
 /// # Errors
 /// The volume's failure; what cannot be written as JSON.
-pub fn keep_used_up(snapshot: &Snapshot, changes: &mut Changes, provider: &str, used_up: UsedUp) -> Result<(), Error> {
+pub fn keep_used_up(snapshot: &Snapshot, changes: &mut Batch<'_>, provider: &str, used_up: UsedUp) -> Result<(), Error> {
     let (Some(directory), Some(file)) = (path(provider), limit(provider)) else {
         return Ok(());
     };
@@ -239,7 +239,7 @@ pub fn keep_used_up(snapshot: &Snapshot, changes: &mut Changes, provider: &str, 
 pub fn used_up(snapshot: &Snapshot, provider: &str) -> Result<Option<UsedUp>, Error> {
     let Some(file) = limit(provider) else { return Ok(None) };
     Ok(snapshot
-        .read(&file, 0, u64::MAX)?
+        .read_range(&file, 0, u64::MAX)?
         .map(|bytes| serde_json::from_slice(&bytes))
         .transpose()?)
 }

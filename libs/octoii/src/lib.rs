@@ -39,12 +39,11 @@ use crate::tools::{
     Asks, EditTool, Exec, ExecuteTool, GlobTool, GrepTool, Permission, ReadTool, Review, ScriptFiber, ShellTool, Tools, WriteTool,
     answer_exec,
 };
-use beak::{Beak, Events};
 use octoii_ai::catalogue::Model;
 use octoii_ai::host::Credentials;
 use octoii_ai::models::{Host as Network, Models, Provider};
 use octoii_ai::transport::Transport;
-use siphon_runtime::{Asked, Options, Runtime};
+use octoii_siphon_lib::{Asked, Runtime, Status};
 
 pub use extension::{Caller, Extension, Full, Lagged, Registrar, Sink, Subscription};
 pub use kept::{Ends, Kept};
@@ -84,19 +83,20 @@ impl Octoii {
     /// The sessions and pairing links stored in this product volume.
     #[must_use]
     pub fn access(&self) -> access::Access {
-        access::Access::new(self.runtime.clone())
+        access::Access::new(self.runtime.runtime_handle())
     }
 
     /// Stops the product's execution and waits for it to close.
     pub async fn close(&self) {
-        self.runtime.close().await;
+        let runtime = self.runtime.clone();
+        let _ = tokio::task::spawn_blocking(move || runtime.close()).await;
     }
 
     /// The volume through Octoii's public operations, without exposing its storage implementation.
     #[must_use]
     pub fn volume(&self) -> crate::volume::Volume {
         crate::volume::Volume {
-            runtime: self.runtime.clone(),
+            runtime: self.runtime.runtime_handle(),
         }
     }
 
@@ -120,13 +120,13 @@ impl Octoii {
     ///
     /// # Errors
     /// Beak's failure to make its namespace.
-    pub fn person_machine(&self) -> beak::Result<crate::machine::Machine> {
+    pub fn person_machine(&self) -> octoii_siphon_lib::Result<crate::machine::Machine> {
         let base = crate::machine::paths::Base {
             workspace: std::path::PathBuf::from("/"),
             home: self.machine.home.clone(),
         };
         crate::machine::Machine::open(
-            self.runtime.kernel(),
+            &self.runtime,
             &self.machine,
             base,
             &crate::machine::Writes::Within(Vec::new()),
@@ -166,10 +166,9 @@ pub struct Building {
     builder: extension::Builder,
     sign_in: providers::SignInSetup,
     credentials: Arc<dyn Credentials>,
-    events: Events,
     network: Network,
     catalogue: Vec<Model>,
-    options: Options,
+    directory: Option<PathBuf>,
 }
 
 impl std::fmt::Debug for Octoii {
@@ -194,7 +193,7 @@ impl Octoii {
     /// # Panics
     /// Never as an id is minted for a model's answer: Beak mints one at any time, going on into the next millisecond
     /// past one's ids, till the year 10889.
-    pub fn builder(setup: Setup) -> beak::Result<Building> {
+    pub fn builder(setup: Setup) -> octoii_siphon_lib::Result<Building> {
         let Setup {
             machine,
             sign_in,
@@ -204,24 +203,19 @@ impl Octoii {
             catalogue,
             directory,
         } = setup;
-        let beak = Beak::new()?;
-        let options = Options {
-            directory,
-            ..Options::default()
-        };
-        let (kernel, events) = options.open(&beak)?;
-        let (minting, minted_at, clock) = (kernel.clone(), Arc::clone(&options.clock), Arc::clone(&options.clock));
+        let runtime = octoii_siphon_lib::Builder::new()?;
+        let handle = runtime.runtime_handle()?;
+        let (minting, clock) = (handle.clone(), handle.clone());
         let network = Network {
             credentials: Arc::clone(&credentials),
             transport,
-            // Beak mints a UUIDv7 at any time: past a millisecond's ids it goes on in the next, till the year 10889.
-            new_id: Arc::new(move || minting.new_id(minted_at.now_ms()).expect("the volume mints an id")),
-            clock: Arc::new(move || clock.now_ms()),
+            new_id: Arc::new(move || minting.new_id().expect("the volume mints an id")),
+            clock: Arc::new(move || clock.now_ms().expect("the runtime clock")),
         };
         let mut builder = extension::Builder {
-            kernel,
+            handle,
             machine,
-            runtime: Runtime::builder(),
+            runtime,
             tools: Tools::new(),
             owners: HashMap::new(),
             providers,
@@ -244,10 +238,9 @@ impl Octoii {
             builder,
             sign_in,
             credentials,
-            events,
             network,
             catalogue,
-            options,
+            directory,
         })
     }
 }
@@ -296,7 +289,7 @@ impl Building {
     ///
     /// # Errors
     /// The volume's failure, a missing or duplicate base extension, or invalid independent model prompts.
-    pub fn start(self) -> beak::Result<Octoii> {
+    pub fn start(self) -> octoii_siphon_lib::Result<Octoii> {
         let base_count = self
             .builder
             .registry
@@ -305,16 +298,16 @@ impl Building {
             .filter(|extension| extension.name == "base")
             .count();
         if base_count != 1 {
-            return Err(beak::Error {
-                status: beak::Status::Invalid,
-                reason: format!("exactly one base extension is required; found {base_count}"),
-            });
+            return Err(octoii_siphon_lib::Error::new(
+                Status::Invalid,
+                format!("exactly one base extension is required; found {base_count}"),
+            ));
         }
         let [registered] = self.builder.prompts.as_slice() else {
-            return Err(beak::Error {
-                status: beak::Status::Invalid,
-                reason: "base must supply independent model prompts exactly once".into(),
-            });
+            return Err(octoii_siphon_lib::Error::new(
+                Status::Invalid,
+                "base must supply independent model prompts exactly once",
+            ));
         };
         let prompts = registered.item;
         if registered.extension != "base"
@@ -322,23 +315,22 @@ impl Building {
                 .iter()
                 .any(|text| text.trim().is_empty())
         {
-            return Err(beak::Error {
-                status: beak::Status::Invalid,
-                reason: "independent model prompts must be nonempty and supplied by base".into(),
-            });
+            return Err(octoii_siphon_lib::Error::new(
+                Status::Invalid,
+                "independent model prompts must be nonempty and supplied by base",
+            ));
         }
         let Building {
             builder,
             sign_in,
             credentials,
-            events,
             network,
             catalogue,
-            options,
+            directory,
         } = self;
         builder.writable_folders.finish(builder.writables.clone())?;
         let extension::Builder {
-            kernel,
+            handle: _,
             machine,
             runtime,
             tools,
@@ -360,11 +352,14 @@ impl Building {
             natives,
             models: Arc::clone(&models),
         };
-        let runtime = register_fibers_and_handlers(runtime, &machine, &models, sources.clone(), tools, writables, prompts)
-            .start_on((kernel, events), options)?;
+        let runtime = register_fibers_and_handlers(runtime, &machine, &models, sources.clone(), tools, writables, prompts)?;
+        let runtime = match directory {
+            Some(directory) => runtime.open(&directory)?,
+            None => runtime.memory()?,
+        };
         let siphon = Octoii {
             machine,
-            threads: Threads::new(runtime.clone()),
+            threads: Threads::new(runtime.runtime_handle()),
             runtime,
             models,
             credentials,
@@ -396,56 +391,59 @@ fn own(registrar: &mut Registrar<'_>) {
 /// The runtime's own fibers and handlers beside the extensions' in `runtime`: the thread's processes, the requests
 /// answered by the machine and the models, and those the person answers.
 fn register_fibers_and_handlers(
-    runtime: siphon_runtime::Builder,
+    mut runtime: octoii_siphon_lib::Builder,
     machine: &Host,
     models: &Arc<Models>,
     sources: Sources,
     tools: Tools,
     writables: Vec<crate::agent::Writable>,
     prompts: crate::agent::Prompts,
-) -> siphon_runtime::Builder {
+) -> octoii_siphon_lib::Result<octoii_siphon_lib::Builder> {
+    let executor =
+        tokio::runtime::Handle::try_current().map_err(|error| octoii_siphon_lib::Error::new(Status::Invalid, error.to_string()))?;
     let (gathering, asking, reviewing) = (sources, Arc::clone(models), Arc::clone(models));
     let (execs, host) = (tools.clone(), machine.clone());
     runtime
-        .fiber(ThreadFiber)
+        .fiber(ThreadFiber)?
         .fiber(TurnFiber {
             tools: tools.clone(),
             machine: machine.clone(),
             models: Arc::clone(models),
             writables,
-        })
+        })?
         .fiber(ScriptFiber {
             tools,
             primitives: Arc::new(crate::agent::ThreadPrimitives),
-        })
+        })?
         .fiber(TitleFiber {
             instruction: prompts.title,
-        })
+        })?
         .fiber(CompactFiber {
             instruction: prompts.recap,
-        })
-        .fiber(DelegatedFiber)
-        .fiber(ResumeFiber)
-        .handle(move |asked: Asked<Gather>| {
+        })?
+        .fiber(DelegatedFiber)?
+        .fiber(ResumeFiber)?
+        .handle(&executor, move |asked: Asked<Gather>| {
             let sources = gathering.clone();
             async move { answer_gather(&sources, asked).await }
-        })
-        .handle(move |asked: Asked<ModelRequest>| {
+        })?
+        .handle(&executor, move |asked: Asked<ModelRequest>| {
             let models = Arc::clone(&asking);
             async move { answer_model(&models, asked).await }
-        })
-        .handle(move |asked: Asked<Review>| {
+        })?
+        .handle(&executor, move |asked: Asked<Review>| {
             let models = Arc::clone(&reviewing);
             async move { answer_review(&models, prompts.review, asked).await }
-        })
-        .handle(move |asked: Asked<Exec>| {
+        })?
+        .handle(&executor, move |asked: Asked<Exec>| {
             let (tools, host) = (execs.clone(), host.clone());
             async move { answer_exec(&tools, &host, asked).await }
-        })
-        .ask_person::<Permission>()
-        .ask_person::<Asks>()
-        .fiber(trust::TrustFiber)
-        .ask_person::<trust::Trust>()
+        })?
+        .ask_person::<Permission>()?
+        .ask_person::<Asks>()?
+        .fiber(trust::TrustFiber)?
+        .ask_person::<trust::Trust>()?;
+    Ok(runtime)
 }
 
 #[cfg(test)]
@@ -469,14 +467,14 @@ mod base_tests {
     #[tokio::test]
     async fn starting_requires_exactly_one_base_extension() {
         let missing = Octoii::builder(testing::setup(Host::default())).unwrap().start().unwrap_err();
-        assert!(missing.reason.contains("found 0"));
+        assert!(missing.message.contains("found 0"));
         let duplicate = Octoii::builder(testing::setup(Host::default()))
             .unwrap()
             .extension(Base)
             .extension(Base)
             .start()
             .unwrap_err();
-        assert!(duplicate.reason.contains("found 2"));
+        assert!(duplicate.message.contains("found 2"));
     }
 
     #[tokio::test]
@@ -510,8 +508,8 @@ mod base_tests {
                 building.builder.registrar(owner).prompts(prompts);
             }
             let error = building.start().unwrap_err();
-            assert_eq!(error.status, beak::Status::Invalid);
-            assert!(error.reason.contains("prompts"));
+            assert_eq!(error.status(), octoii_siphon_lib::Status::Invalid);
+            assert!(error.message.contains("prompts"));
         }
     }
 }

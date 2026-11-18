@@ -6,8 +6,8 @@
 
 use std::io::{self, BufReader};
 
-use beak::{Dirent, FileKind, Namespace, Range, Status};
 use bytes::{Bytes, BytesMut};
+use octoii_siphon_lib::{Dirent, FileKind, Namespace, Range, Status};
 use siphon_text::{Bounds, Content, Diff, Edit, Edited, Page, Refusal, Text};
 
 use crate::machine::namespace::Machine;
@@ -104,11 +104,11 @@ pub enum Error {
     #[error(transparent)]
     Io(#[from] io::Error),
     #[error(transparent)]
-    Beak(#[from] beak::Error),
+    Beak(#[from] octoii_siphon_lib::Error),
 }
 
-fn not_found(error: beak::Error) -> Error {
-    if error.status == Status::NotFound {
+fn not_found(error: octoii_siphon_lib::Error) -> Error {
+    if error.status() == Status::NotFound {
         Error::NotFound
     } else {
         Error::Beak(error)
@@ -199,7 +199,7 @@ struct Reading<'a> {
     namespace: &'a Namespace,
     path: &'a str,
     offset: u64,
-    failed: Option<beak::Error>,
+    failed: Option<octoii_siphon_lib::Error>,
 }
 
 impl io::Read for Reading<'_> {
@@ -264,7 +264,7 @@ impl Machine {
 
     /// The namespace's `path` where something is there, else the path of a name in its folder whose canonical form is
     /// its own, as a person types a name the system holds with other spaces; none where neither is.
-    fn found(&self, path: &str) -> Result<Option<(String, beak::Stat)>, Error> {
+    fn found(&self, path: &str) -> Result<Option<(String, octoii_siphon_lib::Stat)>, Error> {
         if let Some(stat) = self.namespace.stat(path)? {
             return Ok(Some((path.to_owned(), stat)));
         }
@@ -474,10 +474,10 @@ fn all() -> Range<'static> {
 }
 
 /// An I/O failure as Beak's.
-fn io_failure(error: &io::Error) -> beak::Error {
-    beak::Error {
-        status: Status::Failed,
-        reason: error.to_string(),
+fn io_failure(error: &io::Error) -> octoii_siphon_lib::Error {
+    octoii_siphon_lib::Error {
+        code: Status::Failed as u32,
+        message: error.to_string(),
     }
 }
 
@@ -491,10 +491,9 @@ mod tests {
         let workspace = folder.path().canonicalize().expect("its real path");
         let source = workspace.join("changing.bin");
         std::fs::write(&source, b"before").expect("written");
-        let beak = beak::Beak::new().expect("Beak");
-        let kernel = beak::Kernel::open(&beak, &beak::Options::default()).expect("a kernel").0;
+        let runtime = octoii_siphon_lib::Runtime::memory().expect("a runtime");
         let machine = Machine::open(
-            &kernel,
+            &runtime,
             &crate::machine::Host::default(),
             crate::machine::Base { workspace, home: None },
             &crate::machine::Writes::Anywhere,
@@ -522,10 +521,9 @@ mod tests {
         let workspace = folder.path().canonicalize().expect("its real path");
         let fifo = workspace.join("pipe");
         assert!(std::process::Command::new("mkfifo").arg(&fifo).status().expect("mkfifo").success());
-        let beak = beak::Beak::new().expect("Beak");
-        let kernel = beak::Kernel::open(&beak, &beak::Options::default()).expect("a kernel").0;
+        let runtime = octoii_siphon_lib::Runtime::memory().expect("a runtime");
         let machine = Machine::open(
-            &kernel,
+            &runtime,
             &crate::machine::Host::default(),
             crate::machine::Base { workspace, home: None },
             &crate::machine::Writes::Anywhere,

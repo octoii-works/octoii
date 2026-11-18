@@ -1,10 +1,10 @@
 //! Ordered initial input, resolved into ordinary model content in the Thread's creation commit.
-use beak::Snapshot;
 use bytes::Bytes;
 use octoii_ai::vocabulary::{ImageDetail, InputContent};
+use octoii_siphon_lib::Batch;
+use octoii_siphon_lib::Snapshot;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use siphon_runtime::Changes;
 
 use super::{NewThread, StartRequest, files};
 
@@ -58,7 +58,7 @@ pub(super) fn fingerprint(new: &NewThread, parts: &[InputPart], request: &StartR
 
 pub(super) fn keep(
     snapshot: &Snapshot,
-    changes: &mut Changes,
+    changes: &mut Batch<'_>,
     thread: &str,
     parts: Vec<InputPart>,
 ) -> Result<Vec<InputContent>, files::Refused> {

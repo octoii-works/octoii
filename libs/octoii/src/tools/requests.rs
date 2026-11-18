@@ -2,9 +2,9 @@
 //! it. Each is durable — made with its caller's commit, answered once — so a call that waits on a person waits through
 //! the host's restarts.
 
+use octoii_siphon_lib::{AskedOfPerson, Request};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use siphon_runtime::{AskedOfPerson, Request};
 
 use crate::tools::permissions::{Grants, Writes};
 use crate::tools::told::Told;
@@ -69,7 +69,11 @@ impl Request for Permission {
     type Answer = Decision;
 }
 
-impl AskedOfPerson for Permission {}
+impl AskedOfPerson for Permission {
+    fn answer_schema(&self) -> serde_json::Value {
+        schemars::schema_for!(Self::Answer).to_value()
+    }
+}
 
 /// A second model asked to judge a call of the thread `thread`, by Octoii's key of it, as the person named it to: the
 /// call as it is shown.

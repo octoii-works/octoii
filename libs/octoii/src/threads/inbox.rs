@@ -4,11 +4,11 @@
 //! how it runs set on its directory in the same commit. A turn that works takes what joins at its next step, steering
 //! it; an input that waits for the next turn stays till the turn ends, and begins the next.
 
-use beak::{Range, Snapshot};
 use bytes::Bytes;
 use octoii_ai::vocabulary::InputContent;
+use octoii_siphon_lib::{Batch, Mail, Run};
+use octoii_siphon_lib::{Range, Snapshot};
 use serde::{Deserialize, Serialize};
-use siphon_runtime::{Changes, Mail, Run};
 
 use crate::threads::config::{Config, ConfigChange};
 use crate::threads::log::{Address, Entry, Error, Writer};
@@ -82,10 +82,10 @@ pub const ENDED_MAIL: &str = "siphon.ended";
 ///
 /// # Errors
 /// The volume's failure.
-pub fn tell(snapshot: &Snapshot, changes: &mut Changes, reply_to: &ReplyTo, ended: &Ended) -> beak::Result<()> {
+pub fn tell(snapshot: &Snapshot, changes: &mut Batch<'_>, reply_to: &ReplyTo, ended: &Ended) -> octoii_siphon_lib::Result<()> {
     let process = Bytes::copy_from_slice(reply_to.process.as_bytes());
     let lives = snapshot
-        .record(&process)?
+        .fiber(&process)?
         .is_some_and(|record| record.outcome.is_none() && reply_to.started.is_none_or(|started| record.created_seq == started));
     if lives {
         let mail = Mail {
@@ -103,11 +103,11 @@ pub fn tell(snapshot: &Snapshot, changes: &mut Changes, reply_to: &ReplyTo, ende
 ///
 /// # Errors
 /// The volume's failure; a mail not as `tell` writes it.
-pub fn ended_mail(run: &mut siphon_runtime::Run<'_>, key: &str) -> anyhow::Result<Option<Ended>> {
+pub fn ended_mail(run: &mut octoii_siphon_lib::Run<'_>, key: &str) -> anyhow::Result<Option<Ended>> {
     let Some(mail) = run.mail(key.as_bytes())? else { return Ok(None) };
     anyhow::ensure!(mail.name == ENDED_MAIL.as_bytes(), "unexpected completion mail name");
     let ended = serde_json::from_slice(&mail.payload)?;
-    run.take_mail(key);
+    run.take_mail(key)?;
     Ok(Some(ended))
 }
 
@@ -153,7 +153,7 @@ pub fn file(id: &str, delivery: &str) -> Bytes {
 ///
 /// # Errors
 /// What cannot be written as JSON.
-pub fn put(changes: &mut Changes, id: &str, delivery: &str, inbound: &Inbound) -> serde_json::Result<()> {
+pub fn put(changes: &mut Batch<'_>, id: &str, delivery: &str, inbound: &Inbound) -> serde_json::Result<()> {
     changes.write(file(id, delivery), serde_json::to_vec(inbound)?);
     Ok(())
 }
@@ -171,7 +171,7 @@ pub fn waiting(snapshot: &Snapshot, id: &str) -> Result<Vec<Waiting>, Error> {
     for entry in snapshot.list(&path(id), &range)?.unwrap_or_default() {
         let name = String::from_utf8_lossy(&entry.name);
         let Some(delivery) = name.strip_suffix(".json") else { continue };
-        let bytes = snapshot.read(&file(id, delivery), 0, u64::MAX)?.unwrap_or_default();
+        let bytes = snapshot.read_range(&file(id, delivery), 0, u64::MAX)?.unwrap_or_default();
         out.push(Waiting {
             id: delivery.to_owned(),
             inbound: serde_json::from_slice(&bytes)?,

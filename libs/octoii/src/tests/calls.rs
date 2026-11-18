@@ -12,12 +12,12 @@ use crate::tools::{
     CallStatus, Calls, Context, Effect, Exec, ExecuteTool, GlobTool, GrepTool, Judgment, Permission, ReadTool, Refusal, Review,
     ScriptFiber, Setting, ShellTool, State, Told, Tool, Tools, WriteTool, answer_exec, projects,
 };
-use beak::{Beak, Outcome, layout};
 use bytes::Bytes;
 use octoii_ai::vocabulary::InputContent;
+use octoii_siphon_lib::Outcome;
+use octoii_siphon_lib::{Asked, Changes, Ending, Fiber, Run, Runtime, Wait};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use siphon_runtime::{Asked, Changes, Ending, Fiber, NotGiven, Options, Run, Runtime, Wait};
 
 #[test]
 fn a_waiting_tool_uses_the_fiber_checkpoint_tag() {
@@ -171,7 +171,7 @@ impl Fiber for Caller {
             base: &base,
             project: Some(&folder),
             places: &[],
-            confines: beak::machine_confines(),
+            confines: octoii_siphon_lib::machine_confines(),
         };
         match calls.advance(run, &setting)? {
             Some(wait) => Ok(Ending::Wait(calls, wait)),
@@ -216,41 +216,53 @@ fn said(call: crate::tools::Call) -> (CallStatus, String) {
 
 /// A runtime whose caller's tools are exec'd, whose permissions the person answers, and whose second model lets every
 /// command go ahead but one that removes.
-fn runtime(beak: &Beak) -> Runtime {
-    Runtime::builder()
-        .fiber(Caller { tools: tools() })
-        .fiber(RecoveredCaller)
-        .fiber(ScriptFiber {
-            tools: tools(),
-            primitives: std::sync::Arc::new(crate::agent::ThreadPrimitives),
-        })
-        .handle(|asked: Asked<Exec>| async move { answer_exec(&tools(), &Host::default(), asked).await })
-        .ask_person::<Permission>()
-        .ask_person::<crate::tools::Asks>()
-        .handle(|asked: Asked<Review>| async move {
-            let removes = asked.payload.shown.does.iter().any(|does| does.contains(" rm "));
-            Ok(Judgment {
-                allow: !removes,
-                reason: if removes { "it removes files".into() } else { "it builds".into() },
-                usage: None,
+fn runtime() -> Runtime {
+    {
+        let mut builder = octoii_siphon_lib::Builder::new().expect("a builder");
+        builder
+            .fiber(Caller { tools: tools() })
+            .expect("registered")
+            .fiber(RecoveredCaller)
+            .expect("registered")
+            .fiber(ScriptFiber {
+                tools: tools(),
+                primitives: std::sync::Arc::new(crate::agent::ThreadPrimitives),
             })
-        })
-        .start(beak, Options::default())
-        .expect("started")
+            .expect("registered")
+            .handle(&tokio::runtime::Handle::current(), |asked: Asked<Exec>| async move {
+                answer_exec(&tools(), &Host::default(), asked).await
+            })
+            .expect("registered")
+            .ask_person::<Permission>()
+            .expect("registered")
+            .ask_person::<crate::tools::Asks>()
+            .expect("registered")
+            .handle(&tokio::runtime::Handle::current(), |asked: Asked<Review>| async move {
+                let removes = asked.payload.shown.does.iter().any(|does| does.contains(" rm "));
+                Ok(Judgment {
+                    allow: !removes,
+                    reason: if removes { "it removes files".into() } else { "it builds".into() },
+                    usage: None,
+                })
+            })
+            .expect("registered");
+        crate::tests::open_runtime(builder, None)
+    }
+    .expect("started")
 }
 
 async fn caller(runtime: &Runtime, key: &str, asking: &Asking) -> Bytes {
     let mut changes = Changes::new();
     changes.start::<Caller>(Bytes::new(), key, asking).expect("an input");
     runtime.commit(changes).await.expect("started");
-    layout::process(b"", key.as_bytes())
+    octoii_siphon_lib::process_path(b"", key.as_bytes())
 }
 
 async fn ended(runtime: &Runtime, path: &[u8]) -> Vec<(CallStatus, String)> {
-    let mut committed = runtime.committed();
+    let mut committed = runtime.committed().expect("a commit watch");
     let waiting = async {
         loop {
-            let record = runtime.snapshot().expect("a snapshot").record(path).expect("a record");
+            let record = runtime.snapshot().expect("a snapshot").fiber(path).expect("a record");
             if let Some(Outcome::Completed(Some(result))) = record.and_then(|record| record.outcome) {
                 return serde_json::from_slice(&result).expect("what it said");
             }
@@ -261,7 +273,7 @@ async fn ended(runtime: &Runtime, path: &[u8]) -> Vec<(CallStatus, String)> {
 }
 
 /// The person prompt named `name` below this process.
-async fn asked(runtime: &Runtime, path: &[u8], name: &[u8]) -> siphon_runtime::PersonRequest {
+async fn asked(runtime: &Runtime, path: &[u8], name: &[u8]) -> octoii_siphon_lib::PersonRequest {
     let waiting = async {
         loop {
             let snapshot = runtime.snapshot().expect("a snapshot");
@@ -269,7 +281,7 @@ async fn asked(runtime: &Runtime, path: &[u8], name: &[u8]) -> siphon_runtime::P
                 .person_requests(&snapshot, path)
                 .expect("prompts")
                 .into_iter()
-                .find(|prompt| prompt.name.as_ref() == name)
+                .find(|prompt| prompt.name.as_slice() == name)
             {
                 return prompt;
             }
@@ -306,20 +318,12 @@ async fn sub_thread(runtime: &Runtime, id: &str, kind: SubThreadKind) {
 }
 
 fn no_requests(runtime: &Runtime, under: &[u8]) {
-    let query = beak::Query {
-        kind: layout::REQUEST_KIND,
-        name: layout::REQUEST_LABEL,
-        value: None,
-        under,
-        after: None,
-    };
-    assert_eq!(runtime.snapshot().unwrap().find(&query, 100).unwrap(), Vec::<beak::Found>::new());
+    assert!(!runtime.snapshot().unwrap().has_pending_requests(under).unwrap());
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn explorers_keep_their_read_scope_in_full_access_and_with_existing_project_grants() {
-    let beak = Beak::new().unwrap();
-    let runtime = runtime(&beak);
+    let runtime = runtime();
     let (_folder, workspace) = folder();
     std::fs::write(workspace.join("source.txt"), "readable").unwrap();
     sub_thread(&runtime, "explorer", SubThreadKind::Explorer).await;
@@ -375,13 +379,12 @@ async fn explorers_keep_their_read_scope_in_full_access_and_with_existing_projec
         projects::grants(&runtime.snapshot().unwrap(), &workspace.to_string_lossy()).unwrap(),
         grants
     );
-    runtime.close().await;
+    runtime.close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn explorer_scripts_expose_readers_and_cannot_request_write_permissions() {
-    let beak = Beak::new().unwrap();
-    let runtime = runtime(&beak);
+    let runtime = runtime();
     let (_folder, workspace) = folder();
     std::fs::write(workspace.join("source.txt"), "readable").unwrap();
     sub_thread(&runtime, "explorer", SubThreadKind::Explorer).await;
@@ -432,7 +435,7 @@ async fn explorer_scripts_expose_readers_and_cannot_request_write_permissions() 
         projects::grants(&runtime.snapshot().unwrap(), &workspace.to_string_lossy()).unwrap(),
         crate::tools::permissions::Grants::default()
     );
-    runtime.close().await;
+    runtime.close().expect("closed");
 }
 
 /// Recreates a permission wait whose answer the current call rules must recheck.
@@ -470,8 +473,7 @@ impl Fiber for RecoveredCaller {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn recovered_explorer_approval_cannot_grant_or_execute_an_unavailable_tool() {
-    let beak = Beak::new().unwrap();
-    let runtime = runtime(&beak);
+    let runtime = runtime();
     let (_folder, workspace) = folder();
     let (_outside, outside) = folder();
     let target = outside.join("forbidden.txt");
@@ -485,7 +487,7 @@ async fn recovered_explorer_approval_cannot_grant_or_execute_an_unavailable_tool
     let mut changes = Changes::new();
     changes.start::<RecoveredCaller>(Bytes::new(), "restore", &asking).unwrap();
     runtime.commit(changes).await.unwrap();
-    let path = layout::process(b"", b"restore");
+    let path = octoii_siphon_lib::process_path(b"", b"restore");
     let request = asked(&runtime, &path, b"siphon.permission").await;
     runtime
         .answer(&request.id, &json!({ "decision": "allow", "always": true }))
@@ -498,13 +500,12 @@ async fn recovered_explorer_approval_cannot_grant_or_execute_an_unavailable_tool
         crate::tools::permissions::Grants::default()
     );
     no_requests(&runtime, &path);
-    runtime.close().await;
+    runtime.close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn general_purpose_sub_threads_keep_normal_permissions_and_cannot_delegate() {
-    let beak = Beak::new().unwrap();
-    let runtime = runtime(&beak);
+    let runtime = runtime();
     let (_folder, workspace) = folder();
     sub_thread(&runtime, "general", SubThreadKind::GeneralPurpose).await;
     let asking = Asking {
@@ -536,13 +537,12 @@ async fn general_purpose_sub_threads_keep_normal_permissions_and_cannot_delegate
     runtime.answer(&request.id, &json!({ "decision": "deny" })).await.unwrap();
     assert_eq!(ended(&runtime, &path).await[0].0, CallStatus::Rejected);
     assert!(!target.exists());
-    runtime.close().await;
+    runtime.close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn calls_that_act_go_one_after_another_and_a_read_after_them_sees_what_they_did() {
-    let beak = Beak::new().expect("Beak");
-    let runtime = runtime(&beak);
+    let runtime = runtime();
     let (_folder, workspace) = folder();
     let asking = Asking {
         thread: "t1".into(),
@@ -571,13 +571,12 @@ async fn calls_that_act_go_one_after_another_and_a_read_after_them_sees_what_the
         "{said:?}"
     );
     assert_eq!(said[2].1, "one\ntwo", "read after what acted before it");
-    runtime.close().await;
+    runtime.close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_call_the_person_lets_go_ahead_for_good_is_granted_its_project_and_one_they_decline_is_rejected() {
-    let beak = Beak::new().expect("Beak");
-    let runtime = runtime(&beak);
+    let runtime = runtime();
     let (_folder, workspace) = folder();
     let (_outside_folder, outside) = folder();
     let target = outside.join("made.txt");
@@ -603,7 +602,7 @@ async fn a_call_the_person_lets_go_ahead_for_good_is_granted_its_project_and_one
         let payload: serde_json::Value = serde_json::from_slice(&request.payload).expect("JSON");
         let call = payload["call"].as_str().expect("its call");
         assert_eq!(
-            request.id.key.as_ref(),
+            request.id.key.as_slice(),
             format!("{call}.{key}").as_bytes(),
             "the ask names its call by Octoii's key of it"
         );
@@ -615,13 +614,12 @@ async fn a_call_the_person_lets_go_ahead_for_good_is_granted_its_project_and_one
     assert_eq!(said[1], (CallStatus::Rejected, "the person declined it: not there".into()));
     let grants = projects::grants(&runtime.snapshot().expect("a snapshot"), &workspace.to_string_lossy()).expect("read");
     assert_eq!(grants.commands, ["touch *"]);
-    runtime.close().await;
+    runtime.close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn in_auto_a_second_model_judges_what_would_ask() {
-    let beak = Beak::new().expect("Beak");
-    let runtime = runtime(&beak);
+    let runtime = runtime();
     let (_folder, workspace) = folder();
     let asking = Asking {
         thread: "t1".into(),
@@ -638,13 +636,12 @@ async fn in_auto_a_second_model_judges_what_would_ask() {
     assert_eq!((said[0].0, said[2].0), (CallStatus::Ok, CallStatus::Ok));
     assert_eq!(said[1], (CallStatus::Rejected, "blocked: it removes files".into()));
     assert!(workspace.join("out.txt").exists(), "what was blocked did not run");
-    runtime.close().await;
+    runtime.close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_call_s_long_output_is_cut_to_its_head_and_tail_the_whole_kept_in_its_thread() {
-    let beak = Beak::new().expect("Beak");
-    let runtime = runtime(&beak);
+    let runtime = runtime();
     let mut changes = Changes::new();
     changes.mkdir(crate::threads::thread::path("t1"));
     runtime.commit(changes).await.expect("a thread's directory");
@@ -671,24 +668,23 @@ async fn a_call_s_long_output_is_cut_to_its_head_and_tail_the_whole_kept_in_its_
     let files = snapshot
         .list(
             &outputs,
-            &beak::Range {
+            &octoii_siphon_lib::Range {
                 limit: usize::MAX,
-                ..beak::Range::default()
+                ..octoii_siphon_lib::Range::default()
             },
         )
         .expect("outputs")
         .expect("kept");
     assert_eq!(files.len(), 1);
     let place = [&outputs[..], b"/", &files[0].name].concat();
-    let kept = snapshot.read(&place, 0, u64::MAX).expect("read").expect("kept");
+    let kept = snapshot.read_range(&place, 0, u64::MAX).expect("read").expect("kept");
     assert!(kept.ends_with(b"19999\n20000\n<system-reminder>exit 0</system-reminder>"));
-    runtime.close().await;
+    runtime.close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_tool_the_person_answers_is_answered_with_what_fits_what_it_asks() {
-    let beak = Beak::new().expect("Beak");
-    let runtime = runtime(&beak);
+    let runtime = runtime();
     let (_folder, workspace) = folder();
     let asking = Asking {
         thread: "t1".into(),
@@ -699,9 +695,14 @@ async fn a_tool_the_person_answers_is_answered_with_what_fits_what_it_asks() {
     let path = caller(&runtime, "p1", &asking).await;
     let request = asked(&runtime, &path, b"siphon.asks").await;
     let unfit = runtime.answer(&request.id, &json!("green")).await;
-    assert!(matches!(unfit, Err(NotGiven::Unfit(_))), "{unfit:?}");
+    assert!(
+        unfit
+            .as_ref()
+            .is_err_and(|error| error.status() == octoii_siphon_lib::Status::Invalid),
+        "{unfit:?}"
+    );
     runtime.answer(&request.id, &json!("blue")).await.expect("answered");
     let said = ended(&runtime, &path).await;
     assert_eq!(said[0], (CallStatus::Ok, "picked blue".into()));
-    runtime.close().await;
+    runtime.close().expect("closed");
 }

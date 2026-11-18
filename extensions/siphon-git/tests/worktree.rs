@@ -4,7 +4,7 @@ use std::path::Path;
 use std::process::Command;
 
 use octoii::machine::{Base, Host, Machine, Writes};
-use octoii::testing::{Beak, Calling};
+use octoii::testing::Calling;
 use siphon_git::git::{Git, GitError, Worktree};
 use tokio_util::sync::CancellationToken;
 
@@ -47,8 +47,8 @@ struct Worktrees {
 }
 
 impl Worktrees {
-    fn start(beak: &Beak, root: &Path, writes: &Writes) -> Self {
-        let calling = Calling::start(beak, |tools| tools);
+    fn start(root: &Path, writes: &Writes) -> Self {
+        let calling = Calling::start(|tools| tools);
         let machine = calling
             .volume()
             .commands()
@@ -66,7 +66,7 @@ impl Worktrees {
 
     async fn create(&self, folder: &Path, destination: &Path, branch: &str, base: &str) -> Result<Worktree, GitError> {
         let volume = self.calling.volume();
-        let time = volume.now_ms();
+        let time = volume.now_ms().unwrap();
         volume
             .recorded("siphon.git", |under| async move {
                 Git {
@@ -101,8 +101,7 @@ async fn worktrees_start_at_a_fixed_commit_and_keep_their_work_separate() {
     std::fs::write(root.join("untracked.txt"), "untracked\n").expect("written");
     let status = git(&root, &["status", "--porcelain"]);
     let head = git(&root, &["rev-parse", "HEAD"]);
-    let beak = Beak::new().expect("Beak");
-    let worktrees = Worktrees::start(&beak, &workspace, &Writes::Within(vec![workspace.clone()]));
+    let worktrees = Worktrees::start(&workspace, &Writes::Within(vec![workspace.clone()]));
     let first_path = workspace.join("--first $(touch${IFS}path-ran)");
     let first_branch = "topic/$(touch${IFS}branch-ran)";
     let first = worktrees
@@ -157,8 +156,7 @@ async fn existing_branches_and_paths_are_rejected_and_preserved() {
     let root = folder.path().canonicalize().expect("its real path");
     let base = repository(&root);
     git(&root, &["branch", "taken"]);
-    let beak = Beak::new().expect("Beak");
-    let worktrees = Worktrees::start(&beak, &root, &Writes::Within(vec![root.clone()]));
+    let worktrees = Worktrees::start(&root, &Writes::Within(vec![root.clone()]));
     let unused = root.join("unused");
     let error = worktrees
         .create(&root, &unused, "taken", "HEAD")
@@ -199,8 +197,7 @@ async fn invalid_branches_and_bases_never_create_a_destination() {
     let root = folder.path().canonicalize().expect("its real path");
     repository(&root);
     git(&root, &["checkout", "-b", "source"]);
-    let beak = Beak::new().expect("Beak");
-    let worktrees = Worktrees::start(&beak, &root, &Writes::Within(vec![root.clone()]));
+    let worktrees = Worktrees::start(&root, &Writes::Within(vec![root.clone()]));
     let destination = root.join("new worktree");
     let branches = git(&root, &["for-each-ref", "--format=%(refname):%(objectname)", "refs/heads/"]);
     for branch in [
@@ -258,8 +255,7 @@ async fn a_git_failure_preserves_the_existing_worktree_without_reserving_a_direc
     std::fs::write(destination.join("keep.txt"), "existing work\n").expect("written");
     let moved = root.join("moved");
     std::fs::rename(&destination, &moved).expect("left a registered path absent");
-    let beak = Beak::new().expect("Beak");
-    let worktrees = Worktrees::start(&beak, &root, &Writes::Within(vec![root.clone()]));
+    let worktrees = Worktrees::start(&root, &Writes::Within(vec![root.clone()]));
     let error = worktrees
         .create(&root, &destination, "new-branch", "HEAD")
         .await
@@ -278,8 +274,7 @@ async fn preparation_does_not_expand_the_callers_write_permissions() {
     let root = folder.path().canonicalize().expect("its real path");
     repository(&root);
     let branches = git(&root, &["for-each-ref", "--format=%(refname):%(objectname)", "refs/heads/"]);
-    let beak = Beak::new().expect("Beak");
-    let worktrees = Worktrees::start(&beak, &root, &Writes::Within(Vec::new()));
+    let worktrees = Worktrees::start(&root, &Writes::Within(Vec::new()));
     let destination = root.join("denied");
     let error = worktrees
         .create(&root, &destination, "denied", "HEAD")
@@ -305,8 +300,7 @@ async fn agent_worktree_actions_keep_the_workspace_and_protect_uncommitted_work(
     let root = workspace.join("source");
     std::fs::create_dir(&root).unwrap();
     repository(&root);
-    let beak = Beak::new().unwrap();
-    let calling = Calling::start(&beak, |tools| tools.with(GitTool));
+    let calling = Calling::start(|tools| tools.with(GitTool));
     let schema = GitTool::output_schema().unwrap();
     let validator = jsonschema::validator_for(&schema).unwrap();
     let call = async |key: &str, args: Value| {
@@ -373,8 +367,7 @@ async fn creation_uses_git_directory_and_remote_tracking_semantics() {
     git(&root, &["remote", "add", "origin", "."]);
     git(&root, &["update-ref", "refs/remotes/origin/main", &commit]);
     git(&root, &["config", "branch.autoSetupMerge", "true"]);
-    let beak = Beak::new().unwrap();
-    let worktrees = Worktrees::start(&beak, &root, &Writes::Within(vec![root.clone()]));
+    let worktrees = Worktrees::start(&root, &Writes::Within(vec![root.clone()]));
     let empty = root.join("empty");
     std::fs::create_dir(&empty).unwrap();
     let created = worktrees.create(&root, &empty, "tracked", "origin/main").await.unwrap();

@@ -10,21 +10,15 @@
 use crate::threads::inbox::{self, Ended, Inbound};
 use crate::threads::log::Writer;
 use crate::threads::{CallStatus, Config, Entry, MainInput, Outcome as TurnOutcome, ThreadUsage, Turn, Window, thread};
-use beak::{Outcome, layout};
-use bytes::Bytes;
 use octoii_ai::vocabulary::{Failure, FailureKind, FunctionCallOutput, InputContent};
+use octoii_siphon_lib::Outcome;
+use octoii_siphon_lib::{Answer, Ending, Fiber, Retries, Run, Wait};
 use serde::{Deserialize, Serialize};
-use siphon_runtime::{Answer, Ending, Fiber, Retries, Run, Wait};
 
 use crate::agent::gather::Gather;
 use crate::agent::title::{TitleFiber, TitleInput};
 use crate::agent::told::{self, Told};
 use crate::agent::turn::{TurnFiber, TurnInput};
-
-/// The annotation on a turn's process that bounds what its requests may cost, as a cgroup's `*.max` bounds its group.
-fn cost_limit() -> Bytes {
-    [layout::MAX_ANNOTATION_PREFIX, b"cost-nanodollars"].concat().into()
-}
 
 /// Where a thread's main process stands: at rest; gathering what its model is told, by the request of `key`; or its
 /// turn running, the process keyed `turn`.
@@ -42,10 +36,13 @@ pub struct ThreadFiber;
 
 impl Fiber for ThreadFiber {
     const KIND: &'static str = "siphon.thread";
-    const RETRIES: Retries = Retries {
-        count: 3,
-        delay_min_ms: 1_000,
-        delay_max_ms: 10_000,
+    const OPTIONS: octoii_siphon_lib::Options = octoii_siphon_lib::Options {
+        retries: Retries {
+            count: 3,
+            delay_min_ms: 1_000,
+            delay_max_ms: 10_000,
+        },
+        ..octoii_siphon_lib::Options::DEFAULT
     };
     type Input = MainInput;
     type Checkpoint = MainState;
@@ -122,7 +119,7 @@ fn gathered(run: &mut Run<'_>, id: &str, key: &str) -> anyhow::Result<Ending<Mai
             Wait::new().mail(key.to_owned()),
         ));
     };
-    run.take_mail(key);
+    run.take_mail(key)?;
     match answer {
         Answer::Given(told) => begin(run, id, told),
         Answer::Interrupted => Ok(Ending::Next(MainState::Rest)),
@@ -176,8 +173,8 @@ fn begin(run: &mut Run<'_>, id: &str, told: Told) -> anyhow::Result<Ending<MainS
         return end_before(run, id, &mut writer, &taken, Why::Failure(failure));
     }
     if config.title.is_none() && config.model.is_some() {
-        let titling = layout::process(run.path(), TitleFiber::KEY.as_bytes());
-        if run.snapshot().record(&titling)?.is_none() {
+        let titling = octoii_siphon_lib::process_path(run.path(), TitleFiber::KEY.as_bytes());
+        if run.snapshot().fiber(&titling)?.is_none() {
             run.start::<TitleFiber>(TitleFiber::KEY, &TitleInput { thread: id.to_owned() })?;
         }
     }
@@ -190,9 +187,8 @@ fn begin(run: &mut Run<'_>, id: &str, told: Told) -> anyhow::Result<Ending<MainS
         },
     )?;
     if let Some(left) = left {
-        let process = layout::process(run.path(), turn.as_bytes());
-        run.changes
-            .meta(process, Vec::new(), vec![(cost_limit(), Some(Bytes::from(left.to_string())))]);
+        let process = octoii_siphon_lib::process_path(run.path(), turn.as_bytes());
+        run.changes.limit(process, b"cost-nanodollars", left);
     }
     let now = run.time_ms();
     crate::threads::began(&mut run.changes, id, now);
@@ -204,7 +200,7 @@ fn budget_left(run: &Run<'_>, id: &str, config: &Config) -> anyhow::Result<Optio
     let Some(budget) = config.budget_nanodollars else { return Ok(None) };
     let used = run
         .snapshot()
-        .record(&thread::main(id))?
+        .fiber(&thread::main(id))?
         .and_then(|record| ThreadUsage::of(&record.usage))
         .map_or(0, |usage| usage.cost_nanodollars);
     Ok(Some(budget.saturating_sub(used)))
@@ -268,7 +264,7 @@ fn end_before(run: &mut Run<'_>, id: &str, writer: &mut Writer, taken: &[Entry],
 
 /// Tells who waits on each input of `entries` how the turn that took it ended, as `ended` says.
 fn tell(run: &mut Run<'_>, entries: &[Entry], ended: &Ended) -> anyhow::Result<()> {
-    let mut told = siphon_runtime::Changes::new();
+    let mut told = octoii_siphon_lib::Changes::new();
     for entry in entries {
         if let Entry::Input {
             reply_to: Some(reply_to), ..
@@ -283,10 +279,10 @@ fn tell(run: &mut Run<'_>, entries: &[Entry], ended: &Ended) -> anyhow::Result<(
 
 /// The turn keyed `turn` running: settled once it ended, and reaped.
 fn running(run: &mut Run<'_>, id: &str, turn: &str) -> anyhow::Result<Ending<MainState, ()>> {
-    let process = layout::process(run.path(), turn.as_bytes());
+    let process = octoii_siphon_lib::process_path(run.path(), turn.as_bytes());
     let outcome = run
         .snapshot()
-        .record(&process)?
+        .fiber(&process)?
         .filter(crate::volume::reapable)
         .and_then(|record| record.outcome);
     let Some(outcome) = outcome else {
@@ -306,7 +302,7 @@ fn running(run: &mut Run<'_>, id: &str, turn: &str) -> anyhow::Result<Ending<Mai
             }
         }
         Outcome::Failed { error, .. } => (TurnOutcome::Failed, Some(Why::Reason(said(error.as_deref(), "it failed")))),
-        Outcome::Stopped { reason, .. } if reason.as_deref() == Some(layout::LIMIT_REASON) => {
+        Outcome::Stopped { reason, .. } if reason.as_deref() == Some(b"limit") => {
             (TurnOutcome::Stopped, Some(Why::Reason("its thread's budget ran out".to_owned())))
         }
         Outcome::Stopped { reason, .. } => (

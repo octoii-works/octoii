@@ -63,13 +63,13 @@ impl Tool for ShellTool {
             ..Program::new(vec!["bash".into(), "-c".into(), args.command], &context.base.workspace)
         };
         let machine = context.machine()?;
-        let time = context.runtime.now_ms();
+        let time = context.runtime.now_ms().map_err(|error| Refusal(error.to_string()))?;
         let ran = machine.run(time, &context.process, &program, &context.cancelled).await;
         let (output, end) = match ran {
             Ok(ran) => {
                 let end = match ran.exit {
-                    beak::Exit::Code(code) => CommandEnd::Exited { code },
-                    beak::Exit::Signal(signal) => CommandEnd::Signalled { signal },
+                    octoii_siphon_lib::Exit::Code(code) => CommandEnd::Exited { code },
+                    octoii_siphon_lib::Exit::Signal(signal) => CommandEnd::Signalled { signal },
                 };
                 (String::from_utf8_lossy(&ran.output).into_owned(), end)
             }

@@ -145,7 +145,7 @@ async fn threads_answered(siphon: &Octoii, method: Method) -> Result<serde_json:
         Method::CompactThread(of) => {
             threads.listed(&of.thread).map_err(|error| failed(&error))?;
             let snapshot = siphon.runtime.snapshot().map_err(|error| refusal("failed", &error.to_string()))?;
-            let mut changes = siphon_runtime::Changes::new();
+            let mut changes = octoii_siphon_lib::Changes::new();
             crate::agent::compaction::start(&snapshot, &mut changes, &of.thread).map_err(|error| refusal("failed", &error.to_string()))?;
             commit(siphon, changes).await?;
             json(&Nothing {})
@@ -177,19 +177,19 @@ fn read_thread(siphon: &Octoii, thread: &str, before: Option<&str>, limit: u32) 
 /// or at no time, where `at` is none.
 async fn resume_thread(siphon: &Octoii, thread: &str, at: Option<i64>) -> Result<(), Error> {
     siphon.threads.listed(thread).map_err(|error| failed(&error))?;
-    let mut changes = siphon_runtime::Changes::new();
+    let mut changes = octoii_siphon_lib::Changes::new();
     crate::agent::resume::disarm(&mut changes, thread);
     commit(siphon, changes).await?;
     let Some(at) = at else { return Ok(()) };
     let snapshot = siphon.runtime.snapshot().map_err(|error| refusal("failed", &error.to_string()))?;
     let input = crate::agent::ResumeInput::now(&snapshot, thread, at, PERSON).map_err(|error| refusal("failed", &error.to_string()))?;
-    let mut changes = siphon_runtime::Changes::new();
+    let mut changes = octoii_siphon_lib::Changes::new();
     crate::agent::resume::arm(&snapshot, &mut changes, &input).map_err(|error| refusal("failed", &error.to_string()))?;
     commit(siphon, changes).await
 }
 
 /// Commits `changes` to Octoii's volume.
-async fn commit(siphon: &Octoii, changes: siphon_runtime::Changes) -> Result<(), Error> {
+async fn commit(siphon: &Octoii, changes: octoii_siphon_lib::Changes) -> Result<(), Error> {
     siphon
         .runtime
         .commit(changes)

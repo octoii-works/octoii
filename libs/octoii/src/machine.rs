@@ -13,18 +13,18 @@ pub(crate) use files::{EditOutcome, Is};
 pub(crate) use namespace::{Errors, ThreadsView};
 pub(crate) use search::{GrepOptions, Grepped};
 
-/// The commands' own words, as Beak gives them: a command and its events, what starts one, how it ended, a
-/// terminal's screen and a piece of what it wrote.
-pub use beak::{Chunk, Command, CommandEvent, CommandEvents, Exec, Exit, Screen, Spec, Stdio};
 /// What extensions and hosts use of it.
 pub use commands::Commands;
 pub use coprocess::{Coprocess, Stderr, Stdin, Stdout, Variables};
 pub use files::{Error, Read, ReadOptions, media_type};
 pub use namespace::{Host, Machine, Program, RunError, Writes, inside};
+/// The commands' own words, as Beak gives them: a command and its events, what starts one, how it ended, a
+/// terminal's screen and a piece of what it wrote.
+pub use octoii_siphon_lib::{Chunk, Command, CommandEvent, CommandEvents, Exec, Exit, Screen, Spec, Stdio};
 pub use paths::Base;
 
 /// Whether commands can be confined by this machine's sandbox.
 #[must_use]
 pub fn confines() -> bool {
-    beak::machine_confines()
+    octoii_siphon_lib::machine_confines()
 }

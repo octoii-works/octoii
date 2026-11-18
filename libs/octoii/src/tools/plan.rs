@@ -5,8 +5,8 @@
 //! ends, which its caller waits on durably, as `wait` waits on a child.
 
 use octoii_ai::vocabulary::InputContent;
+use octoii_siphon_lib::Run;
 use serde::{Deserialize, Serialize};
-use siphon_runtime::Run;
 
 use crate::threads::inbox::Joins;
 use crate::threads::{MarksChange, SubThreadKind};

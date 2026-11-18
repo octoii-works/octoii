@@ -6,22 +6,22 @@ use std::future::Future;
 
 use bytes::Bytes;
 use octoii_ai::vocabulary::FileRef;
-use siphon_runtime::{Changes, Runtime};
+use octoii_siphon_lib::{Changes, RuntimeHandle};
 
 use crate::threads::{files, thread};
 
 /// What the volume's reads give, and how the volume and the machine's commands fail, as Beak tells it.
-pub use beak::{Error, Result, Snapshot};
+pub use octoii_siphon_lib::{Error, Result, Snapshot};
 
 /// A Fiber can be reaped once it and all its descendants have ended.
-pub(crate) fn reapable(record: &beak::Record) -> bool {
-    record.state == beak::ProcessState::Zombie
+pub(crate) fn reapable(record: &octoii_siphon_lib::FiberRecord) -> bool {
+    record.reapable
 }
 
 /// The volume, as an extension reaches it.
 #[derive(Debug, Clone)]
 pub struct Volume {
-    pub(crate) runtime: Runtime,
+    pub(crate) runtime: RuntimeHandle,
 }
 
 impl Volume {
@@ -29,7 +29,7 @@ impl Volume {
     ///
     /// # Errors
     /// The volume's failure.
-    pub fn snapshot(&self) -> beak::Result<Snapshot> {
+    pub fn snapshot(&self) -> octoii_siphon_lib::Result<octoii_siphon_lib::OwnedSnapshot> {
         self.runtime.snapshot()
     }
 
@@ -125,7 +125,7 @@ impl Volume {
     ///
     /// # Errors
     /// The volume's failure.
-    pub fn new_id(&self) -> beak::Result<String> {
+    pub fn new_id(&self) -> octoii_siphon_lib::Result<String> {
         self.runtime.new_id()
     }
 
@@ -133,13 +133,15 @@ impl Volume {
     #[must_use]
     pub fn commands(&self) -> crate::machine::Commands {
         crate::machine::Commands {
-            kernel: self.runtime.kernel().clone(),
+            runtime: self.runtime.clone(),
         }
     }
 
     /// The time, in ms since the epoch, as the runtime counts it.
-    #[must_use]
-    pub fn now_ms(&self) -> i64 {
+    ///
+    /// # Errors
+    /// The runtime has closed.
+    pub fn now_ms(&self) -> octoii_siphon_lib::Result<i64> {
         self.runtime.now_ms()
     }
 
@@ -218,10 +220,10 @@ impl Volume {
     /// # Errors
     /// A missing thread or a volume failure.
     pub fn read_file(&self, thread: &str, reference: &str) -> std::result::Result<Option<Bytes>, files::Refused> {
-        Ok(files::read(&self.file_snapshot(thread)?, thread, reference)?)
+        Ok(files::read(&*self.file_snapshot(thread)?, thread, reference)?)
     }
 
-    fn file_snapshot(&self, thread: &str) -> std::result::Result<Snapshot, files::Refused> {
+    fn file_snapshot(&self, thread: &str) -> std::result::Result<octoii_siphon_lib::OwnedSnapshot, files::Refused> {
         let snapshot = self.snapshot()?;
         if thread::directory(&snapshot, thread)?.is_none() {
             return Err(files::Refused::NoSuchThread);
@@ -234,7 +236,7 @@ impl Volume {
     ///
     /// # Errors
     /// The volume's failure to make the record.
-    pub async fn recorded<F, Done, T>(&self, kind: &str, work: F) -> beak::Result<T>
+    pub async fn recorded<F, Done, T>(&self, kind: &str, work: F) -> octoii_siphon_lib::Result<T>
     where
         F: FnOnce(Bytes) -> Done,
         Done: Future<Output = T>,

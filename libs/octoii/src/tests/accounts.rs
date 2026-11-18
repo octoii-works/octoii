@@ -2,15 +2,13 @@
 //! up kept on its directory, an account's or the host's own.
 
 use crate::accounts::{Error, UsedUp, accounts, add, keep_used_up, provider_of, providers, remove, rename, used_up};
-use beak::Beak;
 use octoii_ai::drivers::{OLLAMA, OPENAI};
 use octoii_ai::models::Provider;
-use siphon_runtime::{Changes, Options, Runtime};
+use octoii_siphon_lib::Changes;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn an_account_is_another_instance_of_a_host_s_provider_and_a_quota_used_up_stands_on_its_directory() {
-    let beak = Beak::new().expect("Beak");
-    let runtime = Runtime::builder().start(&beak, Options::default()).expect("started");
+    let runtime = octoii_siphon_lib::Runtime::memory().expect("started");
     let host = [Provider::of(std::sync::Arc::new(OPENAI)), Provider::of(std::sync::Arc::new(OLLAMA))];
     let work = add(&runtime, &host, "openai", "  Work  ", "add-1").await.expect("added");
     assert_eq!(
@@ -43,7 +41,7 @@ async fn an_account_is_another_instance_of_a_host_s_provider_and_a_quota_used_up
     );
 
     let spent = UsedUp {
-        reset_at_ms: runtime.now_ms() + 3_600_000,
+        reset_at_ms: runtime.now_ms().expect("time") + 3_600_000,
         window_minutes: Some(300),
     };
     for provider in ["openai", work.as_str()] {
@@ -65,5 +63,5 @@ async fn an_account_is_another_instance_of_a_host_s_provider_and_a_quota_used_up
         "the host's own is no account"
     );
     assert_eq!(provider_of("openai/gpt-6"), "openai");
-    runtime.close().await;
+    runtime.close().expect("closed");
 }

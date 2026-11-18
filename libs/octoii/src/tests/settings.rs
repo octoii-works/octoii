@@ -3,14 +3,12 @@
 
 use crate::settings::{Environment, EnvironmentChange, Error, SettingsChange, device, environment, forget, set};
 use crate::threads::Mode;
-use beak::Beak;
+use octoii_siphon_lib::Changes;
 use serde_json::json;
-use siphon_runtime::{Changes, Options, Runtime};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn the_environment_s_settings_are_shared_and_a_device_s_merged_as_a_patch() {
-    let beak = Beak::new().expect("Beak");
-    let runtime = Runtime::builder().start(&beak, Options::default()).expect("started");
+    let runtime = octoii_siphon_lib::Runtime::memory().expect("started");
     assert_eq!(
         environment(&runtime.snapshot().expect("a snapshot")).expect("read"),
         Environment::default()
@@ -57,5 +55,5 @@ async fn the_environment_s_settings_are_shared_and_a_device_s_merged_as_a_patch(
     forget(&snapshot, &mut changes, "s1").expect("forgotten");
     runtime.commit(changes).await.expect("committed");
     assert_eq!(device(&runtime.snapshot().expect("a snapshot"), "s1").expect("read"), json!({}));
-    runtime.close().await;
+    runtime.close().expect("closed");
 }

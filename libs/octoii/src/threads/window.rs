@@ -5,8 +5,8 @@
 //! its `siphon.window_from` annotation, and at the log's beginning where it says nothing; what a window begins with is
 //! never changed within it, so a provider's cache of it holds.
 
-use beak::Snapshot;
 use octoii_ai::vocabulary::ReasoningEffort;
+use octoii_siphon_lib::Snapshot;
 
 use crate::threads::log::{self, Cursor, Entry, Error};
 use crate::threads::thread;

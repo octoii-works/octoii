@@ -94,7 +94,7 @@ pub(crate) async fn answer(caller: &Caller, action: StartAction) -> anyhow::Resu
             &Writes::Anywhere,
         )?
     };
-    let time = volume.now_ms();
+    let time = volume.now_ms()?;
     volume
         .clone()
         .recorded(crate::RECORD_KIND, |under| async move {
