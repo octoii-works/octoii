@@ -500,13 +500,64 @@ On macOS ARM64, Beak passed 161 tests, Siphon passed 30, and Octoii passed 105 w
 Three C consumers and 13 Rust consumer tests passed against ABI 4. Formatting, scoped strict Clippy, Node's
 all-target check, and the Rust dependency check passed.
 
-### Following slices
+### B2.2c.2: bind streams and browser replies to request identity
 
-Next, migrate Siphon's retained and live streams and Octoii's human prompt and answer flow to the same
-identity. Update the Rust and TypeScript protocol callers together. Keep the existing business keys available
-for matching tool calls and timeline entries. Carry the exact identity through stream replays, close events,
-pending form state, and the answer submitted by the client. After verifying those source paths together,
-expose the verified stream and human answer interfaces through the public binary. Reuse Cargo compilation
-data under the [local verification cache policy](../CONTRIBUTING.md#local-verification-cleanup).
-The [cutover plan](SIPHON_CUTOVER.md) schedules this work alongside the remaining public capabilities,
-platform artifacts, and removal of the product's private source dependency.
+A probe on private commit `3fd4c6f` captured a pending prompt and replaced it under the same process and
+mailbox key. A subsequent address-based answer to the old prompt answered the replacement. A probe against
+the product client reducer then submitted stream offsets 0, 2, and a replacement's 0 under one key. It kept
+only the first part. The missing offset could belong to another topic of the same request.
+
+A handler receives the existing Beak `RequestId` through Siphon. The runtime opens its stream at delivery and
+closes that exact stream on the committed request-close event. The stream task accepts publications only
+for open identities. A publication delayed until after close has no active stream to write to. Each identity
+owns its offsets and retained bytes. Closing one request releases its stream and signals followers that
+received its output.
+
+Topic followers receive a reset followed by retained parts from a fresh subscription or after a broadcast
+lag. Selecting the retained parts and subscribing to live events occur in the same stream task operation.
+Send replay parts individually within the existing buffer limits. A reset replaces the subscriber's volatile
+stream state, including any closed stream whose final event fell out of the broadcast buffer. Durable log
+entries and their cursor continue independently. Live data can have offset gaps within a topic.
+
+Expose a typed pending-request query on Beak snapshots, scoped by subtree and request name. It uses the
+existing request index and identity decoder. Siphon lists person prompts from the supplied snapshot using
+the registered names and derives each schema from its own prompt. The answer method takes that `RequestId`,
+verifies it in the current snapshot before reading the schema, and submits the same identity to the Beak
+transaction. Octoii checks that the process belongs to the selected thread under its existing permissions.
+
+Migrate the wire contract to `octoii.2`. An Ask carries an opaque request ID and its business key. The
+answer carries the thread, request ID and value. Encode the byte fields and sequence numbers losslessly.
+Stream data carries the same opaque identity, its business key, and a lossless offset. The client keys
+pending submissions and live output by identity, accepts increasing offsets, and applies exact close and
+reset events. Business keys still associate calls and persisted timeline entries. Stream eviction follows
+the stream's lifecycle. Reconnect restores the current prompts and live streams without retrying a reply.
+
+Proposed private scope, relative to `devxiyang/octoii-siphon`
+
+| Files | Change |
+| --- | --- |
+| `beak/crates/beak-process/src/{request.rs,lib.rs}`, `beak/crates/beak-volume/src/lib.rs`, `beak/crates/beak/src/snapshot.rs` | Expose the typed, indexed snapshot query for pending requests under a path, with identity, name and payload. |
+| `crates/siphon-runtime/src/{lib.rs,person.rs,runtime.rs}` | Expose the request identity and person prompt, bind list and schema to one snapshot, and replace address-based answer with exact identity. Export the stream event type. |
+| `crates/siphon-runtime/src/request.rs`, `crates/siphon-runtime/src/runtime/{builder.rs,events.rs}` | Carry one typed identity through handler input and stream open, publication and committed close. |
+| `crates/siphon-runtime/src/streams.rs`, `crates/siphon-runtime/tests/runtime.rs` | Implement identity-scoped stream state and replay, and test replacements, late publishers, lag reset, topic filtering and the exact person reply. |
+| `crates/siphon-ffi/src/request.rs` | Project the existing callback address fields from the typed host request. The opaque reply handle still answers the delivery that created it. |
+
+Migrate Octoii's thread status, answer route and stream subscription, the Rust protocol and generated
+TypeScript, the client reducer and conversation projection, and the web approval and pending-submission
+state together. Update the Rust and TypeScript consumers and the desktop answer acceptance script. Use
+Siphon's typed query and answer operations in Octoii.
+
+Verify two simultaneous requests sharing a key, a replacement at the same address, and a reply from a
+form that was already open. Verify topic gaps, exact close, lag recovery, and a new subscription missing
+an earlier close. Verify that final turn entries still render from the durable log and that an acknowledgement
+lost during reconnect does not cause a resend. Run the existing ABI 4 request consumers and the client
+against a real node. The stream's live/replay boundary and the identity comparison inside the reply commit
+belong to Siphon and Beak. A product-only change would still depend on already merged runtime output and
+an address-based reply operation.
+
+### Public binary interface
+
+Expose the verified stream and human answer interfaces through the public binary after the source consumers
+agree on this contract. The [cutover plan](SIPHON_CUTOVER.md) schedules this alongside the remaining public
+capabilities, platform artifacts, and removal of the product's private source dependency.
+The [local verification cache policy](../CONTRIBUTING.md#local-verification-cleanup) applies to these batches.

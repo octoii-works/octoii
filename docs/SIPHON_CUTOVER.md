@@ -46,8 +46,9 @@ in Octoii and its extensions.
 
 ## Implementation order
 
-1. **Finish B2.2c.2 and settle the current format.** Send the committed request identity with every streamed
-   event and person prompt. Carry it through deduplication, close handling, and pending form state. Send the same
+1. **Finish [B2.2c.2](SIPHON_LIFECYCLE.md#b22c2-bind-streams-and-browser-replies-to-request-identity) and settle the current format.**
+   Send the committed request identity with every streamed event and person prompt. Carry it through
+   deduplication, close handling, and pending form state. Send the same
    identity back on reply and verify the request belongs to the selected thread. Keep business keys for tool
    and timeline correlation. Give clients a lossless wire identity and regenerate their protocol bindings with
    the new subprotocol. Define how a fresh subscription restores the active streams, including a close
