@@ -20,11 +20,11 @@ the cutover.
   path dependencies on Beak and Siphon Runtime. The macOS ARM64 product graph resolves 11 private source
   packages. The product graph has no dependency on `octoii-siphon-lib`. Product CI reads the gitlink, checks out the private repo with
   `SIPHON_DEPLOY_KEY`, and tests all three source workspaces.
-- The local public wrapper at `227fe4f` and development ABI 4 cover storage writes, retained snapshots, fibers,
+- The local public wrapper at `c101440` and development ABI 4 cover storage writes, retained snapshots, fibers,
   host request callbacks, directory reads, indexed label queries, metadata changes, the commit journal,
-  Fiber records and lifecycle changes, ordinary mail, volume IDs, time, file retention, and reopen. The wrapper builds
-  from a local archive and verifies the ABI, target, and hash. It rejects native linking outside macOS.
-  Native binary consumers have run on macOS ARM64.
+  commit notifications, Fiber records and lifecycle changes, ordinary mail, volume IDs, time, file retention,
+  and reopen. The wrapper builds from a local archive and verifies the ABI, target, and hash. It rejects native
+  linking outside macOS. Native binary consumers have run on macOS ARM64.
 - The GitHub release list was empty and the crates.io sparse index returned 404 on 2026-11-18. The SDK
   currently links a local artifact.
   [GitHub releases](https://api.github.com/repos/octoii-works/octoii-siphon-lib/releases) · [crates.io index](https://index.crates.io/oc/to/octoii-siphon-lib)
@@ -91,7 +91,7 @@ Each private implementation batch lists its exact files and technical dependency
 
 | Work | Completion condition |
 | --- | --- |
-| Runtime events and requests | Carry commit notifications, exact request identities, person replies, stream replay, closure, and cancellation through the binary. Exercise these while reopening and shutting down. |
+| Runtime events and requests | Carry exact request identities, person replies, stream replay, closure, and cancellation through the binary. Commit notifications have a verified binary watch. Exercise the request paths while reopening and shutting down. |
 | Machine capabilities | Move namespaces, file views, restricted commands, terminal I/O and coprocess channels behind the native SDK. Bring each supported platform up to the same ownership and permission contract. |
 | Product adoption | Build Octoii and Node against a local binary candidate. Migrate startup registration and host callbacks, then verify real turns, approval, workspace tools, stop, and reopen. |
 | Distribution and source removal | Publish matching verified archives and the SDK for macOS, Windows and Linux. A clean product clone must build and pass CI with public inputs. The same change removes the gitlink and private checkout credentials. |
@@ -400,15 +400,20 @@ The C callback takes a sequence value and a context owned by the registration. D
 it. Closing the runtime ends the watch and releases its context. The Rust SDK returns an owned watch with
 an asynchronous `changed` operation. Its caller can read the current sequence and follow the journal.
 
-Proposed scope
+Confirmed scope
 
 | Repository | Files | Change |
 | --- | --- | --- |
 | Private Siphon | `crates/siphon-ffi/src/runtime.rs`, `crates/siphon-ffi/include/siphon.h`, `crates/siphon-ffi/tests/c/lifecycle.c` | Expose the native committed watch with context release and cancellation. |
 | Public SDK | `Cargo.toml`, `src/{lib,sys}.rs`, `include/siphon.h`, `tests/storage.rs` | Bind the watch, enable Tokio sync for the owned receiver, and verify commit, cancel and close. |
 
-The binary runtime owns the durable commit signal. Verify the initial sequence, a successful commit, a
-rejected transaction, independent cancellation, and closure of the receiver at shutdown.
+The binary runtime owns the durable commit signal.
+
+Private commit `67d3648` and public SDK commit `c101440`. The C consumer checks release after an invalid
+registration, callback reentry refusal, and independent cancellation. The Rust SDK verifies the initial
+sequence, progress after successful commits, no notification after a rejected transaction, journal
+visibility, and receiver closure at shutdown. On macOS ARM64, 36 Siphon tests, three independent C
+consumers, and 22 standalone Rust SDK tests passed. Strict Clippy passed for Siphon and the SDK.
 
 ## Completion checks
 
