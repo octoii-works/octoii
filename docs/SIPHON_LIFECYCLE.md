@@ -447,5 +447,56 @@ Carry the identity with the human prompt and its schema from a single snapshot t
 The current Octoii thread answer scans by mailbox key. That boundary also needs the request identity so an
 answer collected earlier can be rejected after the request is replaced. Siphon uses the same identity for
 retention, live and replay offsets, deduplication, and ending a stream. Topics continue to route streams to
-subscribers. Verify both request lifetimes and the source callers before adding their public ABI bindings.
-Reuse Cargo compilation data under the [local verification cache policy](../CONTRIBUTING.md#local-verification-cleanup).
+subscribers.
+
+### B2.2c.1: bind request transactions and host replies
+
+A probe on `11d81af` found three more consequences of sharing the mailbox address. Two posts to the same
+key in one transaction emitted two deliveries, although the committed tree held only the final payload.
+Reusing the key after an answer left that answer readable alongside the new pending request. A plain mail
+to the pending key wrote a new value into the slot and closed the request.
+
+Beak defines `RequestId` from the path, process incarnation, mailbox key, and request creation sequence.
+Use the existing directory creation sequence as the generation. Posting a replacement recreates the request
+directory and opens its answer slot empty, within the same transaction. Beak's pending request reserves the
+slot for its matching answer. A plain mail to a reserved slot receives a refusal, and ordinary mail to other
+slots keeps its existing semantics. During reopen, reconstruct identities from the existing directory data.
+Use the same slot rule to resolve a recovered pending request with old mail at its address before retelling it.
+
+Use the existing final-view notice preparation. Close a previously committed identity if it no longer matches
+the final state. Deliver the final instance at most once per address, in staged publication order, and carry
+its identity in interruption and close notices. A replacement closes its predecessor before it is delivered.
+The transaction applies an answer only while the exact request is pending. Writing its mail and removing its
+request directory are one change. If an append aborts or its outcome requires reopen, use R06's write contract.
+
+The Beak snapshot exposes a pending request with its identity, name and payload from one view. Siphon uses
+the identity carried by the Beak event for host delivery, cancellation and answer commit. For the current
+address-based human answer call, take the request and schema input from one snapshot and carry the captured
+identity through validation into the commit. This closes the race between validation and commit. Client
+prompts still need to carry the identity of the request the person actually saw, in the next slice.
+The existing host ABI reply handle remains scoped to its delivery and uses the same Rust answer path.
+
+Proposed private scope, relative to `devxiyang/octoii-siphon`
+
+| Files | Change |
+| --- | --- |
+| `beak/crates/beak-process/src/{commit.rs,lib.rs}`, new `beak/crates/beak-process/src/request.rs` | Define request identity and the pending request view. Make publication, close, mail reservation and exact answer checks part of Beak's transaction. |
+| `beak/crates/beak-process/src/scheduler.rs`, `beak/crates/beak-process/tests/scheduler.rs` | Reconstruct and retell the recovered identity. Test same-commit coalescing, old mail, replacements, ordinary mail refusal, late answers and recovery. |
+| `beak/crates/beak-volume/src/lib.rs`, `beak/crates/beak-volume/tests/volume.rs` | Re-export the request types and verify the notice and answer path through Volume, including a rejected write. |
+| `beak/crates/beak/src/{lib.rs,kernel.rs,snapshot.rs}`, `beak/crates/beak/tests/beak.rs` | Carry typed identity through the native events, snapshot and answer change. Migrate the native consumer tests. |
+| `crates/siphon-runtime/src/{changes.rs,runtime.rs}`, `crates/siphon-runtime/src/runtime/events.rs`, `crates/siphon-runtime/tests/runtime.rs` | Key host deliveries by the native identity and apply the exact reply. Bind human schema validation to the same request snapshot and test both answer races. |
+
+Verify one final delivery for repeated posts in a batch. Verify that normal replies, old host replies, ordinary
+mail and a replacement racing schema validation affect only the intended slot. Verify close-before-deliver,
+failed writes without notices, and reopen retelling once with the original identity. Run the existing binary
+request consumers against the same ABI 4. Extensions see a request only after Beak has prepared and committed
+its transitions. They cannot enforce the answer-slot invariant or reject a stale reply inside that transaction.
+
+### Following slices
+
+Next, migrate Siphon's retained and live streams and Octoii's human prompt and answer flow to the same
+identity. Update the Rust and TypeScript protocol callers together. Keep the existing business keys available
+for matching tool calls and timeline entries. Carry the exact identity through stream replays, close events,
+pending form state, and the answer submitted by the client. After verifying those source paths together,
+expose the verified stream and human answer interfaces through the public binary. Reuse Cargo compilation
+data under the [local verification cache policy](../CONTRIBUTING.md#local-verification-cleanup).
