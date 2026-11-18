@@ -304,17 +304,38 @@ Today `siphon-runtime` depends on the Rust `beak` crate, whose calls go through 
 entry point for Siphon, backed by the existing kernel, storage and machine crates. The C ABI built by
 `siphon-ffi` remains the contract used by `octoii-siphon-lib`.
 
-1. Migrate kernel open and close, snapshots, commits, process admission and completion, and request events.
-   Pass Rust types directly and reuse the existing kernel methods and commit path. Keep Beak responsible
-   for process state and for when it publishes events. R06a's tree and scheduler work can proceed independently.
-2. Migrate namespace and command access through Beak's Rust types. Retire the Beak C adapter, generated
-   bindings and standalone binary packaging once the remaining callers and tests use Rust.
-3. Check the dependency graph of `siphon-ffi` for removal of `beak-c` and `beak-sys`. Run Beak and
-   Siphon tests for recovery, stopping, sandboxing and PTYs. Link the C and Rust consumers against the
-   resulting Siphon archive with the same ABI 4 interface and verify persisted checkpoints.
+The current Rust binding uses the same C kernel handle to commit a run, mount its volume in a namespace,
+and start and track its commands. Switch those paths together so every operation shares one Rust kernel,
+one volume and one namespace registry. R06a's tree and scheduler work can proceed independently.
 
-This work precedes the remaining B2 streaming and machine interface changes. Scope and confirm the core
-files before implementation.
+- Have `beak` own the existing Rust kernel and return its native snapshots. Apply each change list through
+  the existing `Volume::commit` and `Volume::finish` paths. Pass the reserved run through to finish with
+  its original process and admission identities. Read layout names from the crates that own them.
+- Connect the kernel listener directly to the async event receiver. Create the channel before opening the
+  volume so it receives recovered requests. The listener queues events while the writer holds its lock.
+  Preserve commit, request, interrupt and close ordering.
+- Use the existing Rust namespace, sandbox, command and PTY implementations. Use the host's Tokio handle
+  for command tasks and consume the existing typed command event stream. Preserve asynchronous input and
+  its close ordering. Keep the filesystem error and refusal meanings that Siphon uses.
+
+Proposed file scope, relative to the private repository except where noted
+
+| Files | Changes |
+| --- | --- |
+| `beak/crates/beak/Cargo.toml` and `src/{lib,kernel,snapshot,namespace,command,layout}.rs` in that crate | Replace raw C handles with Rust types and wire the direct operations and events. Map typed errors at the Beak interface. |
+| `beak/crates/beak/src/{ffi,queue}.rs` | Remove the pointer conversions and tagged queue router. |
+| `beak/crates/beak/tests/beak.rs` | Cover request replay and close ordering, shared namespace and command state, and volume release after the last snapshot. |
+| `beak/crates/beak-c/` (17 tracked files), `beak/crates/beak-sys/` (3 tracked files), `beak/scripts/dist.sh` | Retire the private C adapter, binding generator, their standalone C fixtures and old Beak binary packaging. |
+| `beak/Cargo.toml`, `beak/Cargo.lock`, `Cargo.lock`, `README.md` | Update workspace members, resolved dependency graphs and the source build description. |
+| Octoii `Cargo.lock`, `tools/check-rust-layers.py`, `siphon` submodule pin, and this document | Use the new dependency graph and require `siphon-runtime` to enter Beak through the `beak` crate. |
+
+Reuse the existing Beak and Siphon workspace tests, including recovery, failed open, cancellation and PTYs.
+Compare the Siphon ABI 4 export list and header, reopen a volume written by the previous build, and link
+independent C and Rust consumers to the new archive. Verify that the production Cargo graph omits
+`beak-c` and `beak-sys`, then run the Octoii library tests and Node all-target check.
+
+The core batch changes kernel ownership and the transport of committed events. Extensions see these only
+through Siphon's interfaces. This work precedes the remaining B2 streaming and machine interface changes.
 
 ### B2.1: binary lifecycle and storage slice — complete
 
