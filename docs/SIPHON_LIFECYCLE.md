@@ -86,18 +86,118 @@ against this revision.
 [Private CI](https://github.com/devxiyang/octoii-siphon/actions/runs/44202024627) passed both workspace suites
 and linked the ABI 3 archive into independent C and Rust consumers on macOS ARM64.
 
-## Following repairs
+## R04: close a delivery when its request is removed
 
-- **Committed delivery closure and stop.** Bind live host deliveries to request identity and close their
-  waiters when the request is removed later. Preserve cooperative stop and partial replies. Make stop phases
-  honor waits and hand off from an already-admitted normal phase without running both. Verify delayed replies,
-  grace expiry, terminal cleanup and no hot loop.
-- **Storage errors around admission and finish.** Restore unconsumed ready work on a failed pre-commit
-  reservation. Keep a computed phase result for retry only when a failure is known to be before commit. The
-  scheduler also has fallible observation *after* the tree commits, so a generic Failed status cannot authorize
-  replay. Distinguish uncertain or post-commit failure and surface unrecoverable faults to the host. Test the
-  edges with an injected storage fault. Keep admission time and finish time distinct when addressing accounting.
+An independent C consumer linked against `7f0942e` received a request, then woke its process by creating a
+directory that the process was watching. The next phase completed normally. A second later, the host still
+had no `Closed` notification or watch release, and a late reply returned success (queued). The runtime had
+never been closed. Beak had already removed the request in the commit that recorded completion.
 
-After these repairs, use the same request lifecycle for B2.2c streams and human replies; verify human admission
-against the actual request identity before exposing it across the ABI. Keep reusable Cargo compilation data
+Use one existing identity: process path, process creation sequence, and request key. A cooperative stop tells
+the handler to return what it has, and its reply remains usable. Committed removal closes the delivery. A
+reply racing removal can enter the receiver before it closes. Beak's existing answer guard still decides
+whether that reply commits. The public ABI already has `Stop` and `Closed`; the latter closes the receiver
+before notifying the host and releasing its watch.
+
+At transaction finalization, use the tree's touched paths to find previously pending requests that may have
+gone. Resolve those identities against the final transaction view, reusing the pending check from R01. This
+covers answer, exit, kill, expiry and withdrawal through tree changes. A deleted directory can hold requests
+at multiple depths. A recorded deletion by itself is insufficient because a transaction can restore the
+same entry before it commits. Restrict the old-snapshot lookup to affected paths and subtrees. Keep the
+lookup fallible before the transaction commits, and publish each closure once with the existing notices
+after commit. Deliver closure before any new request for a replacement process at the same path.
+
+In Siphon, close the matching handler task and release its retained output after the task can no longer
+publish. Track completion against the specific task so an older completion cannot remove a replacement from
+the live table. Stop retains its distinct cooperative token. Keep the binary-generated mailbox keys and
+existing answer admission. Reusing a caller-chosen key within one live process remains outside this repair.
+
+Confirmed private scope, relative to `devxiyang/octoii-siphon`:
+
+| Files | Change |
+| --- | --- |
+| `beak/crates/beak-tree/src/tree/transaction.rs` | Expose existing touched paths to the scheduler. |
+| `beak/crates/beak-process/src/{commit,scheduler}.rs`, `beak/crates/beak-process/tests/scheduler.rs` | Finalize request and closure notices together. Carry the process creation sequence on stop and closure. Verify closure after answer, removal and exit, deduplication, and no closure for rolled-back or restored entries. |
+| `beak/crates/beak-c/src/queue.rs`, `beak/crates/beak-c/include/beak.h`, `beak/crates/beak/src/{queue,kernel}.rs` | Carry the notices over the private Beak event bridge. |
+| `crates/siphon-runtime/src/runtime/{events,builder}.rs`, `crates/siphon-runtime/tests/runtime.rs` | Close just the affected waiter and verify its handler is dropped while the runtime continues to run. Preserve the partial-reply stop path. |
+| `crates/siphon-ffi/tests/c/request.c` | Add the linked C regression. Wait for delivery, then complete the requesting process, check one `Closed` and one release, and check that the old reply is refused. |
+
+Extensions cannot observe the transaction's final view or close the native handler's receiver. Verification
+uses the macOS ABI 3 archive and its existing independent C and Rust consumers, with the private Beak and
+Siphon workspace checks. Public package files, exported Siphon ABI and storage format stay the same.
+
+Private commit `474a338`. The old ABI 3 archive queued the late reply and emitted no closure. The new archive
+emits one `Closed`, releases the watch, and returns status 3 for the late reply while the runtime remains
+open. Full Beak and Siphon workspace tests and Clippy, the three independent C consumers, all 13 tests of the
+public Rust consumer, and Octoii's library and dependency checks passed on macOS ARM64.
+
+## R05: reserve and finish stop phases through the scheduler
+
+An independent C probe counted 249 stop phase invocations before it submitted any reply. The scheduler
+checks the wait for ordinary work and skips it for stop phases. It also refuses a normal result after
+termination is requested without releasing that run's admission, leaving the process Running until grace.
+
+Give each reserved run its reservation commit sequence in addition to its process creation sequence.
+Keep its mode and sequence with the scheduler's live admission. A finish must match that admission under
+the same writer lock that applies its ending and changes. A normal run already executing when it is asked
+to terminate releases its admission on finish, preserving the last committed checkpoint and discarding the
+staged result. The scheduler can then admit the stop phase. A repeated completion for an earlier admission
+must fail even if a later phase of the same process is already running. The existing on-disk record still
+describes recovery after a host restart. The admission belongs to the current host session.
+
+Clear the ordinary wait when termination is first requested. After the first stop phase, the existing
+mail, change, child and deadline waits drive subsequent stop phases. The grace deadline is independent of
+those waits and can still end a process that has no progress. Verify first admission, delayed partial answers,
+grace while waiting on a child, and a normal completion racing stop. Run the linked C scenario with its reply
+held until the first stop phase has registered its wait.
+
+Proposed private scope, relative to `devxiyang/octoii-siphon`:
+
+| Files | Change |
+| --- | --- |
+| `beak/crates/beak-process/src/{commit,scheduler,lib}.rs`, `beak/crates/beak-process/src/scheduler/simulation.rs`, `beak/crates/beak-process/tests/scheduler.rs` | Define and check the run admission, release it on finish, and schedule both kinds of phase through the existing wait logic. Migrate the scheduler tests and simulator to use real admissions. |
+| `beak/crates/beak-volume/src/{lib,volume}.rs`, `beak/crates/beak-volume/tests/volume.rs` | Route completion through the admission check before applying the write batch. Test handoff, duplicate completion, and preservation of the last committed checkpoint. |
+| `beak/crates/beak-c/src/kernel.rs`, `beak/crates/beak-c/include/beak.h`, `beak/crates/beak-c/tests/abi.rs`, `beak/crates/beak/src/kernel.rs` | Carry the reservation sequence over the private Beak boundary. |
+| `crates/siphon-runtime/src/changes.rs`, `crates/siphon-ffi/tests/c/request.c` | Preserve the forced-removal test for an admitted run and verify delayed partial replies with the linked ABI 3 consumer. |
+
+Only Beak can validate and release its run admission or decide when a sleeping stop phase is runnable.
+The storage encoding and the public Siphon ABI need no change for this repair.
+
+## R06: make the transaction boundary authoritative for execution
+
+The current step drains runnable work before its transaction succeeds. After the root commits, scheduler
+observation reads the journal and process records and can fail before the Volume publishes that commit.
+The dispatcher logs a finish error and drops the already evaluated result. These paths need one answer
+to whether a run was admitted or finished.
+
+Prepare the scheduler's next view from the same transaction that prepares the tree and its change set.
+The commit installs the tree and scheduler view, consumes the admitted work, and publishes committed notices
+under the existing writer lock. Retry a reservation or an already evaluated result only after a known abort.
+Use the exact admission from R05 and never re-run its program to recover a write failure. Distinguish an
+indeterminate append from a known abort and fault the runtime for the former until recovery can establish
+the authoritative state. Account run time up to the evaluation's completion, independently of transactional
+retry delay. Verify each failure boundary with storage fault injection.
+
+Implement this in dependency order:
+
+1. Prepare the final tree change set and scheduler projection before publishing either. Preserve ready work
+   if preparation or the commit aborts. Apply the projection and publish notices after the one successful
+   commit. The scheduler uses the prepared tree rather than reading its own committed journal back.
+2. Have storage distinguish a proven abort from an indeterminate append. An append that may have written
+   part or all of its frame faults the writer until recovery resolves it. Carry these outcomes across the
+   private Beak bridge to the runtime.
+3. Keep the evaluated result and its wait context until its admission is finished or invalidated. Retry the
+   stored result and queued answers only when the failed commit is known to be unapplied. A terminal fault
+   stops the runtime and is available to the host through its next operation. Retained snapshots are still
+   snapshots of their last confirmed state.
+
+## Command cleanup and binary streaming
+
+Beak's command cleanup currently treats a failed record lookup the same as a missing record and can kill a
+live command on a storage read error. Send the signal only when the committed state establishes that the
+command record is gone. Cover failed lookup and confirmed removal separately.
+
+B2.2c should reuse request identity to scope retained stream events and human answer admission. The current
+source wrapper can merge streams of different processes that supply the same mailbox key. Cover distinct
+deliveries with that key before exposing streams over the public ABI. Keep reusable Cargo compilation data
 under the [local verification cache policy](../CONTRIBUTING.md#local-verification-cleanup).
