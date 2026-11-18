@@ -37,7 +37,7 @@ def allowed(source, target):
     if name == "siphon-ffi":
         return dependency in {"beak", "siphon-runtime"}
     if name == "siphon-runtime":
-        return target_layer == "kernel"
+        return dependency == "beak"
     if name == "octoii":
         return target_layer in {"core", "kernel"}
     raise ValueError(f"Core package needs a dependency rule: {name}")
