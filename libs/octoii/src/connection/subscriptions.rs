@@ -142,17 +142,20 @@ fn entries_told(subscription: &Subscription, thread: &str, cursor: &mut Option<l
 async fn threads_told(subscription: &Subscription) -> Result<(), Full> {
     let (siphon, sink) = (&subscription.caller.siphon, &subscription.sink);
     let mut committed = siphon.runtime.committed();
-    let Ok(mut followed) = siphon.runtime.snapshot().map(|snapshot| Followed::at(&snapshot)) else {
-        return Ok(());
+    let (mut followed, all) = {
+        let Ok(snapshot) = siphon.runtime.snapshot() else { return Ok(()) };
+        let Ok(all) = siphon.threads.list_at(&snapshot) else {
+            return Ok(());
+        };
+        (Followed::at(&snapshot), all)
     };
-    let Ok(all) = siphon.threads.list() else { return Ok(()) };
     let mut shown: HashMap<String, Listed> = all.iter().map(|listed| (listed.id.clone(), listed.clone())).collect();
     sink.offer(&SiphonEvent::Threads {
         subscription: sink.id().to_owned(),
         threads: all,
     })?;
     loop {
-        let ids = loop {
+        let (snapshot, ids) = loop {
             tokio::select! {
                 () = subscription.stop.cancelled() => return Ok(()),
                 changed = committed.changed() => if changed.is_err() { return Ok(()) },
@@ -162,16 +165,19 @@ async fn threads_told(subscription: &Subscription) -> Result<(), Full> {
                 Ok(Since::Paths(paths)) => {
                     let changed: BTreeSet<String> = paths.iter().filter_map(|path| thread::id_of(path)).map(str::to_owned).collect();
                     if !changed.is_empty() {
-                        break changed;
+                        break (snapshot, changed);
                     }
                 }
                 Ok(Since::Missed) | Err(_) => {
-                    let Ok(all) = siphon.threads.list() else { return Ok(()) };
-                    break all.iter().map(|listed| listed.id.clone()).chain(shown.keys().cloned()).collect();
+                    let Ok(all) = siphon.threads.list_at(&snapshot) else {
+                        return Ok(());
+                    };
+                    let ids = all.into_iter().map(|listed| listed.id).chain(shown.keys().cloned()).collect();
+                    break (snapshot, ids);
                 }
             }
         };
-        threads_changed(sink, &mut shown, |id| siphon.threads.listed(id).ok(), &ids)?;
+        threads_changed(sink, &mut shown, |id| siphon.threads.listed_at(&snapshot, id).ok(), &ids)?;
     }
 }
 

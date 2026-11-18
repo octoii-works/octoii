@@ -472,9 +472,12 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
     /// # Errors
     /// `NoSuchThread`; the volume's failure.
     pub fn listed(&self, id: &str) -> Result<Listed, Error> {
-        let snapshot = self.runtime.snapshot()?;
-        let directory = thread::directory(&snapshot, id)?.ok_or(Error::NoSuchThread)?;
-        status::listed(&self.runtime, &snapshot, id, &directory)
+        self.listed_at(&self.runtime.snapshot()?, id)
+    }
+
+    pub(crate) fn listed_at(&self, snapshot: &beak::Snapshot, id: &str) -> Result<Listed, Error> {
+        let directory = thread::directory(snapshot, id)?.ok_or(Error::NoSuchThread)?;
+        status::listed(&self.runtime, snapshot, id, &directory)
     }
 
     /// Every thread, as a list shows it, in the order they were made.
@@ -482,7 +485,11 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
     /// # Errors
     /// The volume's failure.
     pub fn list(&self) -> Result<Vec<Listed>, Error> {
-        listed_all(&self.runtime)
+        self.list_at(&self.runtime.snapshot()?)
+    }
+
+    pub(crate) fn list_at(&self, snapshot: &beak::Snapshot) -> Result<Vec<Listed>, Error> {
+        listed_all(&self.runtime, snapshot)
     }
 }
 
@@ -492,12 +499,11 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
 /// # Errors
 /// The volume's failure; a directory not as Octoii writes it.
 pub fn list(volume: &crate::volume::Volume) -> anyhow::Result<Vec<Listed>> {
-    Ok(listed_all(&volume.runtime)?)
+    Ok(listed_all(&volume.runtime, &volume.snapshot()?)?)
 }
 
-/// Every thread `runtime`'s volume holds, as a list shows it, in the order they were made.
-fn listed_all(runtime: &Runtime) -> Result<Vec<Listed>, Error> {
-    let snapshot = runtime.snapshot()?;
+/// Every thread the snapshot holds, as a list shows it, in the order they were made.
+fn listed_all(runtime: &Runtime, snapshot: &beak::Snapshot) -> Result<Vec<Listed>, Error> {
     let prefix = format!("{KIND}:");
     let range = Range {
         prefix: prefix.as_bytes(),
@@ -512,7 +518,7 @@ fn listed_all(runtime: &Runtime) -> Result<Vec<Listed>, Error> {
         if thread::removing(directory) {
             continue;
         }
-        out.push(status::listed(runtime, &snapshot, id, directory)?);
+        out.push(status::listed(runtime, snapshot, id, directory)?);
     }
     Ok(out)
 }

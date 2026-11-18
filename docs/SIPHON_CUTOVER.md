@@ -19,9 +19,9 @@ the cutover.
   the private repo. Cargo metadata resolves 20 product packages. `octoii` and `octoii-node` both declare
   direct path dependencies on Beak and Siphon Runtime. The product CI reads the gitlink, checks out the
   private repo with `SIPHON_DEPLOY_KEY`, and tests all three source workspaces.
-- The local public wrapper at `44bf843` and development ABI 4 cover storage writes, retained snapshots, fibers,
-  host request callbacks, directory reads, indexed label queries, metadata changes, and reopen. The product
-  still needs the journal, process state, streaming, person replies, and machine operations. The wrapper's
+- The local public wrapper at `9be72b8` and development ABI 4 cover storage writes, retained snapshots, fibers,
+  host request callbacks, directory reads, indexed label queries, metadata changes, the commit journal, and
+  reopen. The product still needs process state, streaming, person replies, and machine operations. The wrapper's
   build reads a local archive and verifies the ABI, target, and hash. It rejects native linking outside macOS.
   Native binary consumers have run on macOS ARM64.
 - The public default branch is `ee0b752` and the release list is empty. The crates.io lookup for
@@ -237,6 +237,35 @@ subtree boundaries, searches for any value, searches for empty or exact byte val
 Retained snapshots keep their own index view. A rejected batch preserves the previous metadata and index.
 Fiber tests read the commit that follows a staged change. On macOS ARM64, 34 Siphon tests, three C consumers,
 and 15 standalone Rust SDK tests passed against the current build. Strict Clippy passed for both workspaces.
+
+## Committed journal pages
+
+Thread, thread-list and settings subscriptions read the volume journal to decide which views to refresh.
+The binary snapshot exposes a page of committed change sets after an exclusive sequence cursor. Each set
+carries its sequence and the byte paths it changed. The page reports the sequence read through, the oldest
+retained sequence when present, the snapshot sequence, and whether the reader missed history. Progress is
+independent of the number of paths, so an empty change set can still advance the cursor.
+
+The C visitor borrows one bounded page for the duration of a synchronous call. The Rust SDK copies the
+result into an owned journal page. Octoii advances its cursor after reading through the snapshot. A history gap
+or a page that cannot make progress triggers a refresh. The thread-list baseline and its updates use the
+same snapshot as their journal cursor.
+
+Confirmed scope
+
+| Repository | Files | Change |
+| --- | --- | --- |
+| Private Siphon | `crates/siphon-ffi/src/snapshot.rs`, `crates/siphon-ffi/include/siphon.h`, `crates/siphon-ffi/tests/c/lifecycle.c` | Bind the existing unfiltered snapshot journal and verify its page boundary through C and a native retention test. |
+| Public SDK | `src/{lib,sys,snapshot}.rs`, `include/siphon.h`, `tests/storage.rs` | Expose the owned page and verify bounded reads, byte paths, empty pages, and monotonic exclusive cursors. |
+
+The binary owns access to the snapshot journal and its retention information.
+
+Private commit `1631489` and public SDK commit `9be72b8`. The native test covers a pruned history gap and the
+cursor advancement of an empty commit. The independent consumers verify paging, grouping paths by commits,
+preserving byte paths, and reading through the sequence of a retained snapshot. On macOS ARM64, 35 Siphon
+tests, three independent C programs and 16 standalone Rust SDK tests passed. Strict Clippy passed for Siphon
+and the SDK. The Octoii workspace passed 256 tests and strict Clippy. Its two external integration tests
+were ignored.
 
 ## Completion checks
 

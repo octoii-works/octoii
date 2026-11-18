@@ -32,11 +32,13 @@ impl Followed {
     /// # Errors
     /// The volume's failure.
     pub(crate) fn since(&mut self, snapshot: &Snapshot) -> beak::Result<Since> {
+        let latest = snapshot.seq();
+        let mut through = self.seen;
         let mut paths = Vec::new();
-        while self.seen < snapshot.seq() {
-            let journal = snapshot.journal(self.seen, SETS_AT_ONCE, &[])?;
-            if journal.missed {
-                self.seen = snapshot.seq();
+        while through < latest {
+            let journal = snapshot.journal(through, SETS_AT_ONCE, &[])?;
+            if journal.missed || journal.through <= through {
+                self.seen = latest;
                 return Ok(Since::Missed);
             }
             for set in journal.change_sets {
@@ -44,12 +46,9 @@ impl Followed {
                     beak::Changed::Deleted { path } | beak::Changed::Written { path, .. } => path,
                 }));
             }
-            if journal.through <= self.seen {
-                break;
-            }
-            self.seen = journal.through;
+            through = journal.through;
         }
-        self.seen = self.seen.max(snapshot.seq());
+        self.seen = through;
         Ok(Since::Paths(paths))
     }
 }
