@@ -206,6 +206,34 @@ byte prefixes, exclusive cursors, and the end of the key space. The ABI uses the
 Rust callers. Beak passed 166 tests, Siphon passed 34, and the Octoii workspace passed 256 with the two
 external integration tests ignored.
 
+## Indexed labels and metadata changes
+
+Octoii reads the directory, status and pending prompts of a thread from one immutable snapshot. Startup
+state and attachment access use the same directory lookup, which excludes threads being removed.
+
+Thread deletion finds descendants by parent label. Settings and thread creation also write directory
+metadata. Add `find` to the binary snapshot and `meta` to the atomic changes batch. Use the same label index
+and metadata transaction for native Rust, C and the public Rust SDK. Both operations are available during
+a Fiber phase.
+
+`find` takes the directory kind, label name, optional exact value, subtree, exclusive path cursor and limit.
+Results are ordered by full byte path. Each result includes the matched label value and the same entry view
+used by `stat` and `list`. `meta` accepts label and annotation pairs. In the C call, a null zero-length value
+means removal and a present zero-length value means an empty value. In the Rust SDK this distinction is
+`Option<&[u8]>`. A phase reads from its immutable snapshot while its writes are staged for commit.
+
+Proposed scope
+
+| Repository | Files | Change |
+| --- | --- | --- |
+| Private Siphon | `crates/siphon-ffi/src/{abi,changes,snapshot}.rs`, `crates/siphon-ffi/include/siphon.h`, `crates/siphon-ffi/tests/c/lifecycle.c` | Bind an indexed query and one metadata operation, reusing borrowed entry views and the native change batch. |
+| Public SDK | `src/{lib,sys,fiber,snapshot}.rs`, `include/siphon.h`, `tests/{storage,fiber}.rs` | Expose typed queries and named metadata changes to retained snapshots, batches and Fiber callbacks. |
+
+Extensions cannot provide new binary symbols or publish metadata and index updates in the same native
+transaction. Verify full-path paging, a subtree boundary, any value versus an empty or exact byte value,
+metadata removal, and index visibility on the old and new snapshots. Check both C and standalone Rust
+against the private archive.
+
 ## Completion checks
 
 - A clean product clone builds the Node and desktop packages with public credentials only. The git tree has

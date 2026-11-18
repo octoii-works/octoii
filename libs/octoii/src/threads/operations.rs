@@ -3,7 +3,7 @@
 
 use std::marker::PhantomData;
 
-use beak::{Query, Range, layout};
+use beak::{Query, Range};
 use bytes::Bytes;
 use octoii_ai::vocabulary::InputContent;
 use serde::{Deserialize, Serialize};
@@ -201,7 +201,7 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
                 let result: Result<super::Start, String> = serde_json::from_slice(&bytes)?;
                 return result.map_err(Error::Start);
             }
-            self.directory(id)?;
+            thread::directory(&snapshot, id)?.ok_or(Error::NoSuchThread)?;
             if snapshot.record(&thread::main(id))?.is_some_and(|record| record.outcome.is_some()) {
                 return Err(Error::Start("thread process ended before startup completed".into()));
             }
@@ -263,12 +263,7 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
 
     /// The thread `id`'s directory, as it stands; none for one being removed, gone as its processes end.
     fn directory(&self, id: &str) -> Result<beak::Directory, Error> {
-        self.runtime
-            .snapshot()?
-            .stat(&thread::path(id))?
-            .and_then(|entry| entry.directory)
-            .filter(|directory| !removing(directory))
-            .ok_or(Error::NoSuchThread)
+        thread::directory(&self.runtime.snapshot()?, id)?.ok_or(Error::NoSuchThread)
     }
 
     /// Adds to `changes` `inbound` delivered to the thread `id`, its main process started again where it had ended: its
@@ -477,8 +472,9 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
     /// # Errors
     /// `NoSuchThread`; the volume's failure.
     pub fn listed(&self, id: &str) -> Result<Listed, Error> {
-        let directory = self.directory(id)?;
-        status::listed(&self.runtime, &self.runtime.snapshot()?, id, &directory)
+        let snapshot = self.runtime.snapshot()?;
+        let directory = thread::directory(&snapshot, id)?.ok_or(Error::NoSuchThread)?;
+        status::listed(&self.runtime, &snapshot, id, &directory)
     }
 
     /// Every thread, as a list shows it, in the order they were made.
@@ -513,17 +509,12 @@ fn listed_all(runtime: &Runtime) -> Result<Vec<Listed>, Error> {
         let (Some(id), Some(directory)) = (thread::id_of(&entry.name), entry.directory.as_ref()) else {
             continue;
         };
-        if removing(directory) {
+        if thread::removing(directory) {
             continue;
         }
         out.push(status::listed(runtime, &snapshot, id, directory)?);
     }
     Ok(out)
-}
-
-/// Whether `directory` is being removed, to go once the processes under it end.
-pub(crate) fn removing(directory: &beak::Directory) -> bool {
-    directory.label(layout::REMOVING_LABEL).is_some_and(|value| value == "true")
 }
 
 #[derive(Debug, Serialize, Deserialize)]

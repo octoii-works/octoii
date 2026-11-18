@@ -61,11 +61,7 @@ impl Start {
 }
 
 pub(crate) fn read(snapshot: &Snapshot, id: &str) -> anyhow::Result<Option<Start>> {
-    let directory = snapshot
-        .stat(&thread::path(id))?
-        .and_then(|entry| entry.directory)
-        .filter(|directory| !super::operations::removing(directory))
-        .ok_or_else(|| anyhow::anyhow!("no such thread"))?;
+    let directory = thread::directory(snapshot, id)?.ok_or(super::Error::NoSuchThread)?;
     Ok(Start::of(&directory)?)
 }
 

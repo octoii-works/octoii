@@ -8,7 +8,7 @@ use bytes::Bytes;
 use octoii_ai::vocabulary::FileRef;
 use siphon_runtime::{Changes, Runtime};
 
-use crate::threads::{files, operations, thread};
+use crate::threads::{files, thread};
 
 /// What the volume's reads give, and how the volume and the machine's commands fail, as Beak tells it.
 pub use beak::{Error, Result, Snapshot};
@@ -218,11 +218,7 @@ impl Volume {
 
     fn file_snapshot(&self, thread: &str) -> std::result::Result<Snapshot, files::Refused> {
         let snapshot = self.snapshot()?;
-        let exists = snapshot
-            .stat(&thread::path(thread))?
-            .and_then(|entry| entry.directory)
-            .is_some_and(|directory| !operations::removing(&directory));
-        if !exists {
+        if thread::directory(&snapshot, thread)?.is_none() {
             return Err(files::Refused::NoSuchThread);
         }
         Ok(snapshot)

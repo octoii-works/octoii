@@ -2,7 +2,7 @@
 //! threads by project, by parent and by how the person keeps them, annotated with how it runs and how it stands; in
 //! it its inbox, its log and its main process.
 
-use beak::layout;
+use beak::{Directory, layout};
 use bytes::Bytes;
 
 use crate::volume::Snapshot;
@@ -48,6 +48,22 @@ pub const TURN_KIND: &str = "siphon.turn";
 #[must_use]
 pub fn path(id: &str) -> Bytes {
     layout::child(b"", KIND.as_bytes(), id.as_bytes())
+}
+
+/// The thread's directory in this snapshot, until removal begins.
+///
+/// # Errors
+/// The volume's failure.
+pub(crate) fn directory(snapshot: &Snapshot, id: &str) -> beak::Result<Option<Directory>> {
+    Ok(snapshot
+        .stat(&path(id))?
+        .and_then(|entry| entry.directory)
+        .filter(|directory| !removing(directory)))
+}
+
+/// Whether removal of the directory is already in progress.
+pub(crate) fn removing(directory: &Directory) -> bool {
+    directory.label(layout::REMOVING_LABEL).is_some_and(|value| value == "true")
 }
 
 /// The id of the thread whose directory, or anything in it, is at `path`; none for a path outside every thread.

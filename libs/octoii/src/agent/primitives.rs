@@ -234,12 +234,9 @@ fn refused(run: &Run<'_>, directory: &beak::Directory, made: &HashSet<String>, t
     if made.contains(target) {
         return Ok(None);
     }
-    let Some(theirs) = directory_of(run, target)? else {
+    let Some(theirs) = thread::directory(run.snapshot(), target)? else {
         return Ok(Some(format!("no thread {target}")));
     };
-    if crate::threads::operations::removing(&theirs) {
-        return Ok(Some(format!("no thread {target}")));
-    }
     let reach = |config: &Config| match config.mode.unwrap_or_default() {
         Mode::Default => 0,
         Mode::Auto => 1,
