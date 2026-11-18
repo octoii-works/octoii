@@ -20,8 +20,8 @@ the cutover.
   path dependencies on Beak and Siphon Runtime. The macOS ARM64 product graph resolves 11 private source
   packages. The product graph has no dependency on `octoii-siphon-lib`. Product CI reads the gitlink, checks out the private repo with
   `SIPHON_DEPLOY_KEY`, and tests all three source workspaces.
-- The local public wrapper at `fc0f4fa` and development ABI 4 cover storage writes, retained snapshots, fibers,
-  exact host request IDs and person requests, directory reads, indexed label queries, metadata changes, the commit journal,
+- The local public wrapper at `fa96d9e` and development ABI 4 cover storage writes, retained snapshots, fibers,
+  exact host request IDs, person requests, request streams, directory reads, indexed label queries, metadata changes, the commit journal,
   commit notifications, Fiber records and lifecycle changes, ordinary mail, volume IDs, time, file retention,
   and reopen. The wrapper builds from a local archive and verifies the ABI, target, and hash. It rejects native
   linking outside macOS. Native binary consumers have run on macOS ARM64.
@@ -91,8 +91,7 @@ Each private implementation batch lists its exact files and technical dependency
 
 | Work | Completion condition |
 | --- | --- |
-| Runtime events and requests | Carry live stream publication, replay, closure, and cancellation through the binary. Host deliveries and person replies use the same exact request identity. Commit notifications have a verified binary watch. |
-| Machine capabilities | Move namespaces, file views, restricted commands, terminal I/O and coprocess channels behind the native SDK. Bring each supported platform up to the same ownership and permission contract. |
+| Machine capabilities | Move namespaces and views, then restricted commands and terminal and coprocess I/O behind the native SDK. Bring each supported platform up to the same ownership and permission contract. |
 | Product adoption | Build Octoii and Node against a local binary candidate. Migrate startup registration and host callbacks, then verify real turns, approval, workspace tools, stop, and reopen. |
 | Distribution and source removal | Publish matching verified archives and the SDK for macOS, Windows and Linux. A clean product clone must build and pass CI with public inputs. The same change removes the gitlink and private checkout credentials. |
 
@@ -455,6 +454,32 @@ validation, stale identity and duplicate answer rejection. The SDK also verified
 after close and reopen, and the original snapshot after a valid answer. Strict Clippy passed for Beak,
 Siphon, the SDK, and Octoii on macOS ARM64. Beak passed 166 tests, Siphon passed 36, all three C
 consumers passed, the SDK passed 23, and Octoii passed 257 with two external tests ignored.
+
+## Request streams
+
+Only the host delivery can publish for its exact request identity. The publisher retains the stream
+sender and identity, so a retained reply handle can still be released after runtime shutdown without
+holding its volume open. After a reply is submitted or its delivery closes, publication is rejected.
+
+The native follower reads on demand. It uses the existing replay, lag reset, live data and per-request
+closure rules. The SDK keeps one pending read, including when the caller cancels an await. Dropping
+the follower releases its pending callback and runtime shutdown ends its reads.
+
+Private commit `93c1c8a` and public SDK commit `fa96d9e`. C and Rust consumers exercised retained
+and live output, exact request closure, rejection of late publication, and cancellation. On macOS
+ARM64, strict Clippy, 36 Siphon tests, three C consumers, and 24 standalone SDK tests passed.
+
+## Machine boundary for the product switch
+
+Octoii's file and command tools already operate through a configured namespace. The product decides
+which host folders to mount, which paths to hide, and which read-only views of the volume to show.
+The binary interface should expose those namespace capabilities and execute commands within the same
+namespace. Siphon owns the namespace and command handles. Terminal and coprocess operations keep
+the existing command lifecycle, cancellation and shutdown contract.
+
+The current link and test pipeline covers macOS ARM64. Beak has macOS and Linux command confinement.
+On Windows its restricted command and terminal paths are unsupported. Windows acceptance needs its
+own implementation and execution tests before the product depends on a Windows binary.
 
 ## Completion checks
 
