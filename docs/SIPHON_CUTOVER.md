@@ -20,8 +20,8 @@ the cutover.
   path dependencies on Beak and Siphon Runtime. The macOS ARM64 product graph resolves 11 private source
   packages. The product graph has no dependency on `octoii-siphon-lib`. Product CI reads the gitlink, checks out the private repo with
   `SIPHON_DEPLOY_KEY`, and tests all three source workspaces.
-- The local public wrapper at `c101440` and development ABI 4 cover storage writes, retained snapshots, fibers,
-  host request callbacks, directory reads, indexed label queries, metadata changes, the commit journal,
+- The local public wrapper at `fc0f4fa` and development ABI 4 cover storage writes, retained snapshots, fibers,
+  exact host request IDs and person requests, directory reads, indexed label queries, metadata changes, the commit journal,
   commit notifications, Fiber records and lifecycle changes, ordinary mail, volume IDs, time, file retention,
   and reopen. The wrapper builds from a local archive and verifies the ABI, target, and hash. It rejects native
   linking outside macOS. Native binary consumers have run on macOS ARM64.
@@ -91,7 +91,7 @@ Each private implementation batch lists its exact files and technical dependency
 
 | Work | Completion condition |
 | --- | --- |
-| Runtime events and requests | Carry person replies, stream replay, closure, and cancellation through the binary. Host deliveries carry exact request identities and commit notifications have a verified binary watch. Exercise the request paths while reopening and shutting down. |
+| Runtime events and requests | Carry live stream publication, replay, closure, and cancellation through the binary. Host deliveries and person replies use the same exact request identity. Commit notifications have a verified binary watch. |
 | Machine capabilities | Move namespaces, file views, restricted commands, terminal I/O and coprocess channels behind the native SDK. Bring each supported platform up to the same ownership and permission contract. |
 | Product adoption | Build Octoii and Node against a local binary candidate. Migrate startup registration and host callbacks, then verify real turns, approval, workspace tools, stop, and reopen. |
 | Distribution and source removal | Publish matching verified archives and the SDK for macOS, Windows and Linux. A clean product clone must build and pass CI with public inputs. The same change removes the gitlink and private checkout credentials. |
@@ -438,6 +438,23 @@ requests in one Fiber share the same Fiber creation sequence and have distinct r
 sequences. The Rust SDK checks that the creation sequence matches the snapshot's Fiber record.
 On macOS ARM64, strict Clippy, 36 Siphon tests, three C consumers, and 22 standalone SDK tests passed.
 The Octoii workspace passed strict Clippy and 257 tests, with two external tests ignored.
+
+## Person requests
+
+Register the schema for a request name before opening the runtime. The application supplies the schema
+from the typed payload. Siphon lists prompts from the caller's retained snapshot, validates an answer
+on the current request, and commits it against the same exact identity. Prompts remain visible in their
+original snapshot after the current request is answered. An invalid answer leaves the request pending.
+
+The native builder reserves each request name once across host and person callbacks. The schema
+callback transfers its result bytes with a release function. Siphon decodes those bytes before calling
+release. The retained Beak snapshot can be cloned to share the same immutable view with the ABI worker.
+
+Private commit `588fa19` and public SDK commit `fc0f4fa`. C and Rust consumers verified schema-based
+validation, stale identity and duplicate answer rejection. The SDK also verified the prompt's identity
+after close and reopen, and the original snapshot after a valid answer. Strict Clippy passed for Beak,
+Siphon, the SDK, and Octoii on macOS ARM64. Beak passed 166 tests, Siphon passed 36, all three C
+consumers passed, the SDK passed 23, and Octoii passed 257 with two external tests ignored.
 
 ## Completion checks
 
