@@ -357,35 +357,64 @@ with the live model test ignored. Three regular C consumers, the C fault probe, 
 passed against ABI 4. Formatting, strict Beak/Siphon Clippy, Node's all-target check, and the Rust dependency
 check passed.
 
-## R07: require committed removal before killing a command
+## Identity across the commit boundary
+
+Prepare decisions from a transaction's final view. Publish them after the append is confirmed. Each action
+that arrives later carries the identity it was authorized against, and the owner checks that identity before
+applying the action. R05 and R06 already enforce this for finishing a Fiber. Apply the same rule to command
+records and requests using the existing tree, scheduler, and journal.
+
+Beak owns committed process and request state. The Beak kernel owns command registrations, and the machine
+owns the live operating-system handles. Siphon owns request delivery, cancellation and retained output. Octoii
+and the binary bindings carry request identity through to the caller that will answer it. An append with an
+unknown result follows R06b recovery. A delayed action whose target has been replaced is refused or discarded.
+
+Volume identity bounds commit sequences. Synchronizing a volume can transfer its committed records and
+checkpoints. A live command handle belongs to the machine that launched it. A retained request stream belongs
+to the running Siphon instance. Reopening uses the recovered records and the existing request interruption
+policy. The machine chooses its local process-control mechanisms for each supported platform.
+
+## R07: bind command cleanup to the committed record
 
 An isolated probe on private commit `83d5fd6` corrupted just the directory containing a live command's
 record. An unrelated write still committed. The ensuing lookup returned `DamagedObject` and cleanup sent
 `SIGKILL` to the live command. Replacing the entire parent with a file returned `NotADirectory` and correctly
-stopped the command. Replacing the record directory itself with a file left the command running.
+stopped the command. Replacing the record directory itself with a file left the command running. A second
+probe replaced the command directory created at sequence 2 with a new directory created at sequence 3 at
+the same path. The old command stayed live and its later exit deleted the replacement directory.
 
-Use one command-record lookup in the kernel. An existing directory at the command's reserved path keeps the
-registration live. A missing entry, a non-directory at that path, or a non-directory ancestor establishes
-that the command record is gone. Storage and decoding failures leave the result unresolved. Only confirmed
-removal authorizes the cleanup signal. Continue to take the committed snapshot under the command-table
-lock and check commands whose initial record has been published. The existing post-commit check can try
-an unresolved lookup again on a later commit. A non-directory ancestor is a definitive pathname result,
-as in Linux's `ENOTDIR`. [Linux `stat(2)`](https://man7.org/linux/man-pages/man2/stat.2.html)
+When publishing a command record, bind the held registration to the record's path and creation sequence.
+A command awaiting its initial commit has no confirmed record yet. Once published, keep it registered
+while that exact directory exists. A missing entry, a file in the path, or a different directory creation
+sequence establishes that the original record is gone. A storage or decoding failure leaves that question
+unresolved for a later check. Only confirmed removal or replacement authorizes the cleanup signal.
+Take the committed snapshot under the command-table lock, preserving the publication ordering from B1.
 
-Use the same lookup when the command exits. Delete its remaining record directory when present. A file
-that replaced it stays at the committed path. The command table and the underlying signal API retain
-their existing ownership.
+Apply the same identity check inside the transaction that handles command exit. Delete only the exiting
+command's record. A replacement file or directory stays where its commit put it. The snapshot and
+transaction reads provide the evidence for these two operations. If the per-commit scan needs tuning,
+use the existing change set to narrow affected paths and resolve the final record identities. A deletion
+in the change set can be followed by a write to the same path in that commit.
 
 Proposed private scope, relative to `devxiyang/octoii-siphon`
 
 | Files | Change |
 | --- | --- |
-| `beak/crates/beak-kernel/src/lib.rs` | Share the command-record lookup between committed-snapshot reconciliation and exit cleanup. Send a kill only on confirmed removal. |
-| `beak/crates/beak-kernel/tests/kernel.rs` | Inject an unreadable record under an otherwise writable volume. Verify the command stays live. Verify that replacing the parent or record with a file kills its command and preserves the file. |
+| `beak/crates/beak-kernel/src/lib.rs` | Bind a held command to the exact record created by its publication. Use that identity in committed-snapshot reconciliation and conditional deletion on exit. |
+| `beak/crates/beak-kernel/tests/kernel.rs` | Verify that a read failure keeps the command live. Replace the parent or record with a file, and replace the record with a new directory at the same path. Verify only the old command stops and the replacement survives exit cleanup. |
 
 Run the kernel concurrency regression and the existing confirmed-removal case with the new cases. Recheck
 Beak and the Siphon consumers that use the same kernel. Extensions run outside this reconciliation and
 cannot intercept the signal once Beak's commit listener sends it.
+
+### Command startup and recovery
+
+`Kernel::spawn` currently launches the command before committing its record. `stop_left` uses the recorded
+boot and numeric group for orphan cleanup. Exit cleanup attempts one deletion and discards its commit error.
+Audit these as the next command lifecycle boundary for binary machine operations. The launch path needs
+an exact owner and a release point for execution after record acceptance. Recovery needs proof that any
+local execution it stops is the one that record names. Known write aborts and uncertain commits follow R06b's
+different outcomes. Verify crash and teardown behavior per platform in Beak Machine.
 
 ## B2.2c: request identity for streaming and human answers
 
@@ -396,9 +425,21 @@ incarnation committed to its replacement at the same path and mailbox key. When 
 same pending key again, the request directory retained its creation sequence and the first handler could
 answer the replacement.
 
-Carry the identity of the committed request across delivery, stream retention and offsets, closure, and
-checking an answer at commit. The mailbox key can remain a label for callers. Decide the behavior of a key
-posted again within the same process before choosing the durable identity. The current posting path can
-reuse a pending request directory, so its creation sequence alone cannot distinguish an in-place replacement.
-Cover these cases before exposing streaming and human answers over the public ABI. Keep reusable Cargo
-compilation data under the [local verification cache policy](../CONTRIBUTING.md#local-verification-cleanup).
+Use the existing mailbox key as an address within its process. A request identity consists of the process path,
+its start sequence, the mailbox key, and the request directory's creation sequence. Posting the same pending
+key in a later commit replaces the request with a newly created directory. The transaction's final view determines
+the single request that opens at that address, and the committed notices close the old request before delivering
+the replacement. This reuses the tree's existing creation metadata. Multiple staged posts at one address in a
+transaction yield one delivery of the final request.
+
+Carry that same identity through delivery, stopping, closure and checking an answer at commit. A successful
+answer writes the mail and clears the exact pending request atomically. The host reply handle and the human
+answer both use this operation. The generic mail path currently also clears a pending request of the same key.
+Reserve a pending request's answer slot for the identity-checked operation so ordinary mail cannot consume it.
+
+Carry the identity with the human prompt and its schema from a single snapshot through to the client response.
+The current Octoii thread answer scans by mailbox key. That boundary also needs the request identity so an
+answer collected earlier can be rejected after the request is replaced. Siphon uses the same identity for
+retention, live and replay offsets, deduplication, and ending a stream. Topics continue to route streams to
+subscribers. Verify both request lifetimes and the source callers before adding their public ABI bindings.
+Reuse Cargo compilation data under the [local verification cache policy](../CONTRIBUTING.md#local-verification-cleanup).
