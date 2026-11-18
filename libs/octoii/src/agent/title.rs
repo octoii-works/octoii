@@ -8,7 +8,7 @@
 use crate::threads::inbox::{self, Inbound};
 use crate::threads::{Config, ConfigChange, Entry, Window, thread};
 use serde::{Deserialize, Serialize};
-use siphon_runtime::{Answer, Ending, Program, Run, Wait};
+use siphon_runtime::{Answer, Ending, Fiber, Run, Wait};
 
 use crate::agent::model::ModelRequest;
 use crate::agent::turn::charge;
@@ -22,17 +22,17 @@ pub struct TitleInput {
     pub thread: String,
 }
 
-/// The program of a thread's title process, keyed `KEY` under its main process.
+/// The fiber of a thread's title process, keyed `KEY` under its main process.
 #[derive(Debug, Clone, Copy)]
-pub struct TitleProgram {
+pub struct TitleFiber {
     pub instruction: &'static str,
 }
 
-impl TitleProgram {
+impl TitleFiber {
     pub const KEY: &'static str = "title";
 }
 
-impl Program for TitleProgram {
+impl Fiber for TitleFiber {
     const KIND: &'static str = "siphon.title";
     type Input = TitleInput;
     type Checkpoint = String;

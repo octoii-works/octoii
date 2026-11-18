@@ -7,7 +7,7 @@ use crate::threads::inbox::{self, Inbound, Joins};
 use crate::threads::{Entry, Window, thread};
 use beak::Snapshot;
 use serde::{Deserialize, Serialize};
-use siphon_runtime::{Changes, Ending, Program, Run, Wait};
+use siphon_runtime::{Changes, Ending, Fiber, Run, Wait};
 
 /// The person's word it goes on with.
 pub const WORD: &str = "Continue where you stopped: the account's usage limit has reset.";
@@ -38,11 +38,11 @@ impl ResumeInput {
     }
 }
 
-/// The program of a thread's resume, keyed `KEY` under its main process.
+/// The fiber of a thread's resume, keyed `KEY` under its main process.
 #[derive(Debug, Clone, Copy, Default)]
-pub struct ResumeProgram;
+pub struct ResumeFiber;
 
-impl ResumeProgram {
+impl ResumeFiber {
     pub const KEY: &'static str = thread::RESUME_KEY;
 }
 
@@ -62,7 +62,7 @@ pub enum ArmError {
 /// # Errors
 /// `Armed` where one waits still; the volume's failure.
 pub fn arm(snapshot: &Snapshot, changes: &mut Changes, input: &ResumeInput) -> Result<(), ArmError> {
-    let path = beak::layout::process(&thread::main(&input.thread), ResumeProgram::KEY.as_bytes());
+    let path = beak::layout::process(&thread::main(&input.thread), ResumeFiber::KEY.as_bytes());
     match snapshot.record(&path)? {
         Some(record) if record.outcome.is_none() => return Err(ArmError::Armed),
         Some(_) => {
@@ -70,16 +70,16 @@ pub fn arm(snapshot: &Snapshot, changes: &mut Changes, input: &ResumeInput) -> R
         }
         None => {}
     }
-    changes.start::<ResumeProgram>(thread::main(&input.thread), ResumeProgram::KEY, input)?;
+    changes.start::<ResumeFiber>(thread::main(&input.thread), ResumeFiber::KEY, input)?;
     Ok(())
 }
 
 /// Adds to `changes` the resume of the thread `id` let go of, where one is armed.
 pub fn disarm(changes: &mut Changes, id: &str) {
-    changes.force_remove(beak::layout::process(&thread::main(id), ResumeProgram::KEY.as_bytes()), None);
+    changes.force_remove(beak::layout::process(&thread::main(id), ResumeFiber::KEY.as_bytes()), None);
 }
 
-impl Program for ResumeProgram {
+impl Fiber for ResumeFiber {
     const KIND: &'static str = "siphon.resume";
     type Input = ResumeInput;
     type Checkpoint = ();

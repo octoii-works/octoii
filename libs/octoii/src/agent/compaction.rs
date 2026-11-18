@@ -13,7 +13,7 @@ use crate::threads::{Config, Entry, Window, thread};
 use beak::layout;
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
-use siphon_runtime::{Answer, Changes, Ending, Program, Run, Wait};
+use siphon_runtime::{Answer, Changes, Ending, Fiber, Run, Wait};
 
 use crate::agent::gather::Gather;
 use crate::agent::model::ModelRequest;
@@ -129,20 +129,20 @@ pub enum CompactState {
     },
 }
 
-/// The program of a thread's compaction, keyed `KEY` under its main process.
+/// The fiber of a thread's compaction, keyed `KEY` under its main process.
 #[derive(Debug, Clone, Copy)]
-pub struct CompactProgram {
+pub struct CompactFiber {
     pub instruction: &'static str,
 }
 
-impl CompactProgram {
+impl CompactFiber {
     pub const KEY: &'static str = thread::COMPACTION_KEY;
 }
 
 /// The path of the compaction of the thread `id`.
 #[must_use]
 pub fn path(id: &str) -> Bytes {
-    layout::process(&thread::main(id), CompactProgram::KEY.as_bytes())
+    layout::process(&thread::main(id), CompactFiber::KEY.as_bytes())
 }
 
 /// Adds to `changes` the compaction of the thread `id` started, where it is not running — one that ended reaped as it
@@ -158,11 +158,11 @@ pub fn start(snapshot: &beak::Snapshot, changes: &mut Changes, id: &str) -> anyh
         }
         None => {}
     }
-    changes.start::<CompactProgram>(thread::main(id), CompactProgram::KEY, &CompactInput { thread: id.to_owned() })?;
+    changes.start::<CompactFiber>(thread::main(id), CompactFiber::KEY, &CompactInput { thread: id.to_owned() })?;
     Ok(())
 }
 
-impl Program for CompactProgram {
+impl Fiber for CompactFiber {
     const KIND: &'static str = "siphon.compact";
     type Input = CompactInput;
     type Checkpoint = CompactState;

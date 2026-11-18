@@ -6,8 +6,8 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::agent::thread::ThreadProgram;
-use crate::agent::waiting::{DelegatedProgram, Waiting, directory_of, label};
+use crate::agent::thread::ThreadFiber;
+use crate::agent::waiting::{DelegatedFiber, Waiting, directory_of, label};
 use crate::threads::inbox::{self, Inbound, ReplyTo};
 use crate::threads::{Config, ConfigChange, MarksChange, Mode, NewThread, Parent, Threads, thread};
 use crate::tools::{Awaited, Plan, Primitives, Report, Spawned, Step};
@@ -91,7 +91,7 @@ impl Primitives for ThreadPrimitives {
                     };
                     if refused.is_none() {
                         if !made.contains(thread) && awakened.insert(thread.clone()) {
-                            Threads::<ThreadProgram>::revive(run.snapshot(), &mut changes, thread)?;
+                            Threads::<ThreadFiber>::revive(run.snapshot(), &mut changes, thread)?;
                         }
                         let reply_to = reply_to(run, &mut changes, own, thread, delivery, *report)?;
                         let inbound = Inbound::Input {
@@ -112,7 +112,7 @@ impl Primitives for ThreadPrimitives {
                     let refused = refused(run, &directory, &made, thread)?;
                     if refused.is_none() {
                         if !made.contains(thread) && awakened.insert(thread.clone()) {
-                            Threads::<ThreadProgram>::revive(run.snapshot(), &mut changes, thread)?;
+                            Threads::<ThreadFiber>::revive(run.snapshot(), &mut changes, thread)?;
                         }
                         rename(&mut changes, own, thread, delivery, title)?;
                     }
@@ -191,7 +191,7 @@ fn spawn(
             Spawned::Thread => None,
         },
     };
-    Threads::<ThreadProgram>::made(changes, id, entry, &new)?;
+    Threads::<ThreadFiber>::made(changes, id, entry, &new)?;
     Ok(())
 }
 
@@ -278,7 +278,7 @@ fn reply_to(
                 child: target.to_owned(),
                 task: delivery.to_owned(),
             };
-            changes.start::<DelegatedProgram>(thread::main(own), &waiter, &waiting)?;
+            changes.start::<DelegatedFiber>(thread::main(own), &waiter, &waiting)?;
             Some(ReplyTo {
                 process: String::from_utf8_lossy(&layout::process(&thread::main(own), waiter.as_bytes())).into_owned(),
                 started: None,

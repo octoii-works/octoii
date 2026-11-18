@@ -3,7 +3,7 @@
 //! environment's settings and the providers' accounts; the tools a thread's model calls and the weighing of its calls;
 //! the person's trust in what a project's configuration runs; the agent that runs a thread's turns, tells its model and
 //! compacts it; the extensions a host builds Octoii with; the protocol a client speaks, and its connection — started as
-//! one with the programs of a thread's and the handlers of its requests.
+//! with the fibers that run a thread's processes and the handlers that answer their requests.
 
 pub(crate) mod accounts;
 pub mod agent;
@@ -27,14 +27,14 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::agent::{
-    CORE, CompactProgram, DelegatedProgram, Gather, ModelRequest, ResumeProgram, Sources, ThreadProgram, TitleProgram, Told, TurnProgram,
+    CORE, CompactFiber, DelegatedFiber, Gather, ModelRequest, ResumeFiber, Sources, ThreadFiber, TitleFiber, Told, TurnFiber,
     answer_gather, answer_model, answer_review,
 };
 use crate::machine::Host;
 use crate::protocol::Scope;
 use crate::threads::Threads;
 use crate::tools::{
-    Asks, EditTool, Exec, ExecuteTool, GlobTool, GrepTool, Permission, ReadTool, Review, ScriptProgram, ShellTool, Tools, WriteTool,
+    Asks, EditTool, Exec, ExecuteTool, GlobTool, GrepTool, Permission, ReadTool, Review, ScriptFiber, ShellTool, Tools, WriteTool,
     answer_exec,
 };
 use beak::{Beak, Events};
@@ -67,7 +67,7 @@ pub struct Setup {
 pub struct Octoii {
     pub machine: Host,
     pub runtime: Runtime,
-    pub threads: Threads<ThreadProgram>,
+    pub threads: Threads<ThreadFiber>,
     pub models: Arc<Models>,
     pub credentials: Arc<dyn Credentials>,
     pub providers: Arc<Vec<Provider>>,
@@ -171,7 +171,7 @@ impl std::fmt::Debug for Setup {
 }
 
 impl Octoii {
-    /// Octoii to be built on `beak` as `setup` says, its volume opened, with its own tools, programs, methods and
+    /// Octoii to be built on `beak` as `setup` says, its volume opened, with its own tools, fibers, methods and
     /// topics; its extensions next.
     ///
     /// # Errors
@@ -341,8 +341,8 @@ impl Building {
             natives,
             models: Arc::clone(&models),
         };
-        let runtime =
-            programs(runtime, &machine, &models, sources.clone(), tools, writables, prompts).start_on((kernel, events), options)?;
+        let runtime = register_fibers_and_handlers(runtime, &machine, &models, sources.clone(), tools, writables, prompts)
+            .start_on((kernel, events), options)?;
         let siphon = Octoii {
             machine,
             threads: Threads::new(runtime.clone()),
@@ -374,9 +374,9 @@ fn own(registrar: &mut Registrar<'_>) {
     registrar.tool(ExecuteTool);
 }
 
-/// The runtime's own programs and handlers beside the extensions' in `runtime`: the thread's processes, the requests
+/// The runtime's own fibers and handlers beside the extensions' in `runtime`: the thread's processes, the requests
 /// answered by the machine and the models, and those the person answers.
-fn programs(
+fn register_fibers_and_handlers(
     runtime: siphon_runtime::Builder,
     machine: &Host,
     models: &Arc<Models>,
@@ -388,25 +388,25 @@ fn programs(
     let (gathering, asking, reviewing) = (sources, Arc::clone(models), Arc::clone(models));
     let (execs, host) = (tools.clone(), machine.clone());
     runtime
-        .program(ThreadProgram)
-        .program(TurnProgram {
+        .fiber(ThreadFiber)
+        .fiber(TurnFiber {
             tools: tools.clone(),
             machine: machine.clone(),
             models: Arc::clone(models),
             writables,
         })
-        .program(ScriptProgram {
+        .fiber(ScriptFiber {
             tools,
             primitives: Arc::new(crate::agent::ThreadPrimitives),
         })
-        .program(TitleProgram {
+        .fiber(TitleFiber {
             instruction: prompts.title,
         })
-        .program(CompactProgram {
+        .fiber(CompactFiber {
             instruction: prompts.recap,
         })
-        .program(DelegatedProgram)
-        .program(ResumeProgram)
+        .fiber(DelegatedFiber)
+        .fiber(ResumeFiber)
         .handle(move |asked: Asked<Gather>| {
             let sources = gathering.clone();
             async move { answer_gather(&sources, asked).await }
@@ -425,7 +425,7 @@ fn programs(
         })
         .ask_person::<Permission>()
         .ask_person::<Asks>()
-        .program(trust::TrustProgram)
+        .fiber(trust::TrustFiber)
         .ask_person::<trust::Trust>()
 }
 

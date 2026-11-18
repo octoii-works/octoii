@@ -21,7 +21,7 @@ use octoii_ai::vocabulary::{
     Failure, FailureKind, FunctionCallOutput, Incomplete, InputContent, Item, ItemStatus, Response, ResponseStatus,
 };
 use serde::{Deserialize, Serialize};
-use siphon_runtime::{Answer, Ending, Program, Retries, Run, Wait};
+use siphon_runtime::{Answer, Ending, Fiber, Retries, Run, Wait};
 
 use crate::agent::compaction;
 use crate::agent::model::ModelRequest;
@@ -75,10 +75,10 @@ impl TurnState {
     };
 }
 
-/// The program of a thread's turns: its calls taken on with `tools`, their paths starting from where the `machine`
+/// The fiber of a thread's turns: its calls taken on with `tools`, their paths starting from where the `machine`
 /// has the thread work; how full a window may grow told by the `models`' facts.
 #[derive(Debug, Clone)]
-pub struct TurnProgram {
+pub struct TurnFiber {
     pub tools: Tools,
     pub machine: crate::machine::Host,
     pub models: Arc<Models>,
@@ -89,7 +89,7 @@ pub struct TurnProgram {
 /// where it replied. A fault of the turn's own fails its process.
 pub type Ended = Option<Failure>;
 
-impl Program for TurnProgram {
+impl Fiber for TurnFiber {
     const KIND: &'static str = crate::threads::thread::TURN_KIND;
     const STOP_HANDLER: bool = true;
     const RETRIES: Retries = Retries {
@@ -153,7 +153,7 @@ fn config_of(run: &Run<'_>, id: &str) -> anyhow::Result<Config> {
     Ok(Config::of(&directory)?)
 }
 
-impl TurnProgram {
+impl TurnFiber {
     /// Asks the thread's model for what follows its window, and sleeps till the answer comes; has the window compacted
     /// first where it is too full for the request, once for it.
     fn ask(&self, run: &mut Run<'_>, id: &str, attempt: u32, compacted: bool) -> anyhow::Result<Ending<TurnState, Ended>> {

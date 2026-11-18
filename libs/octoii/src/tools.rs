@@ -20,7 +20,7 @@ pub(crate) mod tool;
 pub(crate) use calls::{Call, Calls, Setting, State};
 pub(crate) use coding::{EditTool, GlobTool, GrepTool, ReadTool, WriteTool};
 
-pub(crate) use execute::{ExecuteTool, ScriptProgram};
+pub(crate) use execute::{ExecuteTool, ScriptFiber};
 pub(crate) use outlet::answer_exec;
 
 pub(crate) use plan::{Awaited, Primitives, Step};

@@ -8,11 +8,11 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::agent::{
-    DelegatedProgram, Gather, ModelRequest, Sources, ThreadProgram, TitleProgram, TurnProgram, answer_gather, answer_model, answer_review,
+    DelegatedFiber, Gather, ModelRequest, Sources, ThreadFiber, TitleFiber, TurnFiber, answer_gather, answer_model, answer_review,
 };
 use crate::machine::Host as Machine;
 use crate::threads::{CallStatus, Config, Entry, Mode, NewThread, Outcome, Threads, Turn};
-use crate::tools::{Asks, Exec, ExecuteTool, Permission, ReadTool, Review, ScriptProgram, ShellTool, Tools, WriteTool, answer_exec};
+use crate::tools::{Asks, Exec, ExecuteTool, Permission, ReadTool, Review, ScriptFiber, ShellTool, Tools, WriteTool, answer_exec};
 use beak::Beak;
 use bytes::Bytes;
 use futures::future::BoxFuture;
@@ -203,25 +203,25 @@ fn runtime(beak: &Beak, script: &Arc<Script>) -> Runtime {
     };
     let execs = tools.clone();
     Runtime::builder()
-        .program(ThreadProgram)
-        .program(TurnProgram {
+        .fiber(ThreadFiber)
+        .fiber(TurnFiber {
             tools,
             machine: crate::machine::Host::default(),
             models: Arc::clone(&models),
             writables: Vec::new(),
         })
-        .program(ScriptProgram {
+        .fiber(ScriptFiber {
             tools: inner,
             primitives: std::sync::Arc::new(crate::agent::ThreadPrimitives),
         })
-        .program(TitleProgram {
+        .fiber(TitleFiber {
             instruction: crate::testing::PROMPTS.title,
         })
-        .program(crate::agent::CompactProgram {
+        .fiber(crate::agent::CompactFiber {
             instruction: crate::testing::PROMPTS.recap,
         })
-        .program(DelegatedProgram)
-        .program(crate::agent::ResumeProgram)
+        .fiber(DelegatedFiber)
+        .fiber(crate::agent::ResumeFiber)
         .handle(move |asked: Asked<Gather>| {
             let sources = sources.clone();
             async move { answer_gather(&sources, asked).await }
@@ -277,11 +277,11 @@ fn calls(call_id: &str, name: &str, arguments: &serde_json::Value) -> Item {
     })
 }
 
-async fn thread(threads: &Threads<ThreadProgram>, workspace: &std::path::Path) -> String {
+async fn thread(threads: &Threads<ThreadFiber>, workspace: &std::path::Path) -> String {
     made(threads, workspace, Mode::FullAccess).await
 }
 
-async fn made(threads: &Threads<ThreadProgram>, workspace: &std::path::Path, mode: Mode) -> String {
+async fn made(threads: &Threads<ThreadFiber>, workspace: &std::path::Path, mode: Mode) -> String {
     let new = NewThread {
         actor: "person".into(),
         config: Config {
@@ -297,7 +297,7 @@ async fn made(threads: &Threads<ThreadProgram>, workspace: &std::path::Path, mod
 }
 
 /// Waits till the thread `id`'s turn stands as `turn`.
-async fn until(threads: &Threads<ThreadProgram>, id: &str, turn: Turn) {
+async fn until(threads: &Threads<ThreadFiber>, id: &str, turn: Turn) {
     let mut committed = threads.runtime().committed();
     let waiting = async {
         while threads.listed(id).expect("listed").status.turn != turn {
@@ -308,7 +308,7 @@ async fn until(threads: &Threads<ThreadProgram>, id: &str, turn: Turn) {
 }
 
 /// The entries of the thread `id`'s log, in its order.
-fn entries(threads: &Threads<ThreadProgram>, id: &str) -> Vec<Entry> {
+fn entries(threads: &Threads<ThreadFiber>, id: &str) -> Vec<Entry> {
     let snapshot = threads.runtime().snapshot().expect("a snapshot");
     let read = crate::threads::log::read_after(&snapshot, id, None, u64::MAX).expect("read");
     read.lines
@@ -359,7 +359,7 @@ async fn gathered_tools_catalogue_and_native_search_follow_the_fixed_sub_thread_
     let beak = Beak::new().unwrap();
     let script = script(Vec::new());
     let runtime = runtime(&beak, &script);
-    let threads = Threads::<ThreadProgram>::new(runtime.clone());
+    let threads = Threads::<ThreadFiber>::new(runtime.clone());
     let (_folder, workspace) = folder();
     let sources = Sources {
         tools: Tools::new()
@@ -437,7 +437,7 @@ async fn a_turn_takes_on_the_calls_its_replies_make_and_asks_again_till_one_call
     ]);
     let beak = Beak::new().expect("Beak");
     let runtime = runtime(&beak, &script);
-    let threads = Threads::<ThreadProgram>::new(runtime.clone());
+    let threads = Threads::<ThreadFiber>::new(runtime.clone());
     let (_folder, workspace) = folder();
     let id = thread(&threads, &workspace).await;
     threads
@@ -517,7 +517,7 @@ async fn a_folder_s_instructions_a_read_comes_upon_are_given_once_a_window() {
     ]);
     let beak = Beak::new().expect("Beak");
     let runtime = runtime(&beak, &script);
-    let threads = Threads::<ThreadProgram>::new(runtime.clone());
+    let threads = Threads::<ThreadFiber>::new(runtime.clone());
     let (_folder, workspace) = folder();
     std::fs::create_dir_all(workspace.join("pkg")).expect("a folder");
     std::fs::write(workspace.join("pkg/AGENTS.md"), "Tabs, not spaces.\n").expect("its instructions");
@@ -572,7 +572,7 @@ async fn a_reply_its_output_limit_cut_off_is_told_to_go_on_once() {
     let script = script(vec![Ok(vec![says(CUT_OFF)]), Ok(vec![says(CUT_OFF)])]);
     let beak = Beak::new().expect("Beak");
     let runtime = runtime(&beak, &script);
-    let threads = Threads::<ThreadProgram>::new(runtime.clone());
+    let threads = Threads::<ThreadFiber>::new(runtime.clone());
     let (_folder, workspace) = folder();
     let id = thread(&threads, &workspace).await;
     threads
@@ -597,7 +597,7 @@ async fn a_failure_that_may_pass_is_kept_and_the_model_asked_again() {
     let script = script(vec![Err(failure), Ok(vec![says("there")])]);
     let beak = Beak::new().expect("Beak");
     let runtime = runtime(&beak, &script);
-    let threads = Threads::<ThreadProgram>::new(runtime.clone());
+    let threads = Threads::<ThreadFiber>::new(runtime.clone());
     let (_folder, workspace) = folder();
     let id = thread(&threads, &workspace).await;
     threads
@@ -623,7 +623,7 @@ async fn a_quota_used_up_ends_the_turn_with_the_failure_and_the_next_before_it_a
     let script = script(vec![Err(failure)]);
     let beak = Beak::new().expect("Beak");
     let runtime = runtime(&beak, &script);
-    let threads = Threads::<ThreadProgram>::new(runtime.clone());
+    let threads = Threads::<ThreadFiber>::new(runtime.clone());
     let (_folder, workspace) = folder();
     let id = thread(&threads, &workspace).await;
     threads
@@ -674,7 +674,7 @@ async fn a_stop_ends_the_turn_with_every_call_it_made_answered() {
     ])]);
     let beak = Beak::new().expect("Beak");
     let runtime = runtime(&beak, &script);
-    let threads = Threads::<ThreadProgram>::new(runtime.clone());
+    let threads = Threads::<ThreadFiber>::new(runtime.clone());
     let (_folder, workspace) = folder();
     let id = thread(&threads, &workspace).await;
     threads
@@ -735,7 +735,7 @@ async fn in_auto_a_call_that_would_ask_is_judged_by_the_model_the_environment_na
         device: None,
     };
     crate::settings::set(&runtime, "s", &change).await.expect("set");
-    let threads = Threads::<ThreadProgram>::new(runtime.clone());
+    let threads = Threads::<ThreadFiber>::new(runtime.clone());
     let (_folder, workspace) = folder();
     std::fs::create_dir(workspace.join("build")).expect("a folder");
     let id = made(&threads, &workspace, Mode::Auto).await;
@@ -763,7 +763,7 @@ async fn a_window_too_full_for_its_next_request_is_compacted_and_the_model_asked
     let script = script(vec![Ok(vec![says("hello")]), Ok(vec![says("read it")])]);
     let beak = Beak::new().expect("Beak");
     let runtime = runtime(&beak, &script);
-    let threads = Threads::<ThreadProgram>::new(runtime.clone());
+    let threads = Threads::<ThreadFiber>::new(runtime.clone());
     let (_folder, workspace) = folder();
     let id = thread(&threads, &workspace).await;
     threads
@@ -821,7 +821,7 @@ async fn a_window_too_full_for_its_next_request_is_compacted_and_the_model_asked
 }
 
 /// The threads made, but `except`, by their ids.
-fn others(threads: &Threads<ThreadProgram>, except: &str) -> Vec<crate::threads::Listed> {
+fn others(threads: &Threads<ThreadFiber>, except: &str) -> Vec<crate::threads::Listed> {
     threads
         .list()
         .expect("listed")
@@ -847,7 +847,7 @@ async fn a_task_delegated_is_worked_on_by_a_sub_thread_and_what_it_said_last_giv
         .push(("say done".into(), vec![says("the child is done")]));
     let beak = Beak::new().expect("Beak");
     let runtime = runtime(&beak, &script);
-    let threads = Threads::<ThreadProgram>::new(runtime.clone());
+    let threads = Threads::<ThreadFiber>::new(runtime.clone());
     let (_folder, workspace) = folder();
     let id = thread(&threads, &workspace).await;
     threads
@@ -914,7 +914,7 @@ async fn a_task_delegated_in_the_background_is_answered_at_once_and_its_end_deli
         .push(("say done".into(), vec![says("the child is done")]));
     let beak = Beak::new().expect("Beak");
     let runtime = runtime(&beak, &script);
-    let threads = Threads::<ThreadProgram>::new(runtime.clone());
+    let threads = Threads::<ThreadFiber>::new(runtime.clone());
     let (_folder, workspace) = folder();
     let id = thread(&threads, &workspace).await;
     threads
@@ -964,7 +964,7 @@ async fn an_input_queued_while_a_turn_works_waits_for_it_to_end_and_begins_the_n
         .push(("and then this".into(), vec![says("this too")]));
     let beak = Beak::new().expect("Beak");
     let runtime = runtime(&beak, &script);
-    let threads = Threads::<ThreadProgram>::new(runtime.clone());
+    let threads = Threads::<ThreadFiber>::new(runtime.clone());
     let (_folder, workspace) = folder();
     let id = thread(&threads, &workspace).await;
     threads
@@ -1023,7 +1023,7 @@ async fn a_thread_started_by_another_takes_its_message_and_its_end_is_told_back(
         .push(("say hi".into(), vec![says("hi there")]));
     let beak = Beak::new().expect("Beak");
     let runtime = runtime(&beak, &script);
-    let threads = Threads::<ThreadProgram>::new(runtime.clone());
+    let threads = Threads::<ThreadFiber>::new(runtime.clone());
     let (_folder, workspace) = folder();
     let id = thread(&threads, &workspace).await;
     threads
@@ -1070,7 +1070,7 @@ async fn a_thread_sends_no_message_to_one_whose_mode_reaches_further() {
     let (_folder, workspace) = folder();
     let script = script(vec![Ok(vec![says("could not")])]);
     let runtime = runtime(&beak, &script);
-    let threads = Threads::<ThreadProgram>::new(runtime.clone());
+    let threads = Threads::<ThreadFiber>::new(runtime.clone());
     let further = made(&threads, &workspace, Mode::FullAccess).await;
     script.replies.lock().expect("held").push_front(Ok(vec![calls(
         "c1",
@@ -1108,7 +1108,7 @@ async fn arm(runtime: &Runtime, id: &str, after: i64) {
     runtime.commit(changes).await.expect("committed");
 }
 
-fn words_given(threads: &Threads<ThreadProgram>, id: &str) -> Vec<String> {
+fn words_given(threads: &Threads<ThreadFiber>, id: &str) -> Vec<String> {
     entries(threads, id)
         .into_iter()
         .filter_map(|entry| match entry {
@@ -1126,7 +1126,7 @@ async fn a_resume_goes_on_at_its_time_unless_the_person_went_on_first() {
     let script = script(vec![Ok(vec![says("going on")]), Ok(vec![says("as you said")])]);
     let beak = Beak::new().expect("Beak");
     let runtime = runtime(&beak, &script);
-    let threads = Threads::<ThreadProgram>::new(runtime.clone());
+    let threads = Threads::<ThreadFiber>::new(runtime.clone());
     let (_folder, workspace) = folder();
     let id = thread(&threads, &workspace).await;
     arm(&runtime, &id, 300).await;
@@ -1140,7 +1140,7 @@ async fn a_resume_goes_on_at_its_time_unless_the_person_went_on_first() {
         .await
         .expect("delivered");
     until(&threads, &other, Turn::Replied).await;
-    let resume = beak::layout::process(&crate::threads::thread::main(&other), crate::agent::ResumeProgram::KEY.as_bytes());
+    let resume = beak::layout::process(&crate::threads::thread::main(&other), crate::agent::ResumeFiber::KEY.as_bytes());
     let mut committed = runtime.committed();
     tokio::time::timeout(Duration::from_secs(10), async {
         while runtime
@@ -1310,7 +1310,7 @@ async fn startup_gate_holds_all_input_until_the_final_workspace_is_bound() {
     script.replies.lock().unwrap().push_back(Ok(vec![says("done")]));
     let runtime = runtime(&beak, &script);
     let volume = crate::volume::Volume { runtime: runtime.clone() };
-    let threads = Threads::<ThreadProgram>::new(runtime.clone());
+    let threads = Threads::<ThreadFiber>::new(runtime.clone());
     let folder = tempfile::tempdir().unwrap();
     let workspace = folder.path().canonicalize().unwrap().to_string_lossy().into_owned();
     let new = NewThread {

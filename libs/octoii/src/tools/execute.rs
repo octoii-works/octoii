@@ -14,7 +14,7 @@ use bytes::Bytes;
 use octoii_ai::vocabulary::InputContent;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use siphon_runtime::{Changes, Ending, Program, Run};
+use siphon_runtime::{Changes, Ending, Fiber, Run};
 use siphon_script::{Host, Limits, Progress, Script};
 
 use crate::threads::CallStatus;
@@ -31,7 +31,7 @@ pub struct ExecuteArgs {
     pub code: String,
 }
 
-/// `execute`, its scripts calling the tools its `ScriptProgram` holds.
+/// `execute`, its scripts calling the tools its `ScriptFiber` holds.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ExecuteTool;
 
@@ -122,7 +122,7 @@ impl Tool for ExecuteTool {
     }
 
     fn exec(&self, _: &Context, _: ExecuteArgs) -> impl std::future::Future<Output = Result<Told, Refusal>> + Send {
-        std::future::ready(Err(Refusal::new("a script runs as a program of its own")))
+        std::future::ready(Err(Refusal::new("a script runs in its own process")))
     }
 
     fn start(
@@ -145,7 +145,7 @@ impl Tool for ExecuteTool {
             mode: setting.mode,
             confines: setting.confines,
         };
-        Some(changes.start::<ScriptProgram>(parent.clone(), key, &input).map(|_| ()))
+        Some(changes.start::<ScriptFiber>(parent.clone(), key, &input).map(|_| ()))
     }
 
     fn finished(&self, outcome: &beak::Outcome) -> Finished {
@@ -194,16 +194,16 @@ impl Tool for ExecuteTool {
     }
 }
 
-/// The program a script's process runs, its scripts calling `tools`, what they plan for threads done by `primitives`.
+/// The fiber a script's process runs, its scripts calling `tools`, what they plan for threads done by `primitives`.
 #[derive(Clone)]
-pub struct ScriptProgram {
+pub struct ScriptFiber {
     pub tools: Tools,
     pub primitives: std::sync::Arc<dyn crate::tools::Primitives>,
 }
 
-impl std::fmt::Debug for ScriptProgram {
+impl std::fmt::Debug for ScriptFiber {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ScriptProgram").field("tools", &self.tools).finish_non_exhaustive()
+        f.debug_struct("ScriptFiber").field("tools", &self.tools).finish_non_exhaustive()
     }
 }
 
@@ -268,7 +268,7 @@ enum Replayed {
     Calls(Vec<siphon_script::Call>),
 }
 
-impl ScriptProgram {
+impl ScriptFiber {
     /// Runs the script `input` gives from its start, settling each call as `state` holds it, to its end or to calls
     /// not yet settled.
     fn replay(&self, input: &ScriptInput, state: &ScriptState, kind: Option<SubThreadKind>) -> Replayed {
@@ -330,7 +330,7 @@ impl ScriptProgram {
     }
 }
 
-impl Program for ScriptProgram {
+impl Fiber for ScriptFiber {
     const KIND: &'static str = "siphon.script";
     type Input = ScriptInput;
     type Checkpoint = ScriptState;

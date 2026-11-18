@@ -195,7 +195,7 @@ struct Caller {
     tools: crate::tools::Tools,
 }
 
-impl siphon_runtime::Program for Caller {
+impl siphon_runtime::Fiber for Caller {
     const KIND: &'static str = "siphon.testing.caller";
     type Input = Asking;
     type Checkpoint = crate::tools::Calls;
@@ -287,12 +287,12 @@ impl Calling {
             .with(crate::tools::ExecuteTool));
         let execs = tools.clone();
         let runtime = siphon_runtime::Runtime::builder()
-            .program(Caller { tools: tools.clone() })
-            .program(crate::tools::ScriptProgram {
+            .fiber(Caller { tools: tools.clone() })
+            .fiber(crate::tools::ScriptFiber {
                 tools,
                 primitives: Arc::new(crate::agent::ThreadPrimitives),
             })
-            .program(crate::trust::TrustProgram)
+            .fiber(crate::trust::TrustFiber)
             .ask_person::<crate::trust::Trust>()
             .handle(move |asked: siphon_runtime::Asked<crate::tools::Exec>| {
                 let tools = execs.clone();
@@ -362,10 +362,10 @@ impl Calling {
     /// # Panics
     /// Where the volume fails, or it is not asked and decided in 10 s each.
     pub async fn decide(&self, trust: &crate::trust::Trust, trusted: bool) {
-        let key = crate::trust::TrustProgram::KEY.as_bytes();
+        let key = crate::trust::TrustFiber::KEY.as_bytes();
         let mut changes = siphon_runtime::Changes::new();
         changes
-            .start::<crate::trust::TrustProgram>(Bytes::new(), crate::trust::TrustProgram::KEY, trust)
+            .start::<crate::trust::TrustFiber>(Bytes::new(), crate::trust::TrustFiber::KEY, trust)
             .expect("an input");
         self.runtime.commit(changes).await.expect("started");
         let process = beak::layout::process(b"", key);

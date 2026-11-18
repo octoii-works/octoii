@@ -99,7 +99,7 @@ impl Volume {
             .await?)
     }
 
-    fn starting_threads(&self) -> crate::threads::Threads<crate::agent::ThreadProgram> {
+    fn starting_threads(&self) -> crate::threads::Threads<crate::agent::ThreadFiber> {
         crate::threads::Threads::new(self.runtime.clone())
     }
 

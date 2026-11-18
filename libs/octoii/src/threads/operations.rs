@@ -7,7 +7,7 @@ use beak::{Query, Range, layout};
 use bytes::Bytes;
 use octoii_ai::vocabulary::InputContent;
 use serde::{Deserialize, Serialize};
-use siphon_runtime::{Changes, NotGiven, Program, Runtime};
+use siphon_runtime::{Changes, Fiber, NotGiven, Runtime};
 
 use crate::threads::config::{Config, ConfigChange};
 use crate::threads::idempotency::{self, Done};
@@ -57,7 +57,7 @@ pub enum Error {
     File(#[from] super::files::Refused),
 }
 
-/// The threads, on a runtime whose program `M` runs each thread's main process.
+/// The threads, on a runtime whose fiber `M` runs each thread's main process.
 #[derive(Debug, Clone)]
 pub struct Threads<M> {
     runtime: Runtime,
@@ -79,7 +79,7 @@ impl<M> Threads<M> {
     }
 }
 
-impl<M: Program<Input = MainInput>> Threads<M> {
+impl<M: Fiber<Input = MainInput>> Threads<M> {
     /// Makes a thread as `new` says, its main process started: its id. Made again under the same `key` within a day,
     /// it is the thread made then.
     ///

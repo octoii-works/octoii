@@ -11,7 +11,7 @@ use beak::Snapshot;
 use bytes::Bytes;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use siphon_runtime::{Answer, AskedOfPerson, Changes, Ending, Program, Request, Run, Wait};
+use siphon_runtime::{Answer, AskedOfPerson, Changes, Ending, Fiber, Request, Run, Wait};
 
 use crate::threads::thread;
 use crate::tools::projects;
@@ -91,14 +91,14 @@ pub fn decide(snapshot: &Snapshot, folder: &str, digest: &str, trusted: bool) ->
 
 /// The process that asks the person what a `Trust` asks, keyed as `KEY` under the thread that needs it.
 #[derive(Debug, Clone, Copy, Default)]
-pub struct TrustProgram;
+pub struct TrustFiber;
 
-impl TrustProgram {
+impl TrustFiber {
     /// The key of the process under its thread, and of its request.
     pub const KEY: &'static str = "trust";
 }
 
-impl Program for TrustProgram {
+impl Fiber for TrustFiber {
     const KIND: &'static str = "siphon.trust";
     type Input = Trust;
     type Checkpoint = ();
@@ -132,12 +132,12 @@ impl Program for TrustProgram {
 /// The volume's failure.
 pub async fn ask(volume: &crate::volume::Volume, thread: &str, trust: &Trust) -> anyhow::Result<()> {
     let main = thread::main(thread);
-    let asking = beak::layout::process(&main, TrustProgram::KEY.as_bytes());
+    let asking = beak::layout::process(&main, TrustFiber::KEY.as_bytes());
     if volume.snapshot()?.record(&asking)?.is_some() {
         return Ok(());
     }
     let mut changes = Changes::new();
-    changes.start::<TrustProgram>(main, TrustProgram::KEY, trust)?;
+    changes.start::<TrustFiber>(main, TrustFiber::KEY, trust)?;
     volume.runtime.commit(changes).await?;
     Ok(())
 }

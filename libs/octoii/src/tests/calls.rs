@@ -10,14 +10,29 @@ use crate::machine::paths::Base;
 use crate::threads::{Mode, SubThreadKind};
 use crate::tools::{
     CallStatus, Calls, Context, Effect, Exec, ExecuteTool, GlobTool, GrepTool, Judgment, Permission, ReadTool, Refusal, Review,
-    ScriptProgram, Setting, ShellTool, Told, Tool, Tools, WriteTool, answer_exec, projects,
+    ScriptFiber, Setting, ShellTool, State, Told, Tool, Tools, WriteTool, answer_exec, projects,
 };
 use beak::{Beak, Outcome, layout};
 use bytes::Bytes;
 use octoii_ai::vocabulary::InputContent;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use siphon_runtime::{Asked, Changes, Ending, NotGiven, Options, Program, Run, Runtime};
+use siphon_runtime::{Asked, Changes, Ending, Fiber, NotGiven, Options, Run, Runtime};
+
+#[test]
+fn a_waiting_tool_fiber_reads_the_existing_call_checkpoint() {
+    let checkpoint = json!([{
+        "id": "call-1",
+        "key": "1",
+        "tool": "execute",
+        "arguments": "{}",
+        "acts": true,
+        "state": {"state": "program"}
+    }]);
+    let calls: Calls = serde_json::from_value(checkpoint.clone()).unwrap();
+    assert_eq!(calls.0[0].state, State::Fiber);
+    assert_eq!(serde_json::to_value(calls).unwrap(), checkpoint);
+}
 
 fn tools() -> Tools {
     Tools::new()
@@ -126,7 +141,7 @@ struct Caller {
     tools: Tools,
 }
 
-impl Program for Caller {
+impl Fiber for Caller {
     const KIND: &'static str = "test.caller";
     type Input = Asking;
     type Checkpoint = Calls;
@@ -200,9 +215,9 @@ fn said(call: crate::tools::Call) -> (CallStatus, String) {
 /// command go ahead but one that removes.
 fn runtime(beak: &Beak) -> Runtime {
     Runtime::builder()
-        .program(Caller { tools: tools() })
-        .program(RecoveredCaller)
-        .program(ScriptProgram {
+        .fiber(Caller { tools: tools() })
+        .fiber(RecoveredCaller)
+        .fiber(ScriptFiber {
             tools: tools(),
             primitives: std::sync::Arc::new(crate::agent::ThreadPrimitives),
         })
@@ -421,7 +436,7 @@ async fn explorer_scripts_expose_readers_and_cannot_request_write_permissions() 
 
 /// A persisted permission state and its queued Allow(always) answer, before the real Calls resumes it.
 struct RecoveredCaller;
-impl Program for RecoveredCaller {
+impl Fiber for RecoveredCaller {
     const KIND: &'static str = "test.recovered_caller";
     type Input = Asking;
     type Checkpoint = Calls;

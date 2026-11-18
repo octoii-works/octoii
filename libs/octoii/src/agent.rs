@@ -18,18 +18,18 @@ pub(crate) mod turn;
 pub(crate) mod waiting;
 pub(crate) mod writable;
 
-pub(crate) use compaction::CompactProgram;
+pub(crate) use compaction::CompactFiber;
 pub(crate) use context::Composition;
 pub(crate) use gather::{CORE, Gather, OwnedTeller, Sources, answer_gather};
 pub(crate) use model::{ModelRequest, Streamed, answer_model};
 pub(crate) use primitives::ThreadPrimitives;
-pub(crate) use resume::{ResumeInput, ResumeProgram};
+pub(crate) use resume::{ResumeFiber, ResumeInput};
 pub(crate) use review::answer_review;
-pub(crate) use thread::ThreadProgram;
-pub(crate) use title::TitleProgram;
+pub(crate) use thread::ThreadFiber;
+pub(crate) use title::TitleFiber;
 
-pub(crate) use turn::TurnProgram;
-pub(crate) use waiting::DelegatedProgram;
+pub(crate) use turn::TurnFiber;
+pub(crate) use waiting::DelegatedFiber;
 pub use writable::{Writable, WritableFolders};
 
 /// Instructions for the three independent model calls, supplied by the required base extension.

@@ -25,8 +25,9 @@ pub enum State {
     Asking,
     Judging,
     Running,
-    /// Its tool's program runs, as a process under its caller keyed by the call's key.
-    Program,
+    /// Its tool's fiber runs, as a process under its caller keyed by the call's key.
+    #[serde(rename = "program")]
+    Fiber,
     /// It ends with how the turn that takes what it delivered ends, which the mail keyed by the delivery tells.
     Awaiting(Awaited),
     Ended {
@@ -268,7 +269,7 @@ impl Calls {
                 State::Asking => format!("{}.permission", call.key),
                 State::Judging => format!("{}.review", call.key),
                 State::Running => call.key.clone(),
-                State::Program => {
+                State::Fiber => {
                     wait = wait.child(call.key.clone());
                     waits = true;
                     continue;
@@ -366,7 +367,7 @@ impl Calls {
                 Some(state) => state,
                 None => return Ok(()),
             },
-            State::Program => {
+            State::Fiber => {
                 let process = beak::layout::process(run.path(), call.key.as_bytes());
                 let Some(outcome) = run.snapshot().record(&process)?.and_then(|record| record.outcome) else {
                     return Ok(());
@@ -412,7 +413,7 @@ impl Calls {
                 State::Asking => Some(format!("{}.permission", call.key)),
                 State::Judging => Some(format!("{}.review", call.key)),
                 State::Running => Some(call.key.clone()),
-                State::Program => {
+                State::Fiber => {
                     run.changes.remove(beak::layout::process(run.path(), call.key.as_bytes()), None);
                     None
                 }
@@ -522,7 +523,7 @@ impl Calls {
             .start(&mut run.changes, &parent, &call.key, &call.tool, &arguments, setting)
         {
             started?;
-            return Ok(State::Program);
+            return Ok(State::Fiber);
         }
         if let Some(answer_schema) = setting.tools.asks(&call.tool, &arguments) {
             let asks = Asks {

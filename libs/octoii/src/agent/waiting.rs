@@ -7,7 +7,7 @@ use crate::threads::inbox::{self, Ended, Inbound, Joins};
 use crate::threads::thread;
 use octoii_ai::vocabulary::InputContent;
 use serde::{Deserialize, Serialize};
-use siphon_runtime::{Ending, Program, Run, Wait};
+use siphon_runtime::{Ending, Fiber, Run, Wait};
 
 /// A task given to a sub-thread, waited on: the thread that gave it, the sub-thread, and the task, by its id in the
 /// sub-thread's inbox, which is also the key of the mail that tells how the turn that took it ended.
@@ -55,13 +55,13 @@ pub fn label(directory: &beak::Directory, name: &str) -> Option<String> {
         .map(|value| String::from_utf8_lossy(value).into_owned())
 }
 
-/// The program of a task given in the background — delegated to a sub-thread, or a message sent to another thread to be
+/// The fiber of a task given in the background — delegated to a sub-thread, or a message sent to another thread to be
 /// told of — beside its thread's main process: waits on the thread that took it till the turn that took it ends, then
 /// ends, what came of it delivered to the thread's inbox in the same commit.
 #[derive(Debug, Clone, Copy, Default)]
-pub struct DelegatedProgram;
+pub struct DelegatedFiber;
 
-impl Program for DelegatedProgram {
+impl Fiber for DelegatedFiber {
     const KIND: &'static str = "siphon.delegated";
     type Input = Waiting;
     type Checkpoint = ();

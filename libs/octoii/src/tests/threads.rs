@@ -10,12 +10,12 @@ use crate::threads::{Config, MainInput, MarksChange, Mode, NewThread, Parent, Th
 use beak::Beak;
 use bytes::Bytes;
 use octoii_ai::vocabulary::{InputContent, ReasoningEffort};
-use siphon_runtime::{Ending, Options, Program, Run, Runtime, Wait};
+use siphon_runtime::{Ending, Fiber, Options, Run, Runtime, Wait};
 
 /// A main process that takes its inbox into its log as it changes, and does nothing more.
 struct Taker;
 
-impl Program for Taker {
+impl Fiber for Taker {
     const KIND: &'static str = "test.taker";
     type Input = MainInput;
     type Checkpoint = ();
@@ -31,7 +31,7 @@ impl Program for Taker {
 /// A main process that never takes its inbox.
 struct Idle;
 
-impl Program for Idle {
+impl Fiber for Idle {
     const KIND: &'static str = "test.idle";
     type Input = MainInput;
     type Checkpoint = ();
@@ -42,8 +42,8 @@ impl Program for Idle {
     }
 }
 
-fn threads<M: Program<Input = MainInput>>(beak: &Beak, main: M) -> Threads<M> {
-    Threads::new(Runtime::builder().program(main).start(beak, Options::default()).expect("started"))
+fn threads<M: Fiber<Input = MainInput>>(beak: &Beak, main: M) -> Threads<M> {
+    Threads::new(Runtime::builder().fiber(main).start(beak, Options::default()).expect("started"))
 }
 
 fn person(config: Config) -> NewThread {
@@ -56,7 +56,7 @@ fn person(config: Config) -> NewThread {
 
 /// Commits a real thread plan so these tests exercise the same primitive boundary as tool calls.
 struct ApplyPlan;
-impl Program for ApplyPlan {
+impl Fiber for ApplyPlan {
     const KIND: &'static str = "test.thread_plan";
     type Input = (String, crate::tools::Plan);
     type Checkpoint = ();
@@ -68,7 +68,7 @@ impl Program for ApplyPlan {
 }
 
 fn organizing_threads(beak: &Beak, options: Options) -> Threads<Taker> {
-    Threads::new(Runtime::builder().program(Taker).program(ApplyPlan).start(beak, options).unwrap())
+    Threads::new(Runtime::builder().fiber(Taker).fiber(ApplyPlan).start(beak, options).unwrap())
 }
 
 async fn applied(runtime: &Runtime, own: &str, plan: crate::tools::Plan) -> Result<(), String> {
@@ -427,7 +427,7 @@ async fn rename_and_deliver_revive_a_target_once_and_removing_targets_are_refuse
     assert_eq!(
         row.status.inbox.len(),
         3,
-        "the revived agent program is not registered in this test runtime"
+        "the revived agent fiber is not registered in this test runtime"
     );
     let main = threads
         .runtime()
@@ -739,7 +739,7 @@ async fn sub_thread_kinds_survive_configuration_changes_and_reopening() {
         directory: Some(storage.path().to_owned()),
         ..Options::default()
     };
-    let first = Threads::<Taker>::new(Runtime::builder().program(Taker).start(&beak, options.clone()).unwrap());
+    let first = Threads::<Taker>::new(Runtime::builder().fiber(Taker).start(&beak, options.clone()).unwrap());
     let mut children = Vec::new();
     for kind in [
         crate::threads::SubThreadKind::Explorer,
@@ -776,7 +776,7 @@ async fn sub_thread_kinds_survive_configuration_changes_and_reopening() {
     }
     first.runtime().close().await;
     drop(first);
-    let reopened = Threads::<Taker>::new(Runtime::builder().program(Taker).start(&beak, options).unwrap());
+    let reopened = Threads::<Taker>::new(Runtime::builder().fiber(Taker).start(&beak, options).unwrap());
     let volume = crate::volume::Volume {
         runtime: reopened.runtime().clone(),
     };
@@ -979,10 +979,7 @@ fn startup_request() -> crate::threads::StartRequest {
 
 fn startup_volume(beak: &Beak, options: Options) -> crate::volume::Volume {
     crate::volume::Volume {
-        runtime: Runtime::builder()
-            .program(crate::agent::ThreadProgram)
-            .start(beak, options)
-            .unwrap(),
+        runtime: Runtime::builder().fiber(crate::agent::ThreadFiber).start(beak, options).unwrap(),
     }
 }
 
@@ -1071,7 +1068,7 @@ async fn stopping_or_deleting_preparation_cannot_be_undone_by_a_late_result() {
     use crate::threads::{StartState, StartWorkspace};
     let beak = Beak::new().unwrap();
     let volume = startup_volume(&beak, Options::default());
-    let threads = Threads::<crate::agent::ThreadProgram>::new(volume.runtime.clone());
+    let threads = Threads::<crate::agent::ThreadFiber>::new(volume.runtime.clone());
     let new = person(Config::default());
     let (id, start) = volume
         .prepare_thread(&new, vec![InputContent::text("wait").into()], startup_request(), "startup-stop")

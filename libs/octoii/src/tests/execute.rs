@@ -9,14 +9,14 @@ use crate::machine::Host;
 use crate::machine::paths::Base;
 use crate::threads::Mode;
 use crate::tools::{
-    CallStatus, Calls, Exec, ExecuteTool, Permission, ReadTool, ScriptProgram, Setting, ShellTool, Tool, Tools, WriteTool, answer_exec,
+    CallStatus, Calls, Exec, ExecuteTool, Permission, ReadTool, ScriptFiber, Setting, ShellTool, Tool, Tools, WriteTool, answer_exec,
 };
 use beak::{Beak, Outcome, layout};
 use bytes::Bytes;
 use octoii_ai::vocabulary::InputContent;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use siphon_runtime::{Asked, Changes, Ending, Options, Program, Run, Runtime};
+use siphon_runtime::{Asked, Changes, Ending, Fiber, Options, Run, Runtime};
 
 fn inner() -> Tools {
     Tools::new().with(ReadTool).with(WriteTool).with(ShellTool)
@@ -45,7 +45,7 @@ struct Caller {
     threads: Option<PathBuf>,
 }
 
-impl Program for Caller {
+impl Fiber for Caller {
     const KIND: &'static str = "test.caller";
     type Input = Asking;
     type Checkpoint = Calls;
@@ -108,10 +108,10 @@ fn runtime(beak: &Beak, options: Options) -> Runtime {
 
 fn runtime_on(beak: &Beak, options: Options, host: Host) -> Runtime {
     Runtime::builder()
-        .program(Caller {
+        .fiber(Caller {
             threads: host.threads.clone(),
         })
-        .program(ScriptProgram {
+        .fiber(ScriptFiber {
             tools: inner(),
             primitives: std::sync::Arc::new(crate::agent::ThreadPrimitives),
         })

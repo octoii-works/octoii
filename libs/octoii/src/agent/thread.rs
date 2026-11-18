@@ -14,12 +14,12 @@ use beak::{Outcome, layout};
 use bytes::Bytes;
 use octoii_ai::vocabulary::{Failure, FailureKind, FunctionCallOutput, InputContent};
 use serde::{Deserialize, Serialize};
-use siphon_runtime::{Answer, Ending, Program, Retries, Run, Wait};
+use siphon_runtime::{Answer, Ending, Fiber, Retries, Run, Wait};
 
 use crate::agent::gather::Gather;
-use crate::agent::title::{TitleInput, TitleProgram};
+use crate::agent::title::{TitleFiber, TitleInput};
 use crate::agent::told::{self, Told};
-use crate::agent::turn::{TurnInput, TurnProgram};
+use crate::agent::turn::{TurnFiber, TurnInput};
 
 /// The annotation on a turn's process that bounds what its requests may cost, as a cgroup's `*.max` bounds its group.
 fn cost_limit() -> Bytes {
@@ -36,11 +36,11 @@ pub enum MainState {
     Running { turn: String },
 }
 
-/// The program of a thread's main process.
+/// The fiber of a thread's main process.
 #[derive(Debug, Clone, Copy, Default)]
-pub struct ThreadProgram;
+pub struct ThreadFiber;
 
-impl Program for ThreadProgram {
+impl Fiber for ThreadFiber {
     const KIND: &'static str = "siphon.thread";
     const RETRIES: Retries = Retries {
         count: 3,
@@ -176,13 +176,13 @@ fn begin(run: &mut Run<'_>, id: &str, told: Told) -> anyhow::Result<Ending<MainS
         return end_before(run, id, &mut writer, &taken, Why::Failure(failure));
     }
     if config.title.is_none() && config.model.is_some() {
-        let titling = layout::process(run.path(), TitleProgram::KEY.as_bytes());
+        let titling = layout::process(run.path(), TitleFiber::KEY.as_bytes());
         if run.snapshot().record(&titling)?.is_none() {
-            run.start::<TitleProgram>(TitleProgram::KEY, &TitleInput { thread: id.to_owned() })?;
+            run.start::<TitleFiber>(TitleFiber::KEY, &TitleInput { thread: id.to_owned() })?;
         }
     }
     let turn = run.new_id()?;
-    run.start::<TurnProgram>(
+    run.start::<TurnFiber>(
         &turn,
         &TurnInput {
             thread: id.to_owned(),

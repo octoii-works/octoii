@@ -18,7 +18,7 @@ Future, trait object or unwind may cross the ABI directly. Concrete ABI details 
 ## Implementation order
 
 1. B1: import the complete Beak source into beak/ as an independent Cargo workspace in the private Siphon repository.
-2. B2: design and validate one real binary execution path: open, register a program, spawn, call a host
+2. B2: design and validate one real binary execution path: open, register a fiber, spawn, call a host
    handler, commit, cancel, close/reopen and recover. Preserve existing durable execution semantics.
 3. B3: converge product access to controlled storage, machine/sandbox and authorization mechanisms through
    the public wrapper; remove direct Beak and siphon-runtime dependencies from Octoii and Node.
@@ -238,10 +238,9 @@ Do not export Rust trait objects, Future, Tokio objects, references, Vec or Stri
 Use versioned C declarations, opaque handles, byte slices and explicit ownership/release functions.
 Catch unwinding panics inside each side of a foreign call; never promise recovery from aborting panics.
 
-Keep existing Program, Run, Changes, Wait, Request and Answer semantics. Runtime registration currently
-uses associated constants and private erased traits; adapting those is a later explicitly scoped batch,
-not justification for rebuilding the scheduler in the public wrapper. Run-scoped snapshots must keep
-one consistent view, and a phase's changes and ending must still commit atomically.
+Keep the existing `Fiber`, `Run`, `Changes`, `Wait`, `Request` and `Answer` semantics. The Rust wrapper
+adapts typed fibers and requests to C callbacks. Run-scoped snapshots stay consistent, and a phase's
+changes and ending commit atomically.
 
 The product builds script, shell, image and text from the public Octoii workspace. Keep the underlying
 Beak handles private when migrating the remaining product callers to the public package.
@@ -266,22 +265,16 @@ C consumers passed on macOS ARM64. Both workspaces passed formatting and strict 
 
 ### Fiber naming
 
-Use `Fiber` for the durable execution definition currently named `Program`. A `Process` is its stored
-instance, and a `Run` is an admitted phase. Rename the corresponding Octoii implementations, such as
-`ThreadFiber`, `TurnFiber` and `ScriptFiber`, and use `Builder::fiber` in both Rust interfaces. The Beak
-registration descriptor can be named `FiberSpec`. Persisted kind strings and versions remain the lookup keys
-for waiting and recovering processes. The serialized tool-call state tag `program` is already part of Octoii's
-checkpoints and needs an explicit serialization name if its Rust variant is renamed.
+`Fiber` defines durable execution. A `Process` is its stored instance, and a `Run` is an admitted phase.
+Both Rust interfaces register fibers with `Builder::fiber`. Octoii implements `ThreadFiber`, `TurnFiber`
+and `ScriptFiber` among its fibers. Beak registers each kind's version, stop handler option and retry policy
+as a `FiberSpec`. The machine's executable lookup has its own `Program` type.
 
-Coordinate the public Rust rename with the native symbol `siphon_builder_fiber`, matching headers,
-tests and development ABI 4. Migrate callers to the new names in the same batch. The machine's
-executable lookup has its own `Program` type.
+Development ABI 4 exposes `siphon_builder_fiber`. The headers, artifact manifest and public Rust wrapper
+use the same ABI. Recovery uses the existing kind strings, versions, and Beak records and labels.
+Octoii's Rust variant `State::Fiber` serializes as `"program"` in a tool-call checkpoint.
 
-Verify a matching header and manifest for the public wrapper, link independent C and Rust consumers, and
-reopen stored runs and checkpoints from ABI 3. The rename changes the registration interface. It reuses
-the existing `Process`, `Run`, request admission and scheduling mechanisms.
-
-Proposed scope for the naming change:
+Confirmed scope for the naming change
 
 | Area | Files |
 | --- | --- |
@@ -293,6 +286,14 @@ Proposed scope for the naming change:
 
 The durable trait and the native registration symbol are owned by the core. Changing extension names alone
 cannot change the registration interface or its ABI version.
+
+On macOS ARM64, a C host using ABI 3 wrote a waiting process and closed the volume. A separate ABI 4 host
+reopened that directory, triggered the wait, and ran from the stored JSON checkpoint to a completed outcome.
+The ABI 4 archive linked the standalone lifecycle, fiber and request C consumers and passed the public
+Rust wrapper's 13 tests. Octoii's checkpoint regression reads and writes the existing tool-call state tag.
+Beak passed 148 tests, Siphon passed 23 tests, and Octoii passed 105 library tests with the live model test
+ignored. The Node all-target check passed. The private Siphon commit is `7129df7` and the matching wrapper
+commit is `42e61c2`. Windows and Linux remain part of the distribution verification.
 
 ### B2.1: binary lifecycle and storage slice — complete
 
