@@ -216,18 +216,23 @@ already moved the process to `Running`. Both steps had consumed work that the ho
    under the existing Volume writer lock. Applying the scheduler updates uses the prepared data in memory.
    Journal pruning remains best-effort maintenance.
 
-Proposed private scope, relative to `devxiyang/octoii-siphon`
+Confirmed private scope, relative to `devxiyang/octoii-siphon`
 
 | Files | Change |
 | --- | --- |
 | `beak/crates/beak-tree/src/{lib.rs,tree.rs,tree/transaction.rs}` | Expose the prepared read view within Beak and share the prepare and persist path with direct tree commits. |
 | `beak/crates/beak-process/src/scheduler.rs` | Prepare ordered updates for affected paths and consume the selected wakes after persistence. Reuse the existing admissions, live table and wait queues. |
-| `beak/crates/beak-process/tests/scheduler.rs` | Use the simulated disk to cover preparation failure and a journal read failure after the write. Verify that each successful reservation returns its admission. |
+| `beak/crates/beak-process/tests/scheduler.rs` | Reject an unreadable removal during preparation. Use the simulated disk to verify that a committed reservation returns its admission even when the journal read fails. |
 | `beak/crates/beak-volume/tests/volume.rs` | Use the existing memory device to fail a reservation commit. Verify the snapshot, notices and readiness, then reserve once on retry without issuing another wake. |
 
 The tree and scheduler own this commit boundary. Extensions observe notices after it. Verify the existing
 wait, cancellation, stop handoff and process recovery suites, then link the ABI 4 C and Rust consumers.
 R06b owns ambiguous storage outcomes. R06c owns retrying a completed phase after a known abort.
+
+Private commit `13ca006`. All three fault regressions failed on the baseline and passed after the change.
+On macOS ARM64, Beak passed 147 tests including the scheduler simulation. Siphon passed 23 tests, the
+three independent ABI 4 C consumers and 13 public Rust tests passed, and Octoii passed 105 library
+tests with its live model test ignored. Node's all-target check, formatting and Beak/Siphon Clippy passed.
 
 ## Command cleanup and binary streaming
 
