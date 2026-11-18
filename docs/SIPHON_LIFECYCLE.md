@@ -172,10 +172,10 @@ and 13 public Rust consumer tests passed, along with strict Clippy and Octoii's 
 
 ## R06: make the transaction boundary authoritative for execution
 
-The current step drains runnable work before its transaction succeeds. After the root commits, scheduler
-observation reads the journal and process records and can fail before the Volume publishes that commit.
-The dispatcher logs a finish error and drops the already evaluated result. These paths need one answer
-to whether a run was admitted or finished.
+Before R06, a step drained runnable work before its transaction succeeded. After the root committed,
+scheduler observation could fail while reading the journal and process records, before the Volume published
+the commit. The dispatcher logged a finish error and dropped the evaluated result. These paths need one
+answer to whether a run was admitted or finished.
 
 Prepare the scheduler's next view from the same transaction that prepares the tree and its change set.
 The commit installs the tree and scheduler view, consumes the admitted work, and publishes committed notices
@@ -286,6 +286,64 @@ interface and Siphon answer retry tests verified the error classification. On ma
 Beak passed 152 tests, Siphon passed 23 tests, and the linked ABI 4 consumers passed three C cases and 13 Rust
 tests. Octoii passed 105 library tests with the live model test ignored. Node's all-target check, the Rust
 dependency check, formatting and strict Beak/Siphon Clippy passed.
+
+### R06c: retain a completed phase until Beak resolves its commit
+
+An isolated run against private commit `3627372` exercised the real log on macOS. Denying file growth
+during finish left the process `Running` at sequence 2 with no output. The Fiber had run once, and the host
+could commit again once the limit was lifted. Interrupting the append instead left the same published state
+and made writes return `ReopenRequired`. The runtime still issued IDs and new snapshots. Commit watchers
+also stayed open after shutdown. In a successful run, advancing the clock from 1000 to 1075 during evaluation
+still produced `run-ms = 0` and `ended_at = 1000` because finish reused the reservation time.
+
+The dispatcher owns the reservation until the phase is evaluated, then owns its result until Beak accepts or
+invalidates that reservation. Keep the original Beak run, result or thrown error, staged changes, and versions
+observed for its waits. On `WriteAborted`, retry the same finish with backoff and let Beak recheck the
+admission. Request handlers retain their answer in the same way. A closed request or obsolete admission
+releases the result. A successful finish may still hand off to the stop handler using the committed checkpoint,
+as R05 defines. Transaction retries only repeat the Beak operation. A Fiber's registered retry policy still
+applies when Beak commits a thrown ending. While the dispatcher is waiting to finish a phase, it holds at most
+one evaluated result and does not evaluate the next reservation in that batch.
+
+Measure phase duration with a monotonic clock around evaluation, before constructing or retrying its commit.
+Pass that duration through Beak's existing finish path, including stop handoff and thrown endings. Keep the
+commit clock for journal timestamps, outcome publication, deadlines, and retry scheduling. This preserves the
+existing persisted `run-ms` counter and excludes both queue time before evaluation and storage retry delay.
+
+Use the existing runtime shutdown path for terminal failures. The first terminal error is recorded before
+signalling shutdown. `ReopenRequired` from a runtime storage operation and any unexpected failure that prevents
+the dispatcher or an answered delivery from progressing take this path. Ordinary caller validation errors and
+proven write aborts are returned to the caller. Use the existing task tracker for admitted blocking work so
+shutdown waits for calls already in flight, even if their async caller was dropped. Reject work that reaches
+admission after shutdown. Stop the dispatcher, request deliveries, commit watches and stream followers.
+[Tokio's blocking task shutdown contract](https://docs.rs/tokio/latest/tokio/task/fn.spawn_blocking.html)
+
+Subsequent runtime operations such as taking a snapshot, committing, or minting an ID return the original
+fault. Retained snapshots remain readable. The native worker returns the fault on an operation or explicit
+close through ABI 4's existing failure status. The host releases handles before reopening the volume and
+letting Beak establish what was committed. A reopened runtime starts from Beak's recovered checkpoint under
+the existing crash recovery rules. Callers holding raw Beak handles manage them through Beak's lifecycle.
+
+Proposed private scope, relative to `devxiyang/octoii-siphon`
+
+| Files | Change |
+| --- | --- |
+| `beak/crates/beak-process/src/{commit.rs,scheduler.rs}` | Make measured phase duration an explicit input to finishing the exact admission. Apply it to the phase, its ancestors and the existing limits. |
+| `beak/crates/beak-process/src/scheduler/simulation.rs`, `beak/crates/beak-process/tests/scheduler.rs` | Migrate direct finish calls and verify charging the process and its ancestors. |
+| `beak/crates/beak-volume/src/volume.rs`, `beak/crates/beak-volume/tests/{volume.rs,concurrency.rs}` | Pass measured time through the transaction boundary. Verify that retrying after a proven abort charges it once and publishes the result once. |
+| `beak/crates/beak/src/kernel.rs`, `beak/crates/beak/tests/beak.rs` | Pass the duration through the native facade and migrate its direct caller. |
+| `crates/siphon-runtime/src/{fiber.rs,changes.rs}` | Separate evaluation from finish, retaining encoded output, wait observations and measured duration. Migrate the direct finish call in the changes test. |
+| `crates/siphon-runtime/src/runtime.rs`, `crates/siphon-runtime/src/runtime/{builder.rs,dispatcher.rs,events.rs}` | Share write-abort retry and shutdown, own the pending result in the dispatcher, track admitted blocking work, and return the first failure through runtime operations. |
+| `crates/siphon-runtime/src/streams.rs`, `crates/siphon-runtime/tests/runtime.rs` | Close followers with the runtime. Verify single evaluation, retry cancellation, fault visibility and draining. |
+| `crates/siphon-ffi/src/runtime.rs` | Have explicit close join the worker and return its recorded failure. Runtime calls use the same error through their existing result path. |
+
+Validate with injected aborts before reservation, finish and answer writes. Verify that finish retries neither
+reevaluate the Fiber nor refresh its observed wait versions. Cover cancellation, stop handoff and obsolete
+admissions. A faulted runtime stops admission, returns the same cause on subsequent host calls, and leaves prior
+snapshots readable. Repeat the isolated disk fault probe and link the ABI 4 C and Rust consumers.
+
+Extensions only supply Fiber code and request handlers. They cannot retain an admission's result after
+evaluation returns, change how Beak charges it, or stop and report failure across runtime entry points.
 
 ## Command cleanup and binary streaming
 
