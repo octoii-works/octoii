@@ -19,7 +19,6 @@ import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu.tsx";
 
 /** A call's permission as it waits: what it would do; the words of allowing it always, where the project keeps its patterns; whether it goes beyond the sandbox, and why; whether an answer is on its way; and the answers. */
 export type Approval = {
-	readonly key: string;
 	/** What the call would do, line by line, past what its line names. */
 	readonly lines: readonly DetailLine[];
 	readonly always: string | undefined;
@@ -33,7 +32,7 @@ export type Approval = {
 /** The permission `ask` of the thread `thread` asks, as the person answers it; none where it asks no permission. */
 export function useApproval(thread: string, ask: Ask | undefined): Approval | undefined {
 	const project = useThreads()?.find((each) => each.id === thread)?.project ?? undefined;
-	const { answering, submit } = useAnswer(thread, ask?.key);
+	const { answering, submit } = useAnswer(thread, ask?.id);
 	if (ask === undefined) return undefined;
 	const form = formOf(ask);
 	if (form.kind !== "permission") return undefined;
@@ -45,7 +44,6 @@ export function useApproval(thread: string, ask: Ask | undefined): Approval | un
 			.catch((error: unknown) => failed("Answer not confirmed", answerError(error)));
 	};
 	return {
-		key: ask.key,
 		lines: permissionBody(form.arguments, form.access),
 		always: alwaysText(form.access, project),
 		escalate: form.access.escalate,

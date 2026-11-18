@@ -71,7 +71,7 @@ export function OldestAsk(props: { readonly thread: string; readonly asks: reado
 	const workspace = useFolder(row);
 	const [first] = props.asks.toSorted((a, b) => (a.key < b.key ? -1 : 1));
 	if (first === undefined) return null;
-	return <AskForm key={first.key} thread={props.thread} workspace={workspace} project={row?.project ?? undefined} ask={first} />;
+	return <AskForm key={first.id} thread={props.thread} workspace={workspace} project={row?.project ?? undefined} ask={first} />;
 }
 
 /** The answer of one request, by what its form asks. */
@@ -82,7 +82,7 @@ function AskForm(props: {
 	readonly ask: Ask;
 }): ReactNode {
 	const [refused, setRefused] = useState<string | undefined>(undefined);
-	const { answering, submit } = useAnswer(props.thread, props.ask.key);
+	const { answering, submit } = useAnswer(props.thread, props.ask.id);
 	const answer = (value: Json): void => {
 		setRefused(undefined);
 		void submit(value).catch((error: unknown) => setRefused(answerError(error)));
@@ -158,7 +158,6 @@ function Permission(props: {
 }): ReactNode {
 	const [message, setMessage] = useState("");
 	const approval: Approval = {
-		key: "",
 		lines: permissionDetail(props.tool, props.arguments, props.access, props.workspace),
 		always: alwaysText(props.access, props.project),
 		escalate: props.access.escalate,

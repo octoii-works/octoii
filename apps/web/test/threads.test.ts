@@ -55,7 +55,7 @@ const asking = (at: number): Standing => ({
 	...idle,
 	turn: "running",
 	began_at: at - 10,
-	asks: [{ process: "call", key: idAt(at), name: "siphon.permission", payload: {}, answer_schema: {} }],
+	asks: [{ id: "request-1", key: idAt(at), name: "siphon.permission", payload: {}, answer_schema: {} }],
 });
 
 describe("the threads", () => {
@@ -63,7 +63,7 @@ describe("the threads", () => {
 		const asking: Standing = {
 			turn: "running",
 			inbox: [],
-			asks: [{ process: "trust-1", key: "a", name: "siphon.trust", payload: {}, answer_schema: {} }],
+			asks: [{ id: "trust-1", key: "a", name: "siphon.trust", payload: {}, answer_schema: {} }],
 			compacting: false,
 		};
 		expect(statusOf(row("1", undefined, asking))).toBe("asks");

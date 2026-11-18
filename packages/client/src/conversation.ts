@@ -31,6 +31,7 @@ export type Call = {
 
 /** A request a turn made of its model: its id; what streamed while it was answered; the reply that came of it, which says whether it failed. */
 export type Step = {
+	readonly id: string;
 	readonly request: string;
 	readonly streaming: readonly Streamed[];
 	readonly reply: Of<"reply"> | undefined;
@@ -75,7 +76,7 @@ export function callOfAsk(ask: Ask): string | undefined {
 	return typeof call === "string" ? call : undefined;
 }
 
-type BuildingStep = { request: string; streaming: readonly Streamed[]; reply: Of<"reply"> | undefined; calls: Call[] };
+type BuildingStep = { id: string; request: string; streaming: readonly Streamed[]; reply: Of<"reply"> | undefined; calls: Call[] };
 type BuildingTurn = { told: Of<"system">[]; inputs: Of<"input">[]; steps: BuildingStep[]; end: Of<"turn-end"> | undefined };
 
 /** What streamed of a request nothing streamed of: one for all, as a part that is the same is the same object. */
@@ -191,7 +192,7 @@ function turnOf(run: readonly Entry[]): Turn | undefined {
 function stepOf(turn: BuildingTurn, request: string): BuildingStep {
 	const found = turn.steps.find((step) => step.request === request);
 	if (found !== undefined) return found;
-	const step: BuildingStep = { request, streaming: NOTHING_STREAMED, reply: undefined, calls: [] };
+	const step: BuildingStep = { id: request, request, streaming: NOTHING_STREAMED, reply: undefined, calls: [] };
 	turn.steps.push(step);
 	return step;
 }
@@ -209,7 +210,7 @@ function callsOf(output: readonly Item[], keys: readonly CallKey[]): Call[] {
  * The turn that runs, as the status and the streams say of it: the requests it waits on its model for as steps of their
  * own, what streamed of each, and what each call asks the person — each part they change copied, every other kept.
  */
-function running(turn: Turn, asks: readonly Ask[], streaming: ReadonlyMap<string, readonly Streamed[]>): Turn {
+function running(turn: Turn, asks: readonly Ask[], streaming: ThreadView["streaming"]): Turn {
 	const asked = new Map(
 		asks.flatMap((ask) => {
 			const call = callOfAsk(ask);
@@ -223,9 +224,13 @@ function running(turn: Turn, asks: readonly Ask[], streaming: ReadonlyMap<string
 		});
 		return calls === step.calls ? step : { ...step, calls };
 	});
-	const added = [...streaming]
-		.filter(([request]) => !turn.steps.some((step) => step.request === request))
-		.map(([request, streamed]) => ({ request, streaming: streamed, reply: undefined, calls: [] }));
+	const added = [...streaming].map(([id, stream]) => ({
+		id,
+		request: stream.key,
+		streaming: stream.parts,
+		reply: undefined,
+		calls: [],
+	}));
 	if (steps === turn.steps && added.length === 0) return turn;
 	return { ...turn, steps: [...steps, ...added] };
 }

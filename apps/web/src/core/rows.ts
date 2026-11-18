@@ -102,7 +102,7 @@ function turnRows(turn: TimelineTurn): readonly TimelineRow[] {
 	}
 	const reply = replyOf(turn);
 	const writing = turn.writing.words !== "";
-	const wrote = writing ? turn.writing.request : turn.answer?.key;
+	const wrote = writing ? turn.writing.id : turn.answer?.key;
 	if (reply !== "") rows.push({ kind: "reply", key: `words:${wrote ?? turn.key}`, room: roomAfter(), text: reply, writing });
 	const end = endOf(turn, reply);
 	if (end !== undefined) rows.push({ kind: "end", key: `end:${turn.key}`, room: roomAfter(), end });

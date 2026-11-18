@@ -27,7 +27,7 @@ pub async fn answer_exec(tools: &Tools, host: &Host, asked: Asked<Exec>) -> Resu
     let exec = asked.payload;
     let context = Context {
         thread: exec.thread,
-        process: asked.process,
+        process: asked.id.process,
         call: exec.call,
         base: Base {
             workspace: PathBuf::from(&exec.workspace),

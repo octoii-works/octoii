@@ -115,7 +115,7 @@ export type Said = {
 
 /** What streams of the request a turn waits on: the request, the words being written, and the calls being formed, by their tools. */
 export type Writing = {
-	readonly request: string | undefined;
+	readonly id: string | undefined;
 	readonly words: string;
 	readonly calls: readonly { readonly id: string; readonly tool: string }[];
 };
@@ -186,7 +186,7 @@ export function itemsOf(conversation: Conversation): readonly TimelineItem[] {
 		shownOf(turn, place, { asks, compactions: conversation.compactions.filter((each) => within(spans[place], each.id)) }),
 	);
 	const asked = new Set(shown.flat().flatMap((turn) => askedIn(turn.work)));
-	const unasked = asks.filter((ask) => !asked.has(ask.key));
+	const unasked = asks.filter((ask) => !asked.has(ask.id));
 	shown.forEach((parts, place) => {
 		const waiting = unasked.filter((ask) => within(spans[place], ask.key));
 		const last = parts.at(-1);
@@ -197,7 +197,7 @@ export function itemsOf(conversation: Conversation): readonly TimelineItem[] {
 	for (const compaction of conversation.compactions) {
 		if (between(compaction.id)) placed.push({ at: compaction.id, items: [{ kind: "summed-up", key: compaction.id }] });
 	}
-	for (const ask of unasked) if (between(ask.key)) placed.push({ at: ask.key, items: [{ kind: "ask", key: ask.key, ask }] });
+	for (const ask of unasked) if (between(ask.key)) placed.push({ at: ask.key, items: [{ kind: "ask", key: ask.id, ask }] });
 	return placed.toSorted((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0)).flatMap((each) => each.items);
 }
 
@@ -246,7 +246,7 @@ function shownOf(turn: Turn, place: number, beside: Beside): readonly TimelineTu
 
 /** The keys of what the calls of `work` wait on the person for, a script's own among them. */
 function askedIn(work: readonly Work[]): readonly string[] {
-	return work.flatMap((step) => (step.kind === "call" ? [...(step.ask === undefined ? [] : [step.ask.key]), ...askedIn(step.calls)] : []));
+	return work.flatMap((step) => (step.kind === "call" ? [...(step.ask === undefined ? [] : [step.ask.id]), ...askedIn(step.calls)] : []));
 }
 
 /** Words of the person's a turn took, and the steps from them on: the words it began with, or words that steered it. */
@@ -301,7 +301,7 @@ function partOf(turn: Turn, part: Part, next: Part | undefined, place: number, i
 		work,
 		answer,
 		changes: changesOf(work),
-		writing: { request: waiting?.request, ...writingOf(waiting?.streaming ?? []) },
+		writing: { id: waiting?.id, ...writingOf(waiting?.streaming ?? []) },
 		asking: waiting === undefined ? undefined : mintedAt(waiting.request),
 		asks: [],
 		ending: steeredAt === undefined ? endingOf(turn) : { state: "steered" },
@@ -634,7 +634,7 @@ export function declinedText(call: CallLine): string {
 }
 
 /** What streams of a request, read as the reply being written: each output item by its place, words as they grow. */
-function writingOf(events: readonly Streamed[]): Omit<Writing, "request"> {
+function writingOf(events: readonly Streamed[]): Omit<Writing, "id"> {
 	const items = new Map<number, { readonly words: string } | { readonly id: string; readonly tool: string }>();
 	for (const event of events) {
 		if (event.type === "delta") {

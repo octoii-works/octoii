@@ -174,7 +174,7 @@ export function TurnEndPart(props: { readonly end: TurnEnd }): ReactNode {
 		<div className="flex flex-col gap-2">
 			<TurnChanges changes={end.changes} />
 			{end.asks.map((ask) => (
-				<AskLine key={ask.key} ask={ask} />
+				<AskLine key={ask.id} ask={ask} />
 			))}
 			{end.failure === undefined ? null : <FailureLine text={end.failure} />}
 			{/* What waits on the person says so where it stands, a call or a request of its own, which it answers. */}

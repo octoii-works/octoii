@@ -5,6 +5,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import { type Ask, conversationOf, type Entry, type Item, type Status, type Streamed, type ThreadView } from "../../src/index.ts";
+import { FollowedThread } from "../../src/thread.ts";
 
 const response = (output: Item[]) => ({ id: "r", model: "m", status: "completed" as const, output });
 const text = (value: string): Item => ({ type: "message", role: "assistant", content: [{ type: "output_text", text: value }] });
@@ -21,7 +22,7 @@ const result = (id: string, callId: string, said: string): Entry => ({
 	output: { call_id: callId, output: [{ type: "input_text", text: said }] },
 });
 const ask = (call: string): Ask => ({
-	process: "main/turn",
+	id: `request-${call}`,
 	key: `k${call}.permission`,
 	name: "siphon.permission",
 	payload: { call: `k${call}` },
@@ -35,7 +36,14 @@ function viewOf(entries: Entry[], asks: Ask[] = [], streaming: [string, Streamed
 		inbox: [["9", { type: "input", actor: "person", content: [{ type: "input_text", text: "and then?" }] }]],
 		asks,
 	};
-	return { entries, read: true, complete: true, status, streaming: new Map(streaming), gone: false };
+	return {
+		entries,
+		read: true,
+		complete: true,
+		status,
+		streaming: new Map(streaming.map(([key, parts]) => [key, { key, offset: BigInt(parts.length - 1), parts }])),
+		gone: false,
+	};
 }
 
 const ENDED: Entry[] = [
@@ -96,4 +104,42 @@ describe("a thread's conversation, by its ids", () => {
 		expect(late.turns[0]?.inputs).toEqual([]);
 		expect(whole.turns[0]?.inputs.map((each) => each.id)).toEqual(["2"]);
 	});
+});
+
+test("a followed thread replays live output by request and keeps its durable cursor", () => {
+	const followed = new FollowedThread("thread", 20);
+	const subscription = "topic";
+	const send = (request: string, offset: string, part: string) =>
+		followed.take({ event: "stream", subscription, request, key: "q1", offset, data: { type: "delta", index: 0, part: "text", text: part } });
+	const close = (request: string) => followed.take({ event: "stream_closed", subscription, request });
+	const reset = () => followed.take({ event: "streams_reset", subscription });
+	const parts = () => [...followed.view.streaming].map(([id, stream]) => [id, stream.parts]);
+	const delta = (part: string): Streamed => ({ type: "delta", index: 0, part: "text", text: part });
+
+	followed.begin([input("1", "start")], undefined, true);
+	send("first", "0", "a");
+	send("second", "18446744073709551613", "b");
+	send("second", "18446744073709551615", "c");
+	send("second", "18446744073709551615", "duplicate");
+	send("second", "18446744073709551614", "older");
+	const cursor = { segment: "1", offset: 2 };
+	followed.take({ event: "entries", subscription, cursor, entries: [reply("2", "q1", [text("A")])] });
+	expect(parts()).toEqual([
+		["first", [delta("a")]],
+		["second", [delta("b"), delta("c")]],
+	]);
+	expect(conversationOf(followed.view).turns[0]?.steps.map(({ id, request }) => [id, request])).toEqual([
+		["q1", "q1"],
+		["first", "q1"],
+		["second", "q1"],
+	]);
+	close("first");
+	expect(parts()).toEqual([["second", [delta("b"), delta("c")]]]);
+	reset();
+	expect(parts()).toEqual([]);
+	send("third", "0", "d");
+	close("second");
+	expect(parts()).toEqual([["third", [delta("d")]]]);
+	expect(followed.cursor).toEqual(cursor);
+	expect(followed.view.entries.map(({ id }) => id)).toEqual(["1", "2"]);
 });

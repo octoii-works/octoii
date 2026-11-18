@@ -90,7 +90,7 @@ const end = (at: string, outcome: "replied" | "failed" | "stopped", reason?: str
 });
 /** What a call asks the person, by the model's id of it, minted at `key`. */
 const askOf = (key: string, name: string, payload: Record<string, unknown>): Ask => ({
-	process: "p",
+	id: `request-${key}`,
 	key,
 	name,
 	payload: payload as Ask["payload"],
@@ -103,7 +103,7 @@ function viewOf(entries: Entry[], working = false, asks: Ask[] = [], streaming: 
 		read: true,
 		complete: true,
 		status: { turn: working ? "running" : "replied", inbox: [], asks, compacting: false },
-		streaming: new Map(streaming),
+		streaming: new Map(streaming.map(([key, parts]) => [`request-${key}`, { key, offset: BigInt(parts.length - 1), parts }])),
 		gone: false,
 	};
 }
@@ -141,7 +141,7 @@ describe("a thread's timeline", () => {
 		const [within] = items;
 		expect(within?.kind === "turn" ? within.turn.work.map((each) => each.kind) : []).toEqual(["compaction"]);
 		// A turn is known by the entry it began with, which it has from the first.
-		expect(items.map((item) => item.key).slice(1)).toEqual([id(4, 5), id(5, 6), id(8, 9), id(9, 10)]);
+		expect(items.map((item) => item.key).slice(1)).toEqual([id(4, 5), id(5, 6), `request-${id(8, 9)}`, id(9, 10)]);
 	});
 
 	it("gives an ended turn's words, its work by its tools, the words on the way, its answer, and how long it took", () => {
@@ -199,7 +199,7 @@ describe("a thread's timeline", () => {
 		);
 		expect(turn?.ending).toEqual({ state: "working" });
 		expect(turn?.work).toMatchObject([{ kind: "call", tool: "shell", subject: "make", state: "running" }]);
-		expect(turn?.writing).toEqual({ request: "q2", words: "Hello", calls: [{ id: "c3", tool: "grep" }] });
+		expect(turn?.writing).toEqual({ id: "request-q2", words: "Hello", calls: [{ id: "c3", tool: "grep" }] });
 		// The reply shows the words being written as they are.
 		expect(turn === undefined ? undefined : replyOf(turn)).toBe("Hello");
 	});

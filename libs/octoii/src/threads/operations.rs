@@ -9,6 +9,7 @@ use octoii_ai::vocabulary::InputContent;
 use serde::{Deserialize, Serialize};
 use siphon_runtime::{Changes, Fiber, NotGiven, Runtime};
 
+use crate::protocol::siphon::request_id;
 use crate::threads::config::{Config, ConfigChange};
 use crate::threads::idempotency::{self, Done};
 use crate::threads::inbox::{self, Inbound, Joins};
@@ -456,29 +457,17 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
         Ok(gone)
     }
 
-    /// Gives the person's `answer` to the request of `key` a process of the thread `id` waits on.
+    /// Gives a person's answer to the exact request of a process in this thread.
     ///
     /// # Errors
-    /// `NoSuchThread`; as the runtime gives it.
-    pub async fn answer(&self, id: &str, key: &str, answer: &serde_json::Value) -> Result<(), Error> {
+    /// The thread or request is missing, the request belongs to another thread, or Siphon rejects the answer.
+    pub async fn answer(&self, id: &str, token: &str, answer: &serde_json::Value) -> Result<(), Error> {
         self.directory(id)?;
-        let under = thread::path(id);
-        let query = Query {
-            kind: layout::REQUEST_KIND,
-            name: layout::REQUEST_LABEL,
-            value: None,
-            under: &under,
-            after: None,
-        };
-        for found in self.runtime.snapshot()?.find(&query, usize::MAX)? {
-            if let Some((process, asked)) = status::split_request(&found.path)
-                && asked == key.as_bytes()
-            {
-                self.runtime.answer(process, asked, answer).await?;
-                return Ok(());
-            }
-        }
-        Err(NotGiven::NoSuchRequest.into())
+        let request = request_id(token)
+            .filter(|request| thread::id_of(&request.process) == Some(id))
+            .ok_or(NotGiven::NoSuchRequest)?;
+        self.runtime.answer(&request, answer).await?;
+        Ok(())
     }
 
     /// The thread `id`, as a list shows it.
@@ -487,7 +476,7 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
     /// `NoSuchThread`; the volume's failure.
     pub fn listed(&self, id: &str) -> Result<Listed, Error> {
         let directory = self.directory(id)?;
-        Ok(status::listed(&self.runtime, &self.runtime.snapshot()?, id, &directory)?)
+        status::listed(&self.runtime, &self.runtime.snapshot()?, id, &directory)
     }
 
     /// Every thread, as a list shows it, in the order they were made.

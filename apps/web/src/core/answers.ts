@@ -1,4 +1,4 @@
-/** In-flight answers belong to a client and request, not to any one button or mounted component. */
+/** In-flight answers belong to a client's exact request. */
 import { ClientError, type Client, type JsonValue } from "@octoii-works/octoii-client";
 
 export class Answers {
@@ -15,18 +15,18 @@ export class Answers {
 		return () => this.#listeners.delete(listener);
 	};
 
-	pending(thread: string, key: string): boolean {
-		return this.#pending.has(JSON.stringify([thread, key]));
+	pending(thread: string, request: string): boolean {
+		return this.#pending.has(JSON.stringify([thread, request]));
 	}
 
 	/** False means another entry point already submitted this request; its answer is never replaced or retried. */
-	async submit(thread: string, key: string, value: JsonValue): Promise<boolean> {
-		const id = JSON.stringify([thread, key]);
+	async submit(thread: string, request: string, value: JsonValue): Promise<boolean> {
+		const id = JSON.stringify([thread, request]);
 		if (this.#pending.has(id)) return false;
 		this.#pending.add(id);
 		this.#changed();
 		try {
-			await this.#client.answer(thread, key, value);
+			await this.#client.answer(thread, request, value);
 			return true;
 		} finally {
 			this.#pending.delete(id);

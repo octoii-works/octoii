@@ -3,7 +3,7 @@ import { describe, expect, it } from "bun:test";
 import type { Listed, Status } from "@octoii-works/octoii-client";
 import { attentionOf, waitingCount } from "../src/core/attention.ts";
 
-const ask = { process: "x", key: "k1", name: "permission", payload: null, answer_schema: null };
+const ask = { id: "request-1", key: "k1", name: "permission", payload: null, answer_schema: null };
 const row = (id: string, turn: Status["turn"], asks = 0, parent?: string): Listed => ({
 	id,
 	...(parent === undefined ? {} : { parent: { kind: "general_purpose" as const, thread: parent, call: "c" } }),

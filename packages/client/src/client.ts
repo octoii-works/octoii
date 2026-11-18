@@ -70,8 +70,8 @@ export type Client = {
 	delete(thread: string): Promise<void>;
 	/** Stops the thread for the person: what waits in its inbox withdrawn, its turn asked to stop. */
 	stop(thread: string): Promise<void>;
-	/** Gives the person's answer to what the thread asks them, by the ask's key. */
-	answer(thread: string, key: string, answer: JsonValue): Promise<void>;
+	/** Gives the person's answer to the exact request they were shown. */
+	answer(thread: string, request: string, answer: JsonValue): Promise<void>;
 	/** What fills the thread's window: the tokens its next request takes, and each part's share of them. */
 	context(thread: string): Promise<Composition>;
 	/** Compacts the thread's window now, where it is not compacting already. */
@@ -173,7 +173,7 @@ export function createClient(options: ClientOptions): Client {
 		withdraw: async (thread, delivery) => (await connection.call("threads.withdraw", { thread, delivery })).withdrawn,
 		delete: (thread) => done(connection.call("threads.delete", { thread })),
 		stop: (thread) => done(connection.call("threads.stop", { thread })),
-		answer: (thread, key, answer) => done(connection.call("threads.answer", { thread, key, answer })),
+		answer: (thread, request, answer) => done(connection.call("threads.answer", { thread, request, answer })),
 		context: (thread) => connection.call("threads.context", { thread }),
 		compact: (thread) => done(connection.call("threads.compact", { thread })),
 		resume: (thread, at) => done(connection.call("threads.resume", at === undefined ? { thread } : { thread, at })),

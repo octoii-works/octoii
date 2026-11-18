@@ -6,7 +6,7 @@ import { Answers } from "../../core/answers.ts";
 
 const clients = new WeakMap<Client, Answers>();
 
-export function useAnswer(thread: string, key: string | undefined) {
+export function useAnswer(thread: string, request: string | undefined) {
 	const client = useClient();
 	let answers = clients.get(client);
 	if (!answers) {
@@ -14,6 +14,9 @@ export function useAnswer(thread: string, key: string | undefined) {
 		clients.set(client, answers);
 	}
 	const store = answers;
-	const answering = useSyncExternalStore(store.subscribe, () => key !== undefined && store.pending(thread, key));
-	return { answering, submit: (value: Parameters<Client["answer"]>[2]) => (key === undefined ? Promise.resolve(false) : store.submit(thread, key, value)) };
+	const answering = useSyncExternalStore(store.subscribe, () => request !== undefined && store.pending(thread, request));
+	return {
+		answering,
+		submit: (value: Parameters<Client["answer"]>[2]) => (request === undefined ? Promise.resolve(false) : store.submit(thread, request, value)),
+	};
 }

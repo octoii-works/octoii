@@ -5,10 +5,11 @@
 
 use std::collections::{BTreeSet, HashMap};
 
-use crate::protocol::siphon::{Settings, SiphonEvent, SiphonTopic};
+use crate::protocol::siphon::{Settings, SiphonEvent, SiphonTopic, request_token};
 use crate::threads::{Listed, Status, log, thread};
 use bytes::Bytes;
 use serde_json::json;
+use siphon_runtime::StreamEvent;
 
 use super::journal::{Followed, Since, is_at_or_under};
 use crate::Octoii;
@@ -40,7 +41,7 @@ pub(crate) async fn told(subscription: Subscription, topic: SiphonTopic) -> Resu
 async fn thread_told(subscription: &Subscription, thread: &str, cursor: &mut Option<log::Cursor>) -> Result<(), Full> {
     let (siphon, sink) = (&subscription.caller.siphon, &subscription.sink);
     let mut committed = siphon.runtime.committed();
-    let mut streams = siphon.runtime.follow(thread).await;
+    let mut streams = siphon.runtime.follow(thread);
     let Ok(mut followed) = siphon.runtime.snapshot().map(|snapshot| Followed::at(&snapshot)) else {
         return Ok(());
     };
@@ -80,18 +81,24 @@ async fn thread_told(subscription: &Subscription, thread: &str, cursor: &mut Opt
                         break;
                     }
                 }
-                published = streams.next() => {
-                    let Some(published) = published else { return Ok(()) };
-                    // What streamed goes on as it was written, never read again.
-                    let Ok(data) = serde_json::value::RawValue::from_string(String::from_utf8_lossy(&published.data).into_owned()) else {
-                        continue;
+                event = streams.next() => {
+                    let Some(event) = event else { return Ok(()) };
+                    let subscription = sink.id().to_owned();
+                    let event = match event {
+                        StreamEvent::Reset => SiphonEvent::StreamsReset { subscription },
+                        StreamEvent::Closed(id) => SiphonEvent::StreamClosed { subscription, request: request_token(&id) },
+                        StreamEvent::Data(part) => {
+                            let Ok(data) = serde_json::from_slice::<Box<serde_json::value::RawValue>>(&part.data) else { continue };
+                            SiphonEvent::Stream {
+                                subscription,
+                                request: request_token(&part.id),
+                                key: String::from_utf8_lossy(&part.id.key).into_owned(),
+                                offset: part.offset.to_string(),
+                                data,
+                            }
+                        }
                     };
-                    sink.offer(&SiphonEvent::Stream {
-                        subscription: sink.id().to_owned(),
-                        request: published.key.to_string(),
-                        offset: published.offset,
-                        data,
-                    })?;
+                    sink.offer(&event)?;
                 }
             }
         }

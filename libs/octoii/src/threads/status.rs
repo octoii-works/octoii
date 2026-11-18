@@ -1,15 +1,16 @@
 //! How a thread stands, as a list of threads and a thread's own view show it: how its latest turn went and when, what
 //! its model requests used, what waits in its inbox, and what it asks the person.
 
-use beak::{Directory, Query, Snapshot, layout};
+use beak::{Directory, Snapshot};
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use siphon_runtime::{Changes, Named, Runtime};
 
+use crate::protocol::siphon::request_token;
 use crate::threads::config::Config;
 use crate::threads::inbox::{self, Waiting};
-use crate::threads::log::Error;
 use crate::threads::marks::{Marks, SNOOZE_NAME};
+use crate::threads::operations::Error;
 use crate::threads::thread::{self, PARENT_CALL_ANNOTATION, PARENT_LABEL, PROJECT_LABEL, SUB_THREAD_KIND_ANNOTATION};
 
 /// How a thread's turns stand: none run yet, one running, or how the last ended.
@@ -114,11 +115,10 @@ impl ThreadUsage {
     }
 }
 
-/// A request a process of the thread waits on a person's answer to: the process, by its path, the request's key and
-/// name, what it asks, and the JSON Schema the answer fits.
+/// A person prompt with its request identity, business key and answer schema.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
 pub struct Ask {
-    pub process: String,
+    pub id: String,
     pub key: String,
     pub name: String,
     pub payload: serde_json::Value,
@@ -261,37 +261,17 @@ fn status(runtime: &Runtime, snapshot: &Snapshot, id: &str, directory: &Director
 /// What the thread `id` asks the person: each request of its processes a person answers, in the order of their paths.
 fn asks(runtime: &Runtime, snapshot: &Snapshot, id: &str) -> Result<Vec<Ask>, Error> {
     let under = thread::path(id);
-    let query = Query {
-        kind: layout::REQUEST_KIND,
-        name: layout::REQUEST_LABEL,
-        value: None,
-        under: &under,
-        after: None,
-    };
-    let mut out = Vec::new();
-    for found in snapshot.find(&query, usize::MAX)? {
-        let Some((process, key)) = split_request(&found.path) else {
-            continue;
-        };
-        let Ok(answer_schema) = runtime.answer_schema(process, key) else {
-            continue;
-        };
-        let payload = snapshot.read(&layout::payload(&found.path), 0, u64::MAX)?.unwrap_or_default();
-        out.push(Ask {
-            process: String::from_utf8_lossy(process).into_owned(),
-            key: String::from_utf8_lossy(key).into_owned(),
-            name: String::from_utf8_lossy(&found.value).into_owned(),
-            payload: serde_json::from_slice(&payload).unwrap_or(serde_json::Value::Null),
-            answer_schema,
-        });
-    }
-    Ok(out)
-}
-
-/// The process that made the request at `path`, and the request's key.
-pub(crate) fn split_request(path: &[u8]) -> Option<(&[u8], &[u8])> {
-    let slash = path.iter().rposition(|&byte| byte == b'/')?;
-    let name = &path[slash + 1..];
-    let key = name.strip_prefix(layout::REQUEST_KIND)?.strip_prefix(b":")?;
-    Some((&path[..slash], key))
+    runtime
+        .person_requests(snapshot, &under)?
+        .into_iter()
+        .map(|prompt| {
+            Ok(Ask {
+                id: request_token(&prompt.id),
+                key: String::from_utf8_lossy(&prompt.id.key).into_owned(),
+                name: String::from_utf8_lossy(&prompt.name).into_owned(),
+                payload: serde_json::from_slice(&prompt.payload)?,
+                answer_schema: prompt.answer_schema,
+            })
+        })
+        .collect()
 }

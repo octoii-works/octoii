@@ -130,7 +130,7 @@ async fn threads_answered(siphon: &Octoii, method: Method) -> Result<serde_json:
         }
         Method::AnswerThread(answer) => {
             threads
-                .answer(&answer.thread, &answer.key, &answer.answer)
+                .answer(&answer.thread, &answer.request, &answer.answer)
                 .await
                 .map_err(|error| failed(&error))?;
             json(&Nothing {})

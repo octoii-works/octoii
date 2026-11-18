@@ -5,14 +5,16 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createClient, type Ask, type Client } from "@octoii-works/octoii-client";
 
-const program = fileURLToPath(new URL("../dist/runtime/bin/octoii", import.meta.url));
+const program = process.argv[2] ?? fileURLToPath(new URL("../dist/runtime/bin/octoii", import.meta.url));
 const temporary = await mkdtemp("/private/tmp/octoii-answers-");
 const home = join(temporary, "node");
 const workspace = join(temporary, "workspace");
 const target = join(temporary, "outside.txt");
+const completion = "Acceptance scenario completed.";
 const clients: Client[] = [];
 let node: ReturnType<typeof Bun.spawn> | undefined;
 let model: ReturnType<typeof Bun.serve> | undefined;
+let finishStream: (() => void) | undefined;
 let origin = "";
 
 async function command(...args: string[]): Promise<string> {
@@ -83,7 +85,7 @@ async function ask(client: Client, thread: string): Promise<Ask> {
 	return request;
 }
 
-async function scenario(client: Client, kind: "question" | "approval"): Promise<string> {
+async function scenario(client: Client, kind: "question" | "approval" | "stream"): Promise<string> {
 	const thread = await client.create({ title: `Acceptance ${kind}`, workspace, model: "ollama/octoii-acceptance", mode: "default" });
 	await client.deliver(thread, [{ type: "input_text", text: `[${kind}] Run the isolated acceptance scenario.` }]);
 	return thread;
@@ -116,24 +118,41 @@ try {
 							{ index: 0, id: "call_acceptance", type: "function", function: { name: question ? "question" : "write", arguments: JSON.stringify(args) } },
 						],
 					}
-				: { role: "assistant", content: "Acceptance scenario completed." };
+				: { role: "assistant", content: completion };
 			const chunk = (delta: unknown, finish: string | null): string =>
 				`data: ${JSON.stringify({ id: "chatcmpl-test", object: "chat.completion.chunk", created: 1, model: body.model, choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`;
-			return new Response(`${chunk(delta, null)}${chunk({}, callsTool ? "tool_calls" : "stop")}data: [DONE]\n\n`, {
-				headers: { "Content-Type": "text/event-stream" },
-			});
+			const end = `${chunk({}, callsTool ? "tool_calls" : "stop")}data: [DONE]\n\n`;
+			const headers = { "Content-Type": "text/event-stream" };
+			if (body.messages.some((message) => message.role === "user" && JSON.stringify(message.content).includes("[stream]"))) {
+				const encoder = new TextEncoder();
+				return new Response(
+					new ReadableStream({
+						start(controller) {
+							controller.enqueue(encoder.encode(chunk(delta, null)));
+							finishStream = () => {
+								controller.enqueue(encoder.encode(end));
+								controller.close();
+							};
+						},
+					}),
+					{ headers },
+				);
+			}
+			return new Response(`${chunk(delta, null)}${end}`, { headers });
 		},
 	});
 	await start();
 	const first = await connect();
 	const second = await connect();
 	await first.refreshModels();
+	const otherThread = await first.create({ title: "Acceptance other thread", workspace, model: "ollama/octoii-acceptance", mode: "default" });
 	for (let round = 0; round < 5; round++) {
 		const thread = await scenario(first, "question");
 		const request = await ask(first, thread);
+		await assert.rejects(second.answer(otherThread, request.id, { answers: [{ chosen: ["SQLite"] }] }), { code: "not_given" });
 		const results = await Promise.allSettled([
-			first.answer(thread, request.key, { answers: [{ chosen: ["SQLite"] }] }),
-			second.answer(thread, request.key, { answers: [{ chosen: ["Postgres"] }] }),
+			first.answer(thread, request.id, { answers: [{ chosen: ["SQLite"] }] }),
+			second.answer(thread, request.id, { answers: [{ chosen: ["Postgres"] }] }),
 		]);
 		assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
 		const rejected = results.find((result) => result.status === "rejected");
@@ -141,21 +160,21 @@ try {
 		await until(async () => (await first.threads()).find((row) => row.id === thread)?.status.turn === "replied", "question completed");
 		assert.equal((await second.threads()).find((row) => row.id === thread)?.status.asks.length, 0);
 	}
-	console.log("PASS: five concurrent answers accept exactly one decision and both clients see the request gone");
+	console.log("PASS: answers are scoped to their thread, and five reply races each accept one decision");
 	const denied = await scenario(first, "approval");
 	const waiting = await ask(first, denied);
 	await stop();
 	await until(() => first.status.value.status !== "open", "disconnect observed");
-	await assert.rejects(first.answer(denied, waiting.key, { decision: "deny", reason: "keep the file" }));
+	await assert.rejects(first.answer(denied, waiting.id, { decision: "deny", reason: "keep the file" }));
 	await start();
 	await until(() => first.status.value.status === "open" && second.status.value.status === "open", "clients reconnected");
-	assert.equal((await ask(second, denied)).key, waiting.key);
-	await first.answer(denied, waiting.key, { decision: "deny", reason: "keep the file" });
+	assert.equal((await ask(second, denied)).id, waiting.id);
+	await first.answer(denied, waiting.id, { decision: "deny", reason: "keep the file" });
 	await until(async () => (await first.threads()).find((row) => row.id === denied)?.status.turn === "replied", "denial completed");
 	await assert.rejects(readFile(target), { code: "ENOENT" });
 	console.log("PASS: waiting approval survives node restart, offline answering fails, and denial performs no write");
 	const allowed = await scenario(first, "approval");
-	await first.answer(allowed, (await ask(first, allowed)).key, { decision: "allow" });
+	await first.answer(allowed, (await ask(first, allowed)).id, { decision: "allow" });
 	await until(async () => (await first.threads()).find((row) => row.id === allowed)?.status.turn === "replied", "allowed write completed");
 	assert.equal(await readFile(target, "utf8"), "approved once");
 	console.log("PASS: allowing the real tool writes only the intended temporary file");
@@ -190,12 +209,12 @@ try {
 	const followed = uncertain.follow(committed);
 	const watched = uncertain.watchThreads();
 	await until(
-		() => followed.view().status?.asks[0]?.key === question.key && watched.view()?.find((row) => row.id === committed)?.status.asks[0]?.key === question.key,
+		() => followed.view().status?.asks[0]?.id === question.id && watched.view()?.find((row) => row.id === committed)?.status.asks[0]?.id === question.id,
 		"subscriptions see the waiting question",
 	);
-	await assert.rejects(uncertain.answer(committed, question.key, { answers: [{ chosen: ["SQLite"] }] }), { code: "connection-lost" });
+	await assert.rejects(uncertain.answer(committed, question.id, { answers: [{ chosen: ["SQLite"] }] }), { code: "connection-lost" });
 	assert.equal(dropped, true);
-	assert.equal(followed.view().status?.asks[0]?.key, question.key);
+	assert.equal(followed.view().status?.asks[0]?.id, question.id);
 	await until(() => uncertain.status.value.status === "open", "reconnected after lost acknowledgement");
 	await until(async () => (await uncertain.threads()).find((row) => row.id === committed)?.status.turn === "replied", "committed answer completed");
 	assert.equal((await uncertain.threads()).find((row) => row.id === committed)?.status.asks.length, 0);
@@ -210,6 +229,32 @@ try {
 	watched.release();
 	assert.equal(answerCalls, 1);
 	console.log("PASS: a lost acknowledgement reports uncertainty, reconnect recovers the committed answer, and no answer is resent");
+
+	let activeSocket: WebSocket | undefined;
+	const reader = await connect((socket) => {
+		activeSocket = socket;
+	});
+	const streamedThread = await scenario(reader, "stream");
+	const reading = reader.follow(streamedThread);
+	const completePart = () => [...reading.view().streaming].find(([, stream]) => stream.parts.some((part) => part.type === "delta" && part.text === completion));
+	await until(() => completePart() !== undefined, "first live output");
+	const initial = completePart();
+	assert.ok(initial && activeSocket);
+	let reset = false;
+	const observeReset = reading.subscribe(() => {
+		if (reading.view().streaming.size === 0) reset = true;
+	});
+	activeSocket.close();
+	await until(() => reset && completePart()?.[0] === initial[0], "the same request replayed after reset");
+	observeReset();
+	assert.ok(finishStream);
+	finishStream();
+	await until(
+		() => reading.view().status?.turn === "replied" && reading.view().streaming.size === 0 && reading.view().entries.some((entry) => entry.type === "reply"),
+		"the request closed and the durable reply arrived",
+	);
+	reading.release();
+	console.log("PASS: reconnect resets and replays the same live request; close leaves its durable reply");
 } finally {
 	for (const client of clients) client.close();
 	await stop();

@@ -6,6 +6,7 @@ import { cachedShare, contextOf, fullnessOf } from "../src/core/details.ts";
 type Step = Turn["steps"][number];
 
 const step = (usage?: { readonly input_tokens: number; readonly output_tokens: number }): Step => ({
+	id: "q",
 	request: "q",
 	streaming: [],
 	reply: {

@@ -105,7 +105,7 @@ async fn a_browser_and_a_program_reach_the_node_by_the_sessions_its_commands_mak
     let browser = [
         ("cookie", session.as_str()),
         ("origin", loopback.as_str()),
-        ("sec-websocket-protocol", "octoii.1"),
+        ("sec-websocket-protocol", octoii::protocol::SUBPROTOCOL),
     ];
     let welcome = welcomed(&address, &browser).await.expect("welcomed");
     assert_eq!(welcome["event"], "welcome");
@@ -117,15 +117,14 @@ async fn a_browser_and_a_program_reach_the_node_by_the_sessions_its_commands_mak
 
     verify_sign_in(&address, &loopback, &browser).await;
 
-    let unversioned = [("cookie", session.as_str()), ("origin", loopback.as_str())];
-    assert!(
-        welcomed(&address, &unversioned).await.is_err(),
-        "a socket of no version of the protocol's is refused"
-    );
+    let outdated = [browser[0], browser[1], ("sec-websocket-protocol", "octoii.1")];
+    for headers in [&browser[..2], &outdated] {
+        assert!(welcomed(&address, headers).await.is_err());
+    }
     let elsewhere = [
         ("cookie", session.as_str()),
         ("origin", "https://elsewhere.example"),
-        ("sec-websocket-protocol", "octoii.1"),
+        ("sec-websocket-protocol", octoii::protocol::SUBPROTOCOL),
     ];
     assert!(
         welcomed(&address, &elsewhere).await.is_err(),
@@ -135,7 +134,10 @@ async fn a_browser_and_a_program_reach_the_node_by_the_sessions_its_commands_mak
     let asked = json!({ "label": "script", "scopes": ["threads.read"] });
     let token = control::ask(&socket, Method::POST, "/tokens", Some(asked)).await.expect("a token");
     let bearer = format!("Bearer {}", token["token"].as_str().expect("a token"));
-    let program = [("authorization", bearer.as_str()), ("sec-websocket-protocol", "octoii.1")];
+    let program = [
+        ("authorization", bearer.as_str()),
+        ("sec-websocket-protocol", octoii::protocol::SUBPROTOCOL),
+    ];
     let welcome = welcomed(&address, &program).await.expect("welcomed");
     assert_eq!(welcome["scopes"], json!(["threads.read"]));
 

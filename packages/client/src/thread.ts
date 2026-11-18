@@ -1,12 +1,12 @@
 /**
  * A thread as a client follows it: its log's latest entries — as many as it keeps, read first, then each as it is
  * appended, the oldest let go past the bound, as a terminal keeps its latest lines — and older ones only as a reader
- * reads further back; its status as it changes; and what streams of each of its model's requests while it is answered,
- * by its offset, let go once the log holds what came of the request. Its subscription goes on from where its reader
- * stands, as a reader of a stream resumes from an offset, so every entry is taken once; what streamed, sent again from
- * each stream's start, is taken past what is held.
+ * reads further back. The subscription resumes log entries from its cursor. Live output is held by request identity
+ * and offset until that request closes. A stream reset rebuilds live output from retained parts and leaves the log intact.
  */
 import type { Cursor, Entry, EventOf, Status, Streamed, SubscriptionEvent } from "./protocol.ts";
+
+type LiveStream = { readonly key: string; readonly offset: bigint; readonly parts: readonly Streamed[] };
 
 /** A followed thread as the interface reads it. */
 export type ThreadView = {
@@ -18,8 +18,8 @@ export type ThreadView = {
 	readonly complete: boolean;
 	/** Its status, once the node told it. */
 	readonly status: Status | undefined;
-	/** What streamed of each request the log holds nothing of yet, by the request's id, in the order it came. */
-	readonly streaming: ReadonlyMap<string, readonly Streamed[]>;
+	/** Live output by exact request identity. */
+	readonly streaming: ReadonlyMap<string, LiveStream>;
 	/** Whether the thread is gone, as it was deleted. */
 	readonly gone: boolean;
 };
@@ -80,12 +80,22 @@ export class FollowedThread {
 			case "status":
 				return this.#publish({ ...view, status: event.status });
 			case "stream": {
-				// A stream is taken in order, each event at the offset that follows what is held: what comes again, as a stream
-				// sent from its start on subscribing again, is left.
-				const held = view.streaming.get(event.request) ?? [];
-				if (event.offset !== held.length) return;
-				return this.#publish({ ...view, streaming: new Map([...view.streaming, [event.request, [...held, event.data]]]) });
+				const offset = BigInt(event.offset);
+				const held = view.streaming.get(event.request);
+				if (held !== undefined && offset <= held.offset) return;
+				const streaming = new Map(view.streaming);
+				streaming.set(event.request, { key: event.key, offset, parts: [...(held?.parts ?? []), event.data] });
+				return this.#publish({ ...view, streaming });
 			}
+			case "stream_closed": {
+				if (!view.streaming.has(event.request)) return;
+				const streaming = new Map(view.streaming);
+				streaming.delete(event.request);
+				return this.#publish({ ...view, streaming });
+			}
+			case "streams_reset":
+				if (view.streaming.size === 0) return;
+				return this.#publish({ ...view, streaming: new Map() });
 			case "thread_gone":
 				return this.#publish({ ...view, gone: true });
 			default:
@@ -98,14 +108,10 @@ export class FollowedThread {
 	}
 }
 
-/** `view` with `event`'s entries appended, the oldest past `bound` let go, and the streams of the requests they settle. */
+/** `view` with the durable entries appended, the oldest past `bound` let go. */
 function appended(view: ThreadView, event: EventOf<"entries">, bound: number): ThreadView {
 	const all = [...view.entries, ...event.entries];
 	// Past its bound, the oldest entries are let go: the log keeps them, to read back.
 	const entries = all.length > bound ? all.slice(all.length - bound) : all;
-	const settled = new Set(event.entries.flatMap((entry) => ("request" in entry ? [entry.request] : [])));
-	const streaming = [...view.streaming.keys()].some((request) => settled.has(request))
-		? new Map([...view.streaming].filter(([request]) => !settled.has(request)))
-		: view.streaming;
-	return { ...view, entries, complete: view.complete && entries.length === all.length, streaming };
+	return { ...view, entries, complete: view.complete && entries.length === all.length };
 }

@@ -20,7 +20,7 @@ import {
 	write,
 } from "../src/core/asks.ts";
 
-const ask = (name: string, answer: JsonValue, payload: JsonValue = null): Ask => ({ process: "p", key: "a1", name, payload, answer_schema: answer });
+const ask = (name: string, answer: JsonValue, payload: JsonValue = null): Ask => ({ id: "request-1", key: "a1", name, payload, answer_schema: answer });
 
 /** A call's permission as Siphon asks it: the call by the model's id, what it would do, and what an always grants. */
 const permission = (tool: string, args: JsonValue, does: string[], always: { commands?: string[]; paths?: string[] } = {}): Ask =>

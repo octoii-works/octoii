@@ -24,7 +24,7 @@ async fn place(relay: &net::RelayUrl) -> Tunnel {
 /// The protocol's WebSocket at the peer, opened with the protocol's version and `bearer` where it is given: the first
 /// message it is sent.
 async fn welcomed(peer: &octoii_tunnel::Peer, bearer: Option<&str>) -> Result<Value, PeerError> {
-    let mut head = Request::builder().header("sec-websocket-protocol", "octoii.1");
+    let mut head = Request::builder().header("sec-websocket-protocol", octoii::protocol::SUBPROTOCOL);
     if let Some(bearer) = bearer {
         head = head.header("authorization", format!("Bearer {bearer}"));
     }

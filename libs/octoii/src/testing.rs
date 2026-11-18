@@ -369,16 +369,25 @@ impl Calling {
             .expect("an input");
         self.runtime.commit(changes).await.expect("started");
         let process = beak::layout::process(b"", key);
-        let request = beak::layout::request(&process, key);
         let mut committed = self.runtime.committed();
         let asked = async {
-            while self.runtime.snapshot().expect("a snapshot").stat(&request).expect("read").is_none() {
+            loop {
+                let snapshot = self.runtime.snapshot().expect("a snapshot");
+                if let Some(prompt) = self
+                    .runtime
+                    .person_requests(&snapshot, &process)
+                    .expect("prompts")
+                    .into_iter()
+                    .find(|prompt| prompt.id.key.as_ref() == key)
+                {
+                    return prompt.id;
+                }
                 committed.changed().await.expect("the runtime runs");
             }
         };
-        tokio::time::timeout(Duration::from_secs(10), asked).await.expect("asked in time");
+        let request = tokio::time::timeout(Duration::from_secs(10), asked).await.expect("asked in time");
         self.runtime
-            .answer(&process, key, &json!({ "trusted": trusted }))
+            .answer(&request, &json!({ "trusted": trusted }))
             .await
             .expect("answered");
         let decided = async {

@@ -260,20 +260,18 @@ async fn ended(runtime: &Runtime, path: &[u8]) -> Vec<(CallStatus, String)> {
     tokio::time::timeout(Duration::from_secs(10), waiting).await.expect("ended in time")
 }
 
-/// The key of the request named `name` the process at `path` waits on, once it does.
-async fn asked(runtime: &Runtime, path: &[u8], name: &[u8]) -> String {
+/// The person prompt named `name` below this process.
+async fn asked(runtime: &Runtime, path: &[u8], name: &[u8]) -> siphon_runtime::PersonRequest {
     let waiting = async {
         loop {
             let snapshot = runtime.snapshot().expect("a snapshot");
-            let query = beak::Query {
-                kind: layout::REQUEST_KIND,
-                name: layout::REQUEST_LABEL,
-                value: Some(name),
-                under: path,
-                after: None,
-            };
-            if let Some(found) = snapshot.find(&query, 10).expect("found").first() {
-                return String::from_utf8_lossy(&found.path).rsplit(':').next().expect("its key").to_owned();
+            if let Some(prompt) = runtime
+                .person_requests(&snapshot, path)
+                .expect("prompts")
+                .into_iter()
+                .find(|prompt| prompt.name.as_ref() == name)
+            {
+                return prompt;
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
@@ -488,9 +486,9 @@ async fn recovered_explorer_approval_cannot_grant_or_execute_an_unavailable_tool
     changes.start::<RecoveredCaller>(Bytes::new(), "restore", &asking).unwrap();
     runtime.commit(changes).await.unwrap();
     let path = layout::process(b"", b"restore");
-    let key = asked(&runtime, &path, b"siphon.permission").await;
+    let request = asked(&runtime, &path, b"siphon.permission").await;
     runtime
-        .answer(&path, key.as_bytes(), &json!({ "decision": "allow", "always": true }))
+        .answer(&request.id, &json!({ "decision": "allow", "always": true }))
         .await
         .unwrap();
     assert_eq!(ended(&runtime, &path).await[0].0, CallStatus::Unavailable);
@@ -534,8 +532,8 @@ async fn general_purpose_sub_threads_keep_normal_permissions_and_cannot_delegate
         calls: vec![call("approval", "write", &json!({ "path": target, "content": "changed" }))],
     };
     let path = caller(&runtime, "general-default", &asking).await;
-    let key = asked(&runtime, &path, b"siphon.permission").await;
-    runtime.answer(&path, key.as_bytes(), &json!({ "decision": "deny" })).await.unwrap();
+    let request = asked(&runtime, &path, b"siphon.permission").await;
+    runtime.answer(&request.id, &json!({ "decision": "deny" })).await.unwrap();
     assert_eq!(ended(&runtime, &path).await[0].0, CallStatus::Rejected);
     assert!(!target.exists());
     runtime.close().await;
@@ -601,35 +599,15 @@ async fn a_call_the_person_lets_go_ahead_for_good_is_granted_its_project_and_one
         ("permission", json!({ "decision": "allow", "always": true })),
         ("permission", json!({ "decision": "deny", "reason": "not there" })),
     ] {
-        let waiting = async {
-            loop {
-                let snapshot = runtime.snapshot().expect("a snapshot");
-                let asked = snapshot
-                    .find(
-                        &beak::Query {
-                            kind: layout::REQUEST_KIND,
-                            name: layout::REQUEST_LABEL,
-                            value: Some(b"siphon.permission"),
-                            under: &path,
-                            after: None,
-                        },
-                        10,
-                    )
-                    .expect("found");
-                if let Some(found) = asked.first() {
-                    let name = String::from_utf8_lossy(&found.path).rsplit(':').next().expect("its key").to_owned();
-                    let payload = snapshot.read(&layout::payload(&found.path), 0, u64::MAX).expect("read");
-                    let payload: serde_json::Value = serde_json::from_slice(&payload.unwrap_or_default()).expect("JSON");
-                    return (name, payload);
-                }
-                tokio::time::sleep(Duration::from_millis(20)).await;
-            }
-        };
-        let (request, payload) = tokio::time::timeout(Duration::from_secs(10), waiting).await.expect("asked in time");
-        assert!(request.ends_with(&format!(".{key}")));
+        let request = asked(&runtime, &path, b"siphon.permission").await;
+        let payload: serde_json::Value = serde_json::from_slice(&request.payload).expect("JSON");
         let call = payload["call"].as_str().expect("its call");
-        assert_eq!(request, format!("{call}.{key}"), "the ask names its call by Octoii's key of it");
-        runtime.answer(&path, request.as_bytes(), &answer).await.expect("answered");
+        assert_eq!(
+            request.id.key.as_ref(),
+            format!("{call}.{key}").as_bytes(),
+            "the ask names its call by Octoii's key of it"
+        );
+        runtime.answer(&request.id, &answer).await.expect("answered");
     }
     let said = ended(&runtime, &path).await;
     assert_eq!(said[0].0, CallStatus::Ok);
@@ -719,10 +697,10 @@ async fn a_tool_the_person_answers_is_answered_with_what_fits_what_it_asks() {
         calls: vec![call("q", "pick", &json!({ "colours": ["red", "blue"] }))],
     };
     let path = caller(&runtime, "p1", &asking).await;
-    let key = asked(&runtime, &path, b"siphon.asks").await;
-    let unfit = runtime.answer(&path, key.as_bytes(), &json!("green")).await;
+    let request = asked(&runtime, &path, b"siphon.asks").await;
+    let unfit = runtime.answer(&request.id, &json!("green")).await;
     assert!(matches!(unfit, Err(NotGiven::Unfit(_))), "{unfit:?}");
-    runtime.answer(&path, key.as_bytes(), &json!("blue")).await.expect("answered");
+    runtime.answer(&request.id, &json!("blue")).await.expect("answered");
     let said = ended(&runtime, &path).await;
     assert_eq!(said[0], (CallStatus::Ok, "picked blue".into()));
     runtime.close().await;

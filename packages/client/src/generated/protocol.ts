@@ -23,15 +23,14 @@ export type AddAccount = { provider: string, name: string, key: string, };
 export type AnswerDialog = { page: string, accept: boolean, text?: string, };
 
 /**
- * What a thread asks the person, by its request's key, answered with `answer`, which fits the schema the ask gives.
+ * An answer to the exact request shown to the person.
  */
-export type AnswerThread = { thread: string, key: string, answer: JsonValue, };
+export type AnswerThread = { thread: string, request: string, answer: JsonValue, };
 
 /**
- * A request a process of the thread waits on a person's answer to: the process, by its path, the request's key and
- * name, what it asks, and the JSON Schema the answer fits.
+ * A person prompt with its request identity, business key and answer schema.
  */
-export type Ask = { process: string, key: string, name: string, payload: JsonValue, answer_schema: JsonValue, };
+export type Ask = { id: string, key: string, name: string, payload: JsonValue, answer_schema: JsonValue, };
 
 /**
  * A literal branch reference and its current commit. Remote HEAD aliases are omitted.
@@ -905,7 +904,7 @@ export type SignInBegun = { url: string, };
  * request's stream; the threads as they stand, first, then a thread of the list as it changed, or gone; the settings
  * as they changed.
  */
-export type SiphonEvent = { "event": "entries", subscription: string, entries: Array<Entry>, cursor: Cursor, } | { "event": "status", subscription: string, status: Status, } | { "event": "stream", subscription: string, request: string, offset: number, data: Streamed, } | { "event": "threads", subscription: string, threads: Array<Listed>, } | { "event": "thread", subscription: string, thread: Listed, } | { "event": "thread_gone", subscription: string, thread: string, } | { "event": "settings", subscription: string, settings: Settings, };
+export type SiphonEvent = { "event": "entries", subscription: string, entries: Array<Entry>, cursor: Cursor, } | { "event": "status", subscription: string, status: Status, } | { "event": "stream", subscription: string, request: string, key: string, offset: string, data: Streamed, } | { "event": "stream_closed", subscription: string, request: string, } | { "event": "streams_reset", subscription: string, } | { "event": "threads", subscription: string, threads: Array<Listed>, } | { "event": "thread", subscription: string, thread: Listed, } | { "event": "thread_gone", subscription: string, thread: string, } | { "event": "settings", subscription: string, settings: Settings, };
 
 /**
  * What a client subscribes to of Siphon's: a thread — its entries from where the client stood, none for from the start, then its

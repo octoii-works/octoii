@@ -517,7 +517,8 @@ Topic followers receive a reset followed by retained parts from a fresh subscrip
 lag. Selecting the retained parts and subscribing to live events occur in the same stream task operation.
 Send replay parts individually within the existing buffer limits. A reset replaces the subscriber's volatile
 stream state, including any closed stream whose final event fell out of the broadcast buffer. Durable log
-entries and their cursor continue independently. Live data can have offset gaps within a topic.
+entries and their cursor continue independently. The follower keeps a pending resubscription while the caller
+processes a log update. Live data can have offset gaps within a topic.
 
 Expose a typed pending-request query on Beak snapshots, scoped by subtree and request name. It uses the
 existing request index and identity decoder. Siphon lists person prompts from the supplied snapshot using
@@ -530,9 +531,10 @@ answer carries the thread, request ID and value. Encode the byte fields and sequ
 Stream data carries the same opaque identity, its business key, and a lossless offset. The client keys
 pending submissions and live output by identity, accepts increasing offsets, and applies exact close and
 reset events. Business keys still associate calls and persisted timeline entries. Stream eviction follows
-the stream's lifecycle. Reconnect restores the current prompts and live streams without retrying a reply.
+the stream's lifecycle. Reconnect restores the current prompts and live streams without retrying a reply. The
+Node version is `0.0.2` so the bundled desktop runtime check can identify a running Node from before the change.
 
-Proposed private scope, relative to `devxiyang/octoii-siphon`
+Confirmed private scope, relative to `devxiyang/octoii-siphon`
 
 | Files | Change |
 | --- | --- |
@@ -554,6 +556,16 @@ lost during reconnect does not cause a resend. Run the existing ABI 4 request co
 against a real node. The stream's live/replay boundary and the identity comparison inside the reply commit
 belong to Siphon and Beak. A product-only change would still depend on already merged runtime output and
 an address-based reply operation.
+
+Private commit `5ff8240`. Stream tests cover shared keys, exact close, late publications, topic gaps, and
+resubscription after lag even when a log update interrupts the read. The person reply tests cover replacement
+before and during validation. The Node and client acceptance covers cross-thread refusal, competing answers,
+restart with a pending prompt, and a lost acknowledgement without a resend. The same client reconnects during
+a model stream, replays the original request, and sees its durable reply after the live stream closes.
+
+On macOS ARM64 with Rust 1.100, Beak passed 164 tests, Siphon passed 33, and Octoii passed 255 with the live
+model and Claude Code tests ignored. Three independent C consumers and 13 public Rust tests passed against
+ABI 4. The Rust dependency check, scoped strict Clippy, `bun run check`, and nine real-Node client tests passed.
 
 ### Public binary interface
 

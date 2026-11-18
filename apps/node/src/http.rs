@@ -1,6 +1,6 @@
 //! The node's HTTP, as each way a client reaches it carries it — HTTP/1.1 and HTTP/2 on the loopback, HTTP/3 in a
 //! device's tunnel session — one router for both: the protocol's WebSocket at `/ws`, its version agreed by the
-//! subprotocol `octoii.1` — opened by an upgrade on the loopback, by extended CONNECT (RFC 9220) in a tunnel session —
+//! subprotocol — opened by an upgrade on the loopback, by extended CONNECT (RFC 9220) in a tunnel session —
 //! its client known by the session it holds: a browser's in its cookie, a program's as a bearer token, a device's by
 //! the key its tunnel session shows; the one request a client pairs by, `/pair`, which redeems a link's credential for
 //! a session — a browser's held in an `HttpOnly` cookie its page cannot read, a device's by its key; and the web app's
@@ -139,8 +139,7 @@ fn offers_protocol(headers: &HeaderMap) -> bool {
 }
 
 fn unversioned() -> Response {
-    let why = "the WebSocket asks for no protocol of this node's: octoii.1";
-    Denied(StatusCode::BAD_REQUEST, why.into()).into_response()
+    Denied(StatusCode::BAD_REQUEST, format!("the WebSocket must offer {SUBPROTOCOL}")).into_response()
 }
 
 /// The protocol's WebSocket on the loopback, upgraded, for the session the request holds.

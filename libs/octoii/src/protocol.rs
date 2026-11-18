@@ -1,5 +1,5 @@
 //! Siphon's protocol, as a client speaks it over its WebSocket — the version agreed as the socket opens, by its
-//! subprotocol `octoii.1`: the welcome first; then each call the client makes, by its id, its method and the method's
+//! subprotocol `octoii.2`: the welcome first; then each call the client makes, by its id, its method and the method's
 //! params, answered once by that id with its result or the error it was refused with; and the events of each
 //! subscription the client holds, as what it follows changes. A subscription that falls behind what its client reads
 //! is let go and told it lagged, with the topic to subscribe to again from where it stood.
@@ -21,7 +21,7 @@ pub use typescript::{Declarations, typescript};
 pub use {serde, serde_json, ts_rs};
 
 /// The subprotocol a client's WebSocket asks for, which names the protocol's version.
-pub const SUBPROTOCOL: &str = "octoii.1";
+pub const SUBPROTOCOL: &str = "octoii.2";
 
 /// A call a client makes: its id, by which its answer comes, its method's name and the method's params.
 #[derive(Debug, Clone, PartialEq, Deserialize)]

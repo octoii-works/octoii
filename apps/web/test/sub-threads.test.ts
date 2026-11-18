@@ -38,7 +38,7 @@ const delegation = (id: string, state: CallLine["state"] = "done"): CallLine => 
 
 describe("sub-threads", () => {
 	it("wait on the person where they ask something", () => {
-		const ask = { process: "x", key: "k1", name: "permission", payload: null, answer_schema: null };
+		const ask = { id: "request-1", key: "k1", name: "permission", payload: null, answer_schema: null };
 		const asking = { ...sub("running"), id: "s1", status: { ...sub("running").status, asks: [ask] } };
 		const other = { ...sub("running"), id: "s2" };
 		const elsewhere = { ...asking, id: "s3", parent: { kind: "general_purpose" as const, thread: "q", call: "c" } };

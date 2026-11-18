@@ -33,8 +33,8 @@ the cutover.
 | --- | --- | --- |
 | Beak request recovery | `beak-process/src/scheduler.rs` empties occupied answer slots on reopen to repair mail written by the old rules. The current request transaction opens an empty slot and reserves it for the exact reply. | Remove the old-state repair. Verify current-format wait recovery and retelling. Reject a broken slot invariant before dispatch. |
 | Fiber persistence | Previous revisions used `system.program` and the `"program"` checkpoint spelling for a Fiber. | Completed in the Fiber label and volume format batch below. Beak uses `system.fiber`, Octoii reads the typed process record, and the new format is checked at open. |
-| Person replies | Siphon still exposes an address-based human answer call. Octoii scans a thread by mailbox key, and clients submit that key. | Replace this route with the exact committed request identity throughout the prompt and reply. Use the same snapshot for the prompt, schema and identity, then verify the identity again in the reply transaction. |
-| Streams | Siphon retains output, offsets and close handling by mailbox key. The client also deduplicates by that key and expects contiguous offsets. A subscription to one topic can see gaps in a request-wide offset sequence. | Carry the request identity and offsets through live delivery, replay, closure and reconnect. Use the mailbox key for business correlation. The client tracks the highest accepted offset for the exact request and accepts later offsets on the subscribed topic. |
+| Person replies | B2.2c.2 replaced address-based replies with the exact committed identity. Siphon reads the prompt and schema from one snapshot, then validates that identity again in the reply transaction. | Expose the same typed query and answer through the public SDK. |
+| Streams | B2.2c.2 bound live output, replay and close to the exact request. The client accepts increasing offsets with gaps and resets live state on resubscribe. | Expose the stream contract through the public SDK. |
 | Octoii persisted settings and threads | A child missing its kind becomes General Purpose. A stored disabled-extension list silently filters out `base`. Both historical cases have explicit regression tests. | Require a child kind and validate the mandatory base extension on persisted reads and writes. Keep the current creation defaults for fields that are optional by contract. |
 | Raw kernel access | Octoii opens Beak before starting Siphon, puts `Kernel` in the extension registrar, and uses `Runtime::kernel()` for commands, namespaces and IDs. Browser, Claude Code and Terminals take command handles during registration. Node accesses native snapshots and changes for files and sessions. | Register callbacks and assemble extension configuration through the public runtime builder. Give services typed volume, ID and machine capabilities before any resumed work can call them. Node and extensions use Octoii's product interfaces. Retire the raw kernel setup path after its callers move. |
 
@@ -46,15 +46,10 @@ in Octoii and its extensions.
 
 ## Implementation order
 
-1. **Finish [B2.2c.2](SIPHON_LIFECYCLE.md#b22c2-bind-streams-and-browser-replies-to-request-identity) and settle the current format.**
-   Send the committed request identity with every streamed event and person prompt. Carry it through
-   deduplication, close handling, and pending form state. Send the same
-   identity back on reply and verify the request belongs to the selected thread. Keep business keys for tool
-   and timeline correlation. Give clients a lossless wire identity and regenerate their protocol bindings with
-   the new subprotocol. Define how a fresh subscription restores the active streams, including a close
-   missed during reconnect. Exercise two requests sharing a key, a replacement while the browser still holds
-   the old prompt, closed streams, and replay after a gap. Remove the confirmed legacy behaviors in small
-   scoped batches before freezing the public contract and storage format.
+1. **Settle the current format.**
+   [B2.2c.2](SIPHON_LIFECYCLE.md#b22c2-bind-streams-and-browser-replies-to-request-identity) migrated Siphon,
+   Node and client source consumers to the exact request identity. Remove the remaining confirmed legacy
+   behaviors in scoped batches before freezing the public contract and storage format.
 2. **Fill the public SDK gaps from actual callers.** Extend the C declarations and safe Rust wrapper together.
    Group the work around capabilities the product already needs:
 

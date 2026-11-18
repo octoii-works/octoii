@@ -167,22 +167,17 @@ async fn ended_call(runtime: &Runtime, path: &[u8]) -> CallResult {
 }
 
 /// The path and key of the permission a process under `under` asks, once one does.
-async fn permission(runtime: &Runtime, under: &[u8]) -> (Vec<u8>, String) {
+async fn permission(runtime: &Runtime, under: &[u8]) -> siphon_runtime::RequestId {
     let waiting = async {
         loop {
             let snapshot = runtime.snapshot().expect("a snapshot");
-            let query = beak::Query {
-                kind: layout::REQUEST_KIND,
-                name: layout::REQUEST_LABEL,
-                value: Some(b"siphon.permission"),
-                under,
-                after: None,
-            };
-            if let Some(found) = snapshot.find(&query, 10).expect("found").first() {
-                let path = String::from_utf8_lossy(&found.path).into_owned();
-                let marker = format!("/{}:", String::from_utf8_lossy(layout::REQUEST_KIND));
-                let (process, key) = path.rsplit_once(&marker).expect("a request's path");
-                return (process.as_bytes().to_vec(), key.to_owned());
+            if let Some(prompt) = runtime
+                .person_requests(&snapshot, under)
+                .expect("prompts")
+                .into_iter()
+                .find(|prompt| prompt.name.as_ref() == b"siphon.permission")
+            {
+                return prompt.id;
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
@@ -251,8 +246,8 @@ async fn a_call_that_waits_on_the_person_is_waited_for_and_one_they_decline_reje
     );
     let path = executed(&runtime, workspace, &code).await;
     for answer in [json!({ "decision": "allow" }), json!({ "decision": "deny", "reason": "not b" })] {
-        let (process, key) = permission(&runtime, &path).await;
-        runtime.answer(&process, key.as_bytes(), &answer).await.expect("answered");
+        let request = permission(&runtime, &path).await;
+        runtime.answer(&request, &answer).await.expect("answered");
     }
     let (status, said) = ended(&runtime, &path).await;
     assert_eq!(status, CallStatus::Ok);
@@ -638,11 +633,8 @@ async fn structured_results_survive_restart_without_repeating_completed_calls() 
     std::fs::write(workspace.join("read.txt"), "after restart").expect("changed");
     drop(first);
     let resumed = runtime(&beak, options);
-    let (process, key) = permission(&resumed, &path).await;
-    resumed
-        .answer(&process, key.as_bytes(), &json!({ "decision": "allow" }))
-        .await
-        .expect("approved");
+    let request = permission(&resumed, &path).await;
+    resumed.answer(&request, &json!({ "decision": "allow" })).await.expect("approved");
     let result = ended_call(&resumed, &path).await;
     assert_eq!(result.text, "\"before restart\"");
     assert_eq!(std::fs::read_to_string(outside.join("approved.txt")).expect("written"), "approved");
