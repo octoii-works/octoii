@@ -526,13 +526,13 @@ the registered names and derives each schema from its own prompt. The answer met
 verifies it in the current snapshot before reading the schema, and submits the same identity to the Beak
 transaction. Octoii checks that the process belongs to the selected thread under its existing permissions.
 
-Migrate the wire contract to `octoii.2`. An Ask carries an opaque request ID and its business key. The
-answer carries the thread, request ID and value. Encode the byte fields and sequence numbers losslessly.
+An Ask carries an opaque request ID and its business key. The answer carries the thread, request ID and value.
+The wire format encodes the byte fields and sequence numbers losslessly.
 Stream data carries the same opaque identity, its business key, and a lossless offset. The client keys
 pending submissions and live output by identity, accepts increasing offsets, and applies exact close and
 reset events. Business keys still associate calls and persisted timeline entries. Stream eviction follows
-the stream's lifecycle. Reconnect restores the current prompts and live streams without retrying a reply. The
-Node version is `0.0.2` so the bundled desktop runtime check can identify a running Node from before the change.
+the stream's lifecycle. Reconnect restores the current prompts and live streams without retrying a reply.
+During pre-release development, Node uses version `0.0.1` and the WebSocket subprotocol is `octoii.1`.
 
 Confirmed private scope, relative to `devxiyang/octoii-siphon`
 

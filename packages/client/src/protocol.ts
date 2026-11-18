@@ -9,7 +9,7 @@ import type { Event, Methods } from "./generated/protocol.ts";
 export * from "./generated/protocol.ts";
 
 /** The protocol's version, as the socket names it in `Sec-WebSocket-Protocol`. */
-export const PROTOCOL = "octoii.2";
+export const PROTOCOL = "octoii.1";
 
 export type MethodName = keyof Methods;
 export type ParamsOf<Name extends MethodName> = Methods[Name]["params"];

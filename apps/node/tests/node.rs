@@ -117,8 +117,8 @@ async fn a_browser_and_a_program_reach_the_node_by_the_sessions_its_commands_mak
 
     verify_sign_in(&address, &loopback, &browser).await;
 
-    let outdated = [browser[0], browser[1], ("sec-websocket-protocol", "octoii.1")];
-    for headers in [&browser[..2], &outdated] {
+    let unsupported = [browser[0], browser[1], ("sec-websocket-protocol", "unsupported")];
+    for headers in [&browser[..2], &unsupported] {
         assert!(welcomed(&address, headers).await.is_err());
     }
     let elsewhere = [

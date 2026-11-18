@@ -1,7 +1,7 @@
 [package]
 name = "octoii-node"
 description = "Octoii's node, the `octoii` program: Octoii and its built-in extensions on this computer, served to the person's clients on the loopback and through the tunnel, its Home kept"
-version = "0.0.2"
+version = "0.0.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
