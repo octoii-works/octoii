@@ -476,7 +476,7 @@ identity through validation into the commit. This closes the race between valida
 prompts still need to carry the identity of the request the person actually saw, in the next slice.
 The existing host ABI reply handle remains scoped to its delivery and uses the same Rust answer path.
 
-Proposed private scope, relative to `devxiyang/octoii-siphon`
+Confirmed private scope, relative to `devxiyang/octoii-siphon`
 
 | Files | Change |
 | --- | --- |
@@ -491,6 +491,14 @@ mail and a replacement racing schema validation affect only the intended slot. V
 failed writes without notices, and reopen retelling once with the original identity. Run the existing binary
 request consumers against the same ABI 4. Extensions see a request only after Beak has prepared and committed
 its transitions. They cannot enforce the answer-slot invariant or reject a stale reply inside that transaction.
+
+Private commit `68d010a`. The Beak tests cover final delivery, stale replies, reserved slots, aborts, and the
+original request identity across reopen. The Siphon tests cover a late host answer and a replacement during
+human schema validation. The Octoii recovered approval fixture now gives its answer through the runtime,
+after the approval request commits, and still checks that an unavailable explorer tool cannot run or grant access.
+On macOS ARM64, Beak passed 161 tests, Siphon passed 30, and Octoii passed 105 with one live model test ignored.
+Three C consumers and 13 Rust consumer tests passed against ABI 4. Formatting, scoped strict Clippy, Node's
+all-target check, and the Rust dependency check passed.
 
 ### Following slices
 

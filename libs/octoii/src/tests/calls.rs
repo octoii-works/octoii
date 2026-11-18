@@ -17,7 +17,7 @@ use bytes::Bytes;
 use octoii_ai::vocabulary::InputContent;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use siphon_runtime::{Asked, Changes, Ending, Fiber, NotGiven, Options, Run, Runtime};
+use siphon_runtime::{Asked, Changes, Ending, Fiber, NotGiven, Options, Run, Runtime, Wait};
 
 #[test]
 fn a_waiting_tool_fiber_reads_the_existing_call_checkpoint() {
@@ -434,7 +434,7 @@ async fn explorer_scripts_expose_readers_and_cannot_request_write_permissions() 
     runtime.close().await;
 }
 
-/// A persisted permission state and its queued Allow(always) answer, before the real Calls resumes it.
+/// Recreates a permission wait whose answer the current call rules must recheck.
 struct RecoveredCaller;
 impl Fiber for RecoveredCaller {
     const KIND: &'static str = "test.recovered_caller";
@@ -448,8 +448,9 @@ impl Fiber for RecoveredCaller {
         let mut calls = Calls::new(run, input.calls)?;
         let call = &mut calls.0[0];
         call.state = crate::tools::State::Asking;
+        let key = format!("{}.permission", call.key);
         run.request(
-            &format!("{}.permission", call.key),
+            &key,
             &Permission {
                 thread: input.thread,
                 call: call.key.clone(),
@@ -462,16 +463,7 @@ impl Fiber for RecoveredCaller {
                 always: crate::tools::permissions::Grants::default(),
             },
         )?;
-        run.changes.send(
-            bytes::Bytes::copy_from_slice(run.path()),
-            siphon_runtime::Mail {
-                key: format!("{}.permission", call.key).into(),
-                name: Bytes::from_static(b"answered"),
-                payload: serde_json::to_vec(&crate::tools::requests::Decision::Allow { always: true })?.into(),
-            },
-            None,
-        );
-        Ok(Ending::Next(calls))
+        Ok(Ending::Wait(calls, Wait::new().mail(key)))
     }
 }
 
@@ -493,6 +485,11 @@ async fn recovered_explorer_approval_cannot_grant_or_execute_an_unavailable_tool
     changes.start::<RecoveredCaller>(Bytes::new(), "restore", &asking).unwrap();
     runtime.commit(changes).await.unwrap();
     let path = layout::process(b"", b"restore");
+    let key = asked(&runtime, &path, b"siphon.permission").await;
+    runtime
+        .answer(&path, key.as_bytes(), &json!({ "decision": "allow", "always": true }))
+        .await
+        .unwrap();
     assert_eq!(ended(&runtime, &path).await[0].0, CallStatus::Unavailable);
     assert!(!target.exists());
     assert_eq!(
