@@ -19,11 +19,11 @@ the cutover.
   the private repo. Cargo metadata resolves 20 product packages. `octoii` and `octoii-node` both declare
   direct path dependencies on Beak and Siphon Runtime. The product CI reads the gitlink, checks out the
   private repo with `SIPHON_DEPLOY_KEY`, and tests all three source workspaces.
-- The local public wrapper at `af8212e` and development ABI 4 cover storage writes, retained snapshots, fibers,
-  host request callbacks, directory reads, and reopen. The product still needs indexed snapshot queries,
-  the journal, streaming, person replies, and machine operations. The wrapper's build reads a local archive
-  and verifies the ABI, target, and hash. It rejects native linking outside macOS. Native binary consumers
-  have run on macOS ARM64.
+- The local public wrapper at `44bf843` and development ABI 4 cover storage writes, retained snapshots, fibers,
+  host request callbacks, directory reads, indexed label queries, metadata changes, and reopen. The product
+  still needs the journal, process state, streaming, person replies, and machine operations. The wrapper's
+  build reads a local archive and verifies the ABI, target, and hash. It rejects native linking outside macOS.
+  Native binary consumers have run on macOS ARM64.
 - The public default branch is `ee0b752` and the release list is empty. The crates.io lookup for
   `octoii-siphon-lib` returns 404. The product therefore has no published artifact to switch to yet.
   [GitHub releases](https://github.com/octoii-works/octoii-siphon-lib/releases) · [crates.io lookup](https://crates.io/api/v1/crates/octoii-siphon-lib)
@@ -212,9 +212,9 @@ Octoii reads the directory, status and pending prompts of a thread from one immu
 state and attachment access use the same directory lookup, which excludes threads being removed.
 
 Thread deletion finds descendants by parent label. Settings and thread creation also write directory
-metadata. Add `find` to the binary snapshot and `meta` to the atomic changes batch. Use the same label index
-and metadata transaction for native Rust, C and the public Rust SDK. Both operations are available during
-a Fiber phase.
+metadata. The binary snapshot exposes `find`, and the atomic changes batch exposes `meta`. Native Rust,
+C and the public Rust SDK use the same label index and metadata transaction. Both operations are available
+during a Fiber phase.
 
 `find` takes the directory kind, label name, optional exact value, subtree, exclusive path cursor and limit.
 Results are ordered by full byte path. Each result includes the matched label value and the same entry view
@@ -222,7 +222,7 @@ used by `stat` and `list`. `meta` accepts label and annotation pairs. In the C c
 means removal and a present zero-length value means an empty value. In the Rust SDK this distinction is
 `Option<&[u8]>`. A phase reads from its immutable snapshot while its writes are staged for commit.
 
-Proposed scope
+Confirmed scope
 
 | Repository | Files | Change |
 | --- | --- | --- |
@@ -230,9 +230,13 @@ Proposed scope
 | Public SDK | `src/{lib,sys,fiber,snapshot}.rs`, `include/siphon.h`, `tests/{storage,fiber}.rs` | Expose typed queries and named metadata changes to retained snapshots, batches and Fiber callbacks. |
 
 Extensions cannot provide new binary symbols or publish metadata and index updates in the same native
-transaction. Verify full-path paging, a subtree boundary, any value versus an empty or exact byte value,
-metadata removal, and index visibility on the old and new snapshots. Check both C and standalone Rust
-against the private archive.
+transaction.
+
+Private commit `f71f1cb` and public commit `44bf843`. The independent tests exercise full-path paging,
+subtree boundaries, searches for any value, searches for empty or exact byte values, and metadata removal.
+Retained snapshots keep their own index view. A rejected batch preserves the previous metadata and index.
+Fiber tests read the commit that follows a staged change. On macOS ARM64, 34 Siphon tests, three C consumers,
+and 15 standalone Rust SDK tests passed against the current build. Strict Clippy passed for both workspaces.
 
 ## Completion checks
 
