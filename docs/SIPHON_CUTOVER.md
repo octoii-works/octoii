@@ -21,9 +21,9 @@ the cutover.
   packages. The macOS ARM64 product graph resolves 11 private source packages. The product graph has no
   dependency on `octoii-siphon-lib`. Product CI reads the gitlink, checks out the private repo with
   `SIPHON_DEPLOY_KEY`, and tests all three source workspaces.
-- The local public wrapper at `b025e59` and development ABI 4 cover storage writes, retained snapshots, fibers,
+- The local public wrapper at `227fe4f` and development ABI 4 cover storage writes, retained snapshots, fibers,
   host request callbacks, directory reads, indexed label queries, metadata changes, the commit journal,
-  Fiber records and lifecycle changes, volume IDs, time, file retention, and reopen. The wrapper builds
+  Fiber records and lifecycle changes, ordinary mail, volume IDs, time, file retention, and reopen. The wrapper builds
   from a local archive and verifies the ABI, target, and hash. It rejects native linking outside macOS.
   Native binary consumers have run on macOS ARM64.
 - The GitHub release list was empty and the crates.io sparse index returned 404 on 2026-11-18. The SDK
@@ -92,7 +92,6 @@ Each private implementation batch lists its exact files and technical dependency
 
 | Work | Completion condition |
 | --- | --- |
-| Writes and Fiber lifecycle | Expose plain mail and selector-based waits. The SDK has both removal operations, signal reasons, reaping, and usage charges. |
 | Runtime events and requests | Carry commit notifications, exact request identities, person replies, stream replay, closure, and cancellation through the binary. Exercise these while reopening and shutting down. |
 | Machine capabilities | Move namespaces, file views, restricted commands, terminal I/O and coprocess channels behind the native SDK. Bring each supported platform up to the same ownership and permission contract. |
 | Product adoption | Build Octoii and Node against a local binary candidate. Migrate startup registration and host callbacks, then verify real turns, approval, workspace tools, stop, and reopen. |
@@ -362,6 +361,33 @@ Private commit `6f79d2d` and public SDK commit `b025e59`. The binary consumers v
 refusal of an early reap, a reaped record's disappearance, and the behavior of both removal operations.
 The SDK tests check batch and phase charges in committed Fiber records. On macOS ARM64, 36 Siphon tests,
 three C consumers, 20 standalone Rust SDK tests and 257 Octoii tests passed. The two external Octoii
+tests were ignored. Strict Clippy passed for all three workspaces.
+
+## Ordinary Fiber mail
+
+Thread completion reports read ordinary mail through `Run::mail` and check the message name before taking it.
+A change batch can send a named payload to a Fiber, with
+an optional creation sequence that fences the delivery to that incarnation. The same batch governs mail
+sent from a phase. The phase reads the message from its immutable snapshot and stages consumption in its
+changes. Mail keys, names, and payloads are byte strings. The keyed mail wait wakes when that entry arrives.
+
+Request answers and ordinary mail use one native read of the mailbox entry. The request answer operation
+decodes that entry according to its type, and the commit still owns the reservation for an unanswered request.
+The product uses keyed mail, child, directory-change, and deadline waits. These cover its current wait sites.
+
+Confirmed scope
+
+| Repository | Files | Change |
+| --- | --- | --- |
+| Private Siphon | `crates/siphon-runtime/src/fiber.rs`, `crates/siphon-ffi/src/{changes,fiber}.rs`, `crates/siphon-ffi/include/siphon.h`, `crates/siphon-ffi/tests/c/fiber.c` | Share the native mailbox read, expose delivery and phase reads, and accept byte keys for staged consumption. |
+| Public SDK | `src/{lib,sys,fiber}.rs`, `include/siphon.h`, `tests/{fiber,request}.rs` | Expose owned mail, send and consume it through the phase and change batch, and exercise byte-keyed waits. |
+
+The commit owns the incarnation check and the reservation for a pending answer.
+
+Private commit `e33d812` and public SDK commit `227fe4f`. Independent consumers verify a byte-keyed message
+waking a phase, consumption becoming visible after commit, refusal of a wrong creation sequence, and protection
+of a reserved answer slot. The phase test also sends mail through its own batch. On macOS ARM64, 36 Siphon
+tests, three C consumers, 21 standalone Rust SDK tests and 257 Octoii tests passed. The two external Octoii
 tests were ignored. Strict Clippy passed for all three workspaces.
 
 ## Completion checks

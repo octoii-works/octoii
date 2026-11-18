@@ -104,13 +104,11 @@ pub fn tell(snapshot: &Snapshot, changes: &mut Changes, reply_to: &ReplyTo, ende
 /// # Errors
 /// The volume's failure; a mail not as `tell` writes it.
 pub fn ended_mail(run: &mut siphon_runtime::Run<'_>, key: &str) -> anyhow::Result<Option<Ended>> {
-    let path = beak::layout::mail(run.path(), key.as_bytes());
-    if run.snapshot().stat(&path)?.is_none() {
-        return Ok(None);
-    }
-    let payload = run.snapshot().read(&beak::layout::payload(&path), 0, u64::MAX)?.unwrap_or_default();
+    let Some(mail) = run.mail(key.as_bytes())? else { return Ok(None) };
+    anyhow::ensure!(mail.name == ENDED_MAIL.as_bytes(), "unexpected completion mail name");
+    let ended = serde_json::from_slice(&mail.payload)?;
     run.take_mail(key);
-    Ok(Some(serde_json::from_slice(&payload)?))
+    Ok(Some(ended))
 }
 
 /// How the turn of the thread `thread` that took an input ended, as `ended` says — none, the thread deleted before it
