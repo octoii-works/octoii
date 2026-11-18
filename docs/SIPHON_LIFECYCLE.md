@@ -263,7 +263,7 @@ answer retry waits and retries only on `WriteAborted`. Other errors follow its e
 R06c covers retaining completed Fiber results through retry and publishing terminal runtime failures to the host.
 This batch uses the existing segment format and public ABI 4.
 
-Proposed private scope, relative to `devxiyang/octoii-siphon`
+Confirmed private scope, relative to `devxiyang/octoii-siphon`
 
 | Files | Change |
 | --- | --- |
@@ -279,6 +279,13 @@ writes, then verify the live root, journal and indexes, the immediate rejection 
 and ordered journal after recovery and a later append. Re-run the Beak and Siphon suites and the linked ABI 4
 consumers. An extension sees only the published state and errors after Beak has attempted the write. It cannot
 resolve the log tail or stop other mutations on the same writer.
+
+Private commit `3627372`. Fault injection covered preallocation, partial and complete appends, a damaged log
+with a complete stale record after the break, and collection's copy into the active segment. The Beak Rust
+interface and Siphon answer retry tests verified the error classification. On macOS ARM64 with Rust 1.100,
+Beak passed 152 tests, Siphon passed 23 tests, and the linked ABI 4 consumers passed three C cases and 13 Rust
+tests. Octoii passed 105 library tests with the live model test ignored. Node's all-target check, the Rust
+dependency check, formatting and strict Beak/Siphon Clippy passed.
 
 ## Command cleanup and binary streaming
 
