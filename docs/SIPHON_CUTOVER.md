@@ -19,10 +19,11 @@ the cutover.
   the private repo. Cargo metadata resolves 20 product packages. `octoii` and `octoii-node` both declare
   direct path dependencies on Beak and Siphon Runtime. The product CI reads the gitlink, checks out the
   private repo with `SIPHON_DEPLOY_KEY`, and tests all three source workspaces.
-- The local public wrapper at `42e61c2` and development ABI 4 cover storage writes, retained snapshots, fibers,
-  host request callbacks, and reopen. The ABI still lacks the product's snapshot queries, journal, streaming,
-  person replies, and machine operations. The wrapper's build reads a local archive and verifies the ABI,
-  target, and hash. It rejects native linking outside macOS. Native binary consumers have run on macOS ARM64.
+- The local public wrapper at `af8212e` and development ABI 4 cover storage writes, retained snapshots, fibers,
+  host request callbacks, directory reads, and reopen. The product still needs indexed snapshot queries,
+  the journal, streaming, person replies, and machine operations. The wrapper's build reads a local archive
+  and verifies the ABI, target, and hash. It rejects native linking outside macOS. Native binary consumers
+  have run on macOS ARM64.
 - The public default branch is `ee0b752` and the release list is empty. The crates.io lookup for
   `octoii-siphon-lib` returns 404. The product therefore has no published artifact to switch to yet.
   [GitHub releases](https://github.com/octoii-works/octoii-siphon-lib/releases) · [crates.io lookup](https://crates.io/api/v1/crates/octoii-siphon-lib)
@@ -163,17 +164,16 @@ The Node attachment routes load and keep thread files through Octoii's `Volume`.
 content-addressed storage use the same primitives as attachments accepted with a thread's first input.
 
 Octoii reads volume entries to find threads, load their configuration and settings, page their inboxes,
-and serve attached files. The native snapshot already reads file bytes. Add `stat` for one entry and
-`list` for a directory page. Both retained snapshots and the snapshot borrowed during a Fiber phase use
-the same read interface.
+and serve attached files. `stat` reads one entry and `list` reads a directory page. Both retained snapshots
+and the snapshot borrowed during a Fiber phase use the same read interface.
 
-The C boundary sends an entry through a synchronous visitor. A visit borrows the entry name, file attributes,
-and optional directory metadata for the duration of the callback. Labels and annotations use byte slices.
+The C boundary sends an entry through a synchronous visitor. The entry name, length, expiration time when
+set, and directory metadata when present are valid for the duration of the callback. Labels and annotations use byte slices.
 The Rust SDK copies results into owned entries. List options carry the prefix, optional exclusive cursor,
 direction, and limit. Missing paths return the existing missing status. A present empty directory returns
 success with zero visits. The transfer exposes no Beak handles or storage encoding.
 
-Proposed scope
+Confirmed scope
 
 | Repository | Files | Change |
 | --- | --- | --- |
@@ -185,8 +185,26 @@ An extension cannot supply the missing symbols. Verify an empty result and a mis
 directory labels and annotations, forward and reverse pagination, and results retained after the runtime closes.
 Index queries, journal cursors, and additional write primitives are separate batches.
 
-The private workflow compares both headers and builds a public consumer at a pinned commit. Advance that
-pin to the verified SDK commit when preparing the matching revisions for publication.
+Private Siphon commit `e38cc68` and public SDK commit `af8212e`. On macOS ARM64, all three independent C
+programs and 14 Rust SDK tests passed against the native ABI 4 archive. The public header matches the
+private header. The Rust tests exercise both retained snapshots and a borrowed Fiber snapshot.
+
+The private workflow compares both headers and builds a public consumer pinned to `42e61c2`. It needs the
+verified SDK revision when preparing the matching revisions for publication.
+
+### Reverse byte-prefix paging
+
+The independent Rust consumer found that Beak's reverse range skips names such as `p\xff` when paging
+under the prefix `p`. The tree seeks below the prefix with a trailing `0xff`, which is itself a valid
+matching name. Compute the exclusive upper bound by incrementing the last byte below `0xff` and omitting
+the trailing bytes. An empty or entirely `0xff` prefix has no finite upper bound. The cursor can narrow
+the resulting range.
+
+Confirmed private correction `3400fbd` in `beak/crates/beak-tree/src/btree.rs` and
+`beak/crates/beak-tree/tests/tree.rs`. Beak and the independent Rust consumer verify reverse pages across
+byte prefixes, exclusive cursors, and the end of the key space. The ABI uses the same bounded tree read as
+Rust callers. Beak passed 166 tests, Siphon passed 34, and the Octoii workspace passed 256 with the two
+external integration tests ignored.
 
 ## Completion checks
 
