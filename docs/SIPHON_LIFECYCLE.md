@@ -234,6 +234,52 @@ On macOS ARM64, Beak passed 147 tests including the scheduler simulation. Siphon
 three independent ABI 4 C consumers and 13 public Rust tests passed, and Octoii passed 105 library
 tests with its live model test ignored. Node's all-target check, formatting and Beak/Siphon Clippy passed.
 
+### R06b: resolve uncertain log appends before writing again
+
+The simulated disk reproduced two problems on private commit `13ca006`.
+
+- A disk that wrote the whole append and then returned an error left the open device at root 1. Reopening
+  found root 2. A second commit on the original handle could overwrite that complete, unacknowledged commit.
+  With a short write instead, reopening found root 1.
+- Recovery cleared the first damaged record and left a valid old commit beyond it. A new append filled the gap.
+  On the second reopen both commits appeared at sequence 2, and the old one gave the device its root.
+
+The active log segment owns both the append position and whether it can still be written. A failure preparing
+space leaves the committed root untouched and returns `WriteAborted`. Once the device attempts a write, an
+error provides insufficient evidence to reuse that position. Record the first failure and return
+`ReopenRequired` from the append and all subsequent writes, collection and sync at the device. Reads continue
+from the last confirmed root and indexes. The same rule covers collection copying objects to the active log.
+A segment rollover that fails after a successful append still leaves that commit accepted. A positioned write
+can report an error after an earlier portion was written.
+[Rust `FileExt::write_all_at`](https://doc.rust-lang.org/std/os/unix/fs/trait.FileExt.html#method.write_all_at)
+
+Reopening scans the existing segment, retains its valid prefix and truncates the entire unverified tail.
+A complete commit record determines the recovered root. The existing Tree open sync makes that result durable
+before the scheduler starts. The recovered sequence and journal let the host reconcile what happened before it
+submits another operation. Reopening the same directory requires releasing handles that still hold its lock.
+
+The Beak Rust interface carries these two outcomes through its existing error types. Siphon's existing request
+answer retry waits and retries only on `WriteAborted`. Other errors follow its existing terminal path.
+R06c covers retaining completed Fiber results through retry and publishing terminal runtime failures to the host.
+This batch uses the existing segment format and public ABI 4.
+
+Proposed private scope, relative to `devxiyang/octoii-siphon`
+
+| Files | Change |
+| --- | --- |
+| `beak/crates/beak-storage/src/{lib.rs,device.rs,memory.rs}` | Define the two outcomes and the device contract. The memory test device reports a proven abort. |
+| `beak/crates/beak-storage/src/{log.rs,log/record.rs}` | Fence mutations at the active segment, rebuild from its valid prefix and remove the old partial-clearing logic. |
+| `beak/crates/beak-storage/src/disk/simulated.rs`, `beak/crates/beak-storage/tests/log.rs` | Inject a one-shot error after a partial or complete write to the active log. Verify the fence, recovery, preallocation failure and rollover. |
+| `beak/crates/beak-tree/src/tree/simulation.rs` | Reopen after an uncertain append in the model test, then compare the recovered tree with the expected commit. |
+| `beak/crates/beak-volume/src/{lib.rs,volume.rs}`, `beak/crates/beak/src/lib.rs` | Carry the two storage outcomes through the Rust interface and document what an error means for snapshots and notices. |
+| `crates/siphon-runtime/src/runtime/events.rs` | Restrict the existing request answer retry to proven aborts and test the error paths. |
+
+Check that a preallocation failure permits the same commit to retry. Inject short, complete and damaged-tail
+writes, then verify the live root, journal and indexes, the immediate rejection of write/sweep/sync, and the root
+and ordered journal after recovery and a later append. Re-run the Beak and Siphon suites and the linked ABI 4
+consumers. An extension sees only the published state and errors after Beak has attempted the write. It cannot
+resolve the log tail or stop other mutations on the same writer.
+
 ## Command cleanup and binary streaming
 
 Beak's command cleanup currently treats a failed record lookup the same as a missing record and can kill a
