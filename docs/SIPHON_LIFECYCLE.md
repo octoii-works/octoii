@@ -357,13 +357,48 @@ with the live model test ignored. Three regular C consumers, the C fault probe, 
 passed against ABI 4. Formatting, strict Beak/Siphon Clippy, Node's all-target check, and the Rust dependency
 check passed.
 
-## Command cleanup and binary streaming
+## R07: require committed removal before killing a command
 
-Beak's command cleanup currently treats a failed record lookup the same as a missing record and can kill a
-live command on a storage read error. Send the signal only when the committed state establishes that the
-command record is gone. Cover failed lookup and confirmed removal separately.
+An isolated probe on private commit `83d5fd6` corrupted just the directory containing a live command's
+record. An unrelated write still committed. The ensuing lookup returned `DamagedObject` and cleanup sent
+`SIGKILL` to the live command. Replacing the entire parent with a file returned `NotADirectory` and correctly
+stopped the command. Replacing the record directory itself with a file left the command running.
 
-B2.2c should reuse request identity to scope retained stream events and human answer admission. The current
-source wrapper can merge streams of different processes that supply the same mailbox key. Cover distinct
-deliveries with that key before exposing streams over the public ABI. Keep reusable Cargo compilation data
-under the [local verification cache policy](../CONTRIBUTING.md#local-verification-cleanup).
+Use one command-record lookup in the kernel. An existing directory at the command's reserved path keeps the
+registration live. A missing entry, a non-directory at that path, or a non-directory ancestor establishes
+that the command record is gone. Storage and decoding failures leave the result unresolved. Only confirmed
+removal authorizes the cleanup signal. Continue to take the committed snapshot under the command-table
+lock and check commands whose initial record has been published. The existing post-commit check can try
+an unresolved lookup again on a later commit. A non-directory ancestor is a definitive pathname result,
+as in Linux's `ENOTDIR`. [Linux `stat(2)`](https://man7.org/linux/man-pages/man2/stat.2.html)
+
+Use the same lookup when the command exits. Delete its remaining record directory when present. A file
+that replaced it stays at the committed path. The command table and the underlying signal API retain
+their existing ownership.
+
+Proposed private scope, relative to `devxiyang/octoii-siphon`
+
+| Files | Change |
+| --- | --- |
+| `beak/crates/beak-kernel/src/lib.rs` | Share the command-record lookup between committed-snapshot reconciliation and exit cleanup. Send a kill only on confirmed removal. |
+| `beak/crates/beak-kernel/tests/kernel.rs` | Inject an unreadable record under an otherwise writable volume. Verify the command stays live. Verify that replacing the parent or record with a file kills its command and preserves the file. |
+
+Run the kernel concurrency regression and the existing confirmed-removal case with the new cases. Recheck
+Beak and the Siphon consumers that use the same kernel. Extensions run outside this reconciliation and
+cannot intercept the signal once Beak's commit listener sends it.
+
+## B2.2c: request identity for streaming and human answers
+
+Probes on `83d5fd6` reproduced defects in the private source interfaces. Two live deliveries from
+different processes published to the same topic with the same mailbox key. Both live delivery and replay
+combined their offsets into 0 and 1. In a separate probe, a human answer validated against one process
+incarnation committed to its replacement at the same path and mailbox key. When one process posted the
+same pending key again, the request directory retained its creation sequence and the first handler could
+answer the replacement.
+
+Carry the identity of the committed request across delivery, stream retention and offsets, closure, and
+checking an answer at commit. The mailbox key can remain a label for callers. Decide the behavior of a key
+posted again within the same process before choosing the durable identity. The current posting path can
+reuse a pending request directory, so its creation sequence alone cannot distinguish an in-place replacement.
+Cover these cases before exposing streaming and human answers over the public ABI. Keep reusable Cargo
+compilation data under the [local verification cache policy](../CONTRIBUTING.md#local-verification-cleanup).
