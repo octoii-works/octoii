@@ -20,6 +20,8 @@ Future, trait object or unwind may cross the ABI directly. Concrete ABI details 
 1. B1: import the complete Beak source into beak/ as an independent Cargo workspace in the private Siphon repository.
 2. B2: design and validate one real binary execution path: open, register a fiber, spawn, call a host
    handler, commit, cancel, close/reopen and recover. Preserve existing durable execution semantics.
+   After the Fiber rename, switch Siphon's internal Beak calls to Rust before extending the public
+   ABI for streaming or machine operations.
 3. B3: converge product access to controlled storage, machine/sandbox and authorization mechanisms through
    the public wrapper; remove direct Beak and siphon-runtime dependencies from Octoii and Node.
 4. B4: publish tested binaries and wrapper, switch the product to the published crate and remove its
@@ -294,6 +296,25 @@ Rust wrapper's 13 tests. Octoii's checkpoint regression reads and writes the exi
 Beak passed 148 tests, Siphon passed 23 tests, and Octoii passed 105 library tests with the live model test
 ignored. The Node all-target check passed. The private Siphon commit is `7129df7` and the matching wrapper
 commit is `42e61c2`. Windows and Linux remain part of the distribution verification.
+
+### Direct Rust calls from Siphon to Beak
+
+Today `siphon-runtime` depends on the Rust `beak` crate, whose calls go through `beak-sys` and
+`beak-c`. Both workspaces build from source in the private repository. Make `beak` the native Rust
+entry point for Siphon, backed by the existing kernel, storage and machine crates. The C ABI built by
+`siphon-ffi` remains the contract used by `octoii-siphon-lib`.
+
+1. Migrate kernel open and close, snapshots, commits, process admission and completion, and request events.
+   Pass Rust types directly and reuse the existing kernel methods and commit path. Keep Beak responsible
+   for process state and for when it publishes events. R06a's tree and scheduler work can proceed independently.
+2. Migrate namespace and command access through Beak's Rust types. Retire the Beak C adapter, generated
+   bindings and standalone binary packaging once the remaining callers and tests use Rust.
+3. Check the dependency graph of `siphon-ffi` for removal of `beak-c` and `beak-sys`. Run Beak and
+   Siphon tests for recovery, stopping, sandboxing and PTYs. Link the C and Rust consumers against the
+   resulting Siphon archive with the same ABI 4 interface and verify persisted checkpoints.
+
+This work precedes the remaining B2 streaming and machine interface changes. Scope and confirm the core
+files before implementation.
 
 ### B2.1: binary lifecycle and storage slice — complete
 
