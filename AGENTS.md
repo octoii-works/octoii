@@ -8,6 +8,11 @@
   need and change the design until the need is a plain case of it; never bolt on a special case, a flag, an override
   layer or a fallback. One concept, one place: where two mechanisms do nearly the same job, make them one.
 - **Code style**: read like the code around it.
+- Keep inline Rust unit tests and their helpers in a `#[cfg(test)] mod tests` block at the end of the source file.
+  Add new tests to the existing block.
+- Reuse active Cargo build caches and remove temporary outputs after verification. Periodically review and prune
+  build outputs that are no longer needed once their builds have stopped. Follow the
+  [local verification cleanup guide](CONTRIBUTING.md#local-verification-cleanup).
 - **Core stability**: treat `core/` as frozen by default; build product capabilities in extensions and apps using
   existing public interfaces. Before changing any file under `core/` (including tests and manifests), explain the
   need, exact scope, and why an extension-only solution is insufficient, then obtain a separate explicit confirmation
