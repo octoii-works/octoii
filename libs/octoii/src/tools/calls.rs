@@ -26,7 +26,6 @@ pub enum State {
     Judging,
     Running,
     /// Its tool's fiber runs, as a process under its caller keyed by the call's key.
-    #[serde(rename = "program")]
     Fiber,
     /// It ends with how the turn that takes what it delivered ends, which the mail keyed by the delivery tells.
     Awaiting(Awaited),

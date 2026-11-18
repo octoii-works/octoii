@@ -20,18 +20,21 @@ use serde_json::json;
 use siphon_runtime::{Asked, Changes, Ending, Fiber, NotGiven, Options, Run, Runtime, Wait};
 
 #[test]
-fn a_waiting_tool_fiber_reads_the_existing_call_checkpoint() {
+fn a_waiting_tool_uses_the_fiber_checkpoint_tag() {
     let checkpoint = json!([{
         "id": "call-1",
         "key": "1",
         "tool": "execute",
         "arguments": "{}",
         "acts": true,
-        "state": {"state": "program"}
+        "state": {"state": "fiber"}
     }]);
     let calls: Calls = serde_json::from_value(checkpoint.clone()).unwrap();
     assert_eq!(calls.0[0].state, State::Fiber);
     assert_eq!(serde_json::to_value(calls).unwrap(), checkpoint);
+    let mut old = checkpoint;
+    old[0]["state"]["state"] = json!("program");
+    assert!(serde_json::from_value::<Calls>(old).is_err());
 }
 
 fn tools() -> Tools {

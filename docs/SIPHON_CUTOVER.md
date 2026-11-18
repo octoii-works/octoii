@@ -32,7 +32,7 @@ the cutover.
 | Area | Observed behavior | Cutover action |
 | --- | --- | --- |
 | Beak request recovery | `beak-process/src/scheduler.rs` empties occupied answer slots on reopen to repair mail written by the old rules. The current request transaction opens an empty slot and reserves it for the exact reply. | Remove the old-state repair. Verify current-format wait recovery and retelling. Reject a broken slot invariant before dispatch. |
-| Fiber persistence | Beak indexes fibers under `system.program`; Octoii serializes `State::Fiber` as `"program"`. The prior rename deliberately tested the old spelling and older checkpoints. | Adopt one Fiber naming scheme in labels, checkpoint kinds, public types, and tests. Define the volume format boundary for the semantic change so old labels cannot silently disappear from queries. |
+| Fiber persistence | Previous revisions used `system.program` and the `"program"` checkpoint spelling for a Fiber. | Completed in the Fiber label and volume format batch below. Beak uses `system.fiber`, Octoii reads the typed process record, and the new format is checked at open. |
 | Person replies | Siphon still exposes an address-based human answer call. Octoii scans a thread by mailbox key, and clients submit that key. | Replace this route with the exact committed request identity throughout the prompt and reply. Use the same snapshot for the prompt, schema and identity, then verify the identity again in the reply transaction. |
 | Streams | Siphon retains output, offsets and close handling by mailbox key. The client also deduplicates by that key and expects contiguous offsets. A subscription to one topic can see gaps in a request-wide offset sequence. | Carry the request identity and offsets through live delivery, replay, closure and reconnect. Use the mailbox key for business correlation. The client tracks the highest accepted offset for the exact request and accepts later offsets on the subscribed topic. |
 | Octoii persisted settings and threads | A child missing its kind becomes General Purpose. A stored disabled-extension list silently filters out `base`. Both historical cases have explicit regression tests. | Require a child kind and validate the mandatory base extension on persisted reads and writes. Keep the current creation defaults for fields that are optional by contract. |
@@ -87,6 +87,43 @@ in Octoii and its extensions.
 
 Each private implementation batch lists its exact files and technical dependency before approval under
 `AGENTS.md`. Product code uses the new API as each public capability is adopted.
+
+## Fiber label and volume format batch
+
+Beak writes the Fiber kind to the process directory's `system.fiber` label and uses it for the scheduler's
+process lookup. Octoii queries the process record on the Siphon runtime's snapshot when stopping a turn. Its
+`State::Fiber` checkpoint uses the enum's current `"fiber"` spelling.
+
+The label is part of the persisted volume contract. The frame decoder can still read a well-formed old
+volume, while the new index query would omit the processes it contains. Check a required volume-format
+marker under the existing directory lock before rebuilding indexes, trimming the log, or opening the
+scheduler. A directory containing log or index data needs the current marker. Report an unsupported format
+for unmarked or mismatched data. Initialize a fresh volume by publishing and syncing the marker before
+creating its first segment. Use a temporary file and atomic rename as with the sealed segment index.
+Sync the segment names before open succeeds, including on retry after an interrupted initialization. The
+segment header continues to identify the record encoding.
+
+Confirmed private scope, relative to `devxiyang/octoii-siphon`
+
+| Files | Change |
+| --- | --- |
+| `beak/crates/beak-process/src/{commit.rs,scheduler.rs}`, `beak/crates/beak/src/layout.rs` | Write and query the new internal Fiber label. Remove the layout export now that the caller uses the typed query. |
+| `beak/crates/beak-process/tests/scheduler.rs` | Check the literal persisted label and that the current scheduler discovers the process on reopen. |
+| `beak/crates/beak-storage/src/{lib.rs,log.rs}`, `beak/crates/beak-storage/tests/log.rs` | Define the format error, validate or initialize the marker at open, and cover read-only rejection of unmarked and mismatched logs, interrupted initialization, and current-format reopen. |
+
+Octoii changes `libs/octoii/src/threads/thread.rs` to use the snapshot's process record. Update the checkpoint spelling
+and its regression in `libs/octoii/src/tools/calls.rs` and `libs/octoii/src/tests/calls.rs`. Verify the
+existing stop-turn behavior and link the current binary consumers. The label and
+volume open contract belong to Beak. An extension cannot change the persisted index key or stop an
+incompatible volume from entering recovery.
+
+Private commit `3fd4c6f`. The storage regressions verify rejection before recovery writes and cover failures
+through each initialization step. A failed directory sync could leave a visible segment whose name would
+be lost on power loss. The open completion now syncs the names before handing out the writer. The scheduler
+regression uses `system.fiber` after reopen, and the Octoii checkpoint regression accepts `"fiber"`.
+On macOS ARM64, Beak passed 164 tests, Siphon passed 30, and Octoii passed 105 library tests with one
+live model test ignored. Three standalone C consumers and 13 public Rust consumer tests passed against
+the ABI 4 archive. Formatting, scoped strict Clippy, Node's all-target check and the dependency check passed.
 
 ## Completion checks
 

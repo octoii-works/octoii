@@ -5,6 +5,8 @@
 use beak::layout;
 use bytes::Bytes;
 
+use crate::volume::Snapshot;
+
 /// The kind of a thread's directory.
 pub const KIND: &str = "siphon.thread";
 
@@ -78,7 +80,7 @@ pub(crate) fn flag(on: bool) -> Bytes {
 ///
 /// # Errors
 /// The volume's failure or unreadable startup state.
-pub fn stop_turn(snapshot: &beak::Snapshot, changes: &mut siphon_runtime::Changes, id: &str) -> Result<(), super::operations::Error> {
+pub fn stop_turn(snapshot: &Snapshot, changes: &mut siphon_runtime::Changes, id: &str) -> Result<(), super::operations::Error> {
     if let Some(directory) = snapshot.stat(&path(id))?.and_then(|entry| entry.directory)
         && let Some(start) = super::Start::of(&directory)?
         && matches!(start.state, super::StartState::Pending | super::StartState::Failed { .. })
@@ -98,9 +100,10 @@ pub fn stop_turn(snapshot: &beak::Snapshot, changes: &mut siphon_runtime::Change
     };
     for child in snapshot.list(&main, &under)?.unwrap_or_default() {
         let path: Bytes = [&main[..], b"/", &child.name[..]].concat().into();
-        let directory = snapshot.stat(&path)?.and_then(|entry| entry.directory);
-        let kind = directory.as_ref().and_then(|directory| directory.label(layout::PROGRAM_LABEL));
-        if kind.is_some_and(|kind| kind == TURN_KIND.as_bytes()) {
+        if snapshot
+            .record(&path)?
+            .is_some_and(|record| record.kind.as_ref() == TURN_KIND.as_bytes())
+        {
             changes.signal(path, beak::Signal::Terminate, Some(Bytes::from_static(b"stopped")));
         }
     }
