@@ -383,9 +383,9 @@ stopped the command. Replacing the record directory itself with a file left the 
 probe replaced the command directory created at sequence 2 with a new directory created at sequence 3 at
 the same path. The old command stayed live and its later exit deleted the replacement directory.
 
-When publishing a command record, bind the held registration to the record's path and creation sequence.
-A command awaiting its initial commit has no confirmed record yet. Once published, keep it registered
-while that exact directory exists. A missing entry, a file in the path, or a different directory creation
+When publishing a command record, create it at a vacant path and bind the held registration to that path and
+creation sequence. A command awaiting its initial commit has no confirmed record yet. Once published, keep it
+registered while that exact directory exists. A missing entry, a file in the path, or a different directory creation
 sequence establishes that the original record is gone. A storage or decoding failure leaves that question
 unresolved for a later check. Only confirmed removal or replacement authorizes the cleanup signal.
 Take the committed snapshot under the command-table lock, preserving the publication ordering from B1.
@@ -396,7 +396,7 @@ transaction reads provide the evidence for these two operations. If the per-comm
 use the existing change set to narrow affected paths and resolve the final record identities. A deletion
 in the change set can be followed by a write to the same path in that commit.
 
-Proposed private scope, relative to `devxiyang/octoii-siphon`
+Confirmed private scope, relative to `devxiyang/octoii-siphon`
 
 | Files | Change |
 | --- | --- |
@@ -406,6 +406,12 @@ Proposed private scope, relative to `devxiyang/octoii-siphon`
 Run the kernel concurrency regression and the existing confirmed-removal case with the new cases. Recheck
 Beak and the Siphon consumers that use the same kernel. Extensions run outside this reconciliation and
 cannot intercept the signal once Beak's commit listener sends it.
+
+Private commit `11d81af`. The four new kernel cases covered storage read failure, a file replacing the parent,
+and a file or new directory replacing the command record. The kernel concurrency test passed ten consecutive
+reruns. On macOS ARM64, Beak passed 157 tests, Siphon passed 28, and Octoii passed 105 library tests with one
+live model test ignored. Three C consumers and 13 Rust consumer tests passed against the linked ABI 4 archive.
+Formatting, strict Beak/Siphon Clippy, Node's all-target check, and the Rust dependency check passed.
 
 ### Command startup and recovery
 
