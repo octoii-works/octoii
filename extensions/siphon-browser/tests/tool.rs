@@ -5,13 +5,13 @@ use std::path::PathBuf;
 
 use octoii::machine::Base;
 use octoii::machine::Host;
-use octoii::testing::Runtime;
+use octoii::testing::memory_runtime;
 use octoii::tools::{Effect, Tools};
 use serde_json::json;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn the_browser_tool_reads_a_page_at_once_and_works_one_after_what_came_before() {
-    let fixture = Runtime::memory().expect("Runtime");
+    let fixture = memory_runtime().expect("Runtime");
     let commands = octoii::testing::commands(&fixture);
     let browser = siphon_browser::Browser::start(siphon_browser::BrowserHost {
         commands,

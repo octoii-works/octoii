@@ -15,8 +15,16 @@ use tokio::sync::mpsc;
 use crate::connection::{Access, Outgoing, serve};
 use crate::{Octoii, Setup};
 
-/// Beak, which a test opens for what it starts: Octoii, calls, commands.
+/// The runtime used by in-memory machine fixtures.
 pub use octoii_siphon_lib::Runtime;
+
+/// Opens a runtime in memory for a machine fixture.
+///
+/// # Errors
+/// The runtime builder or in-memory volume could not be opened.
+pub fn memory_runtime() -> octoii_siphon_lib::Result<Runtime> {
+    octoii_siphon_lib::Builder::new()?.memory()
+}
 
 /// Explicit instructions for runtime tests; production instructions belong to the base extension.
 pub const PROMPTS: crate::agent::Prompts = crate::agent::Prompts {
@@ -337,7 +345,7 @@ impl Calling {
                 if let Some(octoii_siphon_lib::Outcome::Completed(Some(result))) = record.and_then(|record| record.outcome) {
                     return serde_json::from_slice(&result).expect("what it came to");
                 }
-                committed.changed().await.expect("the runtime runs");
+                committed.next().await.expect("the runtime runs");
             }
         };
         tokio::time::timeout(Duration::from_secs(30), waiting).await.expect("ended in time")
@@ -390,7 +398,7 @@ impl Calling {
                 {
                     return prompt.id;
                 }
-                committed.changed().await.expect("the runtime runs");
+                committed.next().await.expect("the runtime runs");
             }
         };
         let request = tokio::time::timeout(Duration::from_secs(10), asked).await.expect("asked in time");
@@ -407,7 +415,7 @@ impl Calling {
                 {
                     break;
                 }
-                committed.changed().await.expect("the runtime runs");
+                committed.next().await.expect("the runtime runs");
             }
         };
         tokio::time::timeout(Duration::from_secs(10), decided)

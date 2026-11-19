@@ -316,7 +316,7 @@ async fn until(threads: &Threads<ThreadFiber>, id: &str, turn: Turn) {
     let mut committed = threads.runtime().committed().expect("a commit watch");
     let waiting = async {
         while threads.listed(id).expect("listed").status.turn != turn {
-            committed.changed().await.expect("the runtime runs");
+            committed.next().await.expect("the runtime runs");
         }
     };
     tokio::time::timeout(Duration::from_secs(20), waiting).await.expect("in time");
@@ -464,7 +464,7 @@ async fn a_turn_takes_on_the_calls_its_replies_make_and_asks_again_till_one_call
     let mut titled = threads.runtime().committed().expect("a commit watch");
     tokio::time::timeout(Duration::from_secs(10), async {
         while threads.listed(&id).expect("listed").config.title.is_none() {
-            titled.changed().await.expect("the runtime runs");
+            titled.next().await.expect("the runtime runs");
         }
     })
     .await
@@ -699,7 +699,7 @@ async fn a_stop_ends_the_turn_with_every_call_it_made_answered() {
     let mut committed = runtime.committed().expect("a commit watch");
     tokio::time::timeout(Duration::from_secs(10), async {
         while !entries(&threads, &id).iter().any(|entry| matches!(entry, Entry::Reply { .. })) {
-            committed.changed().await.expect("the runtime runs");
+            committed.next().await.expect("the runtime runs");
         }
     })
     .await
@@ -799,7 +799,7 @@ async fn a_window_too_full_for_its_next_request_is_compacted_and_the_model_asked
             .count()
             < 2
         {
-            committed.changed().await.expect("the runtime runs");
+            committed.next().await.expect("the runtime runs");
         }
     })
     .await
@@ -944,7 +944,7 @@ async fn a_task_delegated_in_the_background_is_answered_at_once_and_its_end_deli
             .count()
             < 2
         {
-            committed.changed().await.expect("the runtime runs");
+            committed.next().await.expect("the runtime runs");
         }
     })
     .await
@@ -999,7 +999,7 @@ async fn an_input_queued_while_a_turn_works_waits_for_it_to_end_and_begins_the_n
             .count()
             < 2
         {
-            committed.changed().await.expect("the runtime runs");
+            committed.next().await.expect("the runtime runs");
         }
     })
     .await
@@ -1053,7 +1053,7 @@ async fn a_thread_started_by_another_takes_its_message_and_its_end_is_told_back(
             .count()
             < 2
         {
-            committed.changed().await.expect("the runtime runs");
+            committed.next().await.expect("the runtime runs");
         }
     })
     .await
@@ -1165,7 +1165,7 @@ async fn a_resume_goes_on_at_its_time_unless_the_person_went_on_first() {
             .and_then(|record| record.outcome)
             .is_none()
         {
-            committed.changed().await.expect("the runtime runs");
+            committed.next().await.expect("the runtime runs");
         }
     })
     .await
@@ -1473,7 +1473,7 @@ async fn compaction_keeps_its_slot_while_descendants_are_exiting() {
             {
                 break snapshot;
             }
-            committed.changed().await.unwrap();
+            committed.next().await.unwrap();
         }
     })
     .await

@@ -5,7 +5,7 @@
 use std::time::Duration;
 
 use octoii::machine::{Base, Host, Machine, Writes};
-use octoii::testing::Runtime;
+use octoii::testing::{Runtime, memory_runtime};
 use serde_json::json;
 use siphon_browser::{Action, Browser, BrowserHost, Change, Outcome, Place, Refusal, Size};
 
@@ -181,7 +181,7 @@ fn ref_in(reading: &str, role: &str, name: &str) -> String {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn text_actions_replace_insert_clear_and_press_without_implicit_submission() {
-    let fixture = Runtime::memory().expect("Runtime");
+    let fixture = memory_runtime().expect("Runtime");
     let (profile, downloads) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
     let machine = machine(&fixture, profile.path());
     let Some(browser) = browser(&fixture, profile.path(), downloads.path()) else {
@@ -256,7 +256,7 @@ async fn text_actions_replace_insert_clear_and_press_without_implicit_submission
 
 #[tokio::test(flavor = "multi_thread")]
 async fn the_agent_opens_reads_fills_and_submits_a_form_and_the_person_sees_it_painted() {
-    let fixture = Runtime::memory().expect("Runtime");
+    let fixture = memory_runtime().expect("Runtime");
     let (profile, downloads) = (tempfile::tempdir().expect("a folder"), tempfile::tempdir().expect("a folder"));
     let machine = machine(&fixture, profile.path());
     let Some(browser) = browser(&fixture, profile.path(), downloads.path()) else {
@@ -327,7 +327,7 @@ async fn the_agent_opens_reads_fills_and_submits_a_form_and_the_person_sees_it_p
 
 #[tokio::test(flavor = "multi_thread")]
 async fn resizing_a_page_tells_its_thread_the_view_that_matches_the_new_frame() {
-    let fixture = Runtime::memory().expect("Runtime");
+    let fixture = memory_runtime().expect("Runtime");
     let (profile, downloads) = (tempfile::tempdir().expect("a folder"), tempfile::tempdir().expect("a folder"));
     let machine = machine(&fixture, profile.path());
     let Some(browser) = browser(&fixture, profile.path(), downloads.path()) else {
@@ -388,7 +388,7 @@ async fn resizing_a_page_tells_its_thread_the_view_that_matches_the_new_frame() 
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_covered_element_is_refused_a_dialog_is_answered_and_the_page_goes_back_through_its_history() {
-    let fixture = Runtime::memory().expect("Runtime");
+    let fixture = memory_runtime().expect("Runtime");
     let (profile, downloads) = (tempfile::tempdir().expect("a folder"), tempfile::tempdir().expect("a folder"));
     let machine = machine(&fixture, profile.path());
     let Some(browser) = browser(&fixture, profile.path(), downloads.path()) else {
@@ -473,7 +473,7 @@ async fn a_covered_element_is_refused_a_dialog_is_answered_and_the_page_goes_bac
 
 #[tokio::test(flavor = "multi_thread")]
 async fn tabs_are_the_thread_s_its_console_and_downloads_are_told_and_cdp_reaches_the_page() {
-    let fixture = Runtime::memory().expect("Runtime");
+    let fixture = memory_runtime().expect("Runtime");
     let (profile, downloads) = (tempfile::tempdir().expect("a folder"), tempfile::tempdir().expect("a folder"));
     let machine = machine(&fixture, profile.path());
     let Some(browser) = browser(&fixture, profile.path(), downloads.path()) else {
@@ -541,7 +541,7 @@ async fn tabs_are_the_thread_s_its_console_and_downloads_are_told_and_cdp_reache
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_script_runs_inside_a_frame_of_another_site_s_process() {
-    let fixture = Runtime::memory().expect("Runtime");
+    let fixture = memory_runtime().expect("Runtime");
     let (profile, downloads) = (tempfile::tempdir().expect("a folder"), tempfile::tempdir().expect("a folder"));
     let machine = machine(&fixture, profile.path());
     let Some(browser) = browser(&fixture, profile.path(), downloads.path()) else {
@@ -577,7 +577,7 @@ async fn a_script_runs_inside_a_frame_of_another_site_s_process() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn an_http_html_preview_loads_inside_an_opaque_sandbox_and_runs_isolated_scripts() {
-    let fixture = Runtime::memory().expect("Runtime");
+    let fixture = memory_runtime().expect("Runtime");
     let (profile, downloads) = (tempfile::tempdir().expect("a folder"), tempfile::tempdir().expect("a folder"));
     let machine = machine(&fixture, profile.path());
     let Some(browser) = browser(&fixture, profile.path(), downloads.path()) else {
@@ -644,7 +644,7 @@ async fn an_http_html_preview_loads_inside_an_opaque_sandbox_and_runs_isolated_s
 
 #[tokio::test(flavor = "multi_thread")]
 async fn an_html_preview_changes_theme_in_place_and_its_height_shrinks_after_interaction() {
-    let fixture = Runtime::memory().expect("Runtime");
+    let fixture = memory_runtime().expect("Runtime");
     let (profile, downloads) = (tempfile::tempdir().expect("a folder"), tempfile::tempdir().expect("a folder"));
     let machine = machine(&fixture, profile.path());
     let Some(browser) = browser(&fixture, profile.path(), downloads.path()) else {
@@ -745,7 +745,7 @@ async fn an_html_preview_changes_theme_in_place_and_its_height_shrinks_after_int
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_local_html_preview_is_isolated_painted_clicked_and_its_console_is_read() {
-    let fixture = Runtime::memory().expect("Runtime");
+    let fixture = memory_runtime().expect("Runtime");
     let (profile, downloads) = (tempfile::tempdir().expect("a folder"), tempfile::tempdir().expect("a folder"));
     let machine = machine(&fixture, profile.path());
     let Some(browser) = browser(&fixture, profile.path(), downloads.path()) else {

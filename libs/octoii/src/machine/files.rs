@@ -491,7 +491,7 @@ mod tests {
         let workspace = folder.path().canonicalize().expect("its real path");
         let source = workspace.join("changing.bin");
         std::fs::write(&source, b"before").expect("written");
-        let runtime = octoii_siphon_lib::Runtime::memory().expect("a runtime");
+        let runtime = crate::testing::memory_runtime().expect("a runtime");
         let machine = Machine::open(
             &runtime,
             &crate::machine::Host::default(),
@@ -521,7 +521,7 @@ mod tests {
         let workspace = folder.path().canonicalize().expect("its real path");
         let fifo = workspace.join("pipe");
         assert!(std::process::Command::new("mkfifo").arg(&fifo).status().expect("mkfifo").success());
-        let runtime = octoii_siphon_lib::Runtime::memory().expect("a runtime");
+        let runtime = crate::testing::memory_runtime().expect("a runtime");
         let machine = Machine::open(
             &runtime,
             &crate::machine::Host::default(),

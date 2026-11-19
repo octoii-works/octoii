@@ -266,7 +266,7 @@ async fn ended(runtime: &Runtime, path: &[u8]) -> Vec<(CallStatus, String)> {
             if let Some(Outcome::Completed(Some(result))) = record.and_then(|record| record.outcome) {
                 return serde_json::from_slice(&result).expect("what it said");
             }
-            committed.changed().await.expect("the runtime runs");
+            committed.next().await.expect("the runtime runs");
         }
     };
     tokio::time::timeout(Duration::from_secs(10), waiting).await.expect("ended in time")
@@ -317,8 +317,8 @@ async fn sub_thread(runtime: &Runtime, id: &str, kind: SubThreadKind) {
     runtime.commit(changes).await.unwrap();
 }
 
-fn no_requests(runtime: &Runtime, under: &[u8]) {
-    assert!(!runtime.snapshot().unwrap().has_pending_requests(under).unwrap());
+fn no_person_requests(runtime: &Runtime, under: &[u8]) {
+    assert_eq!(runtime.person_requests(&runtime.snapshot().unwrap(), under).unwrap(), []);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -373,7 +373,7 @@ async fn explorers_keep_their_read_scope_in_full_access_and_with_existing_projec
             "{results:?}"
         );
         assert!(!workspace.join("forbidden.txt").exists());
-        no_requests(&runtime, &path);
+        no_person_requests(&runtime, &path);
     }
     assert_eq!(
         projects::grants(&runtime.snapshot().unwrap(), &workspace.to_string_lossy()).unwrap(),
@@ -429,7 +429,7 @@ async fn explorer_scripts_expose_readers_and_cannot_request_write_permissions() 
             assert_eq!(results[0].1, "\"execute,glob,grep,read\"");
         }
         assert!(!workspace.join("forbidden.txt").exists());
-        no_requests(&runtime, &path);
+        no_person_requests(&runtime, &path);
     }
     assert_eq!(
         projects::grants(&runtime.snapshot().unwrap(), &workspace.to_string_lossy()).unwrap(),
@@ -499,7 +499,7 @@ async fn recovered_explorer_approval_cannot_grant_or_execute_an_unavailable_tool
         projects::grants(&runtime.snapshot().unwrap(), &workspace.to_string_lossy()).unwrap(),
         crate::tools::permissions::Grants::default()
     );
-    no_requests(&runtime, &path);
+    no_person_requests(&runtime, &path);
     runtime.close().expect("closed");
 }
 

@@ -41,7 +41,7 @@ def files(target):
 def verify(directory, target, names):
     try:
         manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
-        return manifest["abi"] == 4 and manifest["target"] == target and all(
+        return manifest["abi"] == 5 and manifest["target"] == target and all(
             hashlib.sha256((directory / name).read_bytes()).hexdigest() == manifest[checksum]
             for name, checksum in names.items()
         )

@@ -26,7 +26,7 @@ fn tools() -> Tools {
 
 /// A context working in a fresh folder for the thread `t1`, writing as `writes` says; the folder held.
 async fn context(writes: Writes) -> (Runtime, Context, tempfile::TempDir) {
-    let runtime = octoii_siphon_lib::Runtime::memory().expect("started");
+    let runtime = crate::testing::memory_runtime().expect("started");
     let mut changes = Changes::new();
     changes.mkdir(crate::threads::thread::path("t1"));
     runtime.commit(changes).await.expect("a thread's directory");

@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use octoii::machine::Host;
-use octoii::testing::{Called, Calling, Runtime};
+use octoii::testing::{Called, Calling, Runtime, memory_runtime};
 use octoii::tools::{CallStatus, Tool, Tools};
 use serde_json::{Value, json};
 use siphon_terminals::{ACTOR, Event, Running, Size, TerminalTool, Terminals};
@@ -43,7 +43,7 @@ fn data(called: &Called) -> &Value {
 async fn scripts_read_real_terminal_references_and_screens_and_closing_returns_the_request() {
     let folder = tempfile::tempdir().expect("a folder");
     let workspace = folder.path().canonicalize().expect("its real path");
-    let fixture = Runtime::memory().expect("Runtime");
+    let fixture = memory_runtime().expect("Runtime");
     let terminals = terminals(&fixture);
     let tool = TerminalTool {
         terminals: terminals.clone(),
@@ -145,7 +145,7 @@ async fn scripts_read_real_terminal_references_and_screens_and_closing_returns_t
 async fn an_early_exit_keeps_its_actual_reference_exit_code_and_rendered_screen() {
     let folder = tempfile::tempdir().expect("a folder");
     let workspace = folder.path().canonicalize().expect("its real path");
-    let fixture = Runtime::memory().expect("Runtime");
+    let fixture = memory_runtime().expect("Runtime");
     let terminals = terminals(&fixture);
     let mut events = terminals.events();
     let calling = Calling::start(|tools| {
@@ -195,7 +195,7 @@ async fn an_early_exit_keeps_its_actual_reference_exit_code_and_rendered_screen(
 async fn a_write_that_ends_its_command_returns_the_ending_without_consuming_its_notification() {
     let folder = tempfile::tempdir().expect("a folder");
     let workspace = folder.path().canonicalize().expect("its real path");
-    let fixture = Runtime::memory().expect("Runtime");
+    let fixture = memory_runtime().expect("Runtime");
     let terminals = terminals(&fixture);
     let calling = Calling::start(|tools| {
         tools.with(TerminalTool {
@@ -254,7 +254,7 @@ async fn a_write_that_ends_its_command_returns_the_ending_without_consuming_its_
 async fn the_persons_terminal_is_readable_and_write_and_close_refusals_return_no_success_data() {
     let folder = tempfile::tempdir().expect("a folder");
     let workspace = folder.path().canonicalize().expect("its real path");
-    let fixture = Runtime::memory().expect("Runtime");
+    let fixture = memory_runtime().expect("Runtime");
     let terminals = terminals(&fixture);
     let personal = terminals
         .open("t1", workspace.clone(), Size { rows: 24, cols: 80 }, Running::Shell)

@@ -167,7 +167,7 @@ async fn ended_call(runtime: &Runtime, path: &[u8]) -> CallResult {
             if let Some(Outcome::Completed(Some(result))) = record.and_then(|record| record.outcome) {
                 return serde_json::from_slice(&result).expect("what it said");
             }
-            committed.changed().await.expect("the runtime runs");
+            committed.next().await.expect("the runtime runs");
         }
     };
     tokio::time::timeout(Duration::from_secs(20), waiting).await.expect("ended in time")

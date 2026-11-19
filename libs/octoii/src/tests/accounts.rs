@@ -8,7 +8,7 @@ use octoii_siphon_lib::Changes;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn an_account_is_another_instance_of_a_host_s_provider_and_a_quota_used_up_stands_on_its_directory() {
-    let runtime = octoii_siphon_lib::Runtime::memory().expect("started");
+    let runtime = crate::testing::memory_runtime().expect("started");
     let host = [Provider::of(std::sync::Arc::new(OPENAI)), Provider::of(std::sync::Arc::new(OLLAMA))];
     let work = add(&runtime, &host, "openai", "  Work  ", "add-1").await.expect("added");
     assert_eq!(

@@ -8,7 +8,7 @@ use serde_json::json;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn the_environment_s_settings_are_shared_and_a_device_s_merged_as_a_patch() {
-    let runtime = octoii_siphon_lib::Runtime::memory().expect("started");
+    let runtime = crate::testing::memory_runtime().expect("started");
     assert_eq!(
         environment(&runtime.snapshot().expect("a snapshot")).expect("read"),
         Environment::default()

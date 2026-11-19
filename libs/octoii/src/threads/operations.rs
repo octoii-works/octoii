@@ -206,9 +206,9 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
                 return Err(Error::Start("thread process ended before startup completed".into()));
             }
             committed
-                .changed()
+                .next()
                 .await
-                .map_err(|_| Error::Start("runtime closed before startup completed".into()))?;
+                .ok_or_else(|| Error::Start("runtime closed before startup completed".into()))?;
         }
     }
 

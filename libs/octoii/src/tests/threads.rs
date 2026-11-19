@@ -108,7 +108,7 @@ async fn applied(runtime: &Runtime, own: &str, plan: crate::tools::Plan) -> Resu
                 };
                 return serde_json::from_slice(&result).unwrap();
             }
-            committed.changed().await.unwrap();
+            committed.next().await.unwrap();
         }
     })
     .await
@@ -119,7 +119,7 @@ async fn inbox_empty(threads: &Threads<Taker>, id: &str) {
     let mut committed = threads.runtime().committed().expect("a commit watch");
     tokio::time::timeout(Duration::from_secs(10), async {
         while !threads.listed(id).unwrap().status.inbox.is_empty() {
-            committed.changed().await.unwrap();
+            committed.next().await.unwrap();
         }
     })
     .await
@@ -140,7 +140,7 @@ async fn force_remove_main(runtime: &Runtime, id: &str) {
             .unwrap()
             .is_some()
         {
-            committed.changed().await.unwrap();
+            committed.next().await.unwrap();
         }
     })
     .await
@@ -502,7 +502,7 @@ async fn entries<M>(threads: &Threads<M>, id: &str, done: impl Fn(&[Entry]) -> b
             if done(&entries) {
                 return entries;
             }
-            committed.changed().await.expect("the runtime runs");
+            committed.next().await.expect("the runtime runs");
         }
     };
     tokio::time::timeout(Duration::from_secs(10), waiting).await.expect("in time")

@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use crate::machine::paths::Base;
 use crate::machine::{EditOutcome, GrepOptions, Host, Machine, Program, Read, ReadOptions, RunError, Writes};
-use octoii_siphon_lib::Runtime;
+use crate::testing::{Runtime, memory_runtime};
 use siphon_text::Edit;
 use tokio_util::sync::CancellationToken;
 
@@ -56,7 +56,7 @@ fn a_path_names_one_place_whatever_its_spelling_and_is_shown_back_as_the_model_w
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_file_is_written_read_a_page_at_a_time_and_edited_as_it_held_its_text() {
-    let runtime = Runtime::memory().expect("a runtime");
+    let runtime = memory_runtime().expect("a runtime");
 
     let (machine, _folder, workspace) = machine(&runtime, &Host::default());
     let path = machine.path("deep/down/notes.txt");
@@ -155,7 +155,7 @@ fn repository(runtime: &Runtime) -> (Machine, [tempfile::TempDir; 2]) {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_walk_leaves_out_what_ignore_files_name_and_glob_pages_what_is_left_the_newest_first() {
-    let runtime = Runtime::memory().expect("a runtime");
+    let runtime = memory_runtime().expect("a runtime");
 
     let (machine, _folders) = repository(&runtime);
     let shown = |paths: &[String]| paths.iter().map(|path| machine.shown(path)).collect::<Vec<_>>();
@@ -180,7 +180,7 @@ async fn a_walk_leaves_out_what_ignore_files_name_and_glob_pages_what_is_left_th
 
 #[tokio::test(flavor = "multi_thread")]
 async fn grep_pages_its_matches_in_order_by_path_with_their_context_and_passes_binary_files_over() {
-    let runtime = Runtime::memory().expect("a runtime");
+    let runtime = memory_runtime().expect("a runtime");
 
     let (machine, _folders) = repository(&runtime);
     let options = GrepOptions {
@@ -249,7 +249,7 @@ fn default_grep() -> GrepOptions {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_program_runs_to_its_end_and_what_the_host_hides_is_denied() {
-    let runtime = Runtime::memory().expect("a runtime");
+    let runtime = memory_runtime().expect("a runtime");
 
     let hidden = tempfile::tempdir().expect("a folder");
     let hidden_place = hidden.path().canonicalize().expect("its real path");
@@ -288,7 +288,7 @@ async fn a_program_runs_to_its_end_and_what_the_host_hides_is_denied() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn work_held_to_its_workspace_writes_there_and_reads_everywhere_else() {
-    let runtime = Runtime::memory().expect("a runtime");
+    let runtime = memory_runtime().expect("a runtime");
 
     let (workspace_folder, outside_folder) = (tempfile::tempdir().expect("a folder"), tempfile::tempdir().expect("a folder"));
     let workspace = workspace_folder.path().canonicalize().expect("its real path");
@@ -328,7 +328,7 @@ async fn work_held_to_its_workspace_writes_there_and_reads_everywhere_else() {
 async fn a_coprocess_reads_what_it_is_given_answers_on_its_output_keeps_its_errors_and_ends_as_its_input_closes() {
     use tokio::io::{AsyncBufReadExt as _, AsyncReadExt as _, AsyncWriteExt as _, BufReader};
 
-    let runtime = Runtime::memory().expect("a runtime");
+    let runtime = memory_runtime().expect("a runtime");
 
     let (machine, _folder, workspace) = machine(&runtime, &Host::default());
     let argv = vec![
@@ -363,7 +363,7 @@ async fn a_coprocess_reads_what_it_is_given_answers_on_its_output_keeps_its_erro
 async fn a_coprocess_given_its_variables_alone_runs_with_those_alone() {
     use tokio::io::AsyncReadExt as _;
 
-    let runtime = Runtime::memory().expect("a runtime");
+    let runtime = memory_runtime().expect("a runtime");
 
     let (machine, _folder, workspace) = machine(&runtime, &Host::default());
     let argv = vec!["/bin/sh".into(), "-c".into(), "printf '%s|%s' \"$WORD\" \"${HOME-none}\"".into()];
@@ -378,7 +378,7 @@ async fn a_coprocess_given_its_variables_alone_runs_with_those_alone() {
 async fn a_folder_bound_back_over_what_the_host_hides_is_reached_by_a_command_and_the_rest_is_not() {
     use tokio::io::AsyncReadExt as _;
 
-    let runtime = Runtime::memory().expect("a runtime");
+    let runtime = memory_runtime().expect("a runtime");
 
     let kept = tempfile::tempdir().expect("a folder");
     let kept = kept.path().canonicalize().expect("its real path");
@@ -415,7 +415,7 @@ async fn a_folder_bound_back_over_what_the_host_hides_is_reached_by_a_command_an
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_path_at_which_nothing_is_is_told_the_nearest_folder_and_the_names_like_it() {
-    let runtime = Runtime::memory().expect("a runtime");
+    let runtime = memory_runtime().expect("a runtime");
 
     let (machine, _folder, workspace) = machine(&runtime, &Host::default());
     std::fs::create_dir_all(workspace.join("src")).expect("a folder");

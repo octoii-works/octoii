@@ -165,7 +165,7 @@ async fn the_agent_reads_a_file_and_writes_what_it_found() {
             if matches!(turn, Turn::Replied | Turn::Failed | Turn::Stopped) {
                 return turn;
             }
-            committed.changed().await.expect("the runtime runs");
+            committed.next().await.expect("the runtime runs");
         }
     };
     let turn = tokio::time::timeout(Duration::from_mins(3), ended).await.expect("ended in time");
@@ -175,7 +175,7 @@ async fn the_agent_reads_a_file_and_writes_what_it_found() {
     }
     let titled = async {
         while threads.listed(&id).expect("listed").config.title.is_none() {
-            committed.changed().await.expect("the runtime runs");
+            committed.next().await.expect("the runtime runs");
         }
     };
     let titled = tokio::time::timeout(Duration::from_mins(1), titled).await.is_ok();

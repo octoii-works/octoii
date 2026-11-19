@@ -77,8 +77,8 @@ async fn thread_told(subscription: &Subscription, thread: &str, cursor: &mut Opt
         loop {
             tokio::select! {
                 () = subscription.stop.cancelled() => return Ok(()),
-                changed = committed.changed() => {
-                    if changed.is_err() {
+                sequence = committed.next() => {
+                    if sequence.is_none() {
                         return Ok(());
                     }
                     if touched(siphon, &mut followed, |path| is_at_or_under(path, &own)) {
@@ -165,7 +165,7 @@ async fn threads_told(subscription: &Subscription) -> Result<(), Full> {
         let (snapshot, ids) = loop {
             tokio::select! {
                 () = subscription.stop.cancelled() => return Ok(()),
-                changed = committed.changed() => if changed.is_err() { return Ok(()) },
+                sequence = committed.next() => if sequence.is_none() { return Ok(()) },
             }
             let Ok(snapshot) = siphon.runtime.snapshot() else { return Ok(()) };
             match followed.since(&snapshot) {
@@ -252,7 +252,7 @@ async fn settings_told(subscription: &Subscription) -> Result<(), Full> {
         loop {
             tokio::select! {
                 () = subscription.stop.cancelled() => return Ok(()),
-                changed = committed.changed() => if changed.is_err() { return Ok(()) },
+                sequence = committed.next() => if sequence.is_none() { return Ok(()) },
             }
             if touched(&context.siphon, &mut followed, |path| {
                 *path == directory[..] || *path == device_file[..]

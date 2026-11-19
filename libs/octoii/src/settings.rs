@@ -249,7 +249,7 @@ mod tests {
 
     #[tokio::test]
     async fn disabling_base_is_rejected_on_write_and_read() {
-        let runtime = octoii_siphon_lib::Runtime::memory().unwrap();
+        let runtime = crate::testing::memory_runtime().unwrap();
         let disable = |extension: &str| SettingsChange {
             environment: Some(EnvironmentChange {
                 disabled_extensions: Some(vec![extension.into()]),
