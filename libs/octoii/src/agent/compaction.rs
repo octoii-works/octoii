@@ -214,7 +214,7 @@ fn recapped(run: &mut Run<'_>, id: &str, key: String, cut: Cut) -> anyhow::Resul
         let wait = Wait::new().mail(key.clone());
         return Ok(Ending::Wait(CompactState::Recapping { key, cut }, wait));
     };
-    run.take_mail(&key)?;
+    run.discard_mail(&key)?;
     let response = match answer {
         Answer::Given(response) => response,
         Answer::Interrupted => return Ok(Ending::Fail("the recap was cut off".into())),
@@ -268,7 +268,7 @@ fn compacted(
         };
         return Ok(Ending::Wait(state, Wait::new().mail(key.to_owned())));
     };
-    run.take_mail(key)?;
+    run.discard_mail(key)?;
     let told: Told = match answer {
         Answer::Given(told) => told,
         Answer::Interrupted => return Ok(Ending::Fail("gathering what the model is told was cut off".into())),

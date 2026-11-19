@@ -602,7 +602,7 @@ async fn a_call_the_person_lets_go_ahead_for_good_is_granted_its_project_and_one
         let payload: serde_json::Value = serde_json::from_slice(&request.payload).expect("JSON");
         let call = payload["call"].as_str().expect("its call");
         assert_eq!(
-            request.id.key.as_slice(),
+            request.id.key(),
             format!("{call}.{key}").as_bytes(),
             "the ask names its call by Octoii's key of it"
         );

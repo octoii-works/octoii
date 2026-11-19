@@ -394,7 +394,7 @@ impl Calling {
                     .person_requests(&snapshot, &process)
                     .expect("prompts")
                     .into_iter()
-                    .find(|prompt| prompt.id.key.as_slice() == key)
+                    .find(|prompt| prompt.id.key() == key)
                 {
                     return prompt.id;
                 }

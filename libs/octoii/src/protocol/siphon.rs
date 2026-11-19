@@ -7,7 +7,6 @@ use crate::threads::inbox::Joins;
 use crate::threads::log::Cursor;
 use crate::threads::{Config, ConfigChange, Entry, Listed, MarksChange, Status};
 use octoii_ai::vocabulary::InputContent;
-use octoii_siphon_lib::RequestId;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -158,20 +157,6 @@ pub struct AnswerThread {
     pub thread: String,
     pub request: String,
     pub answer: serde_json::Value,
-}
-
-pub(crate) fn request_token(id: &RequestId) -> String {
-    serde_json::to_string(&(&id.process[..], id.started, &id.key[..], id.created_seq)).expect("a request ID is serializable")
-}
-
-pub(crate) fn request_id(token: &str) -> Option<RequestId> {
-    let (process, started, key, created_seq): (Vec<u8>, u64, Vec<u8>, u64) = serde_json::from_str(token).ok()?;
-    Some(RequestId {
-        process,
-        started,
-        key,
-        created_seq,
-    })
 }
 
 /// A thread going on at `at`, in milliseconds since the epoch; none to let go of the time it goes on at.
@@ -495,23 +480,4 @@ pub enum SiphonEvent {
         subscription: String,
         settings: Settings,
     },
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn request_tokens_preserve_bytes_and_full_sequence_numbers() {
-        let id = RequestId {
-            process: b"/threads/a/\xff".to_vec(),
-            started: u64::MAX - 2,
-            key: b"\xfe\0".to_vec(),
-            created_seq: u64::MAX,
-        };
-        let encoded = serde_json::to_string(&request_token(&id)).unwrap();
-        let token: String = serde_json::from_str(&encoded).unwrap();
-        assert_eq!(request_id(&token), Some(id));
-        assert_eq!(request_id("old-mailbox-key"), None);
-    }
 }

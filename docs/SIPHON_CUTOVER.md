@@ -2,7 +2,7 @@
 
 2026-11-18
 
-Octoii will build and run against the published `octoii-siphon-lib` and `octoii-ai` packages. The private
+Octoii builds and runs against the published `octoii-siphon-lib` and `octoii-ai` packages. The private
 Siphon repository owns Beak, the runtime, the native ABI implementation, and its build pipeline. The public
 Siphon package owns the typed Rust interface and distribution of the corresponding binaries. Octoii owns
 agent behavior, extensions, permissions policy, node composition, and the client protocol.
@@ -24,9 +24,13 @@ The private Siphon repository owns its Beak workspace and builds the native arch
 SDK crate carries the target and checksums of each matching distribution. The product has
 no private checkout dependency or deploy key.
 
-The published SDK is version `0.0.1`. Its four native archives passed the private native
-pipeline's C and Rust consumer checks. [Cargo package](https://crates.io/crates/octoii-siphon-lib/0.0.1) ·
-[Binary release](https://github.com/octoii-works/octoii-siphon-lib/releases/tag/v0.0.1)
+Octoii pins SDK `0.0.3`, which uses the four ABI 5 archives verified by the native pipeline for
+`0.0.2`. [Cargo package](https://crates.io/crates/octoii-siphon-lib/0.0.3) ·
+[Binary release](https://github.com/octoii-works/octoii-siphon-lib/releases/tag/v0.0.3)
+
+The SDK encodes and decodes opaque request tokens. Octoii uses the Fiber path to check thread
+ownership before submitting an answer, and the mailbox key to associate live output with its call.
+Fibers stage removal of mailbox entries in the phase's commit with `Run::discard_mail`.
 
 
 ## Remove the old contracts and close the source boundary

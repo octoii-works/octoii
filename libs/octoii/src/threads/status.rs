@@ -6,7 +6,6 @@ use octoii_siphon_lib::{Batch, Named, RuntimeHandle};
 use octoii_siphon_lib::{Directory, Snapshot};
 use serde::{Deserialize, Serialize};
 
-use crate::protocol::siphon::request_token;
 use crate::threads::config::Config;
 use crate::threads::inbox::{self, Waiting};
 use crate::threads::marks::{Marks, SNOOZE_NAME};
@@ -261,8 +260,8 @@ fn asks(runtime: &RuntimeHandle, snapshot: &Snapshot, id: &str) -> Result<Vec<As
         .into_iter()
         .map(|prompt| {
             Ok(Ask {
-                id: request_token(&prompt.id),
-                key: String::from_utf8_lossy(&prompt.id.key).into_owned(),
+                id: prompt.id.to_token(),
+                key: String::from_utf8_lossy(prompt.id.key()).into_owned(),
                 name: String::from_utf8_lossy(&prompt.name).into_owned(),
                 payload: serde_json::from_slice(&prompt.payload)?,
                 answer_schema: prompt.answer_schema,

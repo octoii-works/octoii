@@ -5,7 +5,7 @@
 
 use std::collections::{BTreeSet, HashMap};
 
-use crate::protocol::siphon::{Settings, SiphonEvent, SiphonTopic, request_token};
+use crate::protocol::siphon::{Settings, SiphonEvent, SiphonTopic};
 use crate::threads::{Listed, Status, log, thread};
 use bytes::Bytes;
 use octoii_siphon_lib::StreamEvent;
@@ -90,13 +90,13 @@ async fn thread_told(subscription: &Subscription, thread: &str, cursor: &mut Opt
                     let subscription = sink.id().to_owned();
                     let event = match event {
                         StreamEvent::Reset => SiphonEvent::StreamsReset { subscription },
-                        StreamEvent::Closed(id) => SiphonEvent::StreamClosed { subscription, request: request_token(&id) },
+                        StreamEvent::Closed(id) => SiphonEvent::StreamClosed { subscription, request: id.to_token() },
                         StreamEvent::Data(part) => {
                             let Ok(data) = serde_json::from_slice::<Box<serde_json::value::RawValue>>(&part.data) else { continue };
                             SiphonEvent::Stream {
                                 subscription,
-                                request: request_token(&part.id),
-                                key: String::from_utf8_lossy(&part.id.key).into_owned(),
+                                request: part.id.to_token(),
+                                key: String::from_utf8_lossy(part.id.key()).into_owned(),
                                 offset: part.offset.to_string(),
                                 data,
                             }

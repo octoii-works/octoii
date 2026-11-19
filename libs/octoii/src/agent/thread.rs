@@ -119,7 +119,7 @@ fn gathered(run: &mut Run<'_>, id: &str, key: &str) -> anyhow::Result<Ending<Mai
             Wait::new().mail(key.to_owned()),
         ));
     };
-    run.take_mail(key)?;
+    run.discard_mail(key)?;
     match answer {
         Answer::Given(told) => begin(run, id, told),
         Answer::Interrupted => Ok(Ending::Next(MainState::Rest)),

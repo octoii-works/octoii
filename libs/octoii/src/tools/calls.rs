@@ -297,7 +297,7 @@ impl Calls {
                 let Some(answer) = run.answer::<Permission>(&key)? else {
                     return Ok(());
                 };
-                run.take_mail(&key)?;
+                run.discard_mail(&key)?;
                 match answer {
                     Answer::Given(Decision::Allow { always }) => {
                         if always && let Some(folder) = setting.project {
@@ -324,7 +324,7 @@ impl Calls {
             State::Judging => {
                 let key = format!("{}.review", call.key);
                 let Some(answer) = run.answer::<Review>(&key)? else { return Ok(()) };
-                run.take_mail(&key)?;
+                run.discard_mail(&key)?;
                 if let Answer::Given(Judgment { usage: Some(used), .. }) = &answer {
                     let process = bytes::Bytes::copy_from_slice(run.path());
                     run.changes.charge(process, crate::threads::ThreadUsage::counters_of(used));
@@ -341,7 +341,7 @@ impl Calls {
                 let Some(answer) = run.answer::<Asks>(&call.key)? else {
                     return Ok(());
                 };
-                run.take_mail(&call.key)?;
+                run.discard_mail(&call.key)?;
                 match answer {
                     Answer::Given(given) => result(
                         CallStatus::Ok,
@@ -355,7 +355,7 @@ impl Calls {
                 let Some(answer) = run.answer::<Exec>(&call.key)? else {
                     return Ok(());
                 };
-                run.take_mail(&call.key)?;
+                run.discard_mail(&call.key)?;
                 match answer {
                     Answer::Given(told) => planned(run, setting, &call.key, told)?,
                     Answer::Failed(words) => ended(CallStatus::ToolError, words),
@@ -430,7 +430,7 @@ impl Calls {
             };
             if let Some(key) = request {
                 run.cancel_request(&key)?;
-                run.take_mail(&key)?;
+                run.discard_mail(&key)?;
             }
             let refusal = ended(
                 CallStatus::Unavailable,

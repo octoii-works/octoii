@@ -202,7 +202,7 @@ impl TurnFiber {
             };
             return Ok(Ending::Wait(state, wait));
         };
-        run.take_mail(key)?;
+        run.discard_mail(key)?;
         let response = match answer {
             Answer::Given(response) => response,
             Answer::Interrupted => return Ok(Ending::Next(TurnState::Asking { attempt, compacted })),
@@ -313,7 +313,7 @@ impl TurnFiber {
                     let wait = Wait::new().mail(key.clone());
                     return Ok(Ending::Wait(TurnState::Asked { key, attempt, compacted }, wait));
                 };
-                run.take_mail(&key)?;
+                run.discard_mail(&key)?;
                 let Answer::Given(response) = answer else {
                     return Ok(Ending::Stopped(None));
                 };

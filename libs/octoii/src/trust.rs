@@ -120,7 +120,7 @@ impl Fiber for TrustFiber {
         let Some(answer) = run.answer::<Trust>(Self::KEY)? else {
             return Ok(Ending::Wait((), wait));
         };
-        run.take_mail(Self::KEY)?;
+        run.discard_mail(Self::KEY)?;
         if let Answer::Given(Trusted { trusted }) = answer {
             let decision = decide(run.snapshot(), &trust.folder, &trust.digest, trusted)?;
             run.changes.extend(decision);

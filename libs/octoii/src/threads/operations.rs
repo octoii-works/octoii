@@ -5,11 +5,10 @@ use std::marker::PhantomData;
 
 use bytes::Bytes;
 use octoii_ai::vocabulary::InputContent;
-use octoii_siphon_lib::{Batch, Changes, Fiber, RuntimeHandle};
+use octoii_siphon_lib::{Batch, Changes, Fiber, RequestId, RuntimeHandle};
 use octoii_siphon_lib::{Query, Range};
 use serde::{Deserialize, Serialize};
 
-use crate::protocol::siphon::request_id;
 use crate::threads::config::{Config, ConfigChange};
 use crate::threads::idempotency::{self, Done};
 use crate::threads::inbox::{self, Inbound, Joins};
@@ -460,8 +459,8 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
     /// The thread or request is missing, the request belongs to another thread, or Siphon rejects the answer.
     pub async fn answer(&self, id: &str, token: &str, answer: &serde_json::Value) -> Result<(), Error> {
         self.directory(id)?;
-        let request = request_id(token)
-            .filter(|request| thread::id_of(&request.process) == Some(id))
+        let request = RequestId::from_token(token)
+            .filter(|request| thread::id_of(request.path()) == Some(id))
             .ok_or_else(|| {
                 Error::NotGiven(octoii_siphon_lib::Error::new(
                     octoii_siphon_lib::Status::NotFound,

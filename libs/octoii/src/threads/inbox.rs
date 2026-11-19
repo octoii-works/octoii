@@ -107,7 +107,7 @@ pub fn ended_mail(run: &mut octoii_siphon_lib::Run<'_>, key: &str) -> anyhow::Re
     let Some(mail) = run.mail(key.as_bytes())? else { return Ok(None) };
     anyhow::ensure!(mail.name == ENDED_MAIL.as_bytes(), "unexpected completion mail name");
     let ended = serde_json::from_slice(&mail.payload)?;
-    run.take_mail(key)?;
+    run.discard_mail(key)?;
     Ok(Some(ended))
 }
 

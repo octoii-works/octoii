@@ -59,7 +59,7 @@ impl Fiber for TitleFiber {
         let Some(answer) = run.answer::<ModelRequest>(&key)? else {
             return Ok(Ending::Wait(key.clone(), Wait::new().mail(key)));
         };
-        run.take_mail(&key)?;
+        run.discard_mail(&key)?;
         let Answer::Given(response) = answer else {
             return Ok(Ending::Done(None));
         };
