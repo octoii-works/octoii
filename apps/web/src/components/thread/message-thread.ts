@@ -14,6 +14,7 @@ export type MessageThread = {
 	readonly workspace: string | undefined;
 	readonly pages: readonly PageListed[];
 	readonly terminals: readonly TerminalListed[];
+	readonly openBrowser?: (url: string) => void;
 };
 
 /** The thread of the messages shown; none where they are no thread's. */

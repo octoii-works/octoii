@@ -3,21 +3,21 @@
  * kept on the page while the person goes between places. The composer edits a place's draft.
  */
 import { useSyncExternalStore } from "react";
-import type { ElementFeedback } from "@octoii-works/octoii-client";
 import type { Attachment } from "../../core/attachments.ts";
 import { type Draft, type DraftPlace, EMPTY_DRAFT, afterSubmission, draftKey } from "../../core/drafts.ts";
+import type { ElementAnnotation } from "../../core/element-feedback.ts";
 
 /** A place's draft, and how it changes. */
 export type DraftHandle = {
 	readonly text: string;
 	readonly attachments: readonly Attachment[];
-	readonly feedback: readonly ElementFeedback[];
+	readonly feedback: readonly ElementAnnotation[];
 	readonly setText: (text: string) => void;
 	/** Adds a file to the draft as it stands then, as files kept one by one arrive in any order. */
 	readonly attach: (attachment: Attachment) => void;
 	/** Takes the file `ref` away from the draft. */
 	readonly detach: (ref: string) => void;
-	readonly removeFeedback: (feedback: ElementFeedback) => void;
+	readonly removeFeedback: (feedback: ElementAnnotation) => void;
 	/** Clears only this submitted snapshot after acknowledgement, retaining anything edited or added meanwhile. */
 	readonly clearSubmitted: () => void;
 	/** Clears only the submitted text, preserving newer edits and attachments that were not sent. */
@@ -35,7 +35,7 @@ function changed(key: string, change: Partial<Draft>): void {
 }
 
 /** A capture always belongs to the thread whose files contain it, even if another thread is now on screen. */
-export function attachElementFeedback(feedback: ElementFeedback): void {
+export function attachElementFeedback(feedback: ElementAnnotation): void {
 	const key = draftKey({ thread: feedback.thread });
 	changed(key, { feedback: [...(drafts.get(key) ?? EMPTY_DRAFT).feedback, feedback] });
 }

@@ -22,11 +22,13 @@ import { ConnectionLine, PairingPage, unpaired } from "./access.tsx";
 import { NoticesProvider } from "../components/ui/notices.tsx";
 import { useUndo } from "../components/state/marks.ts";
 import { useAttention } from "../components/state/attention.ts";
+import { useDesktopThread } from "../components/effects/desktop-thread.ts";
 
 /** The app. */
 export function App(): ReactNode {
 	const route = useRoute();
 	const connection = useConnection();
+	useDesktopThread(route.place === "thread" && !unpaired(connection) ? route.thread : null);
 	const { device } = useDevice();
 	useAppearance(device);
 	const [paletteOpen, setPaletteOpen] = useState(false);

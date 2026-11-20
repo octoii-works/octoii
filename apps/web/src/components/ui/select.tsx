@@ -16,6 +16,7 @@ export type SelectProps<Value extends string> = {
 	readonly onValueChange: (value: Value) => void;
 	readonly label: string;
 	readonly className?: string;
+	readonly disabled?: boolean;
 };
 
 /** How a control that picks one of some values reads, closed: the value chosen, and the mark that opens the others. */
@@ -28,12 +29,13 @@ export function Select<Value extends string>(props: SelectProps<Value>) {
 		<SelectPrimitive.Root
 			items={props.items}
 			value={props.value}
+			disabled={props.disabled ?? false}
 			onValueChange={(value) => {
 				const chosen = props.items.find((item) => item.value === value);
 				if (chosen !== undefined) props.onValueChange(chosen.value);
 			}}
 		>
-			<SelectPrimitive.Trigger aria-label={props.label} className={cn(PICKER_TRIGGER, props.className)} data-slot="select-trigger">
+			<SelectPrimitive.Trigger aria-label={props.label} className={cn(PICKER_TRIGGER, "disabled:opacity-64", props.className)} data-slot="select-trigger">
 				<SelectPrimitive.Value className="truncate" />
 				<SelectPrimitive.Icon className="text-muted-foreground">
 					<ChevronsUpDown className="size-3.5" />

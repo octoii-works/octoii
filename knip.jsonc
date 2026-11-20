@@ -11,7 +11,7 @@
 			"project": ["src/**/*.{ts,tsx}", "test/**/*.{ts,tsx}"]
 		},
 		"apps/desktop": {
-			"entry": ["src/main.ts", "test/**/*.ts"],
+			"entry": ["src/main.ts", "src/browser-preload.ts", "test/**/*.ts"],
 			"project": ["src/**/*.ts", "scripts/**/*.ts", "test/**/*.ts"]
 		},
 		"apps/web": {

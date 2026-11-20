@@ -44,6 +44,7 @@ date: <date> (UTC)
 
 === section browser
 When `browser` is available, it controls the thread's browser beside the chat. Each call acts on the current page; switch changes it.
+Use placement "background" when a page must stay open after the desktop closes.
 Use refs from read's accessibility tree for elements; * marks refs new since the previous read. Use look for visual checks. Actions that change the page wait for it to settle and report whether it navigated, changed, or stayed the same.
 A local HTML preview is isolated. Check it with look, console and coordinate clicks. Use raw CDP only when other actions cannot do the job.
 Use :page{id=<id>} for an inline reference, or ::page{id=<id>} on its own line for a card; use the returned page id as id.
@@ -137,6 +138,21 @@ Control the thread's current browser page. One action per call; action parameter
       ],
       "type": "string"
     },
+    "PagePlacement": {
+      "description": "Where the page should live for the duration of its work.",
+      "oneOf": [
+        {
+          "const": "workspace",
+          "description": "Open in the thread's local desktop when it is showing the thread.",
+          "type": "string"
+        },
+        {
+          "const": "background",
+          "description": "Keep the page on the node when the desktop closes.",
+          "type": "string"
+        }
+      ]
+    },
     "Place": {
       "anyOf": [
         {
@@ -195,6 +211,11 @@ Control the thread's current browser page. One action per call; action parameter
           "const": "open",
           "type": "string"
         },
+        "placement": {
+          "$ref": "#/$defs/PagePlacement",
+          "default": "workspace",
+          "description": "Use background for work that must continue after the desktop closes."
+        },
         "url": {
           "description": "URL to open; a blank page if omitted.",
           "type": [
@@ -219,6 +240,10 @@ Control the thread's current browser page. One action per call; action parameter
         "path": {
           "description": "HTML file, relative to the workspace, absolute, or starting with ~ for the home folder.",
           "type": "string"
+        },
+        "placement": {
+          "$ref": "#/$defs/PagePlacement",
+          "default": "workspace"
         }
       },
       "required": [

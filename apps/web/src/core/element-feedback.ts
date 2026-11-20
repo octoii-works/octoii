@@ -2,6 +2,11 @@
 import type { ElementFeedback, InputContent } from "@octoii-works/octoii-client";
 import { directiveOf } from "./things.ts";
 
+/** A capture and the person's note, kept together when several elements are attached. */
+export type ElementAnnotation = ElementFeedback & { readonly comment?: string };
+
+export const ANNOTATION_LIMIT = 4000;
+
 /** A short label for a saved selection, independent of the page's current contents. */
 export function elementSummary(feedback: ElementFeedback): string {
 	const element = feedback.element;
@@ -42,9 +47,11 @@ export function elementEvidence(feedback: ElementFeedback): string {
 }
 
 /** A feedback item's two adjacent parts keep the screenshot with its own captured context. */
-export function elementContent(feedback: ElementFeedback): readonly InputContent[] {
+export function elementContent(feedback: ElementAnnotation): readonly InputContent[] {
+	const comment = feedback.comment?.trim();
+	const evidence = elementEvidence(feedback);
 	return [
-		{ type: "input_text", text: elementEvidence(feedback) },
+		{ type: "input_text", text: comment ? `${bounded(comment, ANNOTATION_LIMIT)}\n\n${evidence}` : evidence },
 		{ type: "input_image", file: feedback.screenshot, detail: "auto" },
 	];
 }

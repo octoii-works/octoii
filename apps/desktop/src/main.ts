@@ -8,6 +8,7 @@ import { desktopResponse } from "./assets.ts";
 import { LastLocation } from "./location.ts";
 import { installBundledRuntime } from "./runtime.ts";
 import { STARTUP_URL, connectingPage, failedPage } from "./startup.ts";
+import { serveBrowser } from "./browser.ts";
 
 app.setName("Octoii");
 protocol.registerSchemesAsPrivileged([{ scheme: "octoii-desktop", privileges: { standard: true, secure: true } }]);
@@ -17,6 +18,25 @@ function openExternal(address: string): void {
 	const url = new URL(address);
 	if (url.protocol !== "https:" && url.protocol !== "http:") return;
 	void shell.openExternal(url.href).catch(() => dialog.showErrorBox("Octoii", "Could not open the link in your browser."));
+}
+
+function desktopWindow(): BrowserWindow {
+	return new BrowserWindow({
+		title: "Octoii",
+		...(process.platform === "darwin" ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 16, y: 19 } } : {}),
+		width: 1280,
+		height: 860,
+		minWidth: 800,
+		minHeight: 560,
+		backgroundColor: "#171717",
+		webPreferences: {
+			nodeIntegration: false,
+			contextIsolation: true,
+			sandbox: true,
+			webviewTag: true,
+			preload: join(app.getAppPath(), "dist/browser-preload.cjs"),
+		},
+	});
 }
 
 async function start(): Promise<void> {
@@ -59,16 +79,9 @@ async function start(): Promise<void> {
 
 	function createWindow(): void {
 		let connecting = false;
-		const window = new BrowserWindow({
-			title: "Octoii",
-			...(process.platform === "darwin" ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 16, y: 19 } } : {}),
-			width: 1280,
-			height: 860,
-			minWidth: 800,
-			minHeight: 560,
-			backgroundColor: "#171717",
-			webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true },
-		});
+		let browserSocket: string | undefined;
+		const window = desktopWindow();
+		serveBrowser(window.webContents, () => (origin && browserSocket ? { origin, socket: browserSocket } : undefined));
 		window.webContents.session.setPermissionRequestHandler((_contents, _permission, reply) => reply(false));
 		window.webContents.session.setPermissionCheckHandler(() => false);
 		window.webContents.setWindowOpenHandler(({ url }) => {
@@ -106,6 +119,7 @@ async function start(): Promise<void> {
 				if (window.isDestroyed()) return;
 				origin = address.origin;
 				if (initial === undefined) await pairLocalNode(node, address, desktopSession);
+				browserSocket = await node.browserSocket(address).catch(() => undefined);
 				if (window.isDestroyed()) return;
 				await window.loadURL(location.restore(address, nodeIdentity).href);
 			} catch (error) {

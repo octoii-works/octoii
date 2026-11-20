@@ -23,8 +23,12 @@ octoii::methods! {
     "browser.dialog" Dialog(AnswerDialog) -> Nothing, Some(Scope::BrowserOperate);
     /// A page closed.
     "browser.close" Close(OfPage) -> Nothing, Some(Scope::BrowserOperate);
-    /// A page's view sized anew.
+    /// Takes control of a displayed page or returns it to the agent.
+    "browser.control" Control(PageControl) -> Nothing, Some(Scope::BrowserOperate);
+    /// Measures the viewing room or sets an explicit viewport while holding control.
     "browser.resize" Resize(ResizePage) -> Nothing, Some(Scope::BrowserOperate);
+    /// Sets the page's zoom percentage while holding control.
+    "browser.zoom" Zoom(PageZoom) -> Nothing, Some(Scope::BrowserOperate);
     /// The person's mouse on a page.
     "browser.mouse" Mouse(OnPage<PageMouse>) -> Nothing, Some(Scope::BrowserOperate);
     /// A key the person pressed or let go on a page.
@@ -131,6 +135,18 @@ pub struct OpenPage {
     #[ts(optional)]
     pub url: Option<String>,
     pub view: View,
+    pub placement: PagePlacement,
+}
+
+/// Where the page should live for the duration of its work.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum PagePlacement {
+    /// Open in the thread's local desktop when it is showing the thread.
+    #[default]
+    Workspace,
+    /// Keep the page on the node when the desktop closes.
+    Background,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -157,6 +173,39 @@ pub struct AnswerDialog {
 pub struct ResizePage {
     pub page: String,
     pub view: View,
+    pub presentation: PagePresentation,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub viewport: Option<ViewportMode>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct PageZoom {
+    pub page: String,
+    pub percent: u16,
+    pub presentation: PagePresentation,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum ViewportMode {
+    #[default]
+    Fill,
+    Fixed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum PageHost {
+    Headless,
+    Desktop,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum DevToolsState {
+    Closed,
+    Open,
 }
 
 /// What the person did on a page.
@@ -252,12 +301,46 @@ pub struct PageListed {
     pub url: String,
     pub title: String,
     pub view: View,
+    pub viewport_size: View,
+    pub viewport: ViewportMode,
+    pub zoom: u16,
+    pub host: PageHost,
+    pub dev_tools: DevToolsState,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub dialog: Option<PageDialog>,
     pub loading: bool,
     pub back: bool,
     pub forward: bool,
+    pub control: PageController,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum PageController {
+    Agent,
+    You,
+    Viewer,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum ControlAction {
+    Take,
+    Release,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct PageControl {
+    pub page: String,
+    pub action: ControlAction,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum PagePresentation {
+    Stream,
+    Native,
 }
 
 /// What a client subscribes to of the browser's: a thread's pages, or a page as it is painted.
@@ -265,7 +348,7 @@ pub struct PageListed {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum BrowserTopic {
     Pages { thread: String },
-    Page { page: String },
+    Page { page: String, presentation: PagePresentation },
 }
 
 /// An event of a subscription to the browser's: a thread's pages as they changed; or a frame of a page, the newest the

@@ -121,6 +121,34 @@ pub(crate) fn connect(command: Command, told: CommandEvents) -> (Cdp, mpsc::Unbo
     (Cdp { calls }, heard)
 }
 
+/// The same DevTools messages, relayed by an attached desktop over the node's control connection.
+pub(crate) fn connect_desktop(
+    outgoing: mpsc::UnboundedSender<Value>,
+    mut incoming: mpsc::UnboundedReceiver<Value>,
+) -> (Cdp, mpsc::UnboundedReceiver<Value>) {
+    let (calls, mut inbox) = mpsc::unbounded_channel();
+    let (events, heard) = mpsc::unbounded_channel();
+    tokio::spawn(async move {
+        let mut pending = Pending::default();
+        loop {
+            tokio::select! {
+                call = inbox.recv() => {
+                    let Some(call) = call else { break };
+                    if outgoing.send(pending.sent(call)).is_err() {
+                        break;
+                    }
+                }
+                message = incoming.recv() => {
+                    let Some(message) = message else { break };
+                    pending.heard(message, &events);
+                }
+            }
+        }
+        pending.ended(&mut inbox, &CdpError::Ended);
+    });
+    (Cdp { calls }, heard)
+}
+
 /// Owns the pipe till the browser ends, or every handle to it goes.
 async fn own(command: Command, mut told: CommandEvents, mut calls: mpsc::UnboundedReceiver<Call>, events: mpsc::UnboundedSender<Value>) {
     let (outgoing, mut input) = mpsc::unbounded_channel::<Vec<u8>>();
@@ -132,8 +160,7 @@ async fn own(command: Command, mut told: CommandEvents, mut calls: mpsc::Unbound
         Ok::<_, std::io::Error>(())
     };
     tokio::pin!(writing);
-    let mut pending: HashMap<u64, oneshot::Sender<Result<Value, CdpError>>> = HashMap::new();
-    let mut next_id = 1_u64;
+    let mut pending = Pending::default();
     let mut unended = BytesMut::new();
     let mut offset = 0;
     let end = loop {
@@ -144,16 +171,9 @@ async fn own(command: Command, mut told: CommandEvents, mut calls: mpsc::Unbound
             },
             call = calls.recv() => {
                 let Some(call) = call else { break CdpError::Ended };
-                let id = next_id;
-                next_id += 1;
-                let mut message = serde_json::json!({ "id": id, "method": call.method, "params": call.params });
-                if let Some(session) = call.session {
-                    message["sessionId"] = Value::String(session);
-                }
-                let mut bytes = serde_json::to_vec(&message).unwrap_or_default();
+                let mut bytes = serde_json::to_vec(&pending.sent(call)).unwrap_or_default();
                 bytes.push(0);
                 let _ = outgoing.send(bytes);
-                pending.insert(id, call.reply);
             }
             event = told.next() => match event {
                 Ok(Some(CommandEvent::Output(chunk))) if chunk.offset == offset => {
@@ -161,7 +181,9 @@ async fn own(command: Command, mut told: CommandEvents, mut calls: mpsc::Unbound
                     unended.extend_from_slice(&chunk.bytes);
                     while let Some(end) = unended.iter().position(|&byte| byte == 0) {
                         let message = unended.split_to(end + 1);
-                        handle(&message[..end], &mut pending, &events);
+                        if let Ok(value) = serde_json::from_slice(&message[..end]) {
+                            pending.heard(value, &events);
+                        }
                     }
                 }
                 Ok(Some(CommandEvent::Output(chunk))) => break CdpError::OutputLost { from: offset, through: chunk.offset },
@@ -172,31 +194,51 @@ async fn own(command: Command, mut told: CommandEvents, mut calls: mpsc::Unbound
             },
         }
     };
-    calls.close();
-    for (_, reply) in pending.drain() {
-        let _ = reply.send(Err(end.clone()));
-    }
-    while let Ok(call) = calls.try_recv() {
-        let _ = call.reply.send(Err(end.clone()));
-    }
+    pending.ended(&mut calls, &end);
 }
 
-/// Hands on one message of the browser's: an answer to what waits for it, an event to whoever hears the browser.
-fn handle(message: &[u8], pending: &mut HashMap<u64, oneshot::Sender<Result<Value, CdpError>>>, events: &mpsc::UnboundedSender<Value>) {
-    let Ok(mut value) = serde_json::from_slice::<Value>(message) else {
-        return;
-    };
-    if let Some(id) = value.get("id").and_then(Value::as_u64) {
-        let Some(reply) = pending.remove(&id) else { return };
-        let answer = match value.get_mut("error") {
-            Some(error) => Err(CdpError::Refused {
-                code: error.get("code").and_then(Value::as_i64).unwrap_or_default(),
-                message: error.get("message").and_then(Value::as_str).unwrap_or_default().to_owned(),
-            }),
-            None => Ok(value.get_mut("result").map_or(Value::Null, Value::take)),
-        };
-        let _ = reply.send(answer);
-        return;
+#[derive(Default)]
+struct Pending {
+    last_id: u64,
+    replies: HashMap<u64, oneshot::Sender<Result<Value, CdpError>>>,
+}
+
+impl Pending {
+    fn sent(&mut self, call: Call) -> Value {
+        self.last_id += 1;
+        let mut message = json!({ "id": self.last_id, "method": call.method, "params": call.params });
+        if let Some(session) = call.session {
+            message["sessionId"] = Value::String(session);
+        }
+        self.replies.retain(|_, reply| !reply.is_closed());
+        self.replies.insert(self.last_id, call.reply);
+        message
     }
-    let _ = events.send(value);
+
+    /// Answers end a call; events go on to the owner of the pages.
+    fn heard(&mut self, mut value: Value, events: &mpsc::UnboundedSender<Value>) {
+        if let Some(id) = value.get("id").and_then(Value::as_u64) {
+            let Some(reply) = self.replies.remove(&id) else { return };
+            let answer = match value.get_mut("error") {
+                Some(error) => Err(CdpError::Refused {
+                    code: error.get("code").and_then(Value::as_i64).unwrap_or_default(),
+                    message: error.get("message").and_then(Value::as_str).unwrap_or_default().to_owned(),
+                }),
+                None => Ok(value.get_mut("result").map_or(Value::Null, Value::take)),
+            };
+            let _ = reply.send(answer);
+        } else {
+            let _ = events.send(value);
+        }
+    }
+
+    fn ended(self, calls: &mut mpsc::UnboundedReceiver<Call>, error: &CdpError) {
+        calls.close();
+        for reply in self.replies.into_values() {
+            let _ = reply.send(Err(error.clone()));
+        }
+        while let Ok(call) = calls.try_recv() {
+            let _ = call.reply.send(Err(error.clone()));
+        }
+    }
 }

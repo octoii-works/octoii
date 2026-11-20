@@ -2,12 +2,16 @@
 //! the `browser` tool its model calls, and its methods and topics — a page opened, moved, answered and closed, the
 //! person's mouse, keys and text on it, a thread's pages as they change and a page as it is painted.
 
+use std::sync::{Arc, OnceLock};
+
 use octoii::protocol::{Error, Nothing, Scope};
 use octoii::{Caller, Extension, Lagged, Registrar, Subscription};
 use serde_json::{Value, json};
 use tokio::sync::broadcast::error::RecvError;
 
-use crate::protocol::{self, BrowserEvent, BrowserTopic, Method, PageDialog, PageKey, PageListed, PageMouse, View};
+use crate::protocol::{
+    self, BrowserEvent, BrowserTopic, Method, PageController, PageDialog, PageKey, PageListed, PageMouse, PagePresentation, View,
+};
 use crate::{Browser, BrowserError, BrowserHost, BrowserTool, Change, PageView, Size};
 
 /// The browser, as a host adds it: the program it runs — one found on the machine, where none — the folder of its
@@ -17,6 +21,8 @@ pub struct BrowserExtension {
     pub program: Option<std::path::PathBuf>,
     pub profile: Option<std::path::PathBuf>,
     pub downloads: Option<std::path::PathBuf>,
+    /// Gives the node's private control service the same browser the extension uses.
+    pub browser: Option<Arc<OnceLock<Browser>>>,
 }
 
 impl Extension for BrowserExtension {
@@ -41,6 +47,9 @@ impl Extension for BrowserExtension {
             profile: self.profile,
             downloads: self.downloads,
         });
+        if let Some(handle) = self.browser {
+            let _ = handle.set(browser.clone());
+        }
         let closing = browser.clone();
         registrar.on_thread_deleted(move |thread| closing.close_thread(thread));
         let tool = BrowserTool { browser: browser.clone() };
@@ -68,10 +77,31 @@ fn size(view: View) -> Size {
 
 /// Does `method` on `browser`.
 async fn answered(browser: &Browser, caller: &Caller, method: Method) -> Result<Value, Error> {
+    let driving = match &method {
+        Method::Navigate(navigate) => Some(&navigate.page),
+        Method::Back(of) | Method::Forward(of) | Method::Reload(of) => Some(&of.page),
+        Method::Dialog(answer) => Some(&answer.page),
+        Method::Resize(resize) if resize.viewport.is_some() => Some(&resize.page),
+        Method::Zoom(zoom) => Some(&zoom.page),
+        Method::Mouse(on) => Some(&on.page),
+        Method::Key(on) => Some(&on.page),
+        Method::Text(typed) => Some(&typed.page),
+        _ => None,
+    };
+    let _driving = match driving {
+        Some(page) => Some(browser.drive(page, Some(&caller.session)).await.map_err(|error| failed(&error))?),
+        None => None,
+    };
     let done = match method {
         Method::Open(open) => {
             let page = browser
-                .open(&open.thread, open.url.as_deref(), size(open.view))
+                .open_for(
+                    &open.thread,
+                    open.url.as_deref(),
+                    size(open.view),
+                    Some(caller.session.clone()),
+                    open.placement,
+                )
                 .await
                 .map_err(|error| failed(&error))?;
             return Ok(json!(protocol::PageOpened { page }));
@@ -92,7 +122,19 @@ async fn answered(browser: &Browser, caller: &Caller, method: Method) -> Result<
             browser.close(&of.page);
             Ok(())
         }
-        Method::Resize(resize) => browser.resize(&resize.page, size(resize.view)).await,
+        Method::Control(request) => browser.control(&request.page, &caller.session, request.action).await,
+        Method::Resize(resize) => {
+            browser
+                .resize_view(
+                    &resize.page,
+                    size(resize.view),
+                    resize.presentation,
+                    resize.viewport,
+                    &caller.session,
+                )
+                .await
+        }
+        Method::Zoom(zoom) => browser.zoom(&zoom.page, zoom.percent, zoom.presentation).await,
         Method::Mouse(on) => browser
             .page(&on.page)
             .cdp("Input.dispatchMouseEvent", mouse(&on.event))
@@ -157,6 +199,12 @@ pub(crate) fn failed(error: &BrowserError) -> Error {
     let code = match &error {
         BrowserError::NoSuchPage => "no_such_page",
         BrowserError::NoBrowser => "no_browser",
+        BrowserError::PageControlled => "page_controlled",
+        BrowserError::PageBusy => "page_busy",
+        BrowserError::PageNotViewed => "page_not_viewed",
+        BrowserError::DesktopViewport => "desktop_viewport",
+        BrowserError::InvalidViewport => "invalid_viewport",
+        BrowserError::InvalidZoom => "invalid_zoom",
         _ => "failed",
     };
     Error {
@@ -166,7 +214,7 @@ pub(crate) fn failed(error: &BrowserError) -> Error {
 }
 
 /// A page as a list of a thread's shows it.
-fn listed(view: PageView) -> PageListed {
+fn listed(view: PageView, session: &str) -> PageListed {
     PageListed {
         id: view.id,
         url: view.url,
@@ -176,6 +224,15 @@ fn listed(view: PageView) -> PageListed {
             height: view.size.height,
             scale: Some(view.size.scale),
         },
+        viewport_size: View {
+            width: view.viewport_size.width,
+            height: view.viewport_size.height,
+            scale: Some(view.viewport_size.scale),
+        },
+        viewport: view.viewport,
+        zoom: view.zoom,
+        host: view.host,
+        dev_tools: view.dev_tools,
         dialog: view.dialog.map(|dialog| PageDialog {
             kind: dialog.kind,
             message: dialog.message,
@@ -184,6 +241,11 @@ fn listed(view: PageView) -> PageListed {
         loading: view.loading,
         back: view.back,
         forward: view.forward,
+        control: match view.controller.as_deref() {
+            Some(person) if person == session => PageController::You,
+            Some(_) => PageController::Viewer,
+            None => PageController::Agent,
+        },
     }
 }
 
@@ -192,9 +254,16 @@ fn listed(view: PageView) -> PageListed {
 async fn told(browser: &Browser, subscription: &Subscription, topic: BrowserTopic) -> Result<(), Lagged> {
     let sink = &subscription.sink;
     let mut changes = browser.events();
+    let _viewing = match &topic {
+        BrowserTopic::Page { page, presentation } => match browser.watch(page, &subscription.caller.session, *presentation).await {
+            Ok(viewing) => Some(viewing),
+            Err(_) => return Ok(()),
+        },
+        BrowserTopic::Pages { .. } => None,
+    };
     let lagged = || Lagged(serde_json::to_value(&topic).unwrap_or_default());
     let tell_pages = |pages: Vec<PageView>| {
-        let pages = pages.into_iter().map(listed).collect();
+        let pages = pages.into_iter().map(|page| listed(page, &subscription.caller.session)).collect();
         sink.offer(&BrowserEvent::Pages {
             subscription: sink.id().to_owned(),
             pages,
@@ -211,11 +280,18 @@ async fn told(browser: &Browser, subscription: &Subscription, topic: BrowserTopi
     };
     match &topic {
         BrowserTopic::Pages { thread } => tell_pages(browser.pages(thread).await).map_err(|_| lagged())?,
-        BrowserTopic::Page { page } => {
+        BrowserTopic::Page {
+            page,
+            presentation: PagePresentation::Stream,
+        } => {
             if let Some(frame) = browser.frame(page).await {
                 tell_frame(frame);
             }
         }
+        BrowserTopic::Page {
+            presentation: PagePresentation::Native,
+            ..
+        } => {}
     }
     loop {
         let change = tokio::select! {
@@ -230,7 +306,13 @@ async fn told(browser: &Browser, subscription: &Subscription, topic: BrowserTopi
             (BrowserTopic::Pages { thread }, Err(RecvError::Lagged(_))) => {
                 tell_pages(browser.pages(thread).await).map_err(|_| lagged())?;
             }
-            (BrowserTopic::Page { page }, Ok(Change::Painted { page: painted, .. })) if painted == *page => {
+            (
+                BrowserTopic::Page {
+                    page,
+                    presentation: PagePresentation::Stream,
+                },
+                Ok(Change::Painted { page: painted, .. }),
+            ) if painted == *page => {
                 if let Some(frame) = browser.frame(page).await {
                     tell_frame(frame);
                 }

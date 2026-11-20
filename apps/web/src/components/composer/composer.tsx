@@ -8,7 +8,8 @@
  * call, telling the model what to do instead — Enter, or Esc — and Deny, Allow (⌘↵) and More stand where it sends.
  */
 import { type ReactNode, useId, useRef, useState, useTransition } from "react";
-import type { ElementFeedback, ReasoningEffort as Effort, Mode } from "@octoii-works/octoii-client";
+import type { ReasoningEffort as Effort, Mode } from "@octoii-works/octoii-client";
+import type { ElementAnnotation } from "../../core/element-feedback.ts";
 import { ArrowUp, LoaderCircle, Square } from "lucide-react";
 import type { Device } from "../../core/device.ts";
 import type { DraftPlace } from "../../core/drafts.ts";
@@ -65,7 +66,7 @@ export type ComposerProps = {
 };
 
 /** A message as the composer sends it: its words, and the files it gives its model. */
-export type Outgoing = { readonly text: string; readonly attachments: readonly Attachment[]; readonly feedback: readonly ElementFeedback[] };
+export type Outgoing = { readonly text: string; readonly attachments: readonly Attachment[]; readonly feedback: readonly ElementAnnotation[] };
 
 /** The words a box says it takes, and what it says where it mentions things. */
 const PLACEHOLDER = "Ask anything";

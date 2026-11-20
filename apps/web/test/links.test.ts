@@ -1,8 +1,16 @@
 /** Links in a message: what one points at, the link a mention writes, and a line with links by their words. */
 import { describe, expect, it } from "bun:test";
-import { namesAsWords, linkTo, targetOf } from "../src/core/links.ts";
+import { developmentAddress, namesAsWords, linkTo, targetOf } from "../src/core/links.ts";
 
 describe("a link", () => {
+	it("recognizes development links without treating lookalike hosts or credentials as local", () => {
+		expect(developmentAddress("http://localhost:5173/docs?example=1")?.href).toBe("http://localhost:5173/docs?example=1");
+		expect(developmentAddress("https://127.0.0.2:8443")?.origin).toBe("https://127.0.0.2:8443");
+		expect(developmentAddress("http://[::1]:8000")?.origin).toBe("http://[::1]:8000");
+		expect(developmentAddress("http://localhost.example.test:5173")).toBeUndefined();
+		expect(developmentAddress("http://name:password@localhost:5173")).toBeUndefined();
+		expect(developmentAddress("ftp://localhost:5173")).toBeUndefined();
+	});
 	it("points at a path of the machine — from the thread's folder, whole, or a file address — its line let go", () => {
 		expect(targetOf("src/main.zig")).toEqual({ path: "src/main.zig" });
 		expect(targetOf("src/main.zig#L12-L20")).toEqual({ path: "src/main.zig", lines: { start: 12, end: 20 } });

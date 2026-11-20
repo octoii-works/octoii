@@ -10,4 +10,13 @@ const result = await Bun.build({
 	outdir: new URL("dist", root).pathname,
 });
 if (!result.success) throw new AggregateError(result.logs, "The desktop did not build");
+const preload = await Bun.build({
+	entrypoints: [new URL("src/browser-preload.ts", root).pathname],
+	target: "node",
+	format: "cjs",
+	external: ["electron"],
+	outdir: new URL("dist", root).pathname,
+	naming: "browser-preload.cjs",
+});
+if (!preload.success) throw new AggregateError(preload.logs, "The desktop browser preload did not build");
 console.log("Built desktop main process and bundled Web interface");

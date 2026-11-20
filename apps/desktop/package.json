@@ -17,8 +17,10 @@
     "electron": "catalog:",
     "@types/node": "catalog:",
     "@types/bun": "catalog:",
+    "@types/ws": "8.18.2",
     "electron-builder": "26.18.0",
-    "@octoii-works/octoii-client": "workspace:*"
+    "@octoii-works/octoii-client": "workspace:*",
+    "ws": "8.22.0"
   },
   "productName": "Octoii",
   "description": "Octoii desktop: a durable agent on your own computer",

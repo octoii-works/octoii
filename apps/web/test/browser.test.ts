@@ -1,8 +1,35 @@
 /** The browser as the interface shows it. */
 import { describe, expect, it } from "bun:test";
 import { addressOf, editingOf, modifiersOf, PageInputGate, pageName, pickViewOf, shownAddress, typedBy } from "../src/core/browser.ts";
+import { elementContent } from "../src/core/element-feedback.ts";
+import { capturedElement } from "./fixtures.ts";
+import { editedViewport, viewportScale } from "../src/core/browser-viewport.ts";
+
+describe("the browser viewport", () => {
+	it("fits both dimensions in the room while a manual preview zoom can overflow it", () => {
+		const view = { width: 1600, height: 900 };
+		expect(viewportScale(view, { width: 824, height: 624 }, "fit")).toBe(0.5);
+		expect(viewportScale(view, { width: 2024, height: 624 }, "fit")).toBeCloseTo(2 / 3);
+		expect(viewportScale(view, { width: 400, height: 400 }, "150")).toBe(1.5);
+	});
+
+	it("recalculates the other dimension only when a ratio is locked", () => {
+		const view = { width: 1280, height: 720 };
+		expect(editedViewport(view, "width", 800)).toEqual({ width: 800, height: 720 });
+		expect(editedViewport(view, "width", 800, 16 / 9)).toEqual({ width: 800, height: 450 });
+		expect(editedViewport(view, "height", 450, 16 / 9)).toEqual({ width: 800, height: 450 });
+		expect(editedViewport(view, "width", 0, 16 / 9)).toBeUndefined();
+	});
+});
 
 describe("the local element picker", () => {
+	it("keeps a browser note and its screenshot together in a normal message", () => {
+		const capture = capturedElement();
+		const [note, image] = elementContent({ ...capture, comment: "Make this easier to read" });
+		expect(note).toMatchObject({ type: "input_text", text: expect.stringContaining("Make this easier to read") });
+		expect(image).toEqual({ type: "input_image", file: capture.screenshot, detail: "auto" });
+	});
+
 	it("waits for the drawn frame to match the node's CSS viewport and density", () => {
 		const high = { width: 800, height: 600, pixelWidth: 1600, pixelHeight: 1200 };
 		expect(pickViewOf(high, { width: 800, height: 600, scale: 2 })).toEqual({ width: 800, height: 600, scale: 2 });

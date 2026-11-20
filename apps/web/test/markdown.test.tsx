@@ -34,7 +34,21 @@ describe("a message's Markdown", () => {
 
 	it("draws a thing named within a line as its chip, one on a line of its own as its card, a closed one said to be gone", () => {
 		const pages = [
-			{ id: "p1", title: "Docs", url: "https://example.com/docs", view: { width: 1280, height: 800 }, loading: false, back: false, forward: false },
+			{
+				id: "p1",
+				title: "Docs",
+				url: "https://example.com/docs",
+				view: { width: 1280, height: 800 },
+				viewport_size: { width: 1280, height: 800 },
+				viewport: "fill" as const,
+				zoom: 100,
+				host: "headless" as const,
+				dev_tools: "closed" as const,
+				loading: false,
+				back: false,
+				forward: false,
+				control: "agent" as const,
+			},
 		];
 		const html = renderToStaticMarkup(
 			<ContributionsContext value={CONTRIBUTIONS}>

@@ -94,10 +94,10 @@ export type Client = {
 	closeTerminal(id: string): Promise<void>;
 	/** Watches the thread's pages in the browser, in the order they were opened: none until the node told them. */
 	watchPages(thread: string): Followable<readonly PageListed[] | undefined>;
-	/** Opens a page in the browser for the thread, at `url` or blank, the size of the view that opens it: its id. */
+	/** Opens a blank page or reveals the thread's page at `url`. A new page starts at `view`. */
 	openPage(thread: string, url: string | undefined, view: View): Promise<string>;
-	/** Follows the page `id` for a view `view` big, told through `handlers`, which clicks it, types into it, resizes it and lets it go. */
-	page(id: string, view: View, handlers: PageHandlers): PageView;
+	/** Follows the page `id` through `handlers`, and can drive it after taking control. */
+	page(id: string, handlers?: PageHandlers): PageView;
 	/** Captures the element the person selected, keeping its screenshot in the named thread. */
 	pickElement(pick: PickElement): Promise<ElementFeedback>;
 	/** Closes the page `id`: gone from its thread. */
@@ -192,8 +192,9 @@ export function createClient(options: ClientOptions): Client {
 		closeTerminal: (id) => done(requests.call("terminals.close", { terminal: id })),
 		watchPages: (thread) =>
 			watched<readonly PageListed[]>(watches, `pages ${thread}`, { type: "pages", thread }, (event) => (event.event === "pages" ? event.pages : undefined)),
-		openPage: async (thread, url, view) => (await requests.call("browser.open", { thread, view, ...(url === undefined ? {} : { url }) })).page,
-		page: (id, view, handlers) => followPage(new Controls(connection, told), requests, subscriptions, id, view, handlers),
+		openPage: async (thread, url, view) =>
+			(await requests.call("browser.open", { thread, view, placement: "workspace", ...(url === undefined ? {} : { url }) })).page,
+		page: (id, handlers) => followPage(new Controls(connection, told), requests, subscriptions, id, handlers),
 		pickElement: (pick) => requests.call("browser.pick", pick),
 		closePage: (id) => done(requests.call("browser.close", { page: id })),
 		grants: async () => (await requests.call("grants.list", {})).projects,

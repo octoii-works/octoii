@@ -14,7 +14,7 @@ import { fenceOpen } from "../../core/blocks.ts";
 import remarkDirective from "remark-directive";
 import remarkGfm from "remark-gfm";
 import { nameOf } from "../../core/files.ts";
-import { targetOf } from "../../core/links.ts";
+import { developmentAddress, targetOf } from "../../core/links.ts";
 import { picturesOfParagraph } from "../../core/pictures.ts";
 import { PathLink } from "../files/path-link.tsx";
 import { cn } from "../ui/cn.ts";
@@ -24,6 +24,7 @@ import { CARD_ELEMENT, CHIP_ELEMENT, remarkDirectives } from "./directives.ts";
 import { remarkAutolinkEnds } from "./autolinks.ts";
 import { PictureStrip } from "./pictures.tsx";
 import { ThingCard, ThingChip } from "./things.tsx";
+import { MessageThreadContext } from "./message-thread.ts";
 
 declare module "react" {
 	namespace JSX {
@@ -73,6 +74,7 @@ function ImageLink(props: { readonly src: string; readonly words: string }): Rea
 
 /** A link: to a path of the machine, a chip that opens it; to a page, opening it in the browser; to nothing, its words. */
 function Link(props: { readonly href: string; readonly children: ReactNode }): ReactNode {
+	const openBrowser = use(MessageThreadContext)?.openBrowser;
 	if (props.href === "") return props.children;
 	const target = targetOf(props.href);
 	if ("path" in target)
@@ -81,6 +83,20 @@ function Link(props: { readonly href: string; readonly children: ReactNode }): R
 				{props.children}
 			</PathLink>
 		);
+	const local = openBrowser === undefined ? undefined : developmentAddress(target.url);
+	if (local && openBrowser) {
+		return (
+			<a
+				href={local.href}
+				onClick={(event) => {
+					event.preventDefault();
+					openBrowser(local.href);
+				}}
+			>
+				{props.children}
+			</a>
+		);
+	}
 	return (
 		<a href={target.url} target="_blank" rel="noopener noreferrer">
 			{props.children}

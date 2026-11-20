@@ -6,7 +6,7 @@
 import type { PageFrame, PageListed, View } from "@octoii-works/octoii-client";
 
 /** Selecting is local; capture keeps input blocked until its result or a cancellation. */
-export type PageMode = "browse" | "pick" | "capturing";
+export type PageMode = "browse" | "observe" | "pick" | "capturing" | "annotate";
 
 /** The viewport and the decoded dimensions of the frame on the canvas. */
 export type DrawnPage = Pick<PageFrame, "width" | "height"> & { readonly pixelWidth: number; readonly pixelHeight: number };
@@ -86,7 +86,7 @@ export function addressOf(typed: string): string {
 }
 
 /** A page's name on its tab: its title, else the host it is on, else New tab where it is blank. */
-export function pageName(page: PageListed): string {
+export function pageName(page: Pick<PageListed, "title" | "url">): string {
 	const title = page.title.trim();
 	if (title !== "" && title !== page.url) return title;
 	if (page.url === "" || page.url === "about:blank") return "New tab";

@@ -4,7 +4,7 @@
  * where the model looks at no images.
  */
 import { type ReactNode, useRef } from "react";
-import type { ElementFeedback } from "@octoii-works/octoii-client";
+import type { ElementAnnotation } from "../../core/element-feedback.ts";
 import { FileText, LoaderCircle, Paperclip, X } from "lucide-react";
 import { type Attachment, fileAddress, isImage, sizeLabel } from "../../core/attachments.ts";
 import { IconButton } from "../ui/button.tsx";
@@ -15,8 +15,8 @@ import { ElementFeedbackCards } from "./element-feedback.tsx";
 /** What the row is given: the draft's files, those on their way, and whether the model looks at images. */
 export type AttachmentsProps = {
 	readonly attachments: readonly Attachment[];
-	readonly feedback: readonly ElementFeedback[];
-	readonly onRemoveFeedback: (feedback: ElementFeedback) => void;
+	readonly feedback: readonly ElementAnnotation[];
+	readonly onRemoveFeedback: (feedback: ElementAnnotation) => void;
 	readonly attaching: Attaching;
 	readonly seesImages: boolean | undefined;
 	/** The thread the files are kept by; none for a thread not made yet, whose files the page holds. */

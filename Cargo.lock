@@ -5565,6 +5565,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "ts-rs",
+ "url",
 ]
 
 [[package]]
@@ -5736,6 +5737,7 @@ dependencies = [
  "bytes",
  "octoii",
  "octoii-ai",
+ "regex",
  "schemars 1.2.3",
  "serde",
  "serde_json",
@@ -5744,6 +5746,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "ts-rs",
+ "url",
 ]
 
 [[package]]

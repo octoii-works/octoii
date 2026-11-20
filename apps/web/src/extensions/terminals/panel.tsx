@@ -19,6 +19,7 @@ export function useTerminalsPanel(
 	thread: string,
 	terminals: readonly TerminalListed[],
 	on: boolean,
+	openBrowser?: (url: string) => void,
 ): { readonly surfaces: readonly Surface[]; readonly openings: readonly Opening[] } {
 	const client = useClient();
 	if (!on) return { surfaces: [], openings: [] };
@@ -26,7 +27,7 @@ export function useTerminalsPanel(
 		key: terminalKey(terminal.id),
 		icon: <SquareTerminal />,
 		label: terminalName(terminal),
-		body: <TerminalPane terminal={terminal.id} />,
+		body: <TerminalPane terminal={terminal.id} openBrowser={openBrowser} />,
 		close: () => {
 			client.closeTerminal(terminal.id).catch((error: unknown) => failed("The terminal could not be closed", error));
 		},

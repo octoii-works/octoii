@@ -70,7 +70,7 @@ const configuration: Configuration = {
 	directories: { output: "out" },
 	electronDist: join(desktop, "node_modules/electron/dist"),
 	electronVersion: JSON.parse(await readFile(join(desktop, "node_modules/electron/package.json"), "utf8")).version,
-	files: ["dist/main.js", "dist/web/**/*", "package.json"],
+	files: ["dist/main.js", "dist/browser-preload.cjs", "dist/web/**/*", "package.json"],
 	extraResources: [{ from: "dist/runtime", to: "runtime" }],
 	npmRebuild: false,
 	mac: {

@@ -6,11 +6,13 @@
 use std::path::Path;
 
 use axum::Router;
+use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Json, Path as Named, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post};
 use bytes::Bytes;
+use futures_util::{SinkExt as _, StreamExt as _};
 use http_body_util::{BodyExt as _, Full};
 use octoii::protocol::Scope;
 use serde::{Deserialize, Serialize};
@@ -25,6 +27,9 @@ pub struct Control {
     pub machine_name: String,
     pub links: crate::pairing::Links,
     pub home: std::path::PathBuf,
+    pub socket: std::path::PathBuf,
+    pub browser: siphon_browser::Browser,
+    pub stop: tokio_util::sync::CancellationToken,
 }
 
 /// What a link or a session is asked with: its label, and what it grants — everything, where none is given.
@@ -42,9 +47,45 @@ pub fn router(control: Control) -> Router {
         .route("/links", post(link))
         .route("/tokens", post(token))
         .route("/status", get(status))
+        .route("/browser", get(desktop))
         .route("/access", get(listed))
         .route("/access/{id}", delete(revoke))
         .with_state(control)
+}
+
+/// The desktop hosts pages for this node over the same owner-only socket as its CLI.
+async fn desktop(State(control): State<Control>, upgrade: WebSocketUpgrade) -> Response {
+    let upgrade = upgrade.protocols(["octoii.desktop-browser.1"]);
+    if upgrade.selected_protocol().is_none() {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    upgrade.on_upgrade(move |socket| desktop_connected(control, socket))
+}
+
+async fn desktop_connected(control: Control, socket: WebSocket) {
+    let Ok(mut browser) = control.browser.desktop().await else { return };
+    let (mut sending, mut receiving) = socket.split();
+    loop {
+        tokio::select! {
+            () = control.stop.cancelled() => return,
+            message = browser.commands.recv() => {
+                let Some(message) = message else { return };
+                if sending.send(Message::Text(message.to_string().into())).await.is_err() {
+                    return;
+                }
+            }
+            message = receiving.next() => match message {
+                Some(Ok(Message::Text(text))) => {
+                    let Ok(message) = serde_json::from_str(&text) else { return };
+                    if browser.messages.send(message).is_err() {
+                        return;
+                    }
+                }
+                Some(Ok(Message::Ping(_) | Message::Pong(_))) => {}
+                _ => return,
+            },
+        }
+    }
 }
 
 fn failed(error: &Refused) -> Response {
@@ -82,6 +123,7 @@ async fn status(State(control): State<Control>) -> Response {
         "home": control.home,
         "machine": control.machine_name,
         "loopback": control.links.loopback,
+        "control_socket": control.socket,
         "key": control.links.tunnel.key().to_string(),
         "relay": relay,
         "seen_from_outside": control.links.tunnel.seen_from_outside(),

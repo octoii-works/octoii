@@ -4,8 +4,8 @@
  * it. A message is sent as parts, its words first, then each file; read back, a message's files are those parts that
  * name a kept file.
  */
-import type { ElementFeedback, InputContent } from "@octoii-works/octoii-client";
-import { elementContent } from "./element-feedback.ts";
+import type { InputContent } from "@octoii-works/octoii-client";
+import { type ElementAnnotation, elementContent } from "./element-feedback.ts";
 
 /**
  * A file given with a message: its reference, what it is, its name and its size in bytes — and, where its thread is not
@@ -62,7 +62,7 @@ export function givenTypeOf(file: { readonly type: string; readonly name: string
 }
 
 /** A message's content: its words first, where it has any, then each file, as the file the thread keeps. */
-export function contentOf(text: string, attachments: readonly Attachment[], feedback: readonly ElementFeedback[] = []): readonly InputContent[] {
+export function contentOf(text: string, attachments: readonly Attachment[], feedback: readonly ElementAnnotation[] = []): readonly InputContent[] {
 	const files = attachments.map((attachment): InputContent => {
 		const file = { ref: attachment.ref, media_type: attachment.media_type, filename: attachment.name };
 		return isImage(attachment.media_type) ? { type: "input_image", file, detail: "auto" } : { type: "input_file", file };

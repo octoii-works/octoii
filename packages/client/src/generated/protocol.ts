@@ -57,7 +57,7 @@ export type BrowserEvent = { "event": "pages", subscription: string, pages: Arra
 /**
  * What a client subscribes to of the browser's: a thread's pages, or a page as it is painted.
  */
-export type BrowserTopic = { "type": "pages", thread: string, } | { "type": "page", page: string, };
+export type BrowserTopic = { "type": "pages", thread: string, } | { "type": "page", page: string, presentation: PagePresentation, };
 
 /**
  * A call a reply made, by the model's id of it and Octoii's key of it — the key it is run, asked of and answered by,
@@ -188,6 +188,8 @@ export type Connects = "api_key" | "sign_in" | "agent" | "server";
  */
 export type ContextPart = "system" | "instructions" | "skills" | "catalog" | "tools" | "recap" | "messages" | "replies" | "results";
 
+export type ControlAction = "take" | "release";
+
 export type CreateThread = { config: Config, key: string, };
 
 /**
@@ -222,6 +224,8 @@ export type Deliver = { thread: string, content: Array<InputContent>, key: strin
 joins?: Joins, };
 
 export type Delivered = { delivery: string, };
+
+export type DevToolsState = "closed" | "open";
 
 /**
  * A finite description of one element, excluding form values and the surrounding DOM. Its optional selector is a
@@ -652,7 +656,7 @@ export type OfThread = { thread: string, };
  */
 export type OnPage<E> = { page: string, event: E, };
 
-export type OpenPage = { thread: string, url?: string, view: View, };
+export type OpenPage = { thread: string, url?: string, view: View, placement: PagePlacement, };
 
 export type OpenTerminal = { thread: string, size: Cells, };
 
@@ -685,11 +689,17 @@ export type Override = { min_prompt_tokens: number | null, utc_start: number | n
  */
 export type PageButton = "none" | "left" | "middle" | "right";
 
+export type PageControl = { page: string, action: ControlAction, };
+
+export type PageController = "agent" | "you" | "viewer";
+
 /**
  * A dialog that holds a page till it is answered: its kind — alert, confirm, prompt, beforeunload — its message, and
  * the text a prompt offers.
  */
 export type PageDialog = { kind: string, message: string, offered: string, };
+
+export type PageHost = "headless" | "desktop";
 
 /**
  * A key pressed or let go on a page: its name and the key it is on, as the DOM names them, the text it types, the
@@ -701,7 +711,7 @@ export type PageKey = { pressed: boolean, key: string, code: string, text?: stri
  * A page of a thread's: its id, where it is and what it is called, its view, the dialog that holds it, whether it
  * loads, and whether its history goes back and forward from where it is.
  */
-export type PageListed = { id: string, url: string, title: string, view: View, dialog?: PageDialog, loading: boolean, back: boolean, forward: boolean, };
+export type PageListed = { id: string, url: string, title: string, view: View, viewport_size: View, viewport: ViewportMode, zoom: number, host: PageHost, dev_tools: DevToolsState, dialog?: PageDialog, loading: boolean, back: boolean, forward: boolean, control: PageController, };
 
 /**
  * The mouse over a page, at a point of its CSS pixels: what it did, the button pressed or let go, the buttons held
@@ -711,7 +721,16 @@ export type PageMouse = { motion: MouseMotion, x: number, y: number, button: Pag
 
 export type PageOpened = { page: string, };
 
+/**
+ * Where the page should live for the duration of its work.
+ */
+export type PagePlacement = "workspace" | "background";
+
 export type PagePoint = { x: number, y: number, };
+
+export type PagePresentation = "stream" | "native";
+
+export type PageZoom = { page: string, percent: number, presentation: PagePresentation, };
 
 /**
  * What a link is made with: its label, and what it grants — everything, where none is given.
@@ -816,7 +835,7 @@ export type ReplyTo = { process: string, started?: number | null, key: string, }
  */
 export type Repository = { root: string, branch?: string, head?: string, upstream?: string, ahead: number, behind: number, base?: string, };
 
-export type ResizePage = { page: string, view: View, };
+export type ResizePage = { page: string, view: View, presentation: PagePresentation, viewport?: ViewportMode, };
 
 export type ResizeTerminal = { terminal: string, size: Cells, };
 
@@ -1000,7 +1019,7 @@ export type TerminalListed = { id: string, number: number, size: Cells, title: s
 /**
  * The command line it runs, where the model opened it to run one rather than the person's shell.
  */
-line?: string, };
+line?: string, local_servers: Array<string>, };
 
 export type TerminalOpened = { terminal: string, };
 
@@ -1103,6 +1122,8 @@ export type Versions = { old?: string, new?: string, };
  */
 export type View = { width: number, height: number, scale?: number, };
 
+export type ViewportMode = "fill" | "fixed";
+
 /**
  * What a web search did: searched, opened a page, or looked for a pattern in one.
  */
@@ -1185,7 +1206,9 @@ export type Methods = {
   'browser.reload': { params: OfPage; result: Nothing };
   'browser.dialog': { params: AnswerDialog; result: Nothing };
   'browser.close': { params: OfPage; result: Nothing };
+  'browser.control': { params: PageControl; result: Nothing };
   'browser.resize': { params: ResizePage; result: Nothing };
+  'browser.zoom': { params: PageZoom; result: Nothing };
   'browser.mouse': { params: OnPage<PageMouse>; result: Nothing };
   'browser.key': { params: OnPage<PageKey>; result: Nothing };
   'browser.text': { params: TypeText; result: Nothing };

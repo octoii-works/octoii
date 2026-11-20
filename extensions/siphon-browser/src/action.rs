@@ -18,6 +18,7 @@ use crate::browser::{Browser, BrowserError, Size};
 use crate::input::{Button, Input, InputError, Target};
 use crate::page::{Evaluated, Landed, Page, SETTLE_CAP, Wanted};
 use crate::primitives::PageInfo;
+use crate::protocol::PagePlacement;
 use crate::snapshot::node_of;
 
 /// The size a page the Agent opens is laid out at.
@@ -66,12 +67,17 @@ pub enum Action {
     Open {
         /// URL to open; a blank page if omitted.
         url: Option<String>,
+        /// Use background for work that must continue after the desktop closes.
+        #[serde(default)]
+        placement: PagePlacement,
     },
     /// Open a local HTML file in an isolated preview and make it current. Inline scripts run, HTTP/HTTPS resources and fetch
     /// requests are allowed, and local image references are embedded. Popups and parent-page access remain blocked. Inspect it with look, console and clicks.
     Preview {
         /// HTML file, relative to the workspace, absolute, or starting with ~ for the home folder.
         path: String,
+        #[serde(default)]
+        placement: PagePlacement,
     },
     /// List the thread's pages.
     Tabs,
@@ -291,8 +297,8 @@ impl Browser {
     /// A `Refusal`, saying why, where it could not be done as asked.
     pub async fn act(&self, thread: &str, machine: &Machine, action: Action) -> Result<Outcome, Refusal> {
         let mut outcome = match action {
-            Action::Open { url } => self.opened(thread, url.as_deref()).await?,
-            Action::Preview { path } => self.previewed(thread, machine, &path).await?,
+            Action::Open { url, placement } => self.opened(thread, url.as_deref(), placement).await?,
+            Action::Preview { path, placement } => self.previewed(thread, machine, &path, placement).await?,
             Action::Tabs => self.tabs(thread).await,
             Action::Switch { page } => {
                 self.switch(thread, &page)
@@ -305,11 +311,23 @@ impl Browser {
                     Some(page) => page,
                     None => self.current_page(thread).await?.id,
                 };
+                if self.view(&page).await.is_none_or(|view| view.thread != thread) {
+                    return Err(Refusal(format!("no page {page} of the thread's; list them with tabs")));
+                }
+                let _driving = self.drive(&page, None).await?;
                 self.close(&page);
                 said(format!("closed page {page}"))
             }
             on_page => {
                 let page = self.current_page(thread).await?;
+                let _driving = if matches!(
+                    &on_page,
+                    Action::Read | Action::Look | Action::Info | Action::Wait { .. } | Action::Console { .. } | Action::Downloads
+                ) {
+                    None
+                } else {
+                    Some(self.drive(&page.id, None).await?)
+                };
                 self.on_page(&page, on_page).await?
             }
         };
@@ -335,17 +353,17 @@ impl Browser {
         Ok(self.page(&id))
     }
 
-    async fn opened(&self, thread: &str, url: Option<&str>) -> Result<Outcome, Refusal> {
-        let id = self.open(thread, url, OPENED).await?;
+    async fn opened(&self, thread: &str, url: Option<&str>, placement: PagePlacement) -> Result<Outcome, Refusal> {
+        let id = self.open_in(thread, url, OPENED, placement).await?;
         let page = self.page(&id);
         page.attached().await?;
         page.wait_for_load(Duration::from_secs(15)).await;
         Ok(said(format!("opened page {id}")))
     }
 
-    async fn previewed(&self, thread: &str, machine: &Machine, path: &str) -> Result<Outcome, Refusal> {
+    async fn previewed(&self, thread: &str, machine: &Machine, path: &str, placement: PagePlacement) -> Result<Outcome, Refusal> {
         let html = siphon_html::prepare(machine, path).map_err(|error| Refusal(error.to_string()))?;
-        let id = self.open(thread, None, OPENED).await?;
+        let id = self.open_in(thread, None, OPENED, placement).await?;
         let page = self.page(&id);
         let tree = page.cdp("Page.getFrameTree", serde_json::json!({})).await?;
         page.cdp(

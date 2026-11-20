@@ -4,6 +4,7 @@
  * what the client follows taken in as the page draws.
  */
 import { createRoot, type Root } from "react-dom/client";
+import { createPortal } from "react-dom";
 import { ClientProvider, type Frame } from "@octoii-works/octoii-client/react";
 import { PAIRING_PATH } from "../core/pairing.ts";
 import { type Reach, ReachContext } from "../components/state/reach.ts";
@@ -12,6 +13,7 @@ import { App } from "./app.tsx";
 import { connect } from "./connect.ts";
 import { ContributionsContext } from "../components/state/contributions.ts";
 import { CONTRIBUTIONS } from "../extensions/contributions.ts";
+import { startDesktopPages } from "../extensions/browser/desktop.ts";
 
 /** The root the page draws in. */
 export function pageRoot(): Root {
@@ -48,6 +50,7 @@ const nextFrame: Frame = (callback) => {
 
 /** Draws the app, on a client of the node `reach` reaches. */
 export function showApp(root: Root, reach: Reach): void {
+	startDesktopPages(createPortal);
 	root.render(
 		<ReachContext value={reach}>
 			<ClientProvider client={connect(reach)} frame={nextFrame}>

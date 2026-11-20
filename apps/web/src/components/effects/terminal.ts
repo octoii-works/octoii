@@ -9,10 +9,11 @@ import type { TerminalView } from "@octoii-works/octoii-client";
 import { useClient } from "@octoii-works/octoii-client/react";
 import { type GridCells, mountTerminal, type TerminalColors, type TerminalSurface } from "@octoii-works/octoii-terminal";
 import { ANSI_DARK, ANSI_LIGHT, TERMINAL_FONT_SIZE } from "../../core/terminal.ts";
+import { developmentAddress } from "../../core/links.ts";
 import { failed } from "../state/notices.ts";
 
 /** The ref that mounts the terminal `terminal` in the element it is given, and takes it out as the element goes. */
-export function useTerminalView(terminal: string): (element: HTMLDivElement | null) => (() => void) | undefined {
+export function useTerminalView(terminal: string, openBrowser?: (url: string) => void): (element: HTMLDivElement | null) => (() => void) | undefined {
 	const client = useClient();
 	return useCallback(
 		(element: HTMLDivElement | null) => {
@@ -40,7 +41,11 @@ export function useTerminalView(terminal: string): (element: HTMLDivElement | nu
 					if (view !== undefined) view.resize(size);
 					else if (surface !== undefined) follow(surface, size);
 				},
-				onLink: (url) => void window.open(url, "_blank", "noopener,noreferrer"),
+				onLink: (url) => {
+					const local = openBrowser === undefined ? undefined : developmentAddress(url);
+					if (local && openBrowser) openBrowser(local.href);
+					else window.open(url, "_blank", "noopener,noreferrer");
+				},
 			}).then(
 				(mounted) => {
 					if (gone) return mounted.dispose();
@@ -58,7 +63,7 @@ export function useTerminalView(terminal: string): (element: HTMLDivElement | nu
 				surface?.dispose();
 			};
 		},
-		[client, terminal],
+		[client, terminal, openBrowser],
 	);
 }
 

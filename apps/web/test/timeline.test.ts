@@ -378,7 +378,7 @@ describe("a thread's timeline", () => {
 	});
 
 	it("ends the items with the thread's present, where it has one to tell", () => {
-		const terminal = { id: "t1", number: 1, size: { rows: 24, cols: 80 }, title: "", line: "bun run dev" };
+		const terminal = { id: "t1", number: 1, size: { rows: 24, cols: 80 }, title: "", line: "bun run dev", local_servers: [] };
 		expect(withNow([], { waiting: [], terminals: [], threads: [] })).toEqual([]);
 		expect(withNow([], { waiting: [], terminals: [terminal], threads: [] }).map((item) => item.kind)).toEqual(["now"]);
 	});

@@ -69,7 +69,7 @@ impl Fixture {
         let page = client
             .command(
                 "browser.open",
-                json!({ "thread": thread, "url": url, "view": { "width": WIDTH, "height": HEIGHT, "scale": 1 } }),
+                json!({ "thread": thread, "url": url, "placement": "workspace", "view": { "width": WIDTH, "height": HEIGHT, "scale": 1 } }),
             )
             .await["result"]["page"]
             .as_str()
@@ -177,12 +177,17 @@ async fn a_pick_dispatches_no_click_ignores_unrelated_dom_changes_and_keeps_its_
     assert!(password.element.text.is_none());
     assert!(!json!(password.element).to_string().contains("never-copy-this"));
 
+    let watched = fixture
+        .client
+        .subscribe(json!({ "type": "page", "page": fixture.page, "presentation": "stream" }))
+        .await;
+    fixture.client.event(&watched, |event| event["event"] == "frame").await;
     assert_eq!(
         fixture
             .client
             .command(
                 "browser.resize",
-                json!({ "page": fixture.page, "view": { "width": WIDTH, "height": HEIGHT, "scale": 2 } }),
+                json!({ "page": fixture.page, "presentation": "stream", "view": { "width": WIDTH, "height": HEIGHT, "scale": 2 } }),
             )
             .await["result"],
         json!({})

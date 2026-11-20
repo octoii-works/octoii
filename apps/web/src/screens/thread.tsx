@@ -6,12 +6,13 @@
  * which a path a message names opens in. What the thread brought is seen as it is shown.
  */
 import { WorktreeStart } from "../extensions/git/thread-start.tsx";
-import { type ReactNode, useRef, useState } from "react";
+import { type ReactNode, useCallback, useMemo, useRef, useState } from "react";
 import type { Conversation, Listed, Status } from "@octoii-works/octoii-client";
 import { useClient, useConversation, usePages, useTerminals, useThreads } from "@octoii-works/octoii-client/react";
 import type { Device } from "../core/device.ts";
 import { type Project, projectOf, statusOf, stopTargetOf, titleOf } from "../core/threads.ts";
 import { contentOf } from "../core/attachments.ts";
+import { localServersOf } from "../core/local-servers.ts";
 import { limitedOf } from "../core/limits.ts";
 import { inBackground, waitingOn } from "../core/sub-threads.ts";
 import { firstSaid, itemsOf, withLimited, withNow } from "../core/timeline.ts";
@@ -29,6 +30,7 @@ import { useExtension, useExtensionAccess } from "../components/state/extensions
 import { thingsOf } from "../core/mentions.ts";
 import type { Thing } from "../core/things.ts";
 import { failed } from "../components/state/notices.ts";
+import { openThreadPage } from "../components/state/browser.ts";
 import { useSeen } from "../components/effects/seen.ts";
 import { useNow } from "../components/effects/now.ts";
 import { useDetailsRoom } from "../components/effects/details-room.ts";
@@ -42,6 +44,7 @@ import { TerminalRows } from "../extensions/terminals/terminal-rows.tsx";
 
 /** How often a page looks again whether the quota that limits its thread is given again: a minute. */
 const LIMITED_CHECKED_MS = 60_000;
+const NO_ENTRIES: readonly [] = [];
 
 /** What a thread's page is given: its thread, and the device's settings. */
 export type ThreadScreenProps = {
@@ -59,10 +62,11 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 	const status = visibleStatus(conversation, row);
 	const terminalsOn = useExtensionAccess("terminals", "terminals.operate");
 	const browserOn = useExtensionAccess("browser", "browser.operate");
-	const terminals = useTerminals(terminalsOn ? thread : undefined) ?? [];
-	const pages = usePages(browserOn ? thread : undefined) ?? [];
-	const terminalsPanel = useTerminalsPanel(thread, terminals, terminalsOn);
-	const browserPanel = useBrowserPanel(thread, pages, browserOn);
+	const terminals = useTerminals(terminalsOn ? thread : undefined) ?? NO_ENTRIES;
+	const pages = usePages(browserOn ? thread : undefined) ?? NO_ENTRIES;
+	const openBrowser = useCallback((address: string) => openThreadPage(client, thread, address), [client, thread]);
+	const terminalsPanel = useTerminalsPanel(thread, terminals, terminalsOn, browserOn ? openBrowser : undefined);
+	const servers = useMemo(() => (browserOn ? localServersOf(pages, terminals, conversation.turns) : []), [browserOn, pages, terminals, conversation.turns]);
 	const reachesThreads = useExtension("thread");
 	const now = useNow(LIMITED_CHECKED_MS);
 	useSeen(thread);
@@ -70,6 +74,11 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 	// the reply grows under it.
 	const [sent, setSent] = useState<string | undefined>(undefined);
 	const timeline = useRef<TimelineHandle>(null);
+	const onSent = (delivery: string): void => {
+		setSent(delivery);
+		timeline.current?.toEnd();
+	};
+	const browserPanel = useBrowserPanel(thread, { pages, on: browserOn, onSent, servers });
 	const limited = limitedOf(conversation, row?.config.model ?? undefined, now);
 	const turnsAndLimit = withLimited(itemsOf(conversation), limited, conversation.status?.resuming_at ?? undefined);
 	const work = turnsAndLimit.flatMap((item) => (item.kind === "turn" ? item.turn.work : []));
@@ -106,7 +115,7 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 		<>
 			<ThreadPane title={row?.config.title ?? (said === undefined ? "New thread" : titleOf(said))} status={status} project={project} details={details}>
 				<div className="relative flex min-h-0 flex-1 flex-col">
-					<MessageThreadContext value={{ thread, workspace, pages, terminals }}>
+					<MessageThreadContext value={{ thread, workspace, pages, terminals, ...(browserOn ? { openBrowser } : {}) }}>
 						<ThreadConversation thread={thread} status={status}>
 							<Timeline
 								ref={timeline}
@@ -132,10 +141,7 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 					conversation={conversation}
 					status={status}
 					device={props.device}
-					onSent={(delivery) => {
-						setSent(delivery);
-						timeline.current?.toEnd();
-					}}
+					onSent={onSent}
 				/>
 			</ThreadPane>
 			<PanelFrame>
@@ -145,6 +151,7 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 					revision={revision}
 					surfaces={[...git.surfaces, ...terminalsPanel.surfaces, ...browserPanel.surfaces]}
 					openings={[...terminalsPanel.openings, ...browserPanel.openings, ...git.openings]}
+					openingGroups={browserPanel.groups}
 				/>
 			</PanelFrame>
 		</>

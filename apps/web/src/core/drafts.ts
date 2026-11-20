@@ -1,8 +1,8 @@
-import type { ElementFeedback } from "@octoii-works/octoii-client";
 import type { Attachment } from "./attachments.ts";
+import type { ElementAnnotation } from "./element-feedback.ts";
 
 /** A message being written, including captures explicitly chosen from its thread's browser. */
-export type Draft = { readonly text: string; readonly attachments: readonly Attachment[]; readonly feedback: readonly ElementFeedback[] };
+export type Draft = { readonly text: string; readonly attachments: readonly Attachment[]; readonly feedback: readonly ElementAnnotation[] };
 
 export const EMPTY_DRAFT: Draft = { text: "", attachments: [], feedback: [] };
 

@@ -6,6 +6,7 @@
 //! the order asked, telling whoever listens as a thread's terminals come, take titles and go, as each writes, and as a
 //! command line the model ran ends of itself, with what its screen showed.
 
+mod addresses;
 mod context;
 
 mod extension;
@@ -55,6 +56,7 @@ pub struct Shown {
     pub size: Size,
     pub title: String,
     pub line: Option<String>,
+    pub local_servers: Vec<String>,
 }
 
 /// What a terminal runs: the person's login shell, or a command line in it, held to what it may write, with the
@@ -72,7 +74,7 @@ pub enum Running {
 /// What the terminals tell.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
-    /// The thread's terminals changed: one came, took a title, or went.
+    /// The thread's terminals changed: one came, reported a title or address, or went.
     Changed { thread: String },
     /// The terminal wrote; it has written `written` bytes in all.
     Wrote { id: String, written: u64 },
@@ -285,6 +287,7 @@ struct Terminal {
     size: Size,
     title: String,
     line: Option<String>,
+    addresses: addresses::Addresses,
     command: Arc<Command>,
     input: mpsc::UnboundedSender<Input>,
     io: tokio::task::JoinHandle<()>,
@@ -456,6 +459,7 @@ impl Owner {
             size,
             title: String::new(),
             line,
+            addresses: addresses::Addresses::default(),
             command,
             input,
             io,
@@ -497,8 +501,17 @@ impl Owner {
             return;
         };
         let written = match event {
-            CommandEvent::Output(chunk) => chunk.offset + chunk.bytes.len() as u64,
-            CommandEvent::Gap { through, .. } => through,
+            CommandEvent::Output(chunk) => {
+                if terminal.addresses.read(&chunk.bytes) {
+                    let thread = terminal.thread.clone();
+                    self.changed(&thread);
+                }
+                chunk.offset + chunk.bytes.len() as u64
+            }
+            CommandEvent::Gap { through, .. } => {
+                terminal.addresses.gap();
+                through
+            }
             CommandEvent::Title(title) => {
                 terminal.title = title;
                 let thread = terminal.thread.clone();
@@ -535,5 +548,6 @@ fn shown(terminal: &Terminal) -> Shown {
         size: terminal.size,
         title: terminal.title.clone(),
         line: terminal.line.clone(),
+        local_servers: terminal.addresses.origins.clone(),
     }
 }

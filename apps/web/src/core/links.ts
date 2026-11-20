@@ -26,6 +26,18 @@ export function targetOf(href: string): LinkTarget {
 	return pathTarget(decoded(href));
 }
 
+/** A development URL whose loopback address belongs to the node running the thread. */
+export function developmentAddress(href: string): URL | undefined {
+	try {
+		const url = new URL(href);
+		if (url.protocol !== "http:" && url.protocol !== "https:") return undefined;
+		if (url.username !== "" || url.password !== "") return undefined;
+		return url.hostname === "localhost" || url.hostname === "[::1]" || /^127(?:\.\d+){3}$/.test(url.hostname) ? url : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
 /** The path `named` names, and the lines after it, where it names any: `#L12`, `#L12-L20`, `:12` or `:12:4`. */
 function pathTarget(named: string): LinkTarget {
 	const found = LINE.exec(named);

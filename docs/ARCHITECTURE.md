@@ -36,6 +36,28 @@ registration live in `tools/{tool,context,registry}.rs`, with the same call runn
 `apps/node/src/http/` contains handlers used by the loopback and tunnel HTTP router. The local control socket uses
 its own state for node status and access management.
 
+## Browser pages
+
+The browser extension owns page IDs, Thread membership, control and DevTools routing. New pages of the Thread shown on
+the local desktop can use an Electron guest. The guest connects through the node's owner-only control socket. Other
+pages use the node's headless Chromium. Each page keeps its original target for its lifetime.
+
+The desktop renders its own guest directly. Network viewers receive frames from that target. An active page
+subscription keeps the viewer's control, and its last disconnect returns control to the agent. Element annotations use
+the Thread's normal input delivery with a captured screenshot.
+
+A page can follow the pane's size or keep a fixed viewport. Presets and page zoom change the shared CSS viewport.
+Native captures use the desktop display's pixel density. Preview fit and preview zoom scale the local surface.
+The local desktop opens DevTools for its guest while the viewer holds control and closes it on handoff.
+
+The browser tool can open a page in the background on the node. Its page ID and runtime survive the desktop
+disconnecting. Opening an address from the Thread reveals the existing tab for that address when available. Loopback
+links use the Thread's node. The Local servers menu gathers reported origins from browser pages, recent Agent output
+and the Thread's running terminals.
+
+The controlling session supplies room measurements for a page that follows the pane's size. Other viewers adapt the
+shared page to their own panes through preview scaling.
+
 ## Node protocol
 
 - `POST /api/v1/call` accepts a JSON object with `method` and `params`. The HTTP status accompanies either `result` or

@@ -6,7 +6,7 @@
 
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use anyhow::Context as _;
 use octoii::protocol::Machine;
@@ -102,6 +102,10 @@ pub fn siphon(home: &Home, sign_in: SignInSetup) -> anyhow::Result<Octoii> {
 /// # Errors
 /// Where the host runtime or volume cannot be opened.
 pub fn building(home: &Home, sign_in: SignInSetup) -> anyhow::Result<octoii::Building> {
+    build(home, sign_in, None)
+}
+
+fn build(home: &Home, sign_in: SignInSetup, browser: Option<Arc<OnceLock<siphon_browser::Browser>>>) -> anyhow::Result<octoii::Building> {
     let providers = providers();
     let temporary = home.temporary().context("the Home's temporary folder")?;
     let setup = Setup {
@@ -117,6 +121,7 @@ pub fn building(home: &Home, sign_in: SignInSetup) -> anyhow::Result<octoii::Bui
         program: None,
         profile: Some(home.browser().join("profile")),
         downloads: Some(temporary.join("downloads")),
+        browser,
     };
     let built = Octoii::builder(setup).context("the volume")?;
     let config = McpExtension {
@@ -189,7 +194,10 @@ pub async fn serve_until(served: Served, stop: impl Future<Output = ()> + Send +
         loopback: loopback.clone(),
         tunnel: tunnel.clone(),
     };
-    let siphon = with_access(building(&home, sign_in)?, links.clone()).start().context("Octoii")?;
+    let browser = Arc::new(OnceLock::new());
+    let siphon = with_access(build(&home, sign_in, Some(browser.clone()))?, links.clone())
+        .start()
+        .context("Octoii")?;
     // The models of each provider that lists its own — Claude Code's — asked for as the node starts, as a thread finds
     // its model, and the person picks one, in the directory alone.
     let models = std::sync::Arc::clone(&siphon.models);
@@ -214,17 +222,20 @@ pub async fn serve_until(served: Served, stop: impl Future<Output = ()> + Send +
         use std::os::unix::fs::PermissionsExt as _;
         std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o600))?;
     }
+    let stopping = tokio_util::sync::CancellationToken::new();
     let control = Control {
         access: node.access.clone(),
         machine_name: node.machine.name.clone(),
         links,
         home: home.root().to_owned(),
+        socket: socket.clone(),
+        browser: browser.get().cloned().context("the browser extension")?,
+        stop: stopping.clone(),
     };
     let router = http::router(node);
     let (serving, remote_router) = (tunnel.clone(), router.clone());
     tokio::spawn(async move { serving.serve(remote_router).await });
     tracing::info!(%loopback, "serving");
-    let stopping = tokio_util::sync::CancellationToken::new();
     let (stop_loopback, stop_control) = (stopping.clone(), stopping.clone());
     let loopback_served = axum::serve(listener, router).with_graceful_shutdown(async move { stop_loopback.cancelled().await });
     let control_served =

@@ -3,7 +3,8 @@
 //! has a browser.
 
 use octoii::Octoii;
-use octoii::protocol::Scope;
+use octoii::connection::{self, Access};
+use octoii::protocol::{Command, Scope};
 use octoii::testing::{self, Client};
 use serde_json::json;
 use siphon_browser::BrowserExtension;
@@ -48,7 +49,7 @@ async fn a_page_is_opened_listed_painted_and_worked_by_the_person() {
     let page = client
         .command(
             "browser.open",
-            json!({ "thread": "t1", "url": PAGE, "view": { "width": 400, "height": 300 } }),
+            json!({ "thread": "t1", "url": PAGE, "placement": "workspace", "view": { "width": 400, "height": 300 } }),
         )
         .await["result"]["page"]
         .as_str()
@@ -57,10 +58,15 @@ async fn a_page_is_opened_listed_painted_and_worked_by_the_person() {
     let (listed, _) = client.event(&pages, |event| event["pages"][0]["title"] == "Hello").await;
     assert_eq!(listed["pages"][0]["id"].as_str(), Some(page.as_str()));
 
-    let painted = client.subscribe(json!({ "type": "page", "page": page })).await;
+    let painted = client
+        .subscribe(json!({ "type": "page", "page": page, "presentation": "stream" }))
+        .await;
     let (frame, jpeg) = client.event(&painted, |event| event["event"] == "frame").await;
     assert!(frame["width"].as_u64().is_some_and(|width| width > 0));
     assert_eq!(&jpeg[..3], [0xFF, 0xD8, 0xFF], "the frame's bytes are JPEG");
+
+    room_belongs_to_controller(&siphon, &mut client, &page, &pages).await;
+    fixed_viewport_survives_zoom_and_room_resize(&mut client, &page, &pages, &painted).await;
 
     assert_eq!(
         client.command("browser.text", json!({ "page": page, "text": "typed" })).await["result"],
@@ -94,4 +100,65 @@ async fn a_page_is_opened_listed_painted_and_worked_by_the_person() {
     client.command("browser.close", json!({ "page": page })).await;
     client.event(&pages, |event| event["pages"] == json!([])).await;
     siphon.close().await;
+}
+
+async fn room_belongs_to_controller(siphon: &Octoii, controller: &mut Client, page: &str, pages: &str) {
+    let viewer = Access {
+        session: "passive-viewer".into(),
+        scopes: vec![Scope::BrowserOperate],
+    };
+    let resize = json!({ "page": page, "presentation": "stream", "view": { "width": 310, "height": 290 } });
+    let measured = Command {
+        method: "browser.resize".into(),
+        params: resize.clone(),
+    };
+    assert_eq!(
+        connection::call(siphon.clone(), viewer, measured)
+            .await
+            .expect("passive measurement"),
+        json!({})
+    );
+    let listed = controller.subscribe(json!({ "type": "pages", "thread": "t1" })).await;
+    let (view, _) = controller.event(&listed, |event| event["event"] == "pages").await;
+    assert_eq!(view["pages"][0]["viewport_size"]["width"], 400);
+    assert_eq!(controller.command("browser.resize", resize).await["result"], json!({}));
+    controller
+        .event(pages, |event| event["pages"][0]["viewport_size"]["width"] == 310)
+        .await;
+}
+
+async fn fixed_viewport_survives_zoom_and_room_resize(client: &mut Client, page: &str, pages: &str, painted: &str) {
+    let resized = client
+        .command(
+            "browser.resize",
+            json!({
+                "page": page, "presentation": "stream", "viewport": "fixed", "view": { "width": 800, "height": 600 }
+            }),
+        )
+        .await;
+    assert_eq!(resized["result"], json!({}));
+    client.event(pages, |event| event["pages"][0]["viewport"] == "fixed").await;
+    let zoomed = client
+        .command("browser.zoom", json!({ "page": page, "presentation": "stream", "percent": 125 }))
+        .await;
+    assert_eq!(zoomed["result"], json!({}));
+    let (listed, _) = client.event(pages, |event| event["pages"][0]["zoom"] == 125).await;
+    assert_eq!(listed["pages"][0]["viewport_size"]["width"], 800);
+    assert_eq!(listed["pages"][0]["view"]["width"], 640);
+    assert_eq!(listed["pages"][0]["view"]["height"], 480);
+    let (frame, _) = client.event(painted, |frame| frame["width"] == 640 && frame["height"] == 480).await;
+    assert_eq!(frame["event"], "frame");
+    let measured = client
+        .command(
+            "browser.resize",
+            json!({
+                "page": page, "presentation": "stream", "view": { "width": 550, "height": 400 }
+            }),
+        )
+        .await;
+    assert_eq!(measured["result"], json!({}));
+    let reread = client.subscribe(json!({ "type": "pages", "thread": "t1" })).await;
+    let (listed, _) = client.event(&reread, |event| event["event"] == "pages").await;
+    assert_eq!(listed["pages"][0]["viewport_size"]["width"], 800);
+    assert_eq!(listed["pages"][0]["view"]["width"], 640);
 }

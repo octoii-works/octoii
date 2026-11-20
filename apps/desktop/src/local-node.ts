@@ -38,7 +38,7 @@ export class LocalNode {
 		}
 	}
 
-	async status(): Promise<URL | undefined> {
+	private async describe(): Promise<{ readonly address: URL; readonly socket: string | undefined } | undefined> {
 		let output: string;
 		try {
 			output = await this.command(["status", "--json"]);
@@ -57,7 +57,18 @@ export class LocalNode {
 				"The running node version differs from this desktop app. Finish its tasks and update the node before retrying. It has not been restarted.",
 			);
 		}
-		return localAddress(status.loopback);
+		const socket = "control_socket" in status && typeof status.control_socket === "string" ? status.control_socket : undefined;
+		return { address: localAddress(status.loopback), socket };
+	}
+
+	async status(): Promise<URL | undefined> {
+		return (await this.describe())?.address;
+	}
+
+	/** The private socket must belong to the node this window actually reached. */
+	async browserSocket(address: URL): Promise<string | undefined> {
+		const status = await this.describe();
+		return status?.address.origin === address.origin ? status.socket : undefined;
 	}
 
 	async connect(): Promise<URL> {

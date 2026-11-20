@@ -20,8 +20,10 @@
         "@octoii-works/octoii-client": "workspace:*",
         "@types/bun": "catalog:",
         "@types/node": "catalog:",
+        "@types/ws": "8.18.2",
         "electron": "catalog:",
         "electron-builder": "26.18.0",
+        "ws": "8.22.0",
       },
     },
     "apps/web": {

@@ -1,18 +1,21 @@
 /** One user-initiated capture, cancelled by changing its page identity or leaving its view. */
 import { useLayoutEffect, useRef, useState } from "react";
-import type { PageListed } from "@octoii-works/octoii-client";
+import type { ElementFeedback, PageListed } from "@octoii-works/octoii-client";
 import { useClient } from "@octoii-works/octoii-client/react";
-import type { PageMode } from "../../core/browser.ts";
-import { attachElementFeedback } from "../state/draft.ts";
 import { failed } from "../state/notices.ts";
-import { focusThreadMessage } from "./focus-message.ts";
 import type { ElementSelection, PageInteraction } from "./page.ts";
 
-export function useElementPicker(thread: string, page: PageListed): PageInteraction & { readonly start: () => void } {
+type Selection = { readonly mode: "pick" | "capturing" } | { readonly mode: "annotate"; readonly feedback: ElementFeedback };
+
+export function useElementPicker(
+	thread: string,
+	page: PageListed,
+): PageInteraction & { readonly start: () => void; readonly feedback: ElementFeedback | undefined } {
 	const client = useClient();
 	const identity = `${thread}\n${page.id}\n${page.url}`;
-	const [state, setState] = useState<{ readonly identity: string; readonly mode: PageMode } | undefined>(undefined);
-	const mode = state?.identity === identity ? state.mode : "browse";
+	const [state, setState] = useState<(Selection & { readonly identity: string }) | undefined>(undefined);
+	const selection = state?.identity === identity ? state : undefined;
+	const mode = selection?.mode ?? "browse";
 	const pending = useRef<object | undefined>(undefined);
 	useLayoutEffect(
 		() => () => {
@@ -22,7 +25,7 @@ export function useElementPicker(thread: string, page: PageListed): PageInteract
 	);
 	const cancel = (): void => {
 		pending.current = undefined;
-		setState({ identity, mode: "browse" });
+		setState(undefined);
 	};
 	const select = (selection: ElementSelection): void => {
 		if (pending.current !== undefined || mode !== "pick") return;
@@ -38,9 +41,7 @@ export function useElementPicker(thread: string, page: PageListed): PageInteract
 					failed("The element could not be captured", new Error("The capture belongs to another page or thread."));
 					return;
 				}
-				attachElementFeedback(feedback);
-				setState({ identity, mode: "browse" });
-				focusThreadMessage(feedback.thread);
+				setState({ identity, mode: "annotate", feedback });
 			},
 			(error: unknown) => {
 				if (pending.current !== capture) return;
@@ -50,5 +51,11 @@ export function useElementPicker(thread: string, page: PageListed): PageInteract
 			},
 		);
 	};
-	return { mode, select, cancel, start: () => setState({ identity, mode: "pick" }) };
+	return {
+		mode,
+		select,
+		cancel,
+		start: () => setState({ identity, mode: "pick" }),
+		feedback: selection?.mode === "annotate" ? selection.feedback : undefined,
+	};
 }

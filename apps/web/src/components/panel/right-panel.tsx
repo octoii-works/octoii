@@ -17,7 +17,7 @@ import { closeSurface, type SurfaceKey, showSurface, type ThreadPanel, useThread
 import { PathIcon } from "../files/path-icon.tsx";
 import { FillPanel, HidePanel, ShowSidebarFromPanel } from "../frame/frame.tsx";
 import { Button, IconButton } from "../ui/button.tsx";
-import { Menu, MenuItem, MenuItemLabel, MenuPopup, MenuShortcut, MenuTrigger } from "../ui/menu.tsx";
+import { Menu, MenuItem, MenuItemLabel, MenuPopup, MenuShortcut, MenuSub, MenuSubTrigger, MenuTrigger } from "../ui/menu.tsx";
 import { FilesSurface } from "../files/files-surface.tsx";
 
 /** What the panel is given: its thread, the folder it works in — none where it works in none — where its turns stand,
@@ -28,6 +28,7 @@ export type RightPanelProps = {
 	readonly revision: string;
 	readonly surfaces: readonly Surface[];
 	readonly openings: readonly Opening[];
+	readonly openingGroups?: readonly OpeningGroup[];
 };
 
 /** What an extension shows in the panel: its tab — its key, its icon, its name — what it shows, and what closing it ends beside the tab. */
@@ -41,6 +42,11 @@ export type Surface = {
 
 /** What `+` opens: its name, icon and letter, and how. */
 export type Opening = { readonly label: string; readonly icon: typeof Files; readonly letter: string; readonly open: () => void };
+export type OpeningGroup = {
+	readonly label: string;
+	readonly icon: typeof Files;
+	readonly items: readonly { readonly label: string; readonly open: () => void }[];
+};
 
 /** The panel. */
 export function RightPanel(props: RightPanelProps): ReactNode {
@@ -62,7 +68,7 @@ export function RightPanel(props: RightPanelProps): ReactNode {
 						<TabButton key={tab.key} tab={tab} onClose={() => close(tab, index)} />
 					))}
 				</Tabs.List>
-				<OpenMenu openings={openings} />
+				<OpenMenu openings={openings} groups={props.openingGroups ?? []} />
 				<span className="flex-1" />
 				<FillPanel />
 				<HidePanel />
@@ -117,7 +123,7 @@ function TabButton(props: { readonly tab: Surface; readonly onClose: () => void 
 }
 
 /** `+`: a menu of what opens, each also opened by its letter while the menu is open. */
-function OpenMenu(props: { readonly openings: readonly Opening[] }): ReactNode {
+function OpenMenu(props: { readonly openings: readonly Opening[]; readonly groups: readonly OpeningGroup[] }): ReactNode {
 	const [open, setOpen] = useState(false);
 	const onKeyDown = (event: KeyboardEvent): void => {
 		const opening = openingOf(props.openings, event);
@@ -139,6 +145,21 @@ function OpenMenu(props: { readonly openings: readonly Opening[] }): ReactNode {
 						<MenuItemLabel>{opening.label}</MenuItemLabel>
 						<MenuShortcut>{opening.letter}</MenuShortcut>
 					</MenuItem>
+				))}
+				{props.groups.map((group) => (
+					<MenuSub key={group.label}>
+						<MenuSubTrigger>
+							<group.icon />
+							<MenuItemLabel>{group.label}</MenuItemLabel>
+						</MenuSubTrigger>
+						<MenuPopup side="right" className="min-w-48">
+							{group.items.map((item) => (
+								<MenuItem key={item.label} onClick={item.open}>
+									<MenuItemLabel>{item.label}</MenuItemLabel>
+								</MenuItem>
+							))}
+						</MenuPopup>
+					</MenuSub>
 				))}
 			</MenuPopup>
 		</Menu>

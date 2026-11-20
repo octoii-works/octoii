@@ -23,18 +23,18 @@ export type PageView = {
 	stop(): void;
 };
 
-/** Follows the page `id` for a view `view` big, told through `handlers`: its newest frame first, then each it paints. */
-export function followPage(controls: Controls, requests: Requests, subscriptions: Subscriptions, id: string, view: View, handlers: PageHandlers): PageView {
-	const subscription = subscriptions.hold({ type: "page", page: id }, (event, bytes) => {
+/** Follows the page `id` through `handlers`: its newest frame first, then each it paints. */
+export function followPage(controls: Controls, requests: Requests, subscriptions: Subscriptions, id: string, handlers: PageHandlers | undefined): PageView {
+	const presentation = handlers === undefined ? "native" : "stream";
+	const subscription = subscriptions.hold({ type: "page", page: id, presentation }, (event, bytes) => {
 		if (event.event !== "frame") return;
-		handlers.frame({ jpeg: bytes ?? new Uint8Array(), width: event.width, height: event.height, number: event.number });
+		handlers?.frame({ jpeg: bytes ?? new Uint8Array(), width: event.width, height: event.height, number: event.number });
 	});
-	controls.send(() => requests.call("browser.resize", { page: id, view }), "resize");
 	return {
 		mouse: (event) => controls.send(() => requests.call("browser.mouse", { page: id, event }), event.motion === "move" ? "move" : undefined),
 		key: (event) => controls.send(() => requests.call("browser.key", { page: id, event })),
 		text: (text) => controls.send(() => requests.call("browser.text", { page: id, text })),
-		resize: (next) => controls.send(() => requests.call("browser.resize", { page: id, view: next }), "resize"),
+		resize: (next) => controls.send(() => requests.call("browser.resize", { page: id, view: next, presentation }), "resize"),
 		stop: () => {
 			controls.stop();
 			subscription.stop();

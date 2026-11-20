@@ -12,6 +12,7 @@ import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import type { PageFrame, PageListed, PageMouse, PageView, PickElement, View as PageSize } from "@octoii-works/octoii-client";
 import { useClient } from "@octoii-works/octoii-client/react";
 import { type DrawnPage, editingOf, modifiersOf, PageInputGate, type PageMode, pickViewOf, typedBy } from "../../core/browser.ts";
+import type { ViewportSize } from "../../core/browser-viewport.ts";
 import { isTypedIn } from "./shortcut.ts";
 
 /** How long the room stands at a size before the page is laid out at it. */
@@ -23,44 +24,59 @@ const LINE_PIXELS = 16;
 /** A local selection, with the viewport actually drawn rather than the container's size. */
 export type ElementSelection = Pick<PickElement, "x" | "y" | "expected_url" | "view">;
 export type PageInteraction = { readonly mode: PageMode; readonly select: (selection: ElementSelection) => void; readonly cancel: () => void };
-type Options = { readonly page: PageListed; readonly interaction: PageInteraction };
+type Options = { readonly page: PageListed; readonly interaction: PageInteraction; readonly room: ViewportSize | undefined };
 type Input = { readonly update: () => void; readonly stop: () => void };
 
 /** The stable ref mounts a page once; changing browse/pick only updates its local input routing. */
 export function usePageView(
 	page: PageListed,
 	interaction: PageInteraction,
+	presentation: "stream" | "native",
+	room: ViewportSize | undefined,
 ): {
 	readonly mount: (element: HTMLDivElement | null) => (() => void) | undefined;
 	readonly ready: boolean;
 } {
 	const client = useClient();
 	const id = page.id;
-	const latest = useRef<Options>({ page, interaction });
+	const latest = useRef<Options>({ page, interaction, room });
 	const input = useRef<Input | undefined>(undefined);
+	const layout = useRef<(() => void) | undefined>(undefined);
 	const [shown, setShown] = useState<DrawnPage | undefined>(undefined);
 	useLayoutEffect(() => {
-		latest.current = { page, interaction };
+		latest.current = { page, interaction, room };
 		input.current?.update();
-	}, [page, interaction]);
+	}, [page, interaction, room]);
+	useLayoutEffect(() => layout.current?.(), [room, page.control, page.view.width, page.view.height, page.view.scale]);
 	const mount = useCallback(
 		(element: HTMLDivElement | null) => {
 			if (element === null) return undefined;
 			setShown(undefined);
-			const surface = mountSurface(element, setShown);
+			const surface = mountSurface(element, presentation, setShown);
 			let view: PageView | undefined;
+			let measured: PageSize | undefined;
 			let settling: ReturnType<typeof setTimeout> | undefined;
 			const settled = (): void => {
-				const size = sizeOf(element);
-				if (size === undefined) return;
-				if (view === undefined) view = client.page(id, size, { frame: surface.draw });
-				else view.resize(size);
+				const shown = sizeOf(element);
+				if (shown === undefined) return;
+				const { page, room } = latest.current;
+				surface.layout({ ...shown, scale: page.view.scale ?? window.devicePixelRatio });
+				view ??= client.page(id, presentation === "stream" ? { frame: surface.draw } : undefined);
+				if (page.control !== "you") {
+					measured = undefined;
+					return;
+				}
+				const size = { ...(room ?? shown), scale: window.devicePixelRatio };
+				if (measured?.width === size.width && measured.height === size.height && measured.scale === size.scale) return;
+				measured = size;
+				view.resize(size);
 			};
 			const schedule = (): void => {
 				clearTimeout(settling);
 				settling = setTimeout(settled, view === undefined ? 0 : SETTLE_MS);
 			};
 			const observer = new ResizeObserver(schedule);
+			layout.current = schedule;
 			observer.observe(element, { box: "device-pixel-content-box" });
 			const routing = takeInput(
 				element,
@@ -77,11 +93,12 @@ export function usePageView(
 				observer.disconnect();
 				routing.stop();
 				if (input.current === routing) input.current = undefined;
+				if (layout.current === schedule) layout.current = undefined;
 				view?.stop();
 				surface.remove();
 			};
 		},
-		[client, id],
+		[client, id, presentation],
 	);
 	return { mount, ready: pickViewOf(shown, page.view) !== undefined };
 }
@@ -96,33 +113,37 @@ function sizeOf(element: HTMLElement): PageSize | undefined {
 
 /** What a page is drawn on: its canvas, the field that takes its keys, drawing a frame, and taking them out again. */
 type Surface = {
-	readonly canvas: HTMLCanvasElement;
 	readonly field: HTMLTextAreaElement;
 	readonly shown: DrawnPage | undefined;
 	/** Where a point of the page's CSS pixels is, from a point of the window's. */
 	pointOf(clientX: number, clientY: number): { readonly x: number; readonly y: number };
 	draw(frame: PageFrame): void;
+	layout(size: PageSize): void;
 	remove(): void;
 };
 
 /** A canvas and a field put in `element`: the canvas blank over all of it till a frame comes, then each frame drawn on it, the
  * newest where they come faster than they are decoded. */
-function mountSurface(element: HTMLElement, onShown: (size: DrawnPage) => void): Surface {
-	const canvas = document.createElement("canvas");
-	// The room filled, as a blank page fills it, till the first frame gives the page's own size.
-	canvas.className = "absolute top-0 left-0 size-full bg-white";
+function mountSurface(element: HTMLElement, presentation: "stream" | "native", onShown: (size: DrawnPage) => void): Surface {
+	const canvas = presentation === "stream" ? document.createElement("canvas") : undefined;
+	if (canvas) {
+		// The room filled, as a blank page fills it, till the first frame gives the page's own size.
+		canvas.className = "absolute top-0 left-0 size-full bg-white";
+		element.append(canvas);
+	}
 	const field = document.createElement("textarea");
 	field.className = "absolute top-0 left-0 size-px resize-none opacity-0";
 	field.setAttribute("aria-label", "The page");
 	field.autocapitalize = "off";
 	field.spellcheck = false;
-	element.append(canvas, field);
-	const context = canvas.getContext("2d");
+	element.append(field);
+	const context = canvas?.getContext("2d");
 	let next: PageFrame | undefined;
 	let drawing = false;
 	let disposed = false;
 	let shown: DrawnPage | undefined;
 	const drawNext = async (): Promise<void> => {
+		if (!canvas) return;
 		drawing = true;
 		for (let frame = next; frame !== undefined; frame = next) {
 			next = undefined;
@@ -135,9 +156,6 @@ function mountSurface(element: HTMLElement, onShown: (size: DrawnPage) => void):
 			const rasterChanged = canvas.width !== image.width || canvas.height !== image.height;
 			if (rasterChanged) Object.assign(canvas, { width: image.width, height: image.height });
 			const resized = rasterChanged || shown?.width !== frame.width || shown.height !== frame.height;
-			if (resized) {
-				Object.assign(canvas.style, { width: `${String(frame.width)}px`, height: `${String(frame.height)}px` });
-			}
 			context?.drawImage(image, 0, 0);
 			if (resized) {
 				shown = { width: frame.width, height: frame.height, pixelWidth: image.width, pixelHeight: image.height };
@@ -148,25 +166,33 @@ function mountSurface(element: HTMLElement, onShown: (size: DrawnPage) => void):
 		drawing = false;
 	};
 	return {
-		canvas,
 		field,
 		get shown() {
 			return shown;
 		},
 		pointOf: (clientX, clientY) => {
-			const box = canvas.getBoundingClientRect();
+			const box = (canvas ?? element).getBoundingClientRect();
 			const across = box.width === 0 ? 1 : (shown?.width ?? 0) / box.width;
 			const down = box.height === 0 ? 1 : (shown?.height ?? 0) / box.height;
 			return { x: (clientX - box.left) * across, y: (clientY - box.top) * down };
 		},
 		draw: (frame) => {
+			if (!canvas) return;
 			next = frame;
 			if (!drawing) void drawNext();
+		},
+		layout: (size) => {
+			if (canvas) return;
+			const scale = Math.max(1, size.scale ?? 1);
+			const next = { width: size.width, height: size.height, pixelWidth: size.width * scale, pixelHeight: size.height * scale };
+			if (shown?.width === next.width && shown.height === next.height && shown.pixelWidth === next.pixelWidth && shown.pixelHeight === next.pixelHeight) return;
+			shown = next;
+			onShown(shown);
 		},
 		remove: () => {
 			disposed = true;
 			next = undefined;
-			canvas.remove();
+			canvas?.remove();
 			field.remove();
 		},
 	};
@@ -376,7 +402,7 @@ function takeKeys({ surface: { field }, gate, send, options, on }: InputScope, c
 }
 
 /** IME, paste and text-only input share the same local selection boundary. */
-function takeText({ surface: { field, canvas }, gate, send, on }: InputScope): () => void {
+function takeText({ element, surface: { field }, gate, send, on }: InputScope): () => void {
 	let localComposition = false;
 	let composing = false;
 	field.addEventListener(
@@ -441,8 +467,8 @@ function takeText({ surface: { field, canvas }, gate, send, on }: InputScope): (
 		if (gate.mode !== "browse" && composing) localComposition = true;
 		field.value = "";
 		field.readOnly = gate.mode !== "browse";
-		field.setAttribute("aria-label", gate.mode === "browse" ? "The page" : "Select an element in the page. Escape cancels.");
-		canvas.style.cursor = gate.mode === "browse" ? "" : gate.mode === "pick" ? "crosshair" : "wait";
+		field.setAttribute("aria-label", gate.mode === "pick" ? "Select an element in the page. Escape cancels." : "The page");
+		element.style.cursor = gate.mode === "pick" ? "crosshair" : gate.mode === "capturing" ? "wait" : "";
 		if (gate.mode === "pick") field.focus({ preventScroll: true });
 	};
 }

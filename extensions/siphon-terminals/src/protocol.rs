@@ -75,6 +75,7 @@ pub struct TerminalListed {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub line: Option<String>,
+    pub local_servers: Vec<String>,
 }
 
 /// What a client subscribes to of the terminals': a thread's terminals, or a terminal as it writes — from the offset
