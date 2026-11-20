@@ -533,7 +533,7 @@ Stream data carries the same opaque identity, its business key, and a lossless o
 pending submissions and live output by identity, accepts increasing offsets, and applies exact close and
 reset events. Business keys still associate calls and persisted timeline entries. Stream eviction follows
 the stream's lifecycle. Reconnect restores the current prompts and live streams without retrying a reply.
-Node uses version `0.0.1`. The current HTTP and watch routes are described in [Node protocol](ARCHITECTURE.md#node-protocol).
+Node uses version `0.0.2`. The current HTTP and watch routes are described in [Node protocol](ARCHITECTURE.md#node-protocol).
 
 Confirmed private scope, relative to `devxiyang/octoii-siphon`
 
