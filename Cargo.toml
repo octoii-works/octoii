@@ -1,11 +1,11 @@
 [workspace]
 resolver = "3"
-members = ["libs/*", "apps/node", "extensions/*"]
+members = ["core", "libs/*", "apps/node", "extensions/*"]
 
 [workspace.dependencies]
 octoii-ai = "0.0.2"
 octoii-siphon-lib = "=0.0.4"
-octoii = { path = "libs/octoii" }
+octoii = { path = "core" }
 siphon-script = { path = "libs/siphon-script" }
 siphon-shell = { path = "libs/siphon-shell" }
 siphon-text = { path = "libs/siphon-text" }

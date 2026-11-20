@@ -13,18 +13,13 @@
 - Reuse active Cargo build caches and remove temporary outputs after verification. Periodically review and prune
   build outputs that are no longer needed once their builds have stopped. Follow the
   [local verification cleanup guide](CONTRIBUTING.md#local-verification-cleanup).
-- **Core stability**: treat `core/` as frozen by default; build product capabilities in extensions and apps using
-  existing public interfaces. Before changing any file under `core/` (including tests and manifests), explain the
-  need, exact scope, and why an extension-only solution is insufficient, then obtain a separate explicit confirmation
-  for that core change. General approval to implement a feature or refactor is not this confirmation. Read-only
-  investigation and checks are allowed; do not bypass core boundaries to avoid asking.
+- **Product core**: `core/` is the `octoii` Cargo package. It owns Thread, Turn, Agent execution and product
+  rules. Apps compose Octoii and its extensions. Only `octoii` directly depends on the published Siphon SDK.
 - **Upper-layer boundary**: apps, product services, extensions and their shared libraries interact with Siphon through
   its public interfaces, not directly with Beak or `siphon-runtime`. Direct lower-layer access is an exception only
   where genuinely necessary: document why Siphon's public interface cannot serve the need and keep the access in the
   smallest possible boundary, such as node initialization. An existing direct dependency is not permission to add
   more. Do not expose kernel internals or bypass Siphon's state, permissions or execution rules for convenience.
-  Changes to `core/` still require the separate confirmation above.
-- **Extensions**: an extension reaches Siphon by its public interface alone, never Beak or `siphon-runtime`, and writes
-  the volume only through Siphon's primitives (`Volume`, `machine::Commands`, a plan's spawn and deliver). What an
-  extension needs that Siphon lacks becomes a primitive of Siphon's, never a way around it.
+- **Extensions**: use Octoii's public product interfaces for Thread, tools, storage and machine operations. Put product
+  rules in Octoii and general storage and execution mechanisms behind the public Siphon SDK.
 - **This file** changes only with the user's confirmation.

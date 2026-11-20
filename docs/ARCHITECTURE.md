@@ -10,7 +10,7 @@ contains the runtime and its internal Beak workspace.
 | crates.io `octoii-ai` | Model vocabulary, providers and transports; no local source directory |
 | `libs/siphon-{script,shell,text,image}/` | Octoii's script engine, shell parsing, text operations and image processing |
 | `vendor/quickjs-ng/` | QuickJS sources built by `libs/siphon-script` |
-| `libs/octoii/` | Agent, threads, basic tools, permissions, protocol and public extension interface |
+| `core/` | The `octoii` Cargo package. Agent, threads, tools, permissions, protocol and the public extension interface |
 | `extensions/` | Built-in backend capabilities and integrations; shared extension helpers |
 | `apps/node/` | The `octoii-node` Cargo package (binary `octoii`): node, CLI, authentication, pairing and extension assembly |
 | `packages/` | TypeScript client and reusable frontend packages |
@@ -28,7 +28,7 @@ contains the runtime and its internal Beak workspace.
 Run `python3 tools/check-rust-layers.py` to validate the resolved dependency graph. The check includes build, test,
 optional and target-specific dependencies.
 
-`libs/octoii/src/lib.rs` declares the public modules and exports. `host.rs` holds the running host and
+`core/src/lib.rs` declares the public modules and exports. `host.rs` holds the running host and
 `host/build.rs` opens the volume, assembles extensions and registers execution. Thread startup and its storage
 rules live in `threads/start.rs`. The Agent owns the execution phases. Tool interfaces, request context and
 registration live in `tools/{tool,context,registry}.rs`, with the same call runner used by turns and scripts.

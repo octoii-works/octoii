@@ -14,6 +14,8 @@ REGISTRY = "registry+https://github.com/rust-lang/crates.io-index"
 
 def layer(package):
     path = Path(package["manifest_path"]).resolve().relative_to(ROOT)
+    if path.parent == Path("core") and package["name"] == "octoii":
+        return "core"
     if path.parts[0] in {"libs", "extensions", "apps"}:
         return path.parts[0]
     raise ValueError(f"Unclassified workspace package: {path}")
@@ -24,11 +26,9 @@ def allowed(source, target):
     if source_layer == "apps":
         return target_layer != "apps"
     if source_layer == "extensions":
-        return target_layer == "extensions" or target["name"] == "octoii"
-    if source["name"] in FOUNDATION:
-        return target["name"] in FOUNDATION
-    if source["name"] == "octoii":
-        return target["name"] in FOUNDATION
+        return target_layer in {"core", "extensions"}
+    if source_layer == "core" or source["name"] in FOUNDATION:
+        return target_layer == "libs" and target["name"] in FOUNDATION
     raise ValueError(f"Product library needs a dependency rule: {source['name']}")
 
 
@@ -47,11 +47,12 @@ def main():
             violations.append(f"Private source present in the resolved graph: {package['name']}")
     for package in packages:
         source = package["name"]
+        source_layer = layer(package)
         # Includes build, development, optional and target-specific dependencies.
         for dependency in package["dependencies"]:
             name = dependency["name"]
             if name == "octoii-siphon-lib":
-                if source != "octoii" or dependency.get("source") != REGISTRY:
+                if source_layer != "core" or dependency.get("source") != REGISTRY:
                     violations.append(f"{source} -> {name} (only Octoii may use the published SDK)")
             if name == "octoii-ai" and dependency.get("source") != REGISTRY:
                 violations.append(f"{source} -> {name} (use the published AI package)")
