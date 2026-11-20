@@ -1,10 +1,11 @@
 //! Accepting a thread and its first input. A thread with preparation waits behind a startup gate that its main
 //! process advances, consuming durable control messages before inputs.
 
-use std::path::Path;
+use std::{future::Future, path::Path};
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use bytes::Bytes;
+use futures::future::BoxFuture;
 use octoii_siphon_lib::{Answer, Batch, Changes, CommitEvent, Fiber, Run};
 use octoii_siphon_lib::{Directory, Range, Snapshot};
 use serde::{Deserialize, Serialize};
@@ -26,7 +27,7 @@ use super::{
 const ANNOTATION: &[u8] = b"siphon.start";
 const CLAIMS: &str = "octoii.start";
 
-/// An extension's accepted preparation request. Octoii does not interpret its payload.
+/// A directory intent or a resolved preparation request, with an extension-owned payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct StartRequest {
     pub owner: String,
@@ -50,11 +51,40 @@ impl StartWorkspace {
     }
 }
 
+type Resolve<'a> = Box<dyn FnOnce(String) -> BoxFuture<'a, anyhow::Result<serde_json::Value>> + Send + 'a>;
+
 /// Where a thread starts. A current directory is already resolved by the host.
-#[derive(Debug, Clone)]
-pub enum StartDirectory {
+pub enum StartDirectory<'a> {
     Current(StartWorkspace),
-    Prepare(StartRequest),
+    #[non_exhaustive]
+    Prepare {
+        intent: StartRequest,
+        resolve: Resolve<'a>,
+    },
+}
+
+impl<'a> StartDirectory<'a> {
+    /// Resolves the intent into a preparation payload only when its receipt is absent.
+    /// The resolver receives the candidate thread ID and leaves workspace creation to the durable preparation.
+    #[must_use]
+    pub fn prepare<Fut>(intent: StartRequest, resolve: impl FnOnce(String) -> Fut + Send + 'a) -> Self
+    where
+        Fut: Future<Output = anyhow::Result<serde_json::Value>> + Send + 'a,
+    {
+        Self::Prepare {
+            intent,
+            resolve: Box::new(move |thread| Box::pin(resolve(thread))),
+        }
+    }
+}
+
+impl std::fmt::Debug for StartDirectory<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Current(directory) => f.debug_tuple("Current").field(directory).finish(),
+            Self::Prepare { intent, .. } => f.debug_struct("Prepare").field("intent", intent).finish_non_exhaustive(),
+        }
+    }
 }
 
 /// Preparation never runs the agent until it becomes ready.
@@ -64,13 +94,23 @@ pub enum StartState {
     Pending,
     Preparing,
     Checking,
-    Failed { reason: String },
-    Interrupted { reason: String },
+    Failed {
+        reason: String,
+    },
+    Interrupted {
+        reason: String,
+    },
     Cancelled,
-    Ready { directory: StartWorkspace },
+    Ready {
+        directory: StartWorkspace,
+    },
+    /// The bound directory could not be found as a directory at the time of observation.
+    Unavailable {
+        directory: StartWorkspace,
+    },
 }
 
-/// Durable startup state. Tokens fence results from an older preparation attempt; they are not authorization.
+/// The startup request, attempt identity, and state. Tokens fence results from an older preparation attempt.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct Start {
     pub request: StartRequest,
@@ -87,13 +127,24 @@ impl Start {
             .transpose()
     }
 
+    pub(super) fn observed(mut self) -> Self {
+        self.state = match self.state {
+            StartState::Ready { directory } if !Path::new(&directory.workspace).is_dir() => StartState::Unavailable { directory },
+            state => state,
+        };
+        self
+    }
+
     #[must_use]
     pub fn blocks_execution(&self) -> bool {
         !matches!(self.state, StartState::Ready { .. })
     }
 
     fn can_cancel(&self) -> bool {
-        self.blocks_execution() && !matches!(self.state, StartState::Cancelled)
+        matches!(
+            self.state,
+            StartState::Pending | StartState::Preparing | StartState::Checking | StartState::Failed { .. } | StartState::Interrupted { .. }
+        )
     }
 }
 
@@ -108,14 +159,14 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
     /// directory or waits for preparation to bind it. The caller's key is claimed with the same commit.
     ///
     /// # Errors
-    /// A reused key with different input, a missing deleted thread, or a storage failure.
+    /// A reused key with different input, a deleted thread, a planning failure, or a storage failure.
     pub async fn start(
         &self,
         caller: &str,
         key: &str,
         new: &NewThread,
         content: Vec<InputPart>,
-        directory: StartDirectory,
+        directory: StartDirectory<'_>,
     ) -> Result<String, Error> {
         idempotency::validate_key(key)?;
         if caller.trim().is_empty() || content.is_empty() {
@@ -123,34 +174,44 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
         }
         let key = Sha256::digest(serde_json::to_vec(&(caller, key))?);
         let path = Bytes::from(format!("{CLAIMS}/{}", URL_SAFE_NO_PAD.encode(key)));
-        let preparation = match &directory {
+        let intent = match &directory {
             StartDirectory::Current(_) => None,
-            StartDirectory::Prepare(request) => Some(request),
+            StartDirectory::Prepare { intent, .. } => Some(intent),
         };
-        let fingerprint = input::fingerprint(new, &content, preparation)?;
+        let fingerprint = input::fingerprint(new, &content, intent)?;
         let runtime = self.runtime();
-        let snapshot = runtime.snapshot()?;
-        if let Some(thread) = claimed(&snapshot, &path, &fingerprint)? {
+        if let Some(thread) = claimed(&*runtime.snapshot()?, &path, &fingerprint)? {
             return Ok(thread);
         }
 
+        let claim = StartClaim {
+            fingerprint,
+            thread: runtime.new_id()?,
+        };
         let mut bound = new.clone();
         let preparation = match directory {
             StartDirectory::Current(workspace) => {
                 workspace.validate().map_err(|reason| Error::Start(reason.into()))?;
                 bound.config.workspace = Some(workspace.workspace);
                 bound.project = workspace.project;
-                None
+                Ok(None)
             }
-            StartDirectory::Prepare(request) => {
-                validate_preparation(new, &request)?;
-                Some(request)
+            StartDirectory::Prepare { intent, resolve } => {
+                validate_preparation(new, &intent)?;
+                resolve(claim.thread.clone()).await.map(|payload| {
+                    Some(StartRequest {
+                        owner: intent.owner,
+                        payload,
+                    })
+                })
             }
         };
-        let claim = StartClaim {
-            fingerprint,
-            thread: runtime.new_id()?,
-        };
+        let snapshot = runtime.snapshot()?;
+        // A concurrent acceptance may have won while the resolver worked, even if it failed here.
+        if let Some(thread) = claimed(&snapshot, &path, &fingerprint)? {
+            return Ok(thread);
+        }
+        let preparation = preparation.map_err(|error| Error::Start(error.to_string()))?;
         let mut changes = Changes::new()?;
         Self::made(&mut changes, &claim.thread, &runtime.new_id()?, &bound)?;
         if let Some(request) = preparation {
@@ -188,7 +249,7 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
     /// # Errors
     /// A missing thread or invalid stored state.
     pub fn start_state(&self, id: &str) -> Result<Option<Start>, Error> {
-        read(&*self.runtime().snapshot()?, id)
+        Ok(read(&*self.runtime().snapshot()?, id)?.map(Start::observed))
     }
 
     pub(crate) async fn start_command(&self, id: &str, token: &str, action: Action) -> Result<Start, Error> {
@@ -274,6 +335,10 @@ pub(super) fn stage_cancel(snapshot: &Snapshot, changes: &mut Batch<'_>, id: &st
 fn read(snapshot: &Snapshot, id: &str) -> Result<Option<Start>, Error> {
     let directory = thread::directory(snapshot, id)?.ok_or(Error::NoSuchThread)?;
     Ok(Start::of(&directory)?)
+}
+
+pub(crate) fn workspace_unavailable(snapshot: &Snapshot, id: &str) -> Result<bool, Error> {
+    Ok(read(snapshot, id)?.is_some_and(|start| matches!(start.observed().state, StartState::Unavailable { .. })))
 }
 
 pub(crate) fn commands(id: &str) -> Bytes {
@@ -374,7 +439,9 @@ pub(crate) fn advance(run: &mut Run<'_>, id: &str, key: Option<&str>) -> anyhow:
             };
             interrupted(answer)
         }
-        StartState::Failed { .. } | StartState::Interrupted { .. } | StartState::Cancelled => return Ok(Gate::Blocked),
+        StartState::Failed { .. } | StartState::Interrupted { .. } | StartState::Cancelled | StartState::Unavailable { .. } => {
+            return Ok(Gate::Blocked);
+        }
     };
     start.state = state;
     save(run, id, &start)?;

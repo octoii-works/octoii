@@ -55,6 +55,7 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 	const conversation = useConversation(thread);
 	const rows = useThreads() ?? [];
 	const row = rows.find((each) => each.id === thread);
+	const status = visibleStatus(conversation, row);
 	const terminalsOn = useExtensionAccess("terminals", "terminals.operate");
 	const browserOn = useExtensionAccess("browser", "browser.operate");
 	const terminals = useTerminals(terminalsOn ? thread : undefined) ?? [];
@@ -103,7 +104,7 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 			<Pane>
 				<ChatHeader
 					title={row?.config.title ?? (said === undefined ? "New thread" : titleOf(said))}
-					status={row === undefined ? undefined : statusOf(row)}
+					status={status === undefined ? undefined : statusOf(status)}
 					{...(project === undefined ? {} : { project })}
 					actions={
 						<div className="-mr-1 flex items-center gap-1">
@@ -117,7 +118,7 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 					<div className="flex min-h-0 min-w-0 flex-1 flex-col">
 						<div className="relative flex min-h-0 flex-1 flex-col">
 							<MessageThreadContext value={{ thread, workspace, pages, terminals }}>
-								<ThreadConversation thread={thread} row={row} conversation={conversation}>
+								<ThreadConversation thread={thread} status={status}>
 									<Timeline
 										ref={timeline}
 										thread={thread}
@@ -139,6 +140,7 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 							things={thingsOf(reachesThreads ? rows : [], terminals, pages, thread)}
 							sent={theirs}
 							conversation={conversation}
+							status={status}
 							device={props.device}
 							onSent={(delivery) => {
 								setSent(delivery);
@@ -162,6 +164,10 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 	);
 }
 
+function visibleStatus(conversation: Conversation, row: Listed | undefined): Status | undefined {
+	return conversation.gone ? undefined : (conversation.status ?? row?.status);
+}
+
 /**
  * What docks at the column's foot, opaque, the turns fading out behind its upper edge: the messages waiting in the
  * thread's inbox over the composer, in the chat's column — or, while something waits on the person, over what waits,
@@ -175,6 +181,7 @@ function Dock(props: {
 	/** What the person sent in the thread, oldest first. */
 	readonly sent: readonly string[];
 	readonly conversation: Conversation;
+	readonly status: Status | undefined;
 	readonly device: Device;
 	/** Told the id each input the person sends is delivered by. */
 	readonly onSent: (input: string) => void;
@@ -186,7 +193,7 @@ function Dock(props: {
 	const stop = stopTargetOf(conversation.status);
 	// A call's permission, the oldest of what waits, is answered in the composer; anything else waits docked in its place.
 	const approval = useApproval(thread, conversation.asks.toSorted((a, b) => (a.key < b.key ? -1 : 1))[0]);
-	if (conversation.gone || awaitingWorkspace(conversation.status ?? row?.status)) return null;
+	if (conversation.gone || awaitingWorkspace(props.status)) return null;
 
 	return (
 		<div className="relative shrink-0 bg-background pb-[max(--spacing(4),env(safe-area-inset-bottom))]">
@@ -235,20 +242,18 @@ function Dock(props: {
 
 function ThreadConversation({
 	thread,
-	row,
-	conversation,
+	status,
 	children,
 }: {
 	readonly thread: string;
-	readonly row: Listed | undefined;
-	readonly conversation: Conversation;
+	readonly status: Status | undefined;
 	readonly children: ReactNode;
 }): ReactNode {
-	const status = conversation.gone ? undefined : (conversation.status ?? row?.status);
+	const hideTimeline = awaitingWorkspace(status) && status?.start?.state.state !== "unavailable";
 	return (
 		<>
-			{status?.start?.request.owner === "git.worktree" ? <WorktreeStart thread={thread} start={status.start} inbox={status.inbox} /> : null}
-			<div className={awaitingWorkspace(status) ? "hidden" : "contents"}>{children}</div>
+			{status === undefined ? null : <WorktreeStart thread={thread} status={status} />}
+			<div className={hideTimeline ? "hidden" : "contents"}>{children}</div>
 		</>
 	);
 }

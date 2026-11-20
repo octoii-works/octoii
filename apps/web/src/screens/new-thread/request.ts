@@ -1,5 +1,5 @@
 /** The ordered initial message, encoded once for the node's local and tunnel HTTP transports. */
-import type { Config, CreateWorktree } from "@octoii-works/octoii-client";
+import type { Config } from "@octoii-works/octoii-client";
 import { Type } from "typebox";
 import { fileAddress } from "../../core/attachments.ts";
 import type { Draft } from "../../core/drafts.ts";
@@ -7,7 +7,7 @@ import { elementEvidence } from "../../core/element-feedback.ts";
 import { matches } from "../../core/schema.ts";
 import { jsonOf, succeeded, wordsOf, type SendRequest } from "../../components/state/reach.ts";
 
-export type ThreadWorkspace = { readonly kind: "current" } | { readonly kind: "isolated"; readonly worktree: CreateWorktree };
+export type ThreadWorkspace = { readonly kind: "current" } | { readonly kind: "isolated"; readonly path: string; readonly base?: string };
 export type ThreadRequest = { readonly contentType: string; readonly body: Blob };
 
 type Submission = { readonly key: string; readonly config: Config; readonly workspace: ThreadWorkspace; readonly draft: Draft };

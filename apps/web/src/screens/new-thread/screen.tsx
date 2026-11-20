@@ -1,11 +1,10 @@
 /** A local draft: project headline, centered composer, shared context controls and floating details. */
 import { type ReactNode, useState } from "react";
-import { useClient, useConnection, useSettings, useThreads } from "@octoii-works/octoii-client/react";
+import { useConnection, useSettings, useThreads } from "@octoii-works/octoii-client/react";
 import { Folder, Laptop } from "lucide-react";
 import type { Device } from "../../core/device.ts";
 import { recentModelsOf } from "../../core/models.ts";
 import type { NewThread, PendingThread } from "./submission.ts";
-import type { ThreadWorkspace } from "./request.ts";
 import { usePendingThread } from "./effects/pending-thread.ts";
 import { failed } from "../../components/state/notices.ts";
 import { clearPendingDraft } from "../../components/state/draft.ts";
@@ -21,7 +20,6 @@ import { ChatHeader } from "../../components/thread/header.tsx";
 import { DraftProject } from "./draft-project.tsx";
 import { DetailsToggle, DetailsFloat, DetailRow } from "../../components/thread/details.tsx";
 import { useNewThreadOptions } from "./options.ts";
-import { planWorktree } from "../../extensions/git/worktree-plan.ts";
 import { SeparateDirectory } from "../../extensions/git/new-worktree.tsx";
 import { ServersMenu } from "../../extensions/mcp/servers-menu.tsx";
 import type { Draft } from "../../core/drafts.ts";
@@ -169,7 +167,7 @@ function PendingTask({
 	readonly refresh: () => void;
 }): ReactNode {
 	const [resuming, setResuming] = useState(false);
-	const worktree = pending.workspace.kind === "isolated" ? pending.workspace.worktree : undefined;
+	const { workspace } = pending;
 	return (
 		<div className="rounded-lg border border-border p-4 text-body">
 			<p className="font-medium">Unfinished submission</p>
@@ -177,11 +175,9 @@ function PendingTask({
 			<p className="text-muted-foreground">
 				{pending.project ?? "No project"} · {pending.draft.attachments.length} attachments
 			</p>
-			{worktree === undefined ? null : (
-				<p className="mt-2 break-all text-muted-foreground">
-					Separate directory · {worktree.branch} · {worktree.destination}
-				</p>
-			)}
+			{workspace.kind === "isolated" ? (
+				<p className="mt-2 break-all text-muted-foreground">Separate directory{workspace.base === undefined ? "" : ` · ${workspace.base}`}</p>
+			) : null}
 			<p className="my-3 text-muted-foreground">
 				{pending.thread === undefined ? "Continue with the original message and attachments." : "The node accepted this task."}
 			</p>
@@ -301,7 +297,6 @@ function useDraftSubmit(
 	options: ReturnType<typeof useNewThreadOptions>["value"],
 	setSending: (sending: boolean) => void,
 ) {
-	const client = useClient();
 	return async (draft: Draft): Promise<void> => {
 		const starting = saved.starting;
 		if (starting === undefined) throw new Error("Wait for the node connection.");
@@ -310,8 +305,7 @@ function useDraftSubmit(
 			const config = draftConfig(folder, model, options);
 			const selected = options.worktree;
 			if (selected !== undefined && selected.path !== folder) throw new Error("Choose the work directory for this project.");
-			const workspace: ThreadWorkspace = selected === undefined ? { kind: "current" } : { kind: "isolated", worktree: await planWorktree(client, selected) };
-			const { key, thread } = await starting.send(config, workspace, draft);
+			const { key, thread } = await starting.send(config, selected, draft);
 			go({ place: "thread", thread });
 			await starting.clear(key).catch((error: unknown) => failed("The saved copy could not be cleared", error));
 		} catch (error) {

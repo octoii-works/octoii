@@ -137,9 +137,7 @@ pub fn building(home: &Home, sign_in: SignInSetup) -> anyhow::Result<octoii::Bui
         .extension(ThreadExtension)
         .extension(FilesExtension)
         .extension(MemoryExtension)
-        .extension(GitExtension {
-            worktrees: Home::worktrees_in(&temporary).context("the Home's worktree directory")?,
-        })
+        .extension(GitExtension)
         .extension(WebSearchExtension)
         .extension(SkillsExtension {
             config: Some(home.config()),
@@ -205,6 +203,7 @@ pub async fn serve_until(served: Served, stop: impl Future<Output = ()> + Send +
         machine: Machine::of(gethostname::gethostname().to_string_lossy().into_owned(), &siphon.machine),
         origins: vec![loopback.clone(), format!("http://localhost:{port}")],
         cookie: http::cookie_of(port),
+        home: home.clone(),
         app,
     };
     let socket = home.socket().context("the control socket's folder")?;

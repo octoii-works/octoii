@@ -1513,10 +1513,13 @@ async fn startup_gate_holds_all_input_until_the_final_workspace_is_bound() {
                     filename: Some("context.txt".into()),
                 },
             ],
-            StartDirectory::Prepare(StartRequest {
-                owner: "test".into(),
-                payload: serde_json::json!({}),
-            }),
+            StartDirectory::prepare(
+                StartRequest {
+                    owner: "test".into(),
+                    payload: serde_json::json!({}),
+                },
+                |_| async { Ok(serde_json::json!({})) },
+            ),
         )
         .await
         .unwrap();
@@ -1566,6 +1569,110 @@ async fn startup_gate_holds_all_input_until_the_final_workspace_is_bound() {
     }));
     assert_eq!(volume.read_file(&id, &reference).unwrap(), Some(attachment));
     assert_eq!(script.asked.lock().unwrap().len(), 1);
+    assert!(requests.preparing.try_recv().is_err());
+    runtime.close().expect("closed");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_lost_prepared_directory_holds_queued_input_and_keeps_history() {
+    use crate::threads::{StartRequest, StartState, thread};
+
+    let script = script(vec![Ok(vec![says("before the loss")]), Ok(vec![says("after restoration")])]);
+    let mut requests = None;
+    let runtime = runtime_with(&script, |builder| {
+        requests = Some(StartupRequests::register(builder)?);
+        Ok(())
+    });
+    let mut requests = requests.unwrap();
+    let volume = crate::volume::Volume {
+        runtime: runtime.runtime_handle(),
+    };
+    let threads = Threads::<ThreadFiber>::new(runtime.runtime_handle());
+    let (_folder, base) = folder();
+    let workspace = base.join("checkout");
+    std::fs::create_dir(&workspace).unwrap();
+    let directory = StartWorkspace {
+        workspace: workspace.to_str().unwrap().to_owned(),
+        project: Some(base.to_str().unwrap().to_owned()),
+    };
+    let id = volume
+        .start_thread(
+            "test-session",
+            "prepared-thread",
+            &NewThread {
+                actor: "person".into(),
+                config: Config {
+                    model: Some("test/m".into()),
+                    title: Some("Prepared thread".into()),
+                    ..Config::default()
+                },
+                ..NewThread::default()
+            },
+            vec![InputContent::text("first").into()],
+            StartDirectory::prepare(
+                StartRequest {
+                    owner: "test".into(),
+                    payload: serde_json::json!({}),
+                },
+                |_| async { Ok(serde_json::json!({})) },
+            ),
+        )
+        .await
+        .unwrap();
+    requests.prepare().await.answer.send(Ok(directory.clone())).unwrap();
+    until(&threads, &id, Turn::Replied).await;
+    let history = entries(&threads, &id);
+    let ready = volume.thread_start(&id).unwrap().unwrap();
+
+    std::fs::remove_dir(&workspace).unwrap();
+    let unavailable = StartState::Unavailable { directory };
+    assert_eq!(volume.thread_start(&id).unwrap().unwrap().state, unavailable);
+    std::fs::write(&workspace, b"a file at the former checkout path").unwrap();
+    assert_eq!(threads.listed(&id).unwrap().status.start.unwrap().state, unavailable);
+
+    let mut commits = threads.runtime().commits().unwrap();
+    let delivery = threads
+        .queue(&id, "person", vec![InputContent::text("while missing")], "while-missing")
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while volume
+            .snapshot()
+            .unwrap()
+            .fiber(&thread::main(&id))
+            .unwrap()
+            .unwrap()
+            .waits_until
+            .is_none()
+        {
+            commits.next().await.unwrap().expect("the runtime is running");
+        }
+    })
+    .await
+    .expect("the thread waited for the directory");
+    let waiting = threads.listed(&id).unwrap().status;
+    assert_eq!(waiting.inbox.len(), 1);
+    assert_eq!(waiting.inbox[0].0, delivery);
+    assert_eq!(waiting.turn, Turn::Replied);
+    assert_eq!(entries(&threads, &id), history);
+    assert!(volume.retry_thread_start(&id, &ready.token).await.is_err());
+
+    std::fs::remove_file(&workspace).unwrap();
+    std::fs::create_dir(&workspace).unwrap();
+    assert_eq!(volume.thread_start(&id).unwrap(), Some(ready));
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let status = threads.listed(&id).unwrap().status;
+            if status.inbox.is_empty() && status.turn == Turn::Replied {
+                break;
+            }
+            commits.next().await.unwrap().expect("the runtime is running");
+        }
+    })
+    .await
+    .expect("the queued input ran after restoring the directory");
+    assert!(entries(&threads, &id).starts_with(&history));
+    assert_eq!(script.asked.lock().unwrap().len(), 2);
     assert!(requests.preparing.try_recv().is_err());
     runtime.close().expect("closed");
 }

@@ -20,6 +20,8 @@ use crate::agent::title::{TitleFiber, TitleInput};
 use crate::agent::told::{self, Told};
 use crate::agent::turn::{TurnFiber, TurnInput};
 
+const WORKSPACE_RECHECK_MS: i64 = 5_000;
+
 /// Where a thread's main process stands: at rest, awaiting a workspace or model context request, or running its turn.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "state", rename_all = "kebab-case")]
@@ -91,6 +93,10 @@ fn rest(run: &mut Run<'_>, id: &str) -> anyhow::Result<Ending<MainState, ()>> {
     }
     let waiting = inbox::waiting(run.snapshot(), id)?;
     if waiting.iter().any(|each| matches!(each.inbound, Inbound::Input { .. })) {
+        if start::workspace_unavailable(run.snapshot(), id)? {
+            let wait = Wait::new().change(inbox::path(id)).deadline(run.time_ms() + WORKSPACE_RECHECK_MS);
+            return Ok(Ending::Wait(MainState::Rest, wait));
+        }
         let key = run.new_id()?;
         run.request(&key, &Gather { thread: id.to_owned() })?;
         return Ok(Ending::Wait(MainState::Gathering { key: key.clone() }, Wait::new().mail(key)));
@@ -124,6 +130,9 @@ fn gathered(run: &mut Run<'_>, id: &str, key: &str) -> anyhow::Result<Ending<Mai
             Wait::new().mail(key.to_owned()),
         ));
     };
+    if start::workspace_unavailable(run.snapshot(), id)? {
+        return Ok(Ending::Next(MainState::Rest));
+    }
     match answer {
         Answer::Given(told) => begin(run, id, told),
         Answer::Interrupted => Ok(Ending::Next(MainState::Rest)),

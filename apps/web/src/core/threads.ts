@@ -16,8 +16,17 @@ import { mintedAt } from "./time.ts";
 /** A project: the folder its threads work in, by its path and its name. */
 export type Project = { readonly folder: string; readonly name: string };
 
-/** How a thread stands, as its row's icon says: asking the person, working, failed, or at rest. */
-export type ThreadStatus = "asks" | "working" | "failed" | "ready" | "preparing";
+/** How a thread stands, including whether its workspace needs attention. */
+export type ThreadStatus = "asks" | "working" | "failed" | "ready" | "preparing" | "unavailable";
+
+export const THREAD_STATUS_LABELS: Readonly<Record<ThreadStatus, string>> = {
+	preparing: "Preparing workspace",
+	unavailable: "Workspace unavailable",
+	asks: "Waiting for you",
+	working: "Working",
+	failed: "Failed",
+	ready: "Done",
+};
 
 /** Whether a workspace is waiting for or undergoing preparation. */
 export function isPreparingStart(state: StartState | undefined): boolean {
@@ -25,23 +34,27 @@ export function isPreparingStart(state: StartState | undefined): boolean {
 }
 
 /** How a thread stands: what waits on the person first, then a turn that runs or inputs that wait, then how the last ended. */
-export function statusOf(row: Listed): ThreadStatus {
-	const start = row.status.start?.state;
+export function statusOf(status: Status): ThreadStatus {
+	const start = status.start?.state;
 	if (isPreparingStart(start)) return "preparing";
+	if (start?.state === "unavailable") return "unavailable";
 	if (start?.state === "failed" || start?.state === "interrupted") return "failed";
 	if (start?.state === "cancelled") return "ready";
-	if (asksOf(row).length > 0) return "asks";
-	if (row.status.turn === "running" || row.status.inbox.length > 0) return "working";
-	return row.status.turn === "failed" ? "failed" : "ready";
+	if (status.asks.length > 0) return "asks";
+	if (status.turn === "running" || status.inbox.length > 0) return "working";
+	return status.turn === "failed" ? "failed" : "ready";
 }
 
 /** The current turn or the person's visible deliveries where no turn is running. */
 export function stopTargetOf(status: Status | undefined): StopTarget | undefined {
-	if (status === undefined || (status.start !== undefined && status.start.state.state !== "ready")) return undefined;
+	if (status === undefined) return undefined;
+	const start = status.start?.state.state;
+	if (start !== undefined && start !== "ready" && start !== "unavailable") return undefined;
 	if (status.turn === "running") {
 		const id = status.turn_id;
 		return id ? { kind: "turn", id } : undefined;
 	}
+	if (start === "unavailable") return undefined;
 	const deliveries = queuedInputsOf(status.inbox).map(({ id }) => id);
 	return deliveries.length === 0 ? undefined : { kind: "queued", deliveries };
 }
@@ -70,7 +83,7 @@ export function standingsOf(rows: readonly Listed[]): (row: Listed) => ThreadSta
 	const standingOf = (row: Listed): ThreadStanding => {
 		const found = known.get(row.id);
 		if (found !== undefined) return found;
-		const status = statusOf(row);
+		const status = statusOf(row.status);
 		const own = { status, since: sinceOf(row, status) };
 		// Its own first, so that a line of parents that came back to it would end.
 		known.set(row.id, own);

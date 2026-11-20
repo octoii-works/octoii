@@ -924,19 +924,19 @@ export type SiphonTopic = { "type": "thread", thread: string, from?: Cursor, } |
 export type Standing = { account?: string, plan?: string, limits: Array<Limit>, guidance?: Guidance, };
 
 /**
- * Durable startup state. Tokens fence results from an older preparation attempt; they are not authorization.
+ * The startup request, attempt identity, and state. Tokens fence results from an older preparation attempt.
  */
 export type Start = { request: StartRequest, token: string, previous: string | null, state: StartState, };
 
 /**
- * An extension's accepted preparation request. Octoii does not interpret its payload.
+ * A directory intent or a resolved preparation request, with an extension-owned payload.
  */
 export type StartRequest = { owner: string, payload: JsonValue, };
 
 /**
  * Preparation never runs the agent until it becomes ready.
  */
-export type StartState = { "state": "pending" } | { "state": "preparing" } | { "state": "checking" } | { "state": "failed", reason: string, } | { "state": "interrupted", reason: string, } | { "state": "cancelled" } | { "state": "ready", directory: StartWorkspace, };
+export type StartState = { "state": "pending" } | { "state": "preparing" } | { "state": "checking" } | { "state": "failed", reason: string, } | { "state": "interrupted", reason: string, } | { "state": "cancelled" } | { "state": "ready", directory: StartWorkspace, } | { "state": "unavailable", directory: StartWorkspace, };
 
 /**
  * The resolved directory and project identity in which a thread runs.
@@ -1139,11 +1139,6 @@ export type Worktree = { path: string, branch: string, base_commit: string, };
 export type WorktreeEntry = { path: string, head: string | null, branch: string | null, bare: boolean, detached: boolean, locked: string | null, prunable: string | null, };
 
 /**
- * A task identifier and an already selected full commit ID, never a moving branch name.
- */
-export type WorktreePlan = { path: string, key: string, base: string, };
-
-/**
  * The worktrees registered with the repository.
  */
 export type Worktrees = { worktrees: Array<WorktreeEntry>, };
@@ -1209,7 +1204,6 @@ export type Methods = {
   'memory.list': { params: InFolder; result: MemoryListed };
   'memory.delete': { params: DeleteMemory; result: Nothing };
   'git.branches': { params: InFolder; result: Branches };
-  'git.worktree-plan': { params: WorktreePlan; result: CreateWorktree };
   'git.retry-start': { params: RetryStart; result: Start };
   'git.worktrees': { params: InFolder; result: Worktrees };
   'git.create-worktree': { params: CreateWorktree; result: Worktree };

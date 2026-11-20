@@ -159,14 +159,14 @@ impl crate::volume::Volume {
     /// `new` holds the original request. The host's resolved current directory is bound at first acceptance.
     ///
     /// # Errors
-    /// Invalid/reused input, a deleted thread, or a storage failure.
+    /// Invalid or reused input, a deleted thread, a planning failure, or a storage failure.
     pub async fn start_thread(
         &self,
         caller: &str,
         key: &str,
         new: &crate::threads::NewThread,
         content: Vec<crate::threads::InputPart>,
-        directory: crate::threads::StartDirectory,
+        directory: crate::threads::StartDirectory<'_>,
     ) -> anyhow::Result<String> {
         Ok(self.starting_threads().start(caller, key, new, content, directory).await?)
     }

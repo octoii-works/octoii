@@ -41,13 +41,14 @@ async fn request(address: &str, method: Method, path: &str, headers: &[(&str, &s
 }
 
 /// The node's HTTP of `siphon` and `access`, served on a loopback port: its address.
-async fn served(siphon: &octoii::Octoii, access: &Access) -> String {
+async fn served(siphon: &octoii::Octoii, access: &Access, home: Home) -> String {
     let node = Node {
         siphon: siphon.clone(),
         access: access.clone(),
         machine: Machine::of("here".into(), &siphon.machine),
         origins: Vec::new(),
         cookie: http::cookie_of(7600),
+        home,
         app: None,
     };
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bound");
@@ -65,7 +66,7 @@ async fn a_thread_s_files_are_sent_kept_and_given_back_to_a_session_that_may() {
     let access = siphon.access();
     let thread = siphon.threads.create(&NewThread::default(), "k1").await.expect("a thread");
     let other = siphon.threads.create(&NewThread::default(), "k2").await.expect("a thread");
-    let address = served(&siphon, &access).await;
+    let address = served(&siphon, &access, home).await;
     let writer = format!(
         "Bearer {}",
         access

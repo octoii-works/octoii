@@ -270,7 +270,7 @@ fn status(runtime: &RuntimeHandle, snapshot: &Snapshot, id: &str, directory: &Di
         Ok(record.filter(|record| record.outcome.is_none()))
     };
     Ok(Status {
-        start: super::Start::of(directory)?,
+        start: super::Start::of(directory)?.map(super::Start::observed),
         turn,
         turn_id: turn_id(directory).map(str::to_owned),
         began_at: time(directory, BEGAN_AT_ANNOTATION),

@@ -95,13 +95,11 @@ describe("the threads", () => {
 			asks: [{ id: "trust-1", key: "a", name: "siphon.trust", payload: {}, answer_schema: {} }],
 			compacting: false,
 		};
-		expect(statusOf(row("1", undefined, asking))).toBe("asks");
-		expect(statusOf(row("2", undefined, { ...idle, turn: "running" }))).toBe("working");
-		expect(statusOf(row("3", undefined, { ...idle, inbox: [["i", { type: "input", actor: "person", content: [{ type: "input_text", text: "hi" }] }]] }))).toBe(
-			"working",
-		);
-		expect(statusOf(row("4", undefined, { ...idle, turn: "failed" }))).toBe("failed");
-		expect(statusOf(row("5", undefined))).toBe("ready");
+		expect(statusOf(asking)).toBe("asks");
+		expect(statusOf({ ...idle, turn: "running" })).toBe("working");
+		expect(statusOf({ ...idle, inbox: [["i", { type: "input", actor: "person", content: [{ type: "input_text", text: "hi" }] }]] })).toBe("working");
+		expect(statusOf({ ...idle, turn: "failed" })).toBe("failed");
+		expect(statusOf(idle)).toBe("ready");
 	});
 
 	it("belong to their project, the repository they work in, the projects in the order of their newest threads", () => {

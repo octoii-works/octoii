@@ -5,7 +5,7 @@
  * the page puts there — a thread's, the frame's button that shows its panel.
  */
 import type { ReactNode } from "react";
-import type { Project, ThreadStatus } from "../../core/threads.ts";
+import { type Project, THREAD_STATUS_LABELS, type ThreadStatus } from "../../core/threads.ts";
 import { ProjectMark } from "../files/project-mark.tsx";
 import { ShowSidebar } from "../frame/frame.tsx";
 import { Pill } from "../ui/pill.tsx";
@@ -42,34 +42,14 @@ export function ChatHeader(props: HeaderProps): ReactNode {
 	);
 }
 
-/** How the thread stands, as a pill: waiting on the person, working, or failed; nothing at rest. */
+/** How the thread stands, as a pill. */
 function StatusPill(props: { readonly status: ThreadStatus }): ReactNode {
-	switch (props.status) {
-		case "preparing":
-			return (
-				<Pill tone="waiting" icon={<StatusMark status="preparing" />}>
-					Preparing workspace
-				</Pill>
-			);
-		case "asks":
-			return (
-				<Pill tone="waiting" icon={<StatusMark status="asks" />}>
-					Waiting for you
-				</Pill>
-			);
-		case "working":
-			return (
-				<Pill tone="running" icon={<StatusMark status="working" />}>
-					Working
-				</Pill>
-			);
-		case "failed":
-			return (
-				<Pill tone="failed" icon={<StatusMark status="failed" />}>
-					Failed
-				</Pill>
-			);
-		case "ready":
-			return null;
-	}
+	const { status } = props;
+	if (status === "ready") return null;
+	const tone = { preparing: "waiting", asks: "waiting", working: "running", failed: "failed", unavailable: "failed" } as const;
+	return (
+		<Pill tone={tone[status]} icon={<StatusMark status={status} />}>
+			{THREAD_STATUS_LABELS[status]}
+		</Pill>
+	);
 }

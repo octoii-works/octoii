@@ -9,7 +9,7 @@ const unreachable: SendRequest = async () => {
 const current: ThreadWorkspace = { kind: "current" };
 const isolated: ThreadWorkspace = {
 	kind: "isolated",
-	worktree: { path: "/project", destination: "/task", branch: "task", base: "a".repeat(40) },
+	path: "/project",
 };
 const attachment = { ref: "local", name: "notes.txt", media_type: "text/plain", size: 4, bytes: new Blob(["note"]) };
 const draft = { text: "Task", feedback: [], attachments: [attachment] };

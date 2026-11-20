@@ -145,9 +145,12 @@ impl Home {
         Ok(temporary)
     }
 
-    /// Opens the private directory in which the node allocates managed checkouts.
-    pub(crate) fn worktrees_in(temporary: &Path) -> std::io::Result<PathBuf> {
-        let directory = std::path::absolute(temporary.join("worktrees"))?;
+    /// Opens this Home's private directory for managed checkouts.
+    ///
+    /// # Errors
+    /// The directory could not be opened as a private directory.
+    pub fn worktrees(&self) -> std::io::Result<PathBuf> {
+        let directory = std::path::absolute(self.temporary()?.join("worktrees"))?;
         private_folder(&directory)?;
         Ok(directory)
     }

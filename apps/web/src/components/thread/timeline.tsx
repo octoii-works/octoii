@@ -204,7 +204,7 @@ const FOOT = <div aria-hidden className="h-8" />;
 /** The list's head: what reads further back, where the client holds the latest of the log alone; or that nothing was said yet. */
 function Head(props: { readonly complete: boolean; readonly empty: boolean; readonly onEarlier: () => void }): ReactNode {
 	if (props.complete && props.empty) {
-		return <p className="py-20 text-center text-ui text-muted-foreground">Send a message to start the conversation.</p>;
+		return <p className="py-20 text-center text-ui text-muted-foreground">No messages yet.</p>;
 	}
 	if (props.complete) return null;
 	return (

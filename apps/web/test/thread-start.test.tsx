@@ -2,10 +2,12 @@ import { expect, test } from "bun:test";
 import { createClient, type Listed, type Received, type Scope, type Start } from "@octoii-works/octoii-client";
 import { ClientProvider } from "@octoii-works/octoii-client/react";
 import { Window } from "happy-dom";
-import { act } from "react";
+import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { WorktreeStart } from "../src/extensions/git/thread-start.tsx";
 import { isSettled, statusOf } from "../src/core/threads.ts";
+import { DEVICE_DEFAULTS } from "../src/core/device.ts";
+import { ThreadScreen } from "../src/screens/thread.tsx";
 
 const start: Start = {
 	request: { owner: "git.worktree", payload: { destination: "/task", branch: "task" } },
@@ -13,6 +15,10 @@ const start: Start = {
 	previous: null,
 	state: { state: "pending" },
 };
+const unavailable = {
+	...start,
+	state: { state: "unavailable", directory: { workspace: "/resolved-workspace", project: "/project" } },
+} satisfies Start;
 const row: Listed = {
 	id: "task",
 	config: {},
@@ -34,13 +40,14 @@ const progress = [
 test("held input is separate from Agent work throughout preparation", () => {
 	for (const [state] of progress) {
 		const waiting = { ...row, status: { ...row.status, start: { ...start, state: { state } } } };
-		expect(statusOf(waiting)).toBe("preparing");
+		expect(statusOf(waiting.status)).toBe("preparing");
 		expect(isSettled(waiting, { status: "preparing", since: 0 }, 30 * 24 * 60 * 60 * 1000)).toBe(false);
 	}
 	for (const state of ["failed", "interrupted"] as const) {
-		expect(statusOf({ ...row, status: { ...row.status, start: { ...start, state: { state, reason: "checkout failed" } } } })).toBe("failed");
+		expect(statusOf({ ...row.status, start: { ...start, state: { state, reason: "checkout failed" } } })).toBe("failed");
 	}
-	expect(statusOf({ ...row, status: { ...row.status, start: { ...start, state: { state: "cancelled" } } } })).toBe("ready");
+	expect(statusOf({ ...row.status, start: { ...start, state: { state: "cancelled" } } })).toBe("ready");
+	expect(statusOf({ ...row.status, start: unavailable })).toBe("unavailable");
 });
 
 test("renders each progress phase with cancellation while sending no RPC on open or update", async () => {
@@ -130,25 +137,118 @@ test("shows the saved message when cancelled and the resolved directory when rea
 	});
 });
 
+test("shows the unavailable workspace and saved input without preparation actions", async () => {
+	await withStart(async ({ draw, element, sent }) => {
+		await draw(unavailable);
+		expect(element.textContent).toContain("Workspace unavailable");
+		expect(element.textContent).toContain("/resolved-workspace");
+		expect(element.textContent).toContain("Restore the original worktree");
+		expect(element.textContent).toContain("Saved task");
+		expect(element.querySelector("button")).toBeNull();
+		expect(sent).toEqual([]);
+	});
+});
+
+test("only offers to stop the active turn in an unavailable workspace", async () => {
+	await withStart(async ({ draw, element, button, click, sent, receive }) => {
+		await draw(unavailable, "active-turn");
+		expect(element.querySelectorAll("button")).toHaveLength(1);
+		expect(button("Stop turn")?.disabled).toBe(false);
+		await click("Stop turn");
+		const request = sent[0];
+		if (request === undefined) throw new Error("Missing turn stop request");
+		expect(request).toMatchObject({ method: "threads.stop", params: { thread: row.id, target: { kind: "turn", id: "active-turn" } } });
+		await receive({ id: request.id, result: {} });
+		await draw(unavailable);
+		expect(element.querySelector("button")).toBeNull();
+		expect(sent).toHaveLength(1);
+	});
+});
+
+test("keeps the thread's history visible and removes the composer while its workspace is unavailable", async () => {
+	await withClientView(async ({ draw, element, button, sent, receive }) => {
+		await draw(<ThreadScreen thread={row.id} device={DEVICE_DEFAULTS} />);
+		const read = sent.find(({ method }) => method === "threads.read");
+		if (read === undefined) throw new Error("Missing thread history request");
+		await receive({
+			id: read.id,
+			result: {
+				complete: false,
+				entries: [
+					{ type: "input", id: "input-1", actor: "person", delivery: "first", content: [{ type: "input_text", text: "Earlier message" }] },
+					{ type: "turn-end", id: "end-1", outcome: "replied" },
+				],
+			},
+		});
+		const watch = sent.filter(({ method }) => method === "subscribe").at(-1);
+		if (watch === undefined) throw new Error("Missing thread subscription");
+		expect(watch.params).toEqual({ topic: { type: "thread", thread: row.id } });
+		for (const { id, method } of sent) {
+			if (method === "subscribe") await receive({ id, result: { subscription: id } });
+		}
+		const ready = { ...row.status, inbox: [], turn: "replied" as const, start: { ...start, state: { ...unavailable.state, state: "ready" as const } } };
+		await receive({ event: "status", subscription: watch.id, status: ready });
+		expect(element.querySelector('textarea[aria-label="Message"]')).not.toBeNull();
+		await receive({ event: "status", subscription: watch.id, status: { ...ready, inbox: row.status.inbox, start: unavailable } });
+		expect(element.querySelector("header h2")?.textContent).toBe("Earlier message");
+		const history = button("Show earlier");
+		expect(history).toBeDefined();
+		expect(history?.closest(".hidden")).toBeNull();
+		expect(element.querySelector('[aria-label="Workspace status"]')?.textContent).toContain("Saved task");
+		expect(element.querySelector('textarea[aria-label="Message"]')).toBeNull();
+		await receive({ event: "status", subscription: watch.id, status: ready });
+		expect(element.querySelector('textarea[aria-label="Message"]')).not.toBeNull();
+	});
+});
+
 type Request = { id: string; method: string; params: unknown };
-type StartView = {
+type ClientView = {
 	readonly element: HTMLElement;
-	readonly draw: (value: Start) => Promise<void>;
+	readonly draw: (children: ReactNode) => Promise<void>;
 	readonly button: (text: string) => HTMLButtonElement | undefined;
 	readonly click: (text: string) => Promise<void>;
 	readonly sent: readonly Request[];
 	readonly receive: (message: Received) => Promise<void>;
 };
+type StartView = Omit<ClientView, "draw"> & { readonly draw: (value: Start, turn?: string) => Promise<void> };
 
-async function withStart(run: (view: StartView) => Promise<void>, scopes: Scope[] = ["threads.operate", "git.operate"]): Promise<void> {
+function withStart(run: (view: StartView) => Promise<void>, scopes?: Scope[]): Promise<void> {
+	return withClientView(
+		({ draw, ...view }) =>
+			run({
+				...view,
+				draw: (value, turn) => {
+					const status = { ...row.status, start: value, ...(turn === undefined ? {} : { turn: "running" as const, turn_id: turn }) };
+					return draw(<WorktreeStart thread={row.id} status={status} />);
+				},
+			}),
+		scopes,
+	);
+}
+
+async function withClientView(run: (view: ClientView) => Promise<void>, scopes: Scope[] = ["threads.operate", "git.operate"]): Promise<void> {
 	const dom = new Window({ url: "http://localhost/" });
-	const globals = { window: dom, document: dom.document, IS_REACT_ACT_ENVIRONMENT: true };
+	const globals = {
+		window: dom,
+		document: dom.document,
+		Element: dom.Element,
+		HTMLElement: dom.HTMLElement,
+		Node: dom.Node,
+		Document: dom.Document,
+		ResizeObserver: dom.ResizeObserver,
+		MutationObserver: dom.MutationObserver,
+		getComputedStyle: dom.getComputedStyle.bind(dom),
+		requestAnimationFrame: dom.requestAnimationFrame.bind(dom),
+		cancelAnimationFrame: dom.cancelAnimationFrame.bind(dom),
+		IS_REACT_ACT_ENVIRONMENT: true,
+	};
 	const previous = new Map(Object.keys(globals).map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
 	for (const [key, value] of Object.entries(globals)) Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
 	const element = document.createElement("div");
 	document.body.append(element);
 	const root = createRoot(element);
 	const sent: Request[] = [];
+	let serial = 0;
 	let receive = (_answer: Received): void => undefined;
 	const client = createClient({
 		open: () => ({
@@ -159,7 +259,7 @@ async function withStart(run: (view: StartView) => Promise<void>, scopes: Scope[
 				if (type === "message") receive = (answer) => listener({ data: JSON.stringify(answer) });
 			},
 		}),
-		randomUUID: () => "fixture",
+		randomUUID: () => `fixture-${String(++serial)}`,
 		clock: { now: () => 0, setTimer: () => () => undefined },
 		report: (error) => {
 			throw error;
@@ -177,11 +277,17 @@ async function withStart(run: (view: StartView) => Promise<void>, scopes: Scope[
 		await run({
 			element,
 			sent,
-			draw: async (value) => {
+			draw: async (children) => {
 				await act(() => {
 					root.render(
-						<ClientProvider client={client} frame={() => () => undefined}>
-							<WorktreeStart thread={row.id} start={value} inbox={row.status.inbox} />
+						<ClientProvider
+							client={client}
+							frame={(publish) => {
+								queueMicrotask(publish);
+								return () => undefined;
+							}}
+						>
+							{children}
 						</ClientProvider>,
 					);
 				});

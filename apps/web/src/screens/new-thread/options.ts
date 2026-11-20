@@ -1,7 +1,7 @@
 /** Unsent draft options share the same page lifetime as composer drafts, isolated by node session and project entry. */
 import { useState, useSyncExternalStore } from "react";
 import type { Mode, ReasoningEffort } from "@octoii-works/octoii-client";
-import type { DraftWorktree } from "../../extensions/git/worktree-plan.ts";
+import type { DraftWorktree } from "../../extensions/git/new-worktree.tsx";
 
 type Options = {
 	readonly chosen?: { readonly folder: string | undefined };

@@ -57,3 +57,4 @@ Node 拥有执行和持久状态。项目是节点内可选的任务分组，Thr
 - A2a 已统一为 `POST /threads`。重放依据原始请求，实际目录和项目归属只在首次提交绑定。真实 Node 验证了两种启动模式、附件、重开后原回执及 Git 临时目录。严格 Clippy、Rust 回归与生成协议检查、`bun run check` 通过。
 - A2b 已将停止目标绑定到 Turn ID、准备令牌或已观察到的排队输入。新旧轮次、准备重试和后台卡片复用均有回归覆盖。Rust 272 项测试、严格 Clippy、生成协议与 `bun run check` 通过。
 - A3a 已由 Thread 的持久请求执行 Git 准备，Web 从订阅读取进度。Git 创建使用该请求的命令能力，写入范围为 Git 公共目录和目标父目录。用实际 Git checkout hook 在准备中强制退出 Node，重开后核查到了已登记的 checkout，原输入保留，准备停在中断状态。Rust 275 项测试、9 项真实 Node 客户端测试、严格 Clippy 和 `bun run check` 通过。
+- A3b 已让隔离启动只接收源路径和可选的固定基准。Node 仅首次受理才解析 Git，按 Thread ID 分配 checkout 和分支。工作目录不可用时，历史和文件可继续读取，下一轮输入留在队列。真实 Node 已验证并发去重、源仓库不可用时重放和临时目录清理。Rust 280 项通过、2 项跳过，9 项真实 Node 客户端测试、严格 Clippy 和 `bun run check` 通过。

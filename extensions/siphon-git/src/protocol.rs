@@ -12,8 +12,6 @@ use crate::git::{Branch, ChangedFile, Changes, ChangesScope, Commit, Comparison,
 octoii::methods! {
     /// Read local and already-fetched remote branches without changing the checkout.
     "git.branches" GitBranches(InFolder) -> Branches, Some(Scope::FilesRead);
-    /// Resolve stable task parameters on this node without creating a branch or directory.
-    "git.worktree-plan" GitWorktreePlan(WorktreePlan) -> CreateWorktree, Some(Scope::FilesRead);
     /// Retry a failed worktree preparation; also requires threads.operate.
     "git.retry-start" GitRetryStart(RetryStart) -> Start, Some(Scope::GitOperate);
     /// List the repository's registered worktrees.
@@ -129,13 +127,4 @@ pub struct RetryStart {
 pub struct Branches {
     pub repository: Repository,
     pub branches: Vec<Branch>,
-}
-
-/// A task identifier and an already selected full commit ID, never a moving branch name.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, TS)]
-#[serde(deny_unknown_fields)]
-pub struct WorktreePlan {
-    pub path: String,
-    pub key: String,
-    pub base: String,
 }

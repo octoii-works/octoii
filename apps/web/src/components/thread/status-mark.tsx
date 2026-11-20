@@ -1,6 +1,6 @@
 /** How a thread stands, as its mark: asking the person, working, failed, or done — each in its colour. */
 import type { ReactNode } from "react";
-import { Clock3, CircleAlert, CircleCheck, LoaderCircle, ShieldQuestion } from "lucide-react";
+import { Clock3, CircleAlert, CircleCheck, FolderX, LoaderCircle, ShieldQuestion } from "lucide-react";
 import type { ThreadStatus } from "../../core/threads.ts";
 import { cn } from "../ui/cn.ts";
 
@@ -16,6 +16,8 @@ export function StatusMark(props: { readonly status: ThreadStatus }): ReactNode 
 			return <LoaderCircle className={cn(look, "animate-spin text-info-foreground motion-reduce:animate-none")} />;
 		case "failed":
 			return <CircleAlert className={cn(look, "text-error-foreground")} />;
+		case "unavailable":
+			return <FolderX className={cn(look, "text-error-foreground")} />;
 		case "ready":
 			return <CircleCheck className={cn(look, "text-success-foreground")} />;
 	}

@@ -47,7 +47,7 @@ pub struct Branch {
     pub commit: String,
 }
 
-pub(crate) fn is_commit_id(value: &str) -> bool {
+fn is_commit_id(value: &str) -> bool {
     matches!(value.len(), 40 | 64) && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
@@ -263,20 +263,25 @@ impl Git<'_> {
         if !is_commit_id(commit) {
             return Err(refused());
         }
-        let resolved = text(
-            &self
-                .output(
-                    folder,
-                    &["rev-parse", "--verify", "--end-of-options", &format!("{commit}^{{commit}}")],
-                )
-                .await?,
-        )
-        .trim()
-        .to_owned();
+        let resolved = self.resolve_commit(folder, commit).await?;
         if !resolved.eq_ignore_ascii_case(commit) {
             return Err(refused());
         }
         Ok(resolved)
+    }
+
+    pub(crate) async fn head_commit(&self, folder: &Path) -> Result<String, GitError> {
+        self.resolve_commit(folder, "HEAD").await
+    }
+
+    async fn resolve_commit(&self, folder: &Path, revision: &str) -> Result<String, GitError> {
+        let output = self
+            .output(
+                folder,
+                &["rev-parse", "--verify", "--end-of-options", &format!("{revision}^{{commit}}")],
+            )
+            .await?;
+        Ok(text(&output).trim().to_owned())
     }
 
     /// Remove a clean linked worktree. Keep its branch and never force removal.
@@ -334,12 +339,9 @@ impl Git<'_> {
         if self.branch_tip(root, branch).await?.is_some() {
             return Err(refused("the branch already exists"));
         }
-        self.output(root, &["rev-parse", "--verify", "--end-of-options", &format!("{base}^{{commit}}")])
-            .await?;
+        self.resolve_commit(root, base).await?;
         self.output(root, &["worktree", "add", "-b", branch, "--", path, base]).await?;
-        let base_commit = text(&self.output(destination, &["rev-parse", "--verify", "HEAD"]).await?)
-            .trim()
-            .to_owned();
+        let base_commit = self.head_commit(destination).await?;
         Ok(Worktree {
             path: path.to_owned(),
             branch: branch.to_owned(),

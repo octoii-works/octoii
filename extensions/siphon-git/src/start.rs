@@ -1,20 +1,32 @@
 //! Durable preparation of a Thread's worktree using the start request's command capability.
 
 use std::future::Future;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 
 use anyhow::Context as _;
+use octoii::Octoii;
 use octoii::machine::{Base, Exit, Machine, Program, Writes, inside};
 use octoii::threads::{
     Config, InputPart, NewThread, PreparationContext, Start, StartDirectory, StartRequest, StartWorkspace, WorkspacePreparer,
 };
 use octoii::volume::Volume;
+use serde::{Deserialize, Serialize};
+use tokio_util::sync::CancellationToken;
 
 use crate::git::Git;
 use crate::protocol::{CreateWorktree, RetryStart};
 
 pub(crate) const OWNER: &str = "git";
+
+/// The source folder and optional full commit ID from which to start an isolated Thread.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorktreeIntent {
+    pub path: String,
+    pub base: Option<String>,
+}
 
 pub(crate) struct WorktreePreparation;
 
@@ -178,42 +190,67 @@ pub(crate) async fn retry(volume: &Volume, asked: &RetryStart) -> anyhow::Result
     volume.retry_thread_start(&asked.thread, &asked.token).await
 }
 
-/// Accept a worktree task and its input behind the Thread's startup gate.
-/// The host must authorize Git and Thread operations before calling this trusted interface.
+/// Accept a worktree task and its input behind the Thread's startup gate. The first acceptance resolves the base
+/// and allocates the worktree name from the Thread ID. The host authorizes Git and Thread operations and provides
+/// its absolute private `worktrees` directory.
 ///
 /// # Errors
-/// Invalid task parameters, conflicting idempotency key, attachment processing or storage failure.
+/// Invalid task parameters, a Git lookup failure, a conflicting idempotency key, or an input or storage failure.
 pub async fn accept(
-    volume: &Volume,
+    node: &Octoii,
+    worktrees: impl FnOnce() -> io::Result<PathBuf> + Send,
     caller: &str,
     key: &str,
     config: Config,
     content: Vec<InputPart>,
-    worktree: CreateWorktree,
+    intent: WorktreeIntent,
 ) -> anyhow::Result<String> {
-    anyhow::ensure!(Path::new(&worktree.path).is_absolute(), "source must be absolute");
-    anyhow::ensure!(Path::new(&worktree.destination).is_absolute(), "destination must be absolute");
-    anyhow::ensure!(
-        crate::git::is_commit_id(&worktree.base),
-        "preparation requires a full commit ID, not a moving revision"
-    );
-    anyhow::ensure!(config.workspace.is_none(), "the workspace is supplied by worktree preparation");
     let new = NewThread {
         actor: "person".into(),
         config,
-        project: Some(worktree.path.clone()),
+        project: Some(intent.path.clone()),
         ..NewThread::default()
     };
-    volume
-        .start_thread(
-            caller,
-            key,
-            &new,
-            content,
-            StartDirectory::Prepare(StartRequest {
-                owner: OWNER.into(),
-                payload: serde_json::to_value(worktree)?,
-            }),
-        )
-        .await
+    let request = StartRequest {
+        owner: OWNER.into(),
+        payload: serde_json::to_value(&intent)?,
+    };
+    let directory = StartDirectory::prepare(request, move |thread| async move {
+        let worktree = plan(node, worktrees, &thread, &intent).await?;
+        Ok(serde_json::to_value(worktree)?)
+    });
+    node.volume().start_thread(caller, key, &new, content, directory).await
+}
+
+async fn plan(
+    node: &Octoii,
+    worktrees: impl FnOnce() -> io::Result<PathBuf> + Send,
+    thread: &str,
+    intent: &WorktreeIntent,
+) -> anyhow::Result<CreateWorktree> {
+    let machine = node.person_machine()?;
+    let commands = node.volume().commands();
+    let git = Git {
+        machine: &machine,
+        commands: &commands,
+        cancelled: CancellationToken::new(),
+    };
+    let source = Path::new(&intent.path);
+    let root = git.repository_root(source).await?.context("source is not a repository")?;
+    let base = match &intent.base {
+        Some(base) => git.verify_commit(source, base).await?,
+        None => git.head_commit(source).await?,
+    };
+    let worktrees = worktrees().context("cannot open the node's managed worktree directory")?;
+    anyhow::ensure!(worktrees.is_absolute(), "managed worktree directory must be absolute");
+    Ok(CreateWorktree {
+        path: root,
+        destination: worktrees
+            .join(thread)
+            .to_str()
+            .context("managed worktree path must be UTF-8")?
+            .to_owned(),
+        branch: format!("octoii/{thread}"),
+        base,
+    })
 }

@@ -13,7 +13,7 @@ use octoii::tools::Place;
 use octoii_ai::vocabulary::InputContent;
 use octoii_tunnel::Remote;
 use serde::{Deserialize, Serialize};
-use siphon_git::protocol::CreateWorktree;
+use siphon_git::start::WorktreeIntent;
 
 use super::{Denied, Node, session};
 
@@ -34,7 +34,7 @@ struct Manifest {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum Workspace {
     Current,
-    Isolated { worktree: CreateWorktree },
+    Isolated { path: String, base: Option<String> },
 }
 
 #[derive(Deserialize)]
@@ -165,7 +165,18 @@ pub(crate) async fn accepted(
                 .start_thread(&session.id, &key, &new, content, StartDirectory::Current(directory))
                 .await
         }
-        Workspace::Isolated { worktree } => siphon_git::start::accept(&volume, &session.id, &key, config, content, worktree).await,
+        Workspace::Isolated { path, base } => {
+            siphon_git::start::accept(
+                &node.siphon,
+                || node.home.worktrees(),
+                &session.id,
+                &key,
+                config,
+                content,
+                WorktreeIntent { path, base },
+            )
+            .await
+        }
     }
     .map_err(|error| Denied(StatusCode::UNPROCESSABLE_ENTITY, error.to_string()))?;
     Ok(axum::Json(Accepted { thread }))

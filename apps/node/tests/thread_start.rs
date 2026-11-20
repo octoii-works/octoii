@@ -1,9 +1,11 @@
 //! Multipart accepts a complete initial message; rejected bodies never create partial Threads.
+use std::path::Path;
+
 use axum::http::StatusCode;
 use http_body_util::BodyExt as _;
 use octoii::protocol::{Machine, Scope};
 use octoii::testing::Client;
-use octoii::threads::{Entry, History, StartState};
+use octoii::threads::{Entry, History, Listed, StartState, StartWorkspace};
 use octoii_ai::vocabulary::{FileRef, InputContent};
 use octoii_node::{
     home::Home,
@@ -44,6 +46,7 @@ impl TestNode {
             machine: Machine::of("test".into(), &siphon.machine),
             origins: vec!["http://localhost".into()],
             cookie: http::cookie_of(7600),
+            home,
             app: None,
         };
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -78,6 +81,30 @@ impl TestNode {
         (status, String::from_utf8(bytes.to_vec()).unwrap())
     }
 
+    async fn accepted(&self, request: &Value, files: &[(&str, &[u8])]) -> String {
+        let (status, receipt) = self.post(&self.writer, multipart(request, files)).await;
+        assert_eq!(status, StatusCode::OK, "{receipt}");
+        let receipt: Value = serde_json::from_str(&receipt).unwrap();
+        let thread = receipt["thread"].as_str().unwrap();
+        assert_eq!(receipt, json!({ "thread": thread }));
+        thread.to_owned()
+    }
+
+    async fn ready_checkout(&self, thread: &str) -> StartWorkspace {
+        tokio::time::timeout(std::time::Duration::from_secs(15), async {
+            loop {
+                let start = self.siphon.volume().thread_start(thread).unwrap().expect("a preparation");
+                match start.state {
+                    StartState::Ready { directory } => return directory,
+                    StartState::Failed { reason } | StartState::Interrupted { reason } => panic!("{reason}"),
+                    _ => tokio::time::sleep(std::time::Duration::from_millis(10)).await,
+                }
+            }
+        })
+        .await
+        .expect("the node prepares the checkout without a connected client")
+    }
+
     async fn close(self) {
         self.server.abort();
         let _ = self.server.await;
@@ -92,14 +119,48 @@ fn manifest(key: &str, workspace: &Value) -> Value {
             {"type":"content","content":{"type":"input_text","text":"after"}}]})
 }
 
-fn isolated_manifest(node: &TestNode, key: &str) -> Value {
-    let home = Home::at(node.home.path());
-    let source = home.root().join("missing-repository");
-    let destination = home.temporary().unwrap().join("worktrees").join(key);
-    manifest(
-        key,
-        &json!({"kind":"isolated", "worktree":{"path":source, "destination":destination, "branch":format!("octoii/{key}"), "base":"0".repeat(40)}}),
-    )
+fn isolated_manifest(source: &Path, key: &str) -> Value {
+    manifest(key, &json!({ "kind": "isolated", "path": source }))
+}
+
+fn git(directory: &Path, args: &[&str]) -> String {
+    let output = std::process::Command::new("git")
+        .current_dir(directory)
+        .args([
+            "-c",
+            "user.name=Octoii Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "-c",
+            "commit.gpgSign=false",
+        ])
+        .args(args)
+        .output()
+        .expect("ran git");
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    String::from_utf8(output.stdout).unwrap()
+}
+
+fn repository() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    git(dir.path(), &["init", "--quiet", "--template="]);
+    git(
+        dir.path(),
+        &["commit", "--allow-empty", "--no-verify", "--quiet", "-m", "Initial commit"],
+    );
+    dir
+}
+
+#[cfg(unix)]
+fn reject_checkout(repo: &Path) {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let hooks = repo.join(".git/hooks");
+    std::fs::create_dir_all(&hooks).unwrap();
+    let hook = hooks.join("post-checkout");
+    std::fs::write(&hook, "#!/bin/sh\nexit 1\n").unwrap();
+    std::fs::set_permissions(hook, std::fs::Permissions::from_mode(0o700)).unwrap();
+    git(repo, &["config", "core.hooksPath", hooks.to_str().unwrap()]);
 }
 
 fn multipart(manifest: &Value, files: &[(&str, &[u8])]) -> Vec<u8> {
@@ -116,82 +177,146 @@ fn multipart(manifest: &Value, files: &[(&str, &[u8])]) -> Vec<u8> {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_worktree_is_prepared_in_the_nodes_temporary_directory_without_a_client() {
     let node = TestNode::start().await;
-    let repo = tempfile::tempdir().unwrap();
-    let git = |args: &[&str]| {
-        let output = std::process::Command::new("git")
-            .current_dir(repo.path())
-            .args(args)
-            .output()
-            .expect("ran git");
-        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
-        String::from_utf8(output.stdout).unwrap()
-    };
-    git(&["init", "--quiet", "--template="]);
-    git(&[
-        "-c",
-        "user.name=Octoii Test",
-        "-c",
-        "user.email=test@example.invalid",
-        "-c",
-        "commit.gpgSign=false",
-        "commit",
-        "--allow-empty",
-        "--no-verify",
-        "--quiet",
-        "-m",
-        "Initial commit",
-    ]);
-    let head = git(&["rev-parse", "HEAD"]);
-    let key = "12345678-1234-1234-1234-123456789abc";
-    let mut client = Client::connect(&node.siphon, vec![Scope::FilesRead], 64);
-    client.message().await;
-    let id = client
-        .call(
-            "git.worktree-plan",
-            json!({"path": repo.path().canonicalize().unwrap(), "key": key, "base": head.trim()}),
-        )
-        .await;
-    let reply = client.answer(&id).await;
-    let root = Home::at(node.home.path()).temporary().unwrap().join("worktrees");
-    let expected = std::path::absolute(root.join(key)).unwrap();
-    assert_eq!(reply["result"]["destination"], json!(expected), "{reply}");
-    assert!(!expected.exists(), "planning a task does not create a checkout");
-    drop(client);
-
-    let manifest = manifest("automatic-preparation", &json!({"kind":"isolated","worktree":reply["result"]}));
-    let (status, receipt) = node.post(&node.writer, multipart(&manifest, &[("file-0", b"attached")])).await;
-    assert_eq!(status, StatusCode::OK, "{receipt}");
-    let accepted: Value = serde_json::from_str(&receipt).unwrap();
-    let thread = accepted["thread"].as_str().unwrap();
-    let directory = tokio::time::timeout(std::time::Duration::from_secs(15), async {
-        loop {
-            let start = node.siphon.volume().thread_start(thread).unwrap().expect("a preparation");
-            match start.state {
-                StartState::Ready { directory } => break directory,
-                StartState::Failed { reason } | StartState::Interrupted { reason } => panic!("{reason}"),
-                _ => tokio::time::sleep(std::time::Duration::from_millis(10)).await,
-            }
-        }
-    })
-    .await
-    .expect("the node prepares the checkout without a connected client");
+    let repo = repository();
+    let head = git(repo.path(), &["rev-parse", "HEAD"]);
+    let request = isolated_manifest(repo.path(), "automatic-preparation");
+    let (thread, replay) = tokio::join!(
+        node.accepted(&request, &[("file-0", b"attached")]),
+        node.accepted(&request, &[("file-0", b"attached")]),
+    );
+    assert_eq!(thread, replay);
+    let directory = node.ready_checkout(&thread).await;
+    let expected = Home::at(node.home.path()).worktrees().unwrap().join(&thread);
     assert_eq!(
         std::path::Path::new(&directory.workspace).canonicalize().unwrap(),
         expected.canonicalize().unwrap()
     );
-    assert_eq!(git(&["-C", &directory.workspace, "rev-parse", "HEAD"]).trim(), head.trim());
-    let listing = node.siphon.threads.listed(thread).unwrap();
+    assert_eq!(git(Path::new(&directory.workspace), &["rev-parse", "HEAD"]), head);
+    assert_eq!(
+        git(Path::new(&directory.workspace), &["branch", "--show-current"]),
+        format!("octoii/{thread}\n")
+    );
+    let listing = node.siphon.threads.listed(&thread).unwrap();
     assert_eq!(listing.config.workspace.as_deref(), Some(directory.workspace.as_str()));
     let reference = format!("sha256:{}", octoii::tools::sha256_hex(b"attached"));
-    let bytes = node.siphon.volume().read_file(thread, &reference).unwrap().unwrap();
+    let bytes = node.siphon.volume().read_file(&thread, &reference).unwrap().unwrap();
     assert_eq!(bytes.as_ref(), b"attached");
+
+    git(
+        repo.path(),
+        &["commit", "--allow-empty", "--no-verify", "--quiet", "-m", "Advance HEAD"],
+    );
+    let mut pinned = isolated_manifest(repo.path(), "second-preparation");
+    pinned["workspace"]["base"] = json!(head.trim());
+    let second = node.accepted(&pinned, &[("file-0", b"attached")]).await;
+    let second_directory = node.ready_checkout(&second).await;
+    assert_ne!(second_directory.workspace, directory.workspace);
+    assert_eq!(git(Path::new(&second_directory.workspace), &["rev-parse", "HEAD"]), head);
+    let git_dir = repo.path().join(".git");
+    std::fs::rename(&git_dir, repo.path().join("moved-git")).unwrap();
+    assert_eq!(node.accepted(&request, &[("file-0", b"attached")]).await, thread);
+    std::fs::rename(repo.path().join("moved-git"), &git_dir).unwrap();
+    assert_eq!(node.siphon.threads.list().unwrap().len(), 2);
     node.close().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_removed_temporary_checkout_leaves_its_thread_and_files_readable() {
+    let node = TestNode::start().await;
+    let repo = repository();
+    let request = isolated_manifest(repo.path(), "before-cleanup");
+    let thread = node.accepted(&request, &[("file-0", b"saved attachment")]).await;
+    let directory = node.ready_checkout(&thread).await;
+    let root = Home::at(node.home.path()).worktrees().unwrap();
+    assert!(
+        Path::new(&directory.workspace)
+            .canonicalize()
+            .unwrap()
+            .starts_with(root.canonicalize().unwrap())
+    );
+    let volume = node.siphon.volume();
+    let first_input = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            let history = History::open(&volume, &thread).unwrap().unwrap();
+            if let Some(input) = history
+                .after(None, 32)
+                .unwrap()
+                .into_iter()
+                .find(|entry| matches!(entry, Entry::Input { .. }))
+            {
+                break input;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the first input is logged");
+    std::fs::remove_dir_all(&root).unwrap();
+    assert_eq!(node.accepted(&request, &[("file-0", b"saved attachment")]).await, thread);
+    assert!(!root.exists(), "a receipt replay does not open the worktree root");
+
+    let mut client = Client::connect(&node.siphon, vec![Scope::ThreadsRead], 16);
+    client.message().await;
+    let reply = client.call("threads.list", json!({})).await;
+    let listed = client.answer(&reply).await;
+    let listed: Vec<Listed> = serde_json::from_value(listed["result"]["threads"].clone()).unwrap();
+    let unavailable = listed
+        .iter()
+        .find(|entry| entry.id == thread)
+        .expect("the same Thread remains visible");
+    assert_eq!(
+        unavailable.status.start.as_ref().unwrap().state,
+        StartState::Unavailable { directory }
+    );
+    let reference = format!("sha256:{}", octoii::tools::sha256_hex(b"saved attachment"));
+    assert_eq!(
+        volume.read_file(&thread, &reference).unwrap().unwrap().as_ref(),
+        b"saved attachment"
+    );
+    assert!(
+        History::open(&volume, &thread)
+            .unwrap()
+            .unwrap()
+            .after(None, 32)
+            .unwrap()
+            .contains(&first_input)
+    );
+
+    let next = isolated_manifest(repo.path(), "after-cleanup");
+    let second = node.accepted(&next, &[("file-0", b"new attachment")]).await;
+    assert_ne!(second, thread);
+    assert!(Path::new(&node.ready_checkout(&second).await.workspace).is_dir());
+    drop(client);
+    node.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_isolated_submission_accepts_an_intent_and_rejects_caller_allocated_paths() {
+    let node = TestNode::start().await;
+    let repo = repository();
+    let mut request = isolated_manifest(repo.path(), "client-allocated");
+    request["workspace"]["destination"] = json!(node.home.path().join("not-managed"));
+    assert_eq!(
+        node.post(&node.writer, multipart(&request, &[("file-0", b"x")])).await.0,
+        StatusCode::BAD_REQUEST,
+    );
+    let mut request = isolated_manifest(repo.path(), "moving-base");
+    request["workspace"]["base"] = json!("HEAD");
+    assert_eq!(
+        node.post(&node.writer, multipart(&request, &[("file-0", b"x")])).await.0,
+        StatusCode::UNPROCESSABLE_ENTITY,
+    );
+    assert_eq!(node.siphon.threads.list().unwrap(), []);
+    node.close().await;
+}
+
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
 async fn multipart_keeps_order_files_and_idempotency_without_starting_the_agent() {
     let node = TestNode::start().await;
-    let request = isolated_manifest(&node, "accepted");
+    let repo = repository();
+    reject_checkout(repo.path());
+    let request = isolated_manifest(repo.path(), "accepted");
     let (status, body) = node.post(&node.writer, multipart(&request, &[("file-0", b"attached")])).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let accepted: Value = serde_json::from_str(&body).unwrap();
@@ -231,7 +356,7 @@ async fn multipart_keeps_order_files_and_idempotency_without_starting_the_agent(
 #[tokio::test(flavor = "multi_thread")]
 async fn malformed_attachments_and_failed_images_never_leave_a_thread() {
     let node = TestNode::start().await;
-    let request = isolated_manifest(&node, "bad");
+    let request = isolated_manifest(&node.home.path().join("missing"), "bad");
     for files in [
         vec![],
         vec![("file-0", b"x".as_slice()), ("file-0", b"x".as_slice())],
@@ -264,9 +389,12 @@ async fn malformed_attachments_and_failed_images_never_leave_a_thread() {
 async fn permissions_origin_and_size_limits_precede_acceptance() {
     let node = TestNode::start().await;
     assert_eq!(
-        node.post(&node.thread_only, multipart(&isolated_manifest(&node, "forbidden"), &[]))
-            .await
-            .0,
+        node.post(
+            &node.thread_only,
+            multipart(&isolated_manifest(&node.home.path().join("missing"), "forbidden"), &[])
+        )
+        .await
+        .0,
         StatusCode::FORBIDDEN
     );
     let git_only = node.siphon.access().issue(None, vec![Scope::GitOperate]).await.unwrap().credential;
@@ -280,7 +408,7 @@ async fn permissions_origin_and_size_limits_precede_acceptance() {
         .await
         .unwrap();
     assert_eq!(foreign.status(), StatusCode::FORBIDDEN);
-    let mut large = isolated_manifest(&node, "large");
+    let mut large = isolated_manifest(&node.home.path().join("missing"), "large");
     large["parts"][0]["content"]["text"] = json!("x".repeat((1 << 20) + 1));
     assert_eq!(
         node.post(&node.writer, multipart(&large, &[])).await.0,
@@ -290,13 +418,16 @@ async fn permissions_origin_and_size_limits_precede_acceptance() {
     assert_eq!(
         node.post(
             &node.writer,
-            multipart(&isolated_manifest(&node, "large-file"), &[("file-0", &oversized)])
+            multipart(
+                &isolated_manifest(&node.home.path().join("missing"), "large-file"),
+                &[("file-0", &oversized)]
+            )
         )
         .await
         .0,
         StatusCode::PAYLOAD_TOO_LARGE
     );
-    let mut total = isolated_manifest(&node, "total-limit");
+    let mut total = isolated_manifest(&node.home.path().join("missing"), "total-limit");
     total["parts"] = json!(
         (0..3)
             .map(|index| json!({"type":"attachment", "index":index, "media_type":"text/plain", "filename":"part.txt"}))
@@ -319,9 +450,15 @@ async fn permissions_origin_and_size_limits_precede_acceptance() {
         .await;
     assert!(client.answer(&id).await["error"].is_null());
     assert_eq!(
-        node.post(&node.writer, multipart(&isolated_manifest(&node, "disabled"), &[("file-0", b"x")]))
-            .await
-            .0,
+        node.post(
+            &node.writer,
+            multipart(
+                &isolated_manifest(&node.home.path().join("missing"), "disabled"),
+                &[("file-0", b"x")]
+            )
+        )
+        .await
+        .0,
         StatusCode::FORBIDDEN
     );
     assert_eq!(node.siphon.threads.list().unwrap().len(), 0);
@@ -458,6 +595,7 @@ async fn replay_keeps_the_original_workspace_binding_when_git_membership_changes
     node.close().await;
 }
 
+#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn image_only_submission_keeps_the_fitted_reference_in_its_initial_input() {
     let node = TestNode::start().await;
@@ -465,7 +603,9 @@ async fn image_only_submission_keeps_the_fitted_reference_in_its_initial_input()
     image::RgbImage::from_pixel(2048, 2048, image::Rgb([20, 40, 80]))
         .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
         .unwrap();
-    let mut request = isolated_manifest(&node, "image-only");
+    let repo = repository();
+    reject_checkout(repo.path());
+    let mut request = isolated_manifest(repo.path(), "image-only");
     request["parts"] = json!([{"type":"attachment", "index":0, "media_type":"image/png", "filename":"image.png"}]);
     let (status, body) = node.post(&node.writer, multipart(&request, &[("file-0", &png)])).await;
     assert_eq!(status, StatusCode::OK, "{body}");

@@ -411,7 +411,7 @@ async fn rename_and_deliver_revive_a_target_once_and_deleted_targets_are_refused
             "target",
             &person(Config::default()),
             vec![InputContent::text("Paused during preparation").into()],
-            StartDirectory::Prepare(startup_request()),
+            startup_directory(),
         )
         .await
         .unwrap();
@@ -1083,6 +1083,12 @@ fn startup_request() -> crate::threads::StartRequest {
     }
 }
 
+fn startup_directory() -> StartDirectory<'static> {
+    let intent = startup_request();
+    let payload = intent.payload.clone();
+    StartDirectory::prepare(intent, |_| async { Ok(payload) })
+}
+
 fn startup_volume(directory: Option<&Path>) -> (WithRuntime<crate::volume::Volume>, StartupRequests) {
     let mut requests = None;
     let runtime = crate::testing::start_runtime(directory, |builder, _| {
@@ -1112,13 +1118,7 @@ async fn startup_refuses_a_claim_without_input_part_discriminants() {
     let content = [InputContent::text("prepare")];
     let parts: Vec<_> = content.iter().cloned().map(Into::into).collect();
     let thread = volume
-        .start_thread(
-            START_CALLER,
-            "current-claim",
-            &new,
-            parts.clone(),
-            StartDirectory::Prepare(request.clone()),
-        )
+        .start_thread(START_CALLER, "current-claim", &new, parts.clone(), startup_directory())
         .await
         .unwrap();
 
@@ -1135,7 +1135,13 @@ async fn startup_refuses_a_claim_without_input_part_discriminants() {
     volume.runtime.commit(changes).await.unwrap();
 
     let error = volume
-        .start_thread(START_CALLER, "claim", &new, parts, StartDirectory::Prepare(request))
+        .start_thread(
+            START_CALLER,
+            "claim",
+            &new,
+            parts,
+            StartDirectory::prepare(request, |_| async { panic!("receipt applies before planning") }),
+        )
         .await
         .unwrap_err();
     assert!(matches!(
@@ -1151,27 +1157,30 @@ async fn a_start_key_belongs_to_its_caller_and_binds_the_workspace_intent() {
     let (volume, _requests) = startup_volume(None);
     let new = person(Config::default());
     let workspace = tempfile::tempdir().unwrap();
-    let bound = StartDirectory::Current(StartWorkspace {
+    let bound = StartWorkspace {
         workspace: workspace.path().to_string_lossy().into_owned(),
         project: None,
-    });
+    };
     let parts = vec![InputContent::text("the task").into()];
     let pending = volume
-        .start_thread(
-            START_CALLER,
-            "same-key",
-            &new,
-            parts.clone(),
-            StartDirectory::Prepare(startup_request()),
-        )
+        .start_thread(START_CALLER, "same-key", &new, parts.clone(), startup_directory())
         .await
         .unwrap();
     let accepted = volume
-        .start_thread("another-session", "same-key", &new, parts.clone(), bound.clone())
+        .start_thread(
+            "another-session",
+            "same-key",
+            &new,
+            parts.clone(),
+            StartDirectory::Current(bound.clone()),
+        )
         .await
         .unwrap();
     assert_ne!(accepted, pending);
-    let error = volume.start_thread(START_CALLER, "same-key", &new, parts, bound).await.unwrap_err();
+    let error = volume
+        .start_thread(START_CALLER, "same-key", &new, parts, StartDirectory::Current(bound))
+        .await
+        .unwrap_err();
     assert_eq!(error.to_string(), "startup key was used with different input");
     assert_eq!(crate::threads::list(&volume).unwrap().len(), 2);
     volume.runtime().close().expect("closed");
@@ -1184,25 +1193,31 @@ async fn a_start_replay_keeps_the_first_binding_for_the_same_requested_directory
     let later = tempfile::tempdir().unwrap();
     let workspace = first.path().to_string_lossy().into_owned();
     let project = Some(first.path().join("project").to_string_lossy().into_owned());
-    let binding = StartDirectory::Current(StartWorkspace {
+    let binding = StartWorkspace {
         workspace: workspace.clone(),
         project: project.clone(),
-    });
-    let changed_binding = StartDirectory::Current(StartWorkspace {
+    };
+    let changed_binding = StartWorkspace {
         workspace: later.path().to_string_lossy().into_owned(),
         project: None,
-    });
+    };
     let new = person(Config {
         workspace: Some("selected/folder".into()),
         ..Config::default()
     });
     let parts = vec![InputContent::text("the task").into()];
     let thread = volume
-        .start_thread(START_CALLER, "binding", &new, parts.clone(), binding)
+        .start_thread(START_CALLER, "binding", &new, parts.clone(), StartDirectory::Current(binding))
         .await
         .unwrap();
     let replayed = volume
-        .start_thread(START_CALLER, "binding", &new, parts.clone(), changed_binding.clone())
+        .start_thread(
+            START_CALLER,
+            "binding",
+            &new,
+            parts.clone(),
+            StartDirectory::Current(changed_binding.clone()),
+        )
         .await
         .unwrap();
     assert_eq!(thread, replayed);
@@ -1217,10 +1232,103 @@ async fn a_start_replay_keeps_the_first_binding_for_the_same_requested_directory
     });
     assert!(
         volume
-            .start_thread(START_CALLER, "binding", &changed_request, parts, changed_binding)
+            .start_thread(
+                START_CALLER,
+                "binding",
+                &changed_request,
+                parts,
+                StartDirectory::Current(changed_binding)
+            )
             .await
             .is_err()
     );
+    volume.runtime().close().expect("closed");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn competing_planners_keep_the_plan_for_the_claimed_thread() {
+    let (volume, mut requests) = startup_volume(None);
+    let new = person(Config::default());
+    let start = |directory| {
+        volume.start_thread(
+            START_CALLER,
+            "competing-plans",
+            &new,
+            vec![InputContent::text("the same input").into()],
+            directory,
+        )
+    };
+    let planning = tokio::sync::Barrier::new(2);
+    let plan = |choice: &'static str| {
+        let planning = &planning;
+        StartDirectory::prepare(startup_request(), move |candidate| async move {
+            planning.wait().await;
+            Ok(serde_json::json!({ "candidate": candidate, "choice": choice }))
+        })
+    };
+    let (first, second) = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::join!(start(plan("first")), start(plan("second")))
+    })
+    .await
+    .expect("both planners ran");
+    let thread = first.unwrap();
+    assert_eq!(second.unwrap(), thread);
+    let delivery = requests.prepare().await;
+    let listed = crate::threads::list(&volume).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].status.inbox.len(), 1);
+    assert_eq!(delivery.request.owner, startup_request().owner);
+    assert_eq!(delivery.request.payload["candidate"], thread);
+    assert_eq!(listed[0].status.start.as_ref().unwrap().request, delivery.request);
+
+    let skip = |intent| StartDirectory::prepare(intent, |_| async { panic!("receipt is checked before planning") });
+    assert_eq!(start(skip(startup_request())).await.unwrap(), thread);
+    let mut different = startup_request();
+    different.payload = serde_json::json!({ "task": "different intent" });
+    assert_eq!(
+        start(skip(different)).await.unwrap_err().to_string(),
+        "startup key was used with different input"
+    );
+    volume.runtime().close().expect("closed");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failed_planner_can_replay_a_concurrent_acceptance() {
+    let (volume, _requests) = startup_volume(None);
+    let new = person(Config::default());
+    let start = |directory| {
+        volume.start_thread(
+            START_CALLER,
+            "failed-plan",
+            &new,
+            vec![InputContent::text("the same input").into()],
+            directory,
+        )
+    };
+    let error = start(StartDirectory::prepare(startup_request(), |_| async {
+        anyhow::bail!("planning failed")
+    }))
+    .await
+    .unwrap_err();
+    assert_eq!(error.to_string(), "planning failed");
+    assert_eq!(crate::threads::list(&volume).unwrap(), Vec::<crate::threads::Listed>::new());
+
+    let (enter, entered) = tokio::sync::oneshot::channel();
+    let (commit, committed) = tokio::sync::oneshot::channel();
+    let failed = start(StartDirectory::prepare(startup_request(), move |_| async {
+        enter.send(()).unwrap();
+        committed.await.unwrap();
+        anyhow::bail!("planning failed")
+    }));
+    let accept = async {
+        entered.await.unwrap();
+        let thread = start(startup_directory()).await.unwrap();
+        commit.send(()).unwrap();
+        thread
+    };
+    let (replayed, accepted) = tokio::join!(failed, accept);
+    assert_eq!(replayed.unwrap(), accepted);
+    assert_eq!(crate::threads::list(&volume).unwrap().len(), 1);
     volume.runtime().close().expect("closed");
 }
 
@@ -1239,14 +1347,14 @@ async fn startup_claim_is_atomic_fenced_and_survives_reopening() {
             "startup-race",
             &new,
             inputs.iter().cloned().map(Into::into).collect(),
-            StartDirectory::Prepare(startup_request()),
+            startup_directory(),
         ),
         volume.start_thread(
             START_CALLER,
             "startup-race",
             &new,
             inputs.iter().cloned().map(Into::into).collect(),
-            StartDirectory::Prepare(startup_request()),
+            startup_directory(),
         )
     );
     let id = a.unwrap();
@@ -1263,7 +1371,7 @@ async fn startup_claim_is_atomic_fenced_and_survives_reopening() {
                 "startup-race",
                 &new,
                 vec![InputContent::text("changed").into()],
-                StartDirectory::Prepare(startup_request()),
+                startup_directory(),
             )
             .await
             .is_err()
@@ -1331,7 +1439,7 @@ async fn stopping_or_deleting_preparation_cannot_be_undone_by_a_late_result() {
             "startup-stop",
             &new,
             vec![InputContent::text("wait").into()],
-            StartDirectory::Prepare(startup_request()),
+            startup_directory(),
         )
         .await
         .unwrap();
@@ -1380,7 +1488,7 @@ async fn stopping_or_deleting_preparation_cannot_be_undone_by_a_late_result() {
             "startup-tool-stop",
             &new,
             vec![InputContent::text("tool stop").into()],
-            StartDirectory::Prepare(startup_request()),
+            startup_directory(),
         )
         .await
         .unwrap();
@@ -1397,7 +1505,7 @@ async fn stopping_or_deleting_preparation_cannot_be_undone_by_a_late_result() {
             "startup-delete",
             &new,
             vec![InputContent::text("delete").into()],
-            StartDirectory::Prepare(startup_request()),
+            startup_directory(),
         )
         .await
         .unwrap();
@@ -1412,7 +1520,7 @@ async fn stopping_or_deleting_preparation_cannot_be_undone_by_a_late_result() {
                 "startup-delete",
                 &new,
                 vec![InputContent::text("delete").into()],
-                StartDirectory::Prepare(startup_request()),
+                startup_directory(),
             )
             .await
             .is_err()
@@ -1433,7 +1541,7 @@ async fn reopening_an_unanswered_preparation_only_dispatches_an_inspection() {
             "startup-check",
             &person(Config::default()),
             vec![InputContent::text("keep this").into()],
-            StartDirectory::Prepare(startup_request()),
+            startup_directory(),
         )
         .await
         .unwrap();
@@ -1483,7 +1591,7 @@ async fn reopening_an_unanswered_inspection_leaves_preparation_interrupted() {
             "startup-check-interrupted",
             &person(Config::default()),
             vec![InputContent::text("keep this").into()],
-            StartDirectory::Prepare(startup_request()),
+            startup_directory(),
         )
         .await
         .unwrap();
@@ -1522,13 +1630,25 @@ async fn a_bound_start_commits_ordered_attachments_and_survives_reopening() {
     let workspace = tempfile::tempdir().unwrap();
     let new = person(Config::default());
     let path = workspace.path().to_string_lossy().into_owned();
-    let bound = StartDirectory::Current(StartWorkspace {
+    let bound = StartWorkspace {
         workspace: path.clone(),
         project: None,
-    });
+    };
     let (a, b) = tokio::join!(
-        volume.start_thread(START_CALLER, "attachments", &new, parts.clone(), bound.clone()),
-        volume.start_thread(START_CALLER, "attachments", &new, parts.clone(), bound.clone())
+        volume.start_thread(
+            START_CALLER,
+            "attachments",
+            &new,
+            parts.clone(),
+            StartDirectory::Current(bound.clone())
+        ),
+        volume.start_thread(
+            START_CALLER,
+            "attachments",
+            &new,
+            parts.clone(),
+            StartDirectory::Current(bound.clone())
+        )
     );
     let id = a.unwrap();
     assert_eq!(b.unwrap(), id);
@@ -1556,7 +1676,13 @@ async fn a_bound_start_commits_ordered_attachments_and_survives_reopening() {
     assert_eq!(files::read(&volume.snapshot().unwrap(), &id, &reference).unwrap(), Some(kept));
     assert_eq!(
         volume
-            .start_thread(START_CALLER, "attachments", &new, parts.clone(), bound.clone())
+            .start_thread(
+                START_CALLER,
+                "attachments",
+                &new,
+                parts.clone(),
+                StartDirectory::Current(bound.clone())
+            )
             .await
             .unwrap(),
         id
@@ -1567,7 +1693,7 @@ async fn a_bound_start_commits_ordered_attachments_and_survives_reopening() {
     }
     assert!(
         volume
-            .start_thread(START_CALLER, "attachments", &new, changed, bound)
+            .start_thread(START_CALLER, "attachments", &new, changed, StartDirectory::Current(bound))
             .await
             .is_err()
     );
@@ -1592,26 +1718,14 @@ async fn invalid_attachment_rolls_back_every_part_and_pure_attachments_are_accep
     };
     assert!(
         volume
-            .start_thread(
-                START_CALLER,
-                "files-only",
-                &new,
-                vec![file.clone(), invalid],
-                StartDirectory::Prepare(startup_request())
-            )
+            .start_thread(START_CALLER, "files-only", &new, vec![file.clone(), invalid], startup_directory())
             .await
             .is_err()
     );
     assert_eq!(crate::threads::list(&volume).unwrap(), []);
     assert!(volume.snapshot().unwrap().stat(b"octoii.start").unwrap().is_none());
     let id = volume
-        .start_thread(
-            START_CALLER,
-            "files-only",
-            &new,
-            vec![file],
-            StartDirectory::Prepare(startup_request()),
-        )
+        .start_thread(START_CALLER, "files-only", &new, vec![file], startup_directory())
         .await
         .unwrap();
     assert_eq!(
@@ -1625,13 +1739,7 @@ async fn invalid_attachment_rolls_back_every_part_and_pure_attachments_are_accep
     };
     assert!(
         volume
-            .start_thread(
-                START_CALLER,
-                "files-only",
-                &new,
-                vec![changed],
-                StartDirectory::Prepare(startup_request())
-            )
+            .start_thread(START_CALLER, "files-only", &new, vec![changed], startup_directory())
             .await
             .is_err()
     );

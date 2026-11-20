@@ -1,6 +1,7 @@
 import type { Config } from "@octoii-works/octoii-client";
 import type { SendRequest } from "../../components/state/reach.ts";
 import type { Draft } from "../../core/drafts.ts";
+import type { DraftWorktree } from "../../extensions/git/new-worktree.tsx";
 import { acceptThread, threadRequest, type ThreadRequest, type ThreadWorkspace } from "./request.ts";
 
 /** The frozen HTTP request and the local draft identities used for recovery. */
@@ -37,11 +38,15 @@ export class NewThread {
 		return this.#store.read();
 	}
 
-	send(config: Config, workspace: ThreadWorkspace, draft: Draft): Promise<Receipt> {
+	send(config: Config, worktree: DraftWorktree | undefined, draft: Draft): Promise<Receipt> {
 		this.#sending ??= this.#store
 			.exclusive(async () => {
 				if ((await this.#store.read()) !== undefined) throw new Error("A task is already saved for this draft.");
 				const key = crypto.randomUUID();
+				const workspace: ThreadWorkspace =
+					worktree === undefined
+						? { kind: "current" }
+						: { kind: "isolated", path: worktree.path, ...(worktree.base === undefined ? {} : { base: worktree.base.commit }) };
 				const request = await threadRequest(this.#send, { key, config, workspace, draft });
 				const pending = {
 					key,

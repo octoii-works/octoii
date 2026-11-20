@@ -6,9 +6,8 @@ pub mod git;
 pub mod protocol;
 pub mod start;
 pub mod tool;
-mod worktree;
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use octoii::connection::refusal;
 use octoii::machine::{Base, Writes};
@@ -22,10 +21,7 @@ use crate::protocol::{Commits, InRepository, Method, Patch, Versions, Worktrees}
 
 /// Git, as a host adds it.
 #[derive(Debug, Clone)]
-pub struct GitExtension {
-    /// Absolute node-managed directory for new task worktrees.
-    pub worktrees: PathBuf,
-}
+pub struct GitExtension;
 
 impl Extension for GitExtension {
     fn name(&self) -> &'static str {
@@ -45,10 +41,8 @@ impl Extension for GitExtension {
         registrar.teller(octoii::agent::Shared::Machine, std::sync::Arc::new(context::GitContext));
         registrar.teller(octoii::agent::Shared::Project, std::sync::Arc::new(context::RepositoryContext));
         registrar.workspace_preparer(start::WorktreePreparation);
-        let worktrees = std::sync::Arc::new(self.worktrees);
-        registrar.methods(protocol::set(), Method::read, move |caller: Caller, method| {
-            let worktrees = worktrees.clone();
-            async move { answered(&caller, method, &worktrees).await }
+        registrar.methods(protocol::set(), Method::read, |caller: Caller, method| async move {
+            answered(&caller, method).await
         });
     }
 }
@@ -65,7 +59,7 @@ fn told(error: &GitError) -> Error {
 }
 
 /// Does the git method `method` for the client of `caller`.
-async fn answered(caller: &Caller, method: Method, worktrees: &Path) -> Result<serde_json::Value, Error> {
+async fn answered(caller: &Caller, method: Method) -> Result<serde_json::Value, Error> {
     let volume = caller.volume();
     if let Method::GitRetryStart(asked) = &method {
         caller.require_scope(Scope::ThreadsOperate)?;
@@ -92,14 +86,14 @@ async fn answered(caller: &Caller, method: Method, worktrees: &Path) -> Result<s
         commands: &commands,
         cancelled: CancellationToken::new(),
     };
-    told_by(&git, method, worktrees).await
+    told_by(&git, method).await
 }
 
 fn json(value: &impl Serialize) -> Result<serde_json::Value, Error> {
     serde_json::to_value(value).map_err(failed)
 }
 
-async fn told_by(git: &Git<'_>, method: Method, worktrees: &Path) -> Result<serde_json::Value, Error> {
+async fn told_by(git: &Git<'_>, method: Method) -> Result<serde_json::Value, Error> {
     match method {
         Method::GitBranches(asked) => {
             let root = Path::new(&asked.path);
@@ -113,7 +107,6 @@ async fn told_by(git: &Git<'_>, method: Method, worktrees: &Path) -> Result<serd
                 branches: git.branches(root).await.map_err(|error| told(&error))?,
             })
         }
-        Method::GitWorktreePlan(asked) => json(&worktree::plan(git, worktrees, asked).await.map_err(failed)?),
         Method::GitRetryStart(_) => unreachable!("startup retry is handled before ordinary Git queries"),
         Method::GitWorktrees(asked) => json(&Worktrees {
             worktrees: git.worktrees(Path::new(&asked.path)).await.map_err(|error| told(&error))?,

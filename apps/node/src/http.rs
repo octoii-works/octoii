@@ -37,7 +37,7 @@ pub fn cookie_of(port: u16) -> String {
 }
 
 /// What the node's HTTP serves with: Octoii, the access, the machine's name, the origins its own pages come from, the
-/// cookie its browsers hold their sessions in, and the web app's folder, where it has one.
+/// cookie its browsers hold their sessions in, its Home, and the web app's folder, where it has one.
 #[derive(Debug, Clone)]
 pub struct Node {
     pub siphon: Octoii,
@@ -45,6 +45,7 @@ pub struct Node {
     pub machine: Machine,
     pub origins: Vec<String>,
     pub cookie: String,
+    pub home: crate::home::Home,
     pub app: Option<PathBuf>,
 }
 

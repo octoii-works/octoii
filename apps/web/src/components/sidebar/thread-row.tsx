@@ -13,7 +13,18 @@ import { type MouseEvent, type ReactNode, useState } from "react";
 import type { Listed, MarksChange } from "@octoii-works/octoii-client";
 import { useClient } from "@octoii-works/octoii-client/react";
 import { AlarmClock, AlarmClockOff, Archive, Bot, Check, CircleDot, Copy, FolderTree, Pencil, Pin, PinOff, Trash2, Undo2 } from "lucide-react";
-import { canMarkUnread, isPinned, isSettled, isSnoozed, isUnread, projectOf, snoozeTimes, threadTitle, type ThreadStanding } from "../../core/threads.ts";
+import {
+	canMarkUnread,
+	isPinned,
+	isSettled,
+	isSnoozed,
+	isUnread,
+	projectOf,
+	snoozeTimes,
+	THREAD_STATUS_LABELS,
+	threadTitle,
+	type ThreadStanding,
+} from "../../core/threads.ts";
 import { runningTime, shortAgo, wakeLabel } from "../../core/time.ts";
 import type { Vendor } from "../../core/vendors.ts";
 import { Counting } from "../effects/now.ts";
@@ -307,13 +318,13 @@ function StatusSlot(props: { readonly row: Listed; readonly standing: ThreadStan
 		case "preparing":
 			return (
 				<Standing mark={<StatusMark status={status} />} className="text-muted-foreground">
-					Preparing workspace
+					{THREAD_STATUS_LABELS[status]}
 				</Standing>
 			);
 		case "asks":
 			return (
 				<Standing mark={<StatusMark status={status} />} className="text-warning-foreground">
-					Waiting for you
+					{THREAD_STATUS_LABELS[status]}
 				</Standing>
 			);
 		case "working":
@@ -323,9 +334,10 @@ function StatusSlot(props: { readonly row: Listed; readonly standing: ThreadStan
 				</Standing>
 			);
 		case "failed":
+		case "unavailable":
 			return (
 				<Standing mark={<StatusMark status={status} />} className="text-error-foreground">
-					Failed
+					{THREAD_STATUS_LABELS[status]}
 				</Standing>
 			);
 		case "ready":
