@@ -7,11 +7,11 @@ import { Button } from "../../components/ui/button.tsx";
 import { Popover, PopoverTrigger, PopoverPopup } from "../../components/ui/popover.tsx";
 import { Command, CommandSearch, CommandList, CommandGroup, CommandItem } from "../../components/ui/command.tsx";
 
-type WorktreeBase = { readonly commit: string; readonly label: string };
-export type DraftWorktree = { readonly path: string; readonly base?: WorktreeBase | undefined };
+export type WorktreeBase = { readonly commit: string; readonly label: string };
 
 export function SeparateDirectory(props: {
-	readonly worktree: DraftWorktree;
+	readonly path: string;
+	readonly base: WorktreeBase | undefined;
 	readonly disabled: boolean;
 	readonly onBaseChange: ((base: WorktreeBase | undefined) => void) | undefined;
 }): ReactNode {
@@ -20,7 +20,7 @@ export function SeparateDirectory(props: {
 			<Folders className="size-3.5 shrink-0" />
 			<span className="shrink-0">Separate directory</span>
 			{props.onBaseChange === undefined ? null : (
-				<BaseBranchChoice path={props.worktree.path} base={props.worktree.base} disabled={props.disabled} onChange={props.onBaseChange} />
+				<BaseBranchChoice path={props.path} base={props.base} disabled={props.disabled} onChange={props.onBaseChange} />
 			)}
 		</div>
 	);

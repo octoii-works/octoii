@@ -8,29 +8,21 @@ import { failureOf } from "../../components/effects/read.ts";
 import { failed } from "../../components/state/notices.ts";
 import { Button } from "../../components/ui/button.tsx";
 
-const START_TITLES: Readonly<Record<StartState["state"], string>> = {
+const START_TITLES: Readonly<Record<Exclude<StartState["state"], "ready">, string>> = {
 	pending: "Waiting to prepare the worktree…",
 	preparing: "Preparing worktree…",
 	checking: "Checking worktree…",
 	failed: "Workspace preparation failed",
 	interrupted: "Workspace preparation interrupted",
 	cancelled: "Preparation cancelled",
-	ready: "Workspace ready",
 	unavailable: THREAD_STATUS_LABELS.unavailable,
 };
 
 export function WorktreeStart({ thread, status }: { readonly thread: string; readonly status: Status }): ReactNode {
 	const start = status.start;
-	if (start?.request.owner !== "git.worktree") return null;
+	if (start?.request.owner !== "git.worktree" || start.state.state === "ready") return null;
 	const { state } = start;
 	const title = START_TITLES[state.state];
-	if (state.state === "ready")
-		return (
-			<details className="chat-column py-2 text-xs text-muted-foreground">
-				<summary className="cursor-pointer">{title}</summary>
-				<p className="mt-2 break-all">{state.directory.workspace}</p>
-			</details>
-		);
 	const { payload } = start.request;
 	const request = payload !== null && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
 	const unavailable = state.state === "unavailable";

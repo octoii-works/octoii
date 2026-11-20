@@ -10,7 +10,7 @@ import { type ReactNode, useRef, useState } from "react";
 import type { Conversation, Listed, Status } from "@octoii-works/octoii-client";
 import { useClient, useConversation, usePages, useTerminals, useThreads } from "@octoii-works/octoii-client/react";
 import type { Device } from "../core/device.ts";
-import { projectOf, statusOf, stopTargetOf, titleOf } from "../core/threads.ts";
+import { type Project, projectOf, statusOf, stopTargetOf, titleOf } from "../core/threads.ts";
 import { contentOf } from "../core/attachments.ts";
 import { limitedOf } from "../core/limits.ts";
 import { inBackground, waitingOn } from "../core/sub-threads.ts";
@@ -21,7 +21,7 @@ import { Composer } from "../components/composer/composer.tsx";
 import { Queued } from "../components/composer/queued.tsx";
 import { Pane, PanelFrame, ShowPanel } from "../components/frame/frame.tsx";
 import { ChatHeader } from "../components/thread/header.tsx";
-import { type DetailParts, DetailsButtons, type DetailsProps, InlineDetails } from "../components/thread/details.tsx";
+import { DetailsButton, DetailsCard, DetailsFloat } from "../components/thread/details.tsx";
 import { Timeline, type TimelineHandle } from "../components/thread/timeline.tsx";
 import { RightPanel } from "../components/panel/right-panel.tsx";
 import { MessageThreadContext } from "../components/thread/message-thread.ts";
@@ -31,6 +31,7 @@ import type { Thing } from "../core/things.ts";
 import { failed } from "../components/state/notices.ts";
 import { useSeen } from "../components/effects/seen.ts";
 import { useNow } from "../components/effects/now.ts";
+import { useDetailsRoom } from "../components/effects/details-room.ts";
 import { useFolder } from "../components/state/folder.ts";
 import { useBrowserPanel } from "../extensions/browser/panel.tsx";
 import { useGitPanel } from "../extensions/git/panel.tsx";
@@ -83,13 +84,13 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 		threads: inBackground(work, rows, thread),
 	});
 	const project = row === undefined ? undefined : projectOf(row);
-	const workspace = useFolder(row);
+	const workspace = useFolder(row, status);
 	const said = firstSaid(items);
 	// Where the thread's turns stand, which its repository and its changes are read again at.
 	const revision = `${conversation.status?.turn ?? ""} ${String(conversation.status?.ended_at ?? "")}`;
 	const gitOn = useExtensionAccess("git", "files.read");
 	const git = useGitPanel(thread, workspace, revision, gitOn);
-	const parts: DetailParts = {
+	const parts = {
 		folder: useExtensionAccess("memory", "files.read") && workspace !== undefined ? <MemoryRow folder={workspace} revision={revision} /> : null,
 		sections: (
 			<>
@@ -98,59 +99,45 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 			</>
 		),
 	};
-	const details: DetailsProps = { thread, row, turns: conversation.turns, compactions: conversation.compactions, revision, parts };
+	const details = (
+		<DetailsCard thread={thread} row={row} workspace={workspace} turns={conversation.turns} compactions={conversation.compactions} parts={parts} />
+	);
 	return (
 		<>
-			<Pane>
-				<ChatHeader
-					title={row?.config.title ?? (said === undefined ? "New thread" : titleOf(said))}
-					status={status === undefined ? undefined : statusOf(status)}
-					{...(project === undefined ? {} : { project })}
-					actions={
-						<div className="-mr-1 flex items-center gap-1">
-							<DetailsButtons {...details} />
-							<ShowPanel />
-						</div>
-					}
-				/>
-				{/* Details reserve space beside both the timeline and its composer. */}
-				<div className="flex min-h-0 flex-1">
-					<div className="flex min-h-0 min-w-0 flex-1 flex-col">
-						<div className="relative flex min-h-0 flex-1 flex-col">
-							<MessageThreadContext value={{ thread, workspace, pages, terminals }}>
-								<ThreadConversation thread={thread} status={status}>
-									<Timeline
-										ref={timeline}
-										thread={thread}
-										parent={row?.parent?.thread}
-										items={items}
-										read={conversation.read}
-										complete={conversation.complete}
-										working={conversation.status?.turn === "running"}
-										waiting={conversation.asks.length}
-										sent={sent}
-										onEarlier={() => void client.readOlder(thread).catch((error: unknown) => failed("Earlier messages could not be read", error))}
-									/>
-								</ThreadConversation>
-							</MessageThreadContext>
-						</div>
-						<Dock
-							thread={thread}
-							row={row}
-							things={thingsOf(reachesThreads ? rows : [], terminals, pages, thread)}
-							sent={theirs}
-							conversation={conversation}
-							status={status}
-							device={props.device}
-							onSent={(delivery) => {
-								setSent(delivery);
-								timeline.current?.toEnd();
-							}}
-						/>
-					</div>
-					<InlineDetails {...details} />
+			<ThreadPane title={row?.config.title ?? (said === undefined ? "New thread" : titleOf(said))} status={status} project={project} details={details}>
+				<div className="relative flex min-h-0 flex-1 flex-col">
+					<MessageThreadContext value={{ thread, workspace, pages, terminals }}>
+						<ThreadConversation thread={thread} status={status}>
+							<Timeline
+								ref={timeline}
+								thread={thread}
+								parent={row?.parent?.thread}
+								items={items}
+								read={conversation.read}
+								complete={conversation.complete}
+								working={conversation.status?.turn === "running"}
+								waiting={conversation.asks.length}
+								sent={sent}
+								onEarlier={() => void client.readOlder(thread).catch((error: unknown) => failed("Earlier messages could not be read", error))}
+							/>
+						</ThreadConversation>
+					</MessageThreadContext>
 				</div>
-			</Pane>
+				<Dock
+					thread={thread}
+					row={row}
+					workspace={workspace}
+					things={thingsOf(reachesThreads ? rows : [], terminals, pages, thread)}
+					sent={theirs}
+					conversation={conversation}
+					status={status}
+					device={props.device}
+					onSent={(delivery) => {
+						setSent(delivery);
+						timeline.current?.toEnd();
+					}}
+				/>
+			</ThreadPane>
 			<PanelFrame>
 				<RightPanel
 					thread={thread}
@@ -161,6 +148,36 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 				/>
 			</PanelFrame>
 		</>
+	);
+}
+
+/** The floating details share the measured conversation pane with the timeline and composer. */
+function ThreadPane(props: {
+	readonly title: string;
+	readonly status: Status | undefined;
+	readonly project: Project | undefined;
+	readonly details: ReactNode;
+	readonly children: ReactNode;
+}): ReactNode {
+	const { room, pane } = useDetailsRoom();
+	return (
+		<Pane>
+			<ChatHeader
+				title={props.title}
+				status={props.status === undefined ? undefined : statusOf(props.status)}
+				{...(props.project === undefined ? {} : { project: props.project })}
+				actions={
+					<>
+						<DetailsButton room={room}>{props.details}</DetailsButton>
+						<ShowPanel />
+					</>
+				}
+			/>
+			<div ref={pane} className="flex min-h-0 flex-1">
+				<div className="flex min-h-0 min-w-0 flex-1 flex-col">{props.children}</div>
+				{room ? <DetailsFloat>{props.details}</DetailsFloat> : null}
+			</div>
+		</Pane>
 	);
 }
 
@@ -176,6 +193,7 @@ function visibleStatus(conversation: Conversation, row: Listed | undefined): Sta
 function Dock(props: {
 	readonly thread: string;
 	readonly row: Listed | undefined;
+	readonly workspace: string | undefined;
 	/** The things the composer's `@` mentions past files. */
 	readonly things: readonly Thing[];
 	/** What the person sent in the thread, oldest first. */
@@ -186,14 +204,13 @@ function Dock(props: {
 	/** Told the id each input the person sends is delivered by. */
 	readonly onSent: (input: string) => void;
 }): ReactNode {
-	const { thread, row, conversation } = props;
+	const { thread, row, workspace, conversation } = props;
 	const client = useClient();
-	const workspace = useFolder(row);
 	const working = conversation.status?.turn === "running" || conversation.inbox.length > 0;
 	const stop = stopTargetOf(conversation.status);
 	// A call's permission, the oldest of what waits, is answered in the composer; anything else waits docked in its place.
 	const approval = useApproval(thread, conversation.asks.toSorted((a, b) => (a.key < b.key ? -1 : 1))[0]);
-	if (conversation.gone || awaitingWorkspace(props.status)) return null;
+	if (!conversation.read || conversation.gone || awaitingWorkspace(props.status)) return null;
 
 	return (
 		<div className="relative shrink-0 bg-background pb-[max(--spacing(4),env(safe-area-inset-bottom))]">

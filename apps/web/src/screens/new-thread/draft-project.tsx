@@ -1,21 +1,26 @@
-/** The draft headline's project picker; the same picker also opens from its details. */
+/** The project menu for a new task. */
 import { useState, type ReactNode } from "react";
-import { ChevronDown, FolderPlus, Folders } from "lucide-react";
+import { Check, ChevronDown, FolderPlus, Folders, Laptop } from "lucide-react";
 import type { Project } from "../../core/threads.ts";
 import { folderName } from "../../core/threads.ts";
 import { Command, CommandSearch, CommandList, CommandItem, CommandGroup } from "../../components/ui/command.tsx";
 import { Popover, PopoverTrigger, PopoverPopup } from "../../components/ui/popover.tsx";
+import { useOutcome } from "../../components/effects/read.ts";
 
 export function DraftProject(props: {
 	readonly folder: string | undefined;
 	readonly projects: readonly Project[];
-	readonly onChoose: (folder: string) => void;
+	readonly onChoose: (folder: string | undefined) => void;
 	readonly onAnother: () => void;
-	readonly directoryAction: { readonly label: string; readonly select: () => void } | undefined;
+	readonly directoryAction: { readonly label: string; readonly select: () => void; readonly repository?: string } | undefined;
 	readonly disabled: boolean;
 }): ReactNode {
 	const [open, setOpen] = useState(false);
 	const { directoryAction } = props;
+	const path = open && !props.disabled ? directoryAction?.repository : undefined;
+	const repository = useOutcome("git.repository", path === undefined ? undefined : { path });
+	const hasHead = repository !== undefined && "result" in repository && repository.result.repository?.head !== undefined;
+	const directory = directoryAction?.repository === undefined || hasHead ? directoryAction : undefined;
 	const select = (action: () => void): void => {
 		setOpen(false);
 		action();
@@ -31,7 +36,7 @@ export function DraftProject(props: {
 				disabled={props.disabled}
 				className="inline-flex max-w-full items-baseline gap-1 rounded-md outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-ring"
 			>
-				<span className="truncate">{props.folder === undefined ? "a project" : folderName(props.folder)}</span>
+				<span className="truncate">{props.folder === undefined ? "No project" : folderName(props.folder)}</span>
 				<ChevronDown className="size-4 shrink-0 self-center text-muted-foreground" />
 			</PopoverTrigger>
 			<PopoverPopup align="center" className="w-72 max-w-[calc(100vw-2rem)]">
@@ -44,16 +49,16 @@ export function DraftProject(props: {
 									<span className="truncate" title={project.folder}>
 										{project.name}
 									</span>
+									{project.folder === props.folder ? <Check aria-label="Selected" className="ms-auto size-4 shrink-0" /> : null}
 								</CommandItem>
 							)}
 						</CommandGroup>
 					</CommandList>
 				</Command>
 				<div className="border-t border-border">
+					{props.folder === undefined ? null : <ProjectAction icon={<Laptop />} label="No project" onClick={() => select(() => props.onChoose(undefined))} />}
 					<ProjectAction icon={<FolderPlus />} label="Add project…" onClick={() => select(props.onAnother)} />
-					{directoryAction === undefined ? null : (
-						<ProjectAction icon={<Folders />} label={directoryAction.label} onClick={() => select(directoryAction.select)} />
-					)}
+					{directory === undefined ? null : <ProjectAction icon={<Folders />} label={directory.label} onClick={() => select(directory.select)} />}
 				</div>
 			</PopoverPopup>
 		</Popover>

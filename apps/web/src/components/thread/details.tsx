@@ -22,72 +22,47 @@ import { SpendingCard } from "./spending.tsx";
 import { ContextCard } from "./context-card.tsx";
 import { isCompacting } from "../../core/context.ts";
 import { SubThreadAvatar, WorkedFor } from "./sub-thread.tsx";
-import { useFolder } from "../state/folder.ts";
 
-/** What the card tells of: the thread, as it is listed, its turns, and where its turns stand, which its repository is read again at. */
-export type DetailsProps = {
+/** What the card tells of: the thread, its bound workspace and its work. */
+type DetailsProps = {
 	readonly thread: string;
 	readonly row: Listed | undefined;
+	readonly workspace: string | undefined;
 	readonly turns: readonly Turn[];
 	/** The thread's compactions, whose requests' spending its card tells among the turns'. */
 	readonly compactions: Conversation["compactions"];
-	readonly revision: string;
 	/** What the extensions add: rows under the thread's folder, and sections after the place it works in. */
-	readonly parts: DetailParts;
+	readonly parts: { readonly folder: ReactNode; readonly sections: ReactNode };
 };
 
-/** What the extensions add to the card: rows under the thread's folder — what is remembered of its project — and sections after where it works — its repository, its terminals. */
-export type DetailParts = { readonly folder: ReactNode; readonly sections: ReactNode };
-
-/**
- * The header toggles the inline column where it fits, or opens details on demand where it does not.
- */
-export function DetailsButtons(props: DetailsProps): ReactNode {
-	return (
-		<DetailsToggle>
-			<DetailsCard {...props} />
-		</DetailsToggle>
-	);
-}
-
-/** Shared header control for draft and accepted thread details. */
-export function DetailsToggle({ children }: { readonly children: ReactNode }): ReactNode {
+/** Toggles the wide card or opens the narrow popover. */
+export function DetailsButton({ room, children }: { readonly room: boolean; readonly children: ReactNode }): ReactNode {
 	const shown = useDetailsShown();
-	return (
-		<>
-			<ToggleButton label="Thread details" pressed={shown} onPressedChange={showDetails} className="hidden details-inline:inline-flex">
+	if (room)
+		return (
+			<ToggleButton label="Thread details" pressed={shown} onPressedChange={showDetails}>
 				<SquareMenu className="size-4" />
 			</ToggleButton>
-			<Popover>
-				<PopoverTrigger render={<IconButton label="Thread details" className="details-inline:hidden" />}>
-					<SquareMenu className="size-4" />
-				</PopoverTrigger>
-				<PopoverPopup side="bottom" align="end" className="w-(--details-width) max-w-[calc(100vw-1rem)]">
-					{children}
-				</PopoverPopup>
-			</Popover>
-		</>
-	);
-}
-
-/**
- * The floating card keeps its natural height while reserving space beside the timeline and composer. Narrow panes hide it without changing the user's preference.
- */
-export function InlineDetails(props: DetailsProps): ReactNode {
+		);
 	return (
-		<DetailsFloat>
-			<DetailsCard {...props} />
-		</DetailsFloat>
+		<Popover>
+			<PopoverTrigger render={<IconButton label="Thread details" />}>
+				<SquareMenu className="size-4" />
+			</PopoverTrigger>
+			<PopoverPopup aria-label="Thread details" side="bottom" align="end" className="w-(--details-width) max-w-[calc(100vw-1rem)]">
+				{children}
+			</PopoverPopup>
+		</Popover>
 	);
 }
 
-/** Same floating layout and responsive behavior for every thread stage. */
+/** Reserves room beside the conversation while it is open. */
 export function DetailsFloat({ children }: { readonly children: ReactNode }): ReactNode {
 	if (!useDetailsShown()) return null;
 	return (
 		<aside
 			aria-label="Thread details"
-			className="floating mx-4 my-3 hidden max-h-[calc(100%-1.5rem)] w-(--details-width) shrink-0 self-start overflow-y-auto rounded-md details-inline:block"
+			className="floating mx-4 my-3 max-h-[calc(100%-1.5rem)] w-(--details-width) shrink-0 self-start overflow-y-auto rounded-md"
 		>
 			{children}
 		</aside>
@@ -95,11 +70,10 @@ export function DetailsFloat({ children }: { readonly children: ReactNode }): Re
 }
 
 /** The card's sections, a line between each two. */
-function DetailsCard(props: DetailsProps): ReactNode {
-	const folder = useFolder(props.row);
+export function DetailsCard(props: DetailsProps): ReactNode {
 	return (
 		<div className="flex flex-col divide-y divide-border text-ui">
-			<Workspace thread={props.thread} folder={folder} project={props.row?.project ?? undefined} parts={props.parts.folder} />
+			<Workspace thread={props.thread} folder={props.workspace} project={props.row?.project ?? undefined} parts={props.parts.folder} />
 			{props.parts.sections}
 			<Lineage thread={props.thread} row={props.row} />
 			<Spending thread={props.thread} row={props.row} turns={props.turns} compactions={props.compactions} />
@@ -160,7 +134,7 @@ function Workspace(props: {
 	const machine = connection.status === "open" ? connection.machine.name : "This machine";
 	const [open, setOpen] = useState(false);
 	const { folder, project } = props;
-	const name = folder === undefined ? "No folder" : folderName(project ?? folder);
+	const name = folderName(project ?? folder ?? "") || "Workspace";
 	return (
 		<section className="p-1.5">
 			<Popover open={open} onOpenChange={setOpen}>
@@ -170,7 +144,7 @@ function Workspace(props: {
 				<PopoverPopup side="bottom" align="end" className="w-72 max-w-[calc(100vw-1rem)] p-1.5 text-ui">
 					<DetailRow icon={<Laptop />} label={machine} />
 					{folder === undefined ? (
-						<DetailRow icon={<FolderX />} label="Works in no folder" />
+						<DetailRow icon={<FolderX />} label="No workspace available" />
 					) : (
 						<>
 							<div className="flex items-start gap-2 px-2 py-2">

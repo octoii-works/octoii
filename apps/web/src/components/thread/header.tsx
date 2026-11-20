@@ -35,9 +35,11 @@ export function ChatHeader(props: HeaderProps): ReactNode {
 				<h2 className="min-w-0 truncate font-medium text-foreground">{props.title}</h2>
 				{props.status === undefined ? null : <StatusPill status={props.status} />}
 			</div>
-			<div role="group" aria-label="View controls" className="flex shrink-0 items-center gap-1">
-				{props.actions}
-			</div>
+			{props.actions === undefined ? null : (
+				<div role="group" aria-label="View controls" className="flex shrink-0 items-center gap-1">
+					{props.actions}
+				</div>
+			)}
 		</header>
 	);
 }

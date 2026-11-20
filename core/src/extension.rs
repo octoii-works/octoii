@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use crate::machine::Host;
 use crate::protocol::{Error, ExtensionListed, Scope, Set};
-use crate::threads::WorkspacePreparer;
+use crate::threads::{Listed, StartState, WorkspacePreparer};
 use crate::tools::Tools;
 use octoii_ai::models::Provider;
 use octoii_siphon_lib::{RuntimeHandle, Snapshot, Status};
@@ -23,7 +23,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::Octoii;
 use crate::agent::{OwnedTeller, Shared};
-use crate::connection::{Outgoing, text};
+use crate::connection::{Outgoing, refusal, text};
 
 /// An extension: its name, which settings switch it by; the words it is shown by and a line of what it brings; and
 /// what it adds as Octoii is built.
@@ -67,11 +67,32 @@ impl Caller {
         &self.siphon.machine
     }
 
-    /// The folder the thread `thread` works in, on the machine; none where there is no such thread.
-    #[must_use]
-    pub fn workspace_of(&self, thread: &str) -> Option<std::path::PathBuf> {
-        let listed = self.siphon.threads.listed(thread).ok()?;
-        Some(self.siphon.machine.workspace_of(listed.config.workspace.as_deref()))
+    /// Reads a Thread for an extension that has already checked its operation's scope.
+    ///
+    /// # Errors
+    /// The Thread is missing or its record could not be read.
+    pub fn thread(&self, thread: &str) -> Result<Listed, Error> {
+        self.siphon.threads.listed(thread).map_err(|error| {
+            let code = if matches!(error, crate::threads::Error::NoSuchThread) {
+                "no_such_thread"
+            } else {
+                "failed"
+            };
+            refusal(code, &error.to_string())
+        })
+    }
+
+    /// Resolves the working directory to use for a Thread's terminal or command.
+    ///
+    /// # Errors
+    /// The Thread is missing, its record is unreadable, or its workspace is awaiting preparation or unavailable.
+    pub fn workspace_of(&self, thread: &str) -> Result<std::path::PathBuf, Error> {
+        let listed = self.thread(thread)?;
+        match listed.status.start.map(|start| start.state) {
+            Some(StartState::Ready { directory }) => Ok(directory.workspace.into()),
+            Some(_) => Err(refusal("workspace_unavailable", "This thread does not have a ready workspace.")),
+            None => Ok(self.siphon.machine.workspace_of(listed.config.workspace.as_deref())),
+        }
     }
 
     /// The machine as the person reaches it through a client: every file, the threads read alone.

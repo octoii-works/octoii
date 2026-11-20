@@ -134,15 +134,14 @@ test("shows interruption diagnostics and permits cancellation with thread permis
 	);
 });
 
-test("shows the saved message when cancelled and the resolved directory when ready", async () => {
+test("shows the saved message when cancelled and releases the conversation when ready", async () => {
 	await withStart(async ({ draw, element, sent }) => {
 		await draw({ ...start, state: { state: "cancelled" } });
 		expect(element.textContent).toContain("Preparation cancelled");
 		expect(element.textContent).toContain("Saved task");
 		expect(element.querySelector("button")).toBeNull();
 		await draw({ ...start, state: { state: "ready", directory: { workspace: "/resolved-workspace", project: "/project" } } });
-		expect(element.textContent).toContain("Workspace ready");
-		expect(element.textContent).toContain("/resolved-workspace");
+		expect(element.querySelector('[aria-label="Worktree preparation"]')).toBeNull();
 		expect(element.querySelector("button")).toBeNull();
 		expect(sent).toEqual([]);
 	});

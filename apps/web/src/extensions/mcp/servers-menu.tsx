@@ -26,6 +26,7 @@ export function ServersMenu(props: { readonly folder: string | undefined }): Rea
 	const outcome = useOutcome("servers.list", props.folder === undefined ? {} : { workspace: props.folder }, decided);
 	if (outcome === undefined || "failure" in outcome) return null;
 	const listed = outcome.result;
+	if (listed.servers.length === 0 && listed.problems.length === 0) return null;
 	const decide = (project: ProjectGroup, trusted: boolean): void => {
 		client.call("trust.decide", { folder: project.folder, digest: project.digest, trusted }).then(
 			() => setDecided(decided + 1),

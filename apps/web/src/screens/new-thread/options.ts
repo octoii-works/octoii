@@ -1,14 +1,13 @@
 /** Unsent draft options share the same page lifetime as composer drafts, isolated by node session and project entry. */
-import { useState, useSyncExternalStore } from "react";
+import { useSyncExternalStore } from "react";
 import type { Mode, ReasoningEffort } from "@octoii-works/octoii-client";
-import type { DraftWorktree } from "../../extensions/git/new-worktree.tsx";
+import type { WorktreeBase } from "../../extensions/git/new-worktree.tsx";
 
 type Options = {
-	readonly chosen?: { readonly folder: string | undefined };
 	readonly model?: string | undefined;
 	readonly mode?: Mode | undefined;
 	readonly effort?: ReasoningEffort | undefined;
-	readonly worktree?: DraftWorktree | undefined;
+	readonly worktree?: { readonly base?: WorktreeBase | undefined } | undefined;
 };
 const empty: Options = {};
 const options = new Map<string, Options>();
@@ -18,9 +17,7 @@ function subscribe(changed: () => void): () => void {
 	return () => listeners.delete(changed);
 }
 export function useNewThreadOptions(session: string | undefined, project: string | undefined) {
-	const [lastSession, setSession] = useState(session);
-	if (session !== undefined && session !== lastSession) setSession(session);
-	const key = JSON.stringify([session ?? lastSession, project]);
+	const key = JSON.stringify([session, project]);
 	const value = useSyncExternalStore(subscribe, () => options.get(key) ?? empty);
 	return {
 		value,

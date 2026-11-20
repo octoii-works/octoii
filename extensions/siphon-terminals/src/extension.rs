@@ -59,9 +59,7 @@ fn size(cells: Cells) -> Size {
 async fn answered(terminals: &Terminals, context: &Caller, method: Method) -> Result<Value, Error> {
     match method {
         Method::Open(open) => {
-            let cwd = context
-                .workspace_of(&open.thread)
-                .ok_or_else(|| refused("no_such_thread", &format!("no thread {}", open.thread)))?;
+            let cwd = context.workspace_of(&open.thread)?;
             let terminal = terminals
                 .open(&open.thread, cwd, size(open.size), Running::Shell)
                 .await

@@ -255,7 +255,7 @@ async fn a_removed_temporary_checkout_leaves_its_thread_and_files_readable() {
     assert_eq!(node.accepted(&request, &[("file-0", b"saved attachment")]).await, thread);
     assert!(!root.exists(), "a receipt replay does not open the worktree root");
 
-    let mut client = Client::connect(&node.siphon, vec![Scope::ThreadsRead], 16);
+    let mut client = Client::connect(&node.siphon, vec![Scope::ThreadsRead, Scope::TerminalsOperate], 16);
     client.message().await;
     let listed = client.command("threads.list", json!({})).await;
     let listed: Vec<Listed> = serde_json::from_value(listed["result"]["threads"].clone()).unwrap();
@@ -266,6 +266,12 @@ async fn a_removed_temporary_checkout_leaves_its_thread_and_files_readable() {
     assert_eq!(
         unavailable.status.start.as_ref().unwrap().state,
         StartState::Unavailable { directory }
+    );
+    assert_eq!(
+        client
+            .command("terminals.open", json!({ "thread": thread, "size": { "rows": 24, "cols": 80 } }))
+            .await["error"]["code"],
+        "workspace_unavailable"
     );
     let reference = format!("sha256:{}", octoii::tools::sha256_hex(b"saved attachment"));
     assert_eq!(
@@ -323,6 +329,13 @@ async fn multipart_keeps_order_files_and_idempotency_without_starting_the_agent(
     assert_eq!(accepted, json!({"thread":thread}));
     let listed = node.siphon.threads.listed(thread).unwrap();
     assert!(listed.status.start.as_ref().is_some_and(octoii::threads::Start::blocks_execution));
+    let client = Client::connect(&node.siphon, vec![Scope::TerminalsOperate], 16);
+    assert_eq!(
+        client
+            .command("terminals.open", json!({ "thread": thread, "size": { "rows": 24, "cols": 80 } }))
+            .await["error"]["code"],
+        "workspace_unavailable"
+    );
     let content = serde_json::to_value(&listed.status.inbox).unwrap();
     assert_eq!(content[0][1]["content"][0]["text"], "before");
     assert_eq!(content[0][1]["content"][2]["text"], "after");

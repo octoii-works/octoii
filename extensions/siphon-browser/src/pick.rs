@@ -175,9 +175,7 @@ struct Evidence {
 pub(crate) async fn pick(browser: &Browser, caller: &Caller, request: PickElement) -> Result<ElementFeedback, Error> {
     caller.require_scope(Scope::ThreadsOperate)?;
     validate(&request)?;
-    if caller.workspace_of(&request.thread).is_none() {
-        return Err(refused("no_such_thread", "no such thread"));
-    }
+    caller.thread(&request.thread)?;
     let view = browser
         .view(&request.page)
         .await

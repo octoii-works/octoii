@@ -29,6 +29,7 @@ export function usePendingThread(project: string | undefined) {
 		};
 	}, [starting, attempt]);
 	return {
+		session,
 		starting,
 		loaded: starting !== undefined && read?.source === starting && read.error === undefined,
 		error: read?.source === starting ? read?.error : undefined,
