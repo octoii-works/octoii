@@ -42,6 +42,7 @@ async fn base_reads_late_registered_folders_and_tracks_extension_settings() {
         .create(
             &NewThread {
                 actor: "person".into(),
+                project: Some(workspace.display().to_string()),
                 config: Config {
                     workspace: Some(workspace.display().to_string()),
                     mode: Some(Mode::FullAccess),

@@ -45,6 +45,8 @@ pub enum Error {
     NoSuchThread,
     #[error("a sub-thread must record its kind")]
     MissingSubThreadKind,
+    #[error("a thread's workspace is fixed at startup")]
+    WorkspaceFixed,
     #[error("{0}")]
     Start(String),
     #[error(transparent)]
@@ -230,18 +232,17 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
     /// takes it, so the change stands in the log where it took effect. Its id in the inbox.
     ///
     /// # Errors
-    /// `NoSuchThread`; the commit's failure.
+    /// `NoSuchThread`, `WorkspaceFixed`, or the commit's failure.
     pub async fn configure(&self, id: &str, actor: &str, change: ConfigChange) -> Result<String, Error> {
-        let sets_workspace = change.workspace.is_some();
+        if change.workspace.is_some() {
+            return Err(Error::WorkspaceFixed);
+        }
         let inbound = Inbound::Config {
             actor: actor.to_owned(),
             change,
         };
         commit_checked(&self.runtime, |snapshot, changes| {
-            let directory = thread::directory(snapshot, id)?.ok_or(Error::NoSuchThread)?;
-            if sets_workspace && super::Start::of(&directory)?.is_some_and(|start| start.blocks_execution()) {
-                return Err(Error::Start("workspace is bound when preparation completes".into()));
-            }
+            thread::directory(snapshot, id)?.ok_or(Error::NoSuchThread)?;
             self.put(snapshot, id, &inbound, changes)
         })
         .await

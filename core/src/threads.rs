@@ -34,4 +34,4 @@ pub use marks::{Marks, MarksChange};
 pub use operations::{NewThread, list};
 pub use status::{Ask, Listed, Parent, Status, SubThreadKind, ThreadUsage, Turn, parent_of};
 
-pub use start::{Start, StartRequest, StartState, StartWorkspace};
+pub use start::{Start, StartDirectory, StartRequest, StartState, StartWorkspace};

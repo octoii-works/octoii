@@ -37,7 +37,7 @@ enum Identity<'a> {
     },
 }
 
-pub(super) fn fingerprint(new: &NewThread, parts: &[InputPart], request: &StartRequest) -> serde_json::Result<[u8; 32]> {
+pub(super) fn fingerprint(new: &NewThread, parts: &[InputPart], preparation: Option<&StartRequest>) -> serde_json::Result<[u8; 32]> {
     let identities: Vec<_> = parts
         .iter()
         .map(|part| match part {
@@ -53,7 +53,7 @@ pub(super) fn fingerprint(new: &NewThread, parts: &[InputPart], request: &StartR
             },
         })
         .collect();
-    Ok(Sha256::digest(serde_json::to_vec(&(new, identities, request))?).into())
+    Ok(Sha256::digest(serde_json::to_vec(&(new, identities, preparation))?).into())
 }
 
 pub(super) fn keep(

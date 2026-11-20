@@ -1,10 +1,11 @@
 /** A local draft: project headline, centered composer, shared context controls and floating details. */
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useState } from "react";
 import { useClient, useConnection, useSettings, useThreads } from "@octoii-works/octoii-client/react";
 import { Folder, Laptop } from "lucide-react";
 import type { Device } from "../../core/device.ts";
 import { recentModelsOf } from "../../core/models.ts";
-import type { AcceptWorktree, NewThread, PendingThread } from "./submission.ts";
+import type { NewThread, PendingThread } from "./submission.ts";
+import type { ThreadWorkspace } from "./request.ts";
 import { usePendingThread } from "./effects/pending-thread.ts";
 import { failed } from "../../components/state/notices.ts";
 import { clearPendingDraft } from "../../components/state/draft.ts";
@@ -20,9 +21,7 @@ import { ChatHeader } from "../../components/thread/header.tsx";
 import { DraftProject } from "./draft-project.tsx";
 import { DetailsToggle, DetailsFloat, DetailRow } from "../../components/thread/details.tsx";
 import { useNewThreadOptions } from "./options.ts";
-import { useReach } from "../../components/state/reach.ts";
 import { planWorktree, prepareWorktree } from "../../extensions/git/prepare.ts";
-import { acceptWorktree } from "../../extensions/git/submit.ts";
 import { SeparateDirectory } from "../../extensions/git/new-worktree.tsx";
 import { ServersMenu } from "../../extensions/mcp/servers-menu.tsx";
 import type { Draft } from "../../core/drafts.ts";
@@ -30,11 +29,8 @@ import type { Draft } from "../../core/drafts.ts";
 export type NewThreadScreenProps = { readonly project: string | undefined; readonly device: Device };
 
 export function NewThreadScreen(props: NewThreadScreenProps): ReactNode {
-	const client = useClient();
 	const connection = useConnection();
-	const { send } = useReach();
-	const accept = useMemo<AcceptWorktree>(() => (submission) => acceptWorktree(send, submission), [send]);
-	const saved = usePendingThread(client, props.project, accept);
+	const saved = usePendingThread(props.project);
 	const { value: options, change } = useNewThreadOptions(connection.status === "open" ? connection.session : undefined, props.project);
 	const [choosing, setChoosing] = useState(false);
 	const [sending, setSending] = useState(false);
@@ -101,7 +97,7 @@ export function NewThreadScreen(props: NewThreadScreenProps): ReactNode {
 						{!saved.loaded ? (
 							<LoadingDraft error={saved.error} retry={saved.retry} />
 						) : saved.pending !== undefined ? (
-							<PendingTask pending={saved.pending} starting={saved.starting} onForgotten={() => saved.setPending(undefined)} />
+							<PendingTask pending={saved.pending} starting={saved.starting} refresh={saved.retry} />
 						) : (
 							<>
 								<Composer
@@ -167,27 +163,28 @@ function LoadingDraft({ error, retry }: { readonly error: string | undefined; re
 function PendingTask({
 	pending,
 	starting,
-	onForgotten,
+	refresh,
 }: {
 	readonly pending: PendingThread;
 	readonly starting: NewThread | undefined;
-	readonly onForgotten: () => void;
+	readonly refresh: () => void;
 }): ReactNode {
 	const [resuming, setResuming] = useState(false);
+	const worktree = pending.workspace.kind === "isolated" ? pending.workspace.worktree : undefined;
 	return (
 		<div className="rounded-lg border border-border p-4 text-body">
 			<p className="font-medium">Unfinished submission</p>
 			<p className="my-3 max-h-48 overflow-auto whitespace-pre-wrap">{pending.draft.text}</p>
 			<p className="text-muted-foreground">
-				{pending.config.workspace ?? "No project"} · {pending.draft.attachments.length} attachments
+				{pending.project ?? "No project"} · {pending.draft.attachments.length} attachments
 			</p>
-			{pending.worktree === undefined ? null : (
+			{worktree === undefined ? null : (
 				<p className="mt-2 break-all text-muted-foreground">
-					Separate directory · {pending.worktree.branch} · {pending.worktree.destination}
+					Separate directory · {worktree.branch} · {worktree.destination}
 				</p>
 			)}
 			<p className="my-3 text-muted-foreground">
-				Continue the original submission. If it was already accepted, this opens its thread without sending it again.
+				{pending.thread === undefined ? "Continue with the original message and attachments." : "The node accepted this task."}
 			</p>
 			<button
 				type="button"
@@ -197,26 +194,22 @@ function PendingTask({
 					if (starting === undefined || resuming) return;
 					setResuming(true);
 					void starting
-						.resume()
-						.then(async (thread) => {
-							clearPendingDraft({ project: pending.config.workspace ?? undefined }, pending.draft);
+						.resume(pending.key)
+						.then(async ({ key, thread }) => {
+							clearPendingDraft({ project: pending.project }, pending.draft);
 							go({ place: "thread", thread });
-							await starting.acknowledge();
+							await starting.clear(key).catch((error: unknown) => failed("The saved copy could not be cleared", error));
 						})
-						.catch((error: unknown) => failed("The task could not be resumed", error))
+						.catch((error: unknown) => {
+							failed("The task could not be resumed", error);
+							refresh();
+						})
 						.finally(() => setResuming(false));
 				}}
 			>
-				{resuming ? "Continuing…" : "Continue task"}
+				{resuming ? "Continuing…" : pending.thread === undefined ? "Continue task" : "Open thread"}
 			</button>
-			{pending.thread === undefined ? null : (
-				<button type="button" className="ml-3 text-primary underline" onClick={() => go({ place: "thread", thread: pending.thread ?? "" })}>
-					View existing thread
-				</button>
-			)}
-			<p className="mt-3 text-xs text-muted-foreground">
-				{pending.worktree === undefined ? "Recovery is available for 23 hours. " : ""}Discarding this saved copy does not stop or delete an existing thread.
-			</p>
+			<p className="mt-3 text-xs text-muted-foreground">Discarding this local copy leaves any accepted thread on the node.</p>
 			<button
 				type="button"
 				disabled={resuming}
@@ -225,8 +218,8 @@ function PendingTask({
 					if (starting === undefined || resuming) return;
 					setResuming(true);
 					void starting
-						.forget(pending.key)
-						.then(onForgotten)
+						.clear(pending.key)
+						.then(refresh)
 						.catch((error: unknown) => failed("The saved copy could not be discarded", error))
 						.finally(() => setResuming(false));
 				}}
@@ -318,16 +311,15 @@ function useDraftSubmit(
 			const config = draftConfig(folder, model, options);
 			const selected = options.worktree;
 			if (selected !== undefined && selected.path !== folder) throw new Error("Choose the work directory for this project.");
-			const thread =
-				selected === undefined
-					? await starting.send(config, draft)
-					: await starting.sendWorktree(config, draft, await planWorktree(client, selected), (thread) =>
-							prepareWorktree(client, thread, () => go({ place: "thread", thread })),
-						);
-			if (selected === undefined) go({ place: "thread", thread });
-			await starting.acknowledge();
+			const workspace: ThreadWorkspace = selected === undefined ? { kind: "current" } : { kind: "isolated", worktree: await planWorktree(client, selected) };
+			const { key, thread } = await starting.send(config, workspace, draft);
+			const open = (): void => go({ place: "thread", thread });
+			if (workspace.kind === "isolated") {
+				await prepareWorktree(client, thread, open).catch((error: unknown) => failed("The separate directory could not be prepared", error));
+			} else open();
+			await starting.clear(key).catch((error: unknown) => failed("The saved copy could not be cleared", error));
 		} catch (error) {
-			saved.setPending(await starting.read());
+			saved.retry();
 			throw error;
 		} finally {
 			setSending(false);

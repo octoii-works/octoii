@@ -1,87 +1,57 @@
-import type { Client, Config, CreateWorktree, InputContent } from "@octoii-works/octoii-client";
-import { contentOf } from "../../core/attachments.ts";
+import type { Config } from "@octoii-works/octoii-client";
+import type { SendRequest } from "../../components/state/reach.ts";
 import type { Draft } from "../../core/drafts.ts";
-import type { WorktreeSubmission } from "../../extensions/git/submit.ts";
+import { acceptThread, threadRequest, type ThreadRequest, type ThreadWorkspace } from "./request.ts";
 
-export type AcceptWorktree = (submission: WorktreeSubmission) => Promise<string>;
-
-/** The immutable submitted message and the acknowledgements saved while starting its thread. */
+/** The frozen HTTP request and the local draft identities used for recovery. */
 export type PendingThread = {
 	readonly key: string;
-	readonly savedAt: number;
-	readonly config: Config;
+	readonly project: string | undefined;
+	readonly workspace: ThreadWorkspace;
 	readonly draft: Draft;
-	readonly worktree?: CreateWorktree;
+	readonly request: ThreadRequest;
 	readonly thread?: string;
-	readonly content?: readonly InputContent[];
-	readonly delivered?: string;
 };
 
-/** One pending submission per node session and new-thread page. Writes finish before the next remote operation. */
+type Receipt = { readonly key: string; readonly thread: string };
+
+/** One pending submission per paired session and new-thread page. */
 export type PendingThreadStore = {
 	read(): Promise<PendingThread | undefined>;
-	exclusive(action: () => Promise<string>): Promise<string>;
-	/** Atomically keeps this submission only if no other tab has already saved one. */
-	begin(pending: PendingThread): Promise<PendingThread>;
+	exclusive<T>(action: () => Promise<T>): Promise<T>;
 	write(pending: PendingThread): Promise<void>;
 	remove(key: string): Promise<void>;
 };
 
-/** Recovery replays the saved message, never a newly edited draft with an old delivery key. */
 export class NewThread {
-	readonly #client: Pick<Client, "call" | "keepFile">;
+	readonly #send: SendRequest;
 	readonly #store: PendingThreadStore;
-	readonly #acceptWorktree: AcceptWorktree;
-	#sending: Promise<string> | undefined;
-	#completed: string | undefined;
+	#sending: Promise<Receipt> | undefined;
 
-	constructor(client: Pick<Client, "call" | "keepFile">, store: PendingThreadStore, acceptWorktree: AcceptWorktree) {
-		this.#client = client;
+	constructor(send: SendRequest, store: PendingThreadStore) {
+		this.#send = send;
 		this.#store = store;
-		this.#acceptWorktree = acceptWorktree;
 	}
 
 	read(): Promise<PendingThread | undefined> {
 		return this.#store.read();
 	}
 
-	send(config: Config, draft: Draft): Promise<string> {
-		return this.#run(() => this.#store.begin({ key: crypto.randomUUID(), savedAt: Date.now(), config, draft }));
-	}
-
-	sendWorktree(config: Config, draft: Draft, worktree: CreateWorktree, prepare: (thread: string) => Promise<void>): Promise<string> {
-		return this.#run(() => this.#store.begin({ key: crypto.randomUUID(), savedAt: Date.now(), config, draft, worktree }), prepare);
-	}
-
-	resume(): Promise<string> {
-		return this.#run(async () => {
-			const pending = await this.#store.read();
-			if (pending === undefined) throw new Error("This task has already been resolved. Reload the page.");
-			return pending;
-		});
-	}
-
-	/** Called after navigation to the acknowledged thread, so a failed cleanup remains recoverable. */
-	async acknowledge(): Promise<void> {
-		if (this.#completed !== undefined) await this.#store.remove(this.#completed);
-	}
-
-	/** Removes only the displayed recovery copy, never a thread or a running turn. */
-	async forget(key: string): Promise<void> {
-		await this.#store.exclusive(async () => {
-			await this.#store.remove(key);
-			return "";
-		});
-	}
-
-	#run(read: () => Promise<PendingThread>, prepare?: (thread: string) => Promise<void>): Promise<string> {
-		if (this.#sending !== undefined) return this.#sending;
-		this.#sending = this.#store
+	send(config: Config, workspace: ThreadWorkspace, draft: Draft): Promise<Receipt> {
+		this.#sending ??= this.#store
 			.exclusive(async () => {
-				const pending = await read();
-				const thread = await this.#submit(pending, prepare);
-				this.#completed = pending.key;
-				return thread;
+				if ((await this.#store.read()) !== undefined) throw new Error("A task is already saved for this draft.");
+				const key = crypto.randomUUID();
+				const request = await threadRequest(this.#send, { key, config, workspace, draft });
+				const pending = {
+					key,
+					project: config.workspace ?? undefined,
+					workspace,
+					draft: { ...draft, attachments: draft.attachments.map(({ bytes: _bytes, ...file }) => file) },
+					request,
+				};
+				await this.#store.write(pending);
+				return this.#submit(pending);
 			})
 			.finally(() => {
 				this.#sending = undefined;
@@ -89,48 +59,24 @@ export class NewThread {
 		return this.#sending;
 	}
 
-	async #submit(saved: PendingThread, prepare?: (thread: string) => Promise<void>): Promise<string> {
-		if (saved.worktree !== undefined) {
-			if (saved.thread !== undefined) return saved.thread;
-			const thread = await this.#acceptWorktree({ ...saved, worktree: saved.worktree });
-			await this.#store.write({ ...saved, thread });
-			await prepare?.(thread);
-			return thread;
-		}
-		let pending = saved;
-		if (pending.delivered !== undefined && pending.thread !== undefined) return pending.thread;
-		assertRecoverable(pending);
-		const thread = pending.thread ?? (await this.#client.call("threads.create", { config: pending.config, key: `${pending.key}-create` })).thread;
-		if (pending.thread === undefined) {
-			pending = { ...pending, thread };
-			await this.#store.write(pending);
-		}
-		let content = pending.content;
-		if (content === undefined) {
-			const attachments = [];
-			for (const attachment of pending.draft.attachments) {
-				if (attachment.bytes === undefined) {
-					attachments.push(attachment);
-					continue;
-				}
-				const made = await this.#client.keepFile(thread, attachment.bytes, attachment.name);
-				attachments.push({ ref: made.ref, media_type: made.media_type, name: made.filename ?? attachment.name, size: attachment.size });
-			}
-			content = contentOf(pending.draft.text, attachments, pending.draft.feedback);
-			pending = { ...pending, content };
-			await this.#store.write(pending);
-		}
-		assertRecoverable(pending);
-		const { delivery: delivered } = await this.#client.call("threads.deliver", { thread, content: [...content], key: `${pending.key}-deliver` });
-		await this.#store.write({ ...pending, delivered });
-		return thread;
+	resume(key: string): Promise<Receipt> {
+		return this.#store.exclusive(async () => {
+			const pending = await this.#store.read();
+			if (pending?.key !== key) throw new Error("This saved submission has changed. Open the latest saved task to continue.");
+			return this.#submit(pending);
+		});
 	}
-}
 
-/** Core keeps idempotency records for 24 hours; reserve one hour and never replay older or future-dated submissions. */
-function assertRecoverable(pending: PendingThread): void {
-	const age = Date.now() - pending.savedAt;
-	if (!Number.isFinite(age) || age < 0 || age >= 23 * 60 * 60 * 1000) {
-		throw new Error("This submission is too old to retry safely. Check the existing threads before starting another task.");
+	/** Removes only the local copy with this key. */
+	clear(key: string): Promise<void> {
+		return this.#store.exclusive(() => this.#store.remove(key));
+	}
+
+	async #submit(pending: PendingThread): Promise<Receipt> {
+		const { key } = pending;
+		if (pending.thread !== undefined) return { key, thread: pending.thread };
+		const thread = await acceptThread(this.#send, pending.request);
+		await this.#store.write({ ...pending, thread });
+		return { key, thread };
 	}
 }

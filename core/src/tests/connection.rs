@@ -470,6 +470,109 @@ async fn a_resume_survives_a_rejected_replacement() {
     siphon.runtime.close().expect("closed");
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn a_thread_keeps_its_starting_workspace_when_reconfigured() {
+    let siphon = siphon();
+    let mut client = Client::connect(&siphon, ALL.to_vec(), 64);
+    client.message().await;
+    let workspace = siphon.machine.workspace_of(None);
+    let id = client
+        .call(
+            "threads.create",
+            json!({ "config": { "workspace": workspace }, "key": "fixed-workspace" }),
+        )
+        .await;
+    let created = client.answer(&id).await;
+    let thread = created["result"]["thread"].as_str().expect("a thread");
+    let id = client
+        .call(
+            "threads.configure",
+            json!({ "thread": thread, "change": { "workspace": "/other" } }),
+        )
+        .await;
+    assert_eq!(client.answer(&id).await["error"]["code"], "workspace_fixed");
+    let listed = siphon.threads.listed(thread).expect("listed");
+    assert_eq!(listed.config.workspace.as_deref(), workspace.to_str());
+    assert_eq!(listed.status.inbox, []);
+    siphon.runtime.close().expect("closed");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn binding_a_default_workspace_does_not_select_a_project() {
+    use crate::agent::{Shared, Teller, Telling};
+    use crate::threads::{InputPart, NewThread, StartDirectory, StartWorkspace};
+    use crate::tools::Place;
+
+    struct ProjectContext;
+    impl Teller for ProjectContext {
+        fn tell<'a>(
+            &'a self,
+            _: &'a crate::volume::Volume,
+            _: &'a str,
+            place: Option<&'a Place>,
+        ) -> futures::future::BoxFuture<'a, anyhow::Result<Telling>> {
+            Box::pin(async move {
+                let sections = place.into_iter().map(|_| ("project".into(), "configured".into())).collect();
+                Ok(Telling {
+                    sections,
+                    tools: Vec::new(),
+                })
+            })
+        }
+    }
+    impl Extension for ProjectContext {
+        fn name(&self) -> &'static str {
+            "project-context"
+        }
+        fn title(&self) -> &'static str {
+            "Project context"
+        }
+        fn description(&self) -> &'static str {
+            "Context only for a selected project"
+        }
+        fn build(self: Box<Self>, registrar: &mut Registrar<'_>) {
+            registrar.teller(Shared::Project, std::sync::Arc::new(*self));
+        }
+    }
+
+    let host = crate::machine::Host::default();
+    let workspace = host.workspace_of(None).to_string_lossy().into_owned();
+    let siphon = Octoii::builder(testing::setup(host))
+        .unwrap()
+        .extension(TestBase)
+        .extension(ProjectContext)
+        .start()
+        .unwrap();
+    let new = NewThread {
+        actor: "person".into(),
+        ..NewThread::default()
+    };
+    let volume = siphon.volume();
+    for (key, project) in [("default-workspace", None), ("with-project", Some(workspace.clone()))] {
+        let expected: Vec<_> = project.iter().map(|_| ("project".to_owned(), "configured".to_owned())).collect();
+        let binding = StartWorkspace {
+            workspace: workspace.clone(),
+            project,
+        };
+        let id = volume
+            .start_thread(
+                "person",
+                key,
+                &new,
+                vec![InputPart::from(octoii_ai::vocabulary::InputContent::text("hello"))],
+                StartDirectory::Current(binding),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            siphon.threads.listed(&id).unwrap().config.workspace.as_deref(),
+            Some(workspace.as_str())
+        );
+        assert_eq!(siphon.told(&id).await.unwrap().sections, expected);
+    }
+    siphon.close().await;
+}
+
 struct TestBase;
 impl crate::Extension for TestBase {
     fn name(&self) -> &'static str {

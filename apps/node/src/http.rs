@@ -69,7 +69,7 @@ pub fn router(node: Node) -> Router {
         )
         .route("/threads/{thread}/files/{hash}", get(files::kept))
         .route(
-            "/git/threads",
+            "/threads",
             post(thread_start::accepted).layer(axum::extract::DefaultBodyLimit::max(thread_start::BODY_MAX)),
         )
         .route("/machine", get(files::machined))

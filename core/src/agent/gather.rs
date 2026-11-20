@@ -156,6 +156,11 @@ pub async fn gathered(sources: &Sources, runtime: &RuntimeHandle, id: &str) -> a
     let place = config
         .workspace
         .as_deref()
+        .filter(|_| {
+            directory
+                .label(thread::PROJECT_LABEL.as_bytes())
+                .is_some_and(|project| !project.is_empty())
+        })
         .map(|workspace| Place::of(std::path::Path::new(workspace)));
     let volume = crate::volume::Volume { runtime: runtime.clone() };
     let mut told = Told::default();

@@ -4,8 +4,8 @@ use std::path::Path;
 use octoii::Caller;
 use octoii::machine::{Base, Writes};
 use octoii::protocol::Scope;
-use octoii::threads::{Config, NewThread, Start, StartRequest, StartState, StartWorkspace};
-use octoii_ai::vocabulary::InputContent;
+use octoii::threads::{Config, InputPart, NewThread, Start, StartDirectory, StartRequest, StartState, StartWorkspace};
+use octoii::volume::Volume;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -14,27 +14,13 @@ use crate::protocol::CreateWorktree;
 
 const OWNER: &str = "git.worktree";
 
-/// Accept saves input without executing Git or the Agent. Prepare and retry are explicit writes.
+/// Prepare or inspect a worktree for an accepted Thread. Prepare and retry are explicit writes.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize, TS)]
 #[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
 pub enum StartAction {
-    Accept {
-        key: String,
-        config: Config,
-        content: Vec<InputContent>,
-        worktree: CreateWorktree,
-    },
-    Prepare {
-        thread: String,
-        token: String,
-    },
-    Retry {
-        thread: String,
-        token: String,
-    },
-    Inspect {
-        thread: String,
-    },
+    Prepare { thread: String, token: String },
+    Retry { thread: String, token: String },
+    Inspect { thread: String },
 }
 
 #[derive(Debug, Serialize, Deserialize, TS)]
@@ -49,19 +35,8 @@ pub struct ThreadStart {
 /// Called under the extension's preparation lock, shared by every connection to this node.
 pub(crate) async fn answer(caller: &Caller, action: StartAction) -> anyhow::Result<ThreadStart> {
     let volume = caller.volume();
-    if let StartAction::Accept {
-        key,
-        config,
-        content,
-        worktree,
-    } = action
-    {
-        return accept(&volume, &key, config, content.into_iter().map(Into::into).collect(), worktree).await;
-    }
-
     let thread = match &action {
         StartAction::Prepare { thread, .. } | StartAction::Retry { thread, .. } | StartAction::Inspect { thread } => thread.clone(),
-        StartAction::Accept { .. } => unreachable!(),
     };
     let mut start = volume
         .thread_start(&thread)?
@@ -80,7 +55,7 @@ pub(crate) async fn answer(caller: &Caller, action: StartAction) -> anyhow::Resu
             }
         }
         StartAction::Retry { token, .. } => start = volume.retry_thread_start(&thread, token).await?,
-        _ => {}
+        StartAction::Inspect { .. } => {}
     }
     let commands = volume.commands();
     let machine = if matches!(action, StartAction::Inspect { .. }) {
@@ -143,18 +118,19 @@ pub(crate) fn authorize(caller: &Caller) -> Result<(), octoii::protocol::Error> 
     caller.require_scope(Scope::ThreadsOperate)
 }
 
-/// Accept a worktree task through either transport using the same Git validation and atomic Thread operation.
+/// Accept a worktree task and its input behind the Thread's startup gate.
 /// The host must authorize Git and Thread operations before calling this trusted interface.
 ///
 /// # Errors
 /// Invalid task parameters, conflicting idempotency key, attachment processing or storage failure.
 pub async fn accept(
-    volume: &octoii::volume::Volume,
+    volume: &Volume,
+    caller: &str,
     key: &str,
     config: Config,
-    content: Vec<octoii::threads::InputPart>,
+    content: Vec<InputPart>,
     worktree: CreateWorktree,
-) -> anyhow::Result<ThreadStart> {
+) -> anyhow::Result<String> {
     anyhow::ensure!(Path::new(&worktree.path).is_absolute(), "source must be absolute");
     anyhow::ensure!(Path::new(&worktree.destination).is_absolute(), "destination must be absolute");
     anyhow::ensure!(
@@ -168,20 +144,16 @@ pub async fn accept(
         project: Some(worktree.path.clone()),
         ..NewThread::default()
     };
-    let (thread, start) = volume
-        .prepare_thread(
+    volume
+        .start_thread(
+            caller,
+            key,
             &new,
             content,
-            StartRequest {
+            StartDirectory::Prepare(StartRequest {
                 owner: OWNER.into(),
                 payload: serde_json::to_value(worktree)?,
-            },
-            key,
+            }),
         )
-        .await?;
-    Ok(ThreadStart {
-        thread,
-        start,
-        worktrees: None,
-    })
+        .await
 }

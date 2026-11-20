@@ -44,11 +44,11 @@ describe("bundled desktop assets", () => {
 		});
 		expect(response.headers.get("Set-Cookie")).toBe(cookie);
 	});
-	test("forwards a multipart Git thread submission intact", async () => {
+	test("forwards a multipart initial thread submission intact", async () => {
 		const form = new FormData();
 		form.append("manifest", "{}");
 		form.append("file-0", new Blob(["attachment"]), "input.txt");
-		const request = new Request(`${origin}/git/threads`, { method: "POST", body: form });
+		const request = new Request(`${origin}/threads`, { method: "POST", body: form });
 		const response = Response.json({ thread: "accepted" });
 		const result = await desktopResponse(request, directory, origin, async (forwarded) => {
 			expect(forwarded).toBe(request);

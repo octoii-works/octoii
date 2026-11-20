@@ -1,14 +1,18 @@
-//! Bounded multipart input. Authentication precedes body parsing; Git validates tasks and Octoii commits them.
-use std::collections::HashMap;
+//! Accept a thread and its initial input from a bounded multipart request.
+use std::collections::{HashMap, HashSet};
+use std::path::Path;
 
 use axum::extract::{Extension, FromRequest, Multipart, Request, State};
 use axum::http::{HeaderMap, StatusCode};
 use bytes::{Bytes, BytesMut};
+use octoii::access::AccessEntry;
+use octoii::machine::{Base, Host};
 use octoii::protocol::Scope;
-use octoii::threads::{Config, InputPart};
+use octoii::threads::{Config, InputPart, NewThread, StartDirectory, StartWorkspace};
+use octoii::tools::Place;
 use octoii_ai::vocabulary::InputContent;
 use octoii_tunnel::Remote;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use siphon_git::protocol::CreateWorktree;
 
 use super::{Denied, Node, session};
@@ -22,8 +26,15 @@ const PARTS_MAX: usize = 128;
 struct Manifest {
     key: String,
     config: Config,
-    worktree: CreateWorktree,
+    workspace: Workspace,
     parts: Vec<Part>,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+enum Workspace {
+    Current,
+    Isolated { worktree: CreateWorktree },
 }
 
 #[derive(Deserialize)]
@@ -37,6 +48,11 @@ enum Part {
         media_type: String,
         filename: Option<String>,
     },
+}
+
+#[derive(Serialize)]
+pub(crate) struct Accepted {
+    thread: String,
 }
 
 fn invalid(error: impl std::fmt::Display) -> Denied {
@@ -58,7 +74,7 @@ async fn bytes(mut field: axum::extract::multipart::Field<'_>, limit: usize) -> 
     Ok(bytes.freeze())
 }
 
-async fn read(mut multipart: Multipart) -> Result<(Manifest, HashMap<usize, Bytes>), Denied> {
+async fn read_manifest(multipart: &mut Multipart) -> Result<Manifest, Denied> {
     let field = multipart
         .next_field()
         .await
@@ -67,12 +83,15 @@ async fn read(mut multipart: Multipart) -> Result<(Manifest, HashMap<usize, Byte
     if field.name() != Some("manifest") {
         return Err(invalid("manifest must be the first field"));
     }
-    let manifest: Manifest = serde_json::from_slice(&bytes(field, MANIFEST_MAX).await?).map_err(invalid)?;
-    if manifest.parts.is_empty() || manifest.parts.len() > PARTS_MAX {
+    serde_json::from_slice(&bytes(field, MANIFEST_MAX).await?).map_err(invalid)
+}
+
+async fn read_parts(mut multipart: Multipart, parts: Vec<Part>) -> Result<Vec<InputPart>, Denied> {
+    if parts.is_empty() || parts.len() > PARTS_MAX {
         return Err(invalid("a message requires between 1 and 128 parts"));
     }
-    let mut expected = std::collections::HashSet::new();
-    for part in &manifest.parts {
+    let mut expected = HashSet::new();
+    for part in &parts {
         if let Part::Attachment { index, .. } = part
             && !expected.insert(*index)
         {
@@ -95,7 +114,21 @@ async fn read(mut multipart: Multipart) -> Result<(Manifest, HashMap<usize, Byte
     if !expected.is_empty() {
         return Err(invalid("missing attachment"));
     }
-    Ok((manifest, files))
+    parts
+        .into_iter()
+        .map(|part| match part {
+            Part::Content { content } => Ok(InputPart::Content(content)),
+            Part::Attachment {
+                index,
+                media_type,
+                filename,
+            } => Ok(InputPart::Attachment {
+                bytes: files.remove(&index).ok_or_else(|| invalid("missing attachment"))?,
+                media_type,
+                filename,
+            }),
+        })
+        .collect()
 }
 
 pub(crate) async fn accepted(
@@ -103,12 +136,60 @@ pub(crate) async fn accepted(
     headers: HeaderMap,
     remote: Option<Extension<Remote>>,
     request: Request,
-) -> Result<axum::Json<siphon_git::start::ThreadStart>, Denied> {
+) -> Result<axum::Json<Accepted>, Denied> {
     let session = session(&node, &headers, remote.as_ref().map(|Extension(remote)| remote))?;
-    if !session.scopes.contains(&Scope::GitOperate) || !session.scopes.contains(&Scope::ThreadsOperate) {
+    if !session.scopes.contains(&Scope::ThreadsOperate) {
+        return Err(Denied(StatusCode::FORBIDDEN, "Thread operation permission is required".into()));
+    }
+    let mut multipart = Multipart::from_request(request, &node).await.map_err(invalid)?;
+    let Manifest {
+        key,
+        config,
+        workspace,
+        parts,
+    } = read_manifest(&mut multipart).await?;
+    if matches!(&workspace, Workspace::Isolated { .. }) {
+        authorize_isolated(&node, &session)?;
+    }
+    let content = read_parts(multipart, parts).await?;
+    let volume = node.siphon.volume();
+    let thread = match workspace {
+        Workspace::Current => {
+            let directory = current(&node.siphon.machine, config.workspace.as_deref())?;
+            let new = NewThread {
+                actor: "person".into(),
+                config,
+                ..NewThread::default()
+            };
+            volume
+                .start_thread(&session.id, &key, &new, content, StartDirectory::Current(directory))
+                .await
+        }
+        Workspace::Isolated { worktree } => siphon_git::start::accept(&volume, &session.id, &key, config, content, worktree).await,
+    }
+    .map_err(|error| Denied(StatusCode::UNPROCESSABLE_ENTITY, error.to_string()))?;
+    Ok(axum::Json(Accepted { thread }))
+}
+
+fn current(host: &Host, given: Option<&str>) -> Result<StartWorkspace, Denied> {
+    let base = Base {
+        workspace: host.workspace_of(None),
+        home: host.home.clone(),
+    };
+    let workspace = std::path::absolute(base.resolve(given.unwrap_or(".")))
+        .map_err(invalid)?
+        .into_os_string()
+        .into_string()
+        .map_err(|_| invalid("workspace must be UTF-8"))?;
+    let project = given.map(|_| Place::of(Path::new(&workspace)).project.to_string_lossy().into_owned());
+    Ok(StartWorkspace { workspace, project })
+}
+
+fn authorize_isolated(node: &Node, session: &AccessEntry) -> Result<(), Denied> {
+    if !session.scopes.contains(&Scope::GitOperate) {
         return Err(Denied(
             StatusCode::FORBIDDEN,
-            "Git and Thread operation permissions are required".into(),
+            "Git operation permission is required for an isolated workspace".into(),
         ));
     }
     let volume = node.siphon.volume();
@@ -125,26 +206,5 @@ pub(crate) async fn accepted(
     {
         return Err(Denied(StatusCode::FORBIDDEN, "Git extension is unavailable".into()));
     }
-    let multipart = Multipart::from_request(request, &node).await.map_err(invalid)?;
-    let (manifest, mut files) = read(multipart).await?;
-    let parts = manifest
-        .parts
-        .into_iter()
-        .map(|part| match part {
-            Part::Content { content } => Ok(InputPart::Content(content)),
-            Part::Attachment {
-                index,
-                media_type,
-                filename,
-            } => Ok(InputPart::Attachment {
-                bytes: files.remove(&index).ok_or_else(|| invalid("missing attachment"))?,
-                media_type,
-                filename,
-            }),
-        })
-        .collect::<Result<Vec<_>, Denied>>()?;
-    let accepted = siphon_git::start::accept(&volume, &manifest.key, manifest.config, parts, manifest.worktree)
-        .await
-        .map_err(|error| Denied(StatusCode::UNPROCESSABLE_ENTITY, error.to_string()))?;
-    Ok(axum::Json(accepted))
+    Ok(())
 }

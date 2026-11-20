@@ -44,18 +44,25 @@ fn file(key: &str) -> Bytes {
     [DIRECTORY.as_bytes(), b"/", key.as_bytes()].concat().into()
 }
 
+/// Checks that a request key can be used as a filename.
+pub(super) fn validate_key(key: &str) -> Result<(), Error> {
+    if (1..=KEY_BYTES_MAX).contains(&key.len())
+        && key
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+    {
+        Ok(())
+    } else {
+        Err(Error::InvalidKey)
+    }
+}
+
 /// What the request of `method` on `thread` did under `key` before, where it was done within the day.
 ///
 /// # Errors
 /// `InvalidKey` for a key no file can be named by; `Reused` where another request was done under it.
 pub fn done_before(snapshot: &Snapshot, key: &str, method: &str, thread: Option<&str>) -> Result<Option<Done>, Error> {
-    let valid = (1..=KEY_BYTES_MAX).contains(&key.len())
-        && key
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'));
-    if !valid {
-        return Err(Error::InvalidKey);
-    }
+    validate_key(key)?;
     let Some(bytes) = snapshot.read_range(&file(key), 0, u64::MAX)? else {
         return Ok(None);
     };

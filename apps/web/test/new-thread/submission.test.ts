@@ -1,37 +1,19 @@
-import type { Client, MethodName, ParamsOf, ResultOf } from "@octoii-works/octoii-client";
-import { describe, expect, it, mock, spyOn } from "bun:test";
-import { NewThread, type PendingThread, type PendingThreadStore } from "../../src/screens/new-thread/submission.ts";
+import { expect, it, mock } from "bun:test";
+import type { NodeAnswer, NodeRequest, SendRequest } from "../../src/components/state/reach.ts";
 import { EMPTY_DRAFT } from "../../src/core/drafts.ts";
-
-const unexpectedWorktree = async (): Promise<string> => {
-	throw new Error("Unexpected worktree submission");
-};
-
-function client() {
-	const create = mock(async (_params: ParamsOf<"threads.create">) => ({ thread: "thread-1" }));
-	const deliver = mock(async (_params: ParamsOf<"threads.deliver">) => ({ delivery: "delivery-1" }));
-	return {
-		create,
-		deliver,
-		keepFile: mock<Client["keepFile"]>(async () => ({ ref: "sha256:kept", media_type: "text/plain" })),
-		call: async <Name extends MethodName>(method: Name, params: ParamsOf<Name>): Promise<ResultOf<Name>> => {
-			// SAFETY: the test transport dispatches only the two methods used by NewThread.
-			if (method === "threads.create") return await create(params as ParamsOf<"threads.create">);
-			if (method === "threads.deliver") return await deliver(params as ParamsOf<"threads.deliver">);
-			throw new Error(`Unexpected method: ${method}`);
-		},
-	};
-}
+import type { ThreadWorkspace } from "../../src/screens/new-thread/request.ts";
+import { NewThread, type PendingThread, type PendingThreadStore } from "../../src/screens/new-thread/submission.ts";
+import { capturedElement } from "../fixtures.ts";
 
 function store(): PendingThreadStore {
 	let saved: PendingThread | undefined;
+	let locked: Promise<unknown> = Promise.resolve();
 	return {
 		read: async () => (saved === undefined ? undefined : structuredClone(saved)),
-		exclusive: (action) => action(),
-		begin: async (pending) => {
-			if (saved !== undefined) throw new Error("A task is already saved");
-			saved = structuredClone(pending);
-			return pending;
+		exclusive: (action) => {
+			const next = locked.then(action);
+			locked = next.catch(() => undefined);
+			return next;
 		},
 		write: async (pending) => {
 			saved = structuredClone(pending);
@@ -42,172 +24,142 @@ function store(): PendingThreadStore {
 	};
 }
 
+const accepted: NodeAnswer = { status: 200, contentType: "application/json", bytes: new TextEncoder().encode('{"thread":"accepted"}') };
+const current: ThreadWorkspace = { kind: "current" };
+const isolated: ThreadWorkspace = {
+	kind: "isolated",
+	worktree: { path: "/project", destination: "/task", branch: "task", base: "a".repeat(40) },
+};
+const config = { workspace: "/project/subfolder" };
 const draft = {
 	...EMPTY_DRAFT,
 	text: "First task",
 	attachments: [{ ref: "local", name: "note.txt", media_type: "text/plain", size: 4, bytes: new Blob(["note"]) }],
 };
 
-describe("recovering a submitted task", () => {
-	it("keeps the original draft and attachment bytes through upload failure and client recreation", async () => {
-		const calls = client();
-		const kept = store();
-		calls.keepFile.mockRejectedValueOnce(new Error("upload failed"));
-		await expect(new NewThread(calls, kept, unexpectedWorktree).send({ workspace: "/project" }, draft)).rejects.toThrow("upload failed");
-		expect(calls.deliver).not.toHaveBeenCalled();
-		const restored = new NewThread(calls, kept, unexpectedWorktree);
-		expect(await (await restored.read())?.draft.attachments[0]?.bytes?.text()).toBe("note");
-		expect(await restored.resume()).toBe("thread-1");
-		expect(calls.create).toHaveBeenCalledTimes(1);
-		expect(calls.deliver.mock.calls[0]?.[0].content).toEqual([
-			{ type: "input_text", text: "First task" },
-			{ type: "input_file", file: { ref: "sha256:kept", media_type: "text/plain", filename: "note.txt" } },
-		]);
-	});
-
-	it("reuses the creation key if the acknowledgement was lost", async () => {
-		const calls = client();
-		const kept = store();
-		calls.create.mockRejectedValueOnce(new Error("connection closed"));
-		await expect(new NewThread(calls, kept, unexpectedWorktree).send({}, draft)).rejects.toThrow();
-		await new NewThread(calls, kept, unexpectedWorktree).resume();
-		expect(calls.create.mock.calls[1]).toEqual(calls.create.mock.calls[0]);
-	});
-
-	it("replays the exact content and delivery key after a lost answer without uploading again", async () => {
-		const calls = client();
-		const kept = store();
-		calls.deliver.mockRejectedValueOnce(new Error("answer lost"));
-		await expect(new NewThread(calls, kept, unexpectedWorktree).send({}, draft)).rejects.toThrow();
-		const restored = new NewThread(calls, kept, unexpectedWorktree);
-		await restored.resume();
-		expect(calls.deliver.mock.calls[1]).toEqual(calls.deliver.mock.calls[0]);
-		expect(calls.keepFile).toHaveBeenCalledTimes(1);
-		await restored.resume();
-		expect(calls.deliver).toHaveBeenCalledTimes(2);
-		await restored.acknowledge();
-		expect(await restored.read()).toBeUndefined();
-	});
-
-	it("does not perform remote work if saving the initial snapshot fails", async () => {
-		const calls = client();
-		const kept = {
-			...store(),
-			begin: async (): Promise<PendingThread> => {
-				throw new Error("storage full");
-			},
-		};
-		await expect(new NewThread(calls, kept, unexpectedWorktree).send({}, draft)).rejects.toThrow("storage full");
-		expect(calls.create).not.toHaveBeenCalled();
-		expect(calls.deliver).not.toHaveBeenCalled();
-	});
-
-	it("never delivers before the exact content has been durably saved", async () => {
-		const calls = client();
-		const kept = store();
-		const write = kept.write;
-		kept.write = async (pending) => {
-			if (pending.content !== undefined) throw new Error("storage full");
-			await write(pending);
-		};
-		await expect(new NewThread(calls, kept, unexpectedWorktree).send({}, draft)).rejects.toThrow("storage full");
-		expect(calls.deliver).not.toHaveBeenCalled();
-	});
-
-	it("coalesces concurrent sends and never replaces a pending message with new input", async () => {
-		const calls = client();
-		const kept = store();
-		const starting = new NewThread(calls, kept, unexpectedWorktree);
-		const first = starting.send({}, draft);
-		expect(starting.send({}, draft)).toBe(first);
-		await first;
-		await expect(starting.send({}, { ...draft, text: "different" })).rejects.toThrow("already saved");
-		expect(calls.deliver).toHaveBeenCalledTimes(1);
-	});
-});
-
-it("refuses old or future-dated recovery without remote writes", async () => {
-	const now = 2_000_000_000_000;
-	const clock = spyOn(Date, "now").mockReturnValue(now);
-	try {
-		for (const savedAt of [now - 24 * 60 * 60 * 1000, now + 60_000]) {
-			const kept = store();
-			await kept.begin({ key: "old", savedAt, config: {}, draft });
-			const calls = client();
-			await expect(new NewThread(calls, kept, unexpectedWorktree).resume()).rejects.toThrow("too old");
-			expect(calls.create).not.toHaveBeenCalled();
-			expect(calls.deliver).not.toHaveBeenCalled();
-		}
-	} finally {
-		clock.mockRestore();
+function upload(sent: NodeRequest | undefined): { readonly contentType: string; readonly body: Blob } {
+	if (sent?.method !== "POST" || sent.path !== "/threads" || !(sent.body instanceof Blob) || sent.contentType === undefined) {
+		throw new Error("Expected a multipart POST /threads");
 	}
-});
+	return { contentType: sent.contentType, body: sent.body };
+}
 
-it("an old acknowledgement cannot remove a newer submission", async () => {
+async function formOf(request: ReturnType<typeof upload>): Promise<FormData> {
+	return new Response(request.body, { headers: { "content-type": request.contentType } }).formData();
+}
+
+it.each([current, isolated])("replays one immutable HTTP submission after a lost response", async (workspace) => {
 	const kept = store();
-	const first = new NewThread(client(), kept, unexpectedWorktree);
-	await first.send({}, draft);
-	await first.acknowledge();
-	const next = new NewThread(client(), kept, unexpectedWorktree);
-	await next.send({}, draft);
-	const saved = await next.read();
-	await first.acknowledge();
-	expect((await next.read())?.key).toBe(saved?.key);
-});
-
-const worktree = { path: "/project", destination: "/task", branch: "task", base: "a".repeat(40) };
-
-it("retries the immutable worktree submission after losing its answer, without creating or delivering separately", async () => {
-	const calls = client();
-	const kept = store();
-	const accept = mock(async () => "accepted-thread");
-	accept.mockRejectedValueOnce(new Error("lost answer"));
-	await expect(new NewThread(calls, kept, accept).sendWorktree({ workspace: "/project" }, draft, worktree, async () => undefined)).rejects.toThrow(
-		"lost answer",
-	);
+	const send = mock<SendRequest>(async () => accepted);
+	send.mockRejectedValueOnce(new Error("lost answer"));
+	await expect(new NewThread(send, kept).send(config, workspace, draft)).rejects.toThrow("lost answer");
 	const saved = await kept.read();
-	expect(saved?.worktree).toEqual(worktree);
-	const restored = new NewThread(calls, kept, accept);
-	expect(await restored.resume()).toBe("accepted-thread");
-	expect(accept.mock.calls[0]).toEqual(accept.mock.calls[1]);
-	expect(calls.create).not.toHaveBeenCalled();
-	expect(calls.keepFile).not.toHaveBeenCalled();
-	expect(calls.deliver).not.toHaveBeenCalled();
-	expect(await restored.resume()).toBe("accepted-thread");
-	expect(accept).toHaveBeenCalledTimes(2);
-	await restored.acknowledge();
-	expect(await kept.read()).toBeUndefined();
+	if (saved === undefined) throw new Error("The first request was never saved");
+	expect(saved.workspace).toEqual(workspace);
+	expect(saved.project).toBe(config.workspace);
+	expect(saved.draft.text).toBe(draft.text);
+	expect(saved.thread).toBeUndefined();
+	const original = upload(send.mock.calls[0]?.[0]);
+	const form = await formOf(original);
+	expect(JSON.parse(String(form.get("manifest"))).key).toBe(saved.key);
+	const file = form.get("file-0");
+	if (!(file instanceof Blob)) throw new Error("Missing attachment");
+	expect(await file.text()).toBe("note");
+	const restored = new NewThread(send, kept);
+	const receipt = { key: saved.key, thread: "accepted" };
+	expect(await restored.resume(saved.key)).toEqual(receipt);
+	const replay = upload(send.mock.calls[1]?.[0]);
+	expect(replay.contentType).toBe(original.contentType);
+	expect(await replay.body.arrayBuffer()).toEqual(await original.body.arrayBuffer());
+	expect(send).toHaveBeenCalledTimes(2);
+	expect((await kept.read())?.thread).toBe("accepted");
+	expect(await new NewThread(send, kept).resume(saved.key)).toEqual(receipt);
+	expect(send).toHaveBeenCalledTimes(2);
+	await restored.clear(saved.key);
+	expect(await restored.read()).toBeUndefined();
 });
 
-it("worktree claims remain recoverable after the ordinary delivery key window", async () => {
+it("freezes evidence before the first POST and replays it after the source is gone", async () => {
+	const feedback = capturedElement();
 	const kept = store();
-	await kept.begin({ key: "permanent", savedAt: 0, config: {}, draft, worktree });
-	const accept = mock(async () => "accepted-thread");
-	expect(await new NewThread(client(), kept, accept).resume()).toBe("accepted-thread");
+	let first = true;
+	const send = mock<SendRequest>(async (request) => {
+		if (request.method === "GET") {
+			if (!first) throw new Error("Source thread was removed");
+			expect(request.path).toBe(`/threads/${feedback.thread}/files/${feedback.screenshot.ref.replace(/^sha256:/, "")}`);
+			return { status: 200, contentType: "image/png", bytes: new TextEncoder().encode("saved screenshot bytes") };
+		}
+		if (first) {
+			first = false;
+			expect(await kept.read()).toBeDefined();
+			throw new Error("lost answer");
+		}
+		return accepted;
+	});
+	await expect(new NewThread(send, kept).send(config, current, { ...draft, feedback: [feedback] })).rejects.toThrow("lost answer");
+	const saved = await kept.read();
+	if (saved === undefined) throw new Error("Missing evidence snapshot");
+	expect((await new NewThread(send, kept).resume(saved.key)).thread).toBe("accepted");
+	expect(send.mock.calls.map(([request]) => request.method)).toEqual(["GET", "POST", "POST"]);
+	const replay = upload(send.mock.calls[2]?.[0]);
+	const original = upload(send.mock.calls[1]?.[0]);
+	expect(replay.contentType).toBe(original.contentType);
+	expect(await replay.body.arrayBuffer()).toEqual(await original.body.arrayBuffer());
+	const form = await formOf(replay);
+	const manifest = String(form.get("manifest"));
+	expect(manifest.indexOf("note.txt")).toBeLessThan(manifest.indexOf("Historical browser context"));
+	expect(manifest.indexOf("Historical browser context")).toBeLessThan(manifest.indexOf("selection.png"));
+	const screenshot = form.get("file-1");
+	if (!(screenshot instanceof Blob)) throw new Error("Missing screenshot");
+	expect(await screenshot.text()).toBe("saved screenshot bytes");
 });
 
-it("replays acceptance if persisting its acknowledgement fails", async () => {
+it("waits for the frozen draft to be saved before submitting it", async () => {
+	const kept = { ...store(), write: async () => Promise.reject(new Error("storage full")) };
+	const send = mock<SendRequest>(async () => accepted);
+	await expect(new NewThread(send, kept).send({}, current, draft)).rejects.toThrow("storage full");
+	expect(send).not.toHaveBeenCalled();
+});
+
+it("replays the same request if saving a received acknowledgement failed", async () => {
 	const kept = store();
 	const write = mock(kept.write);
-	write.mockRejectedValueOnce(new Error("disk full"));
-	const accept = mock(async () => "accepted-thread");
-	const starting = new NewThread(client(), { ...kept, write }, accept);
-	await expect(starting.sendWorktree({}, draft, worktree, async () => undefined)).rejects.toThrow("disk full");
-	expect((await kept.read())?.thread).toBeUndefined();
-	expect(await starting.resume()).toBe("accepted-thread");
-	expect(accept.mock.calls[0]).toEqual(accept.mock.calls[1]);
+	write.mockImplementationOnce(kept.write).mockRejectedValueOnce(new Error("disk full"));
+	const send = mock<SendRequest>(async () => accepted);
+	const starting = new NewThread(send, { ...kept, write });
+	await expect(starting.send({}, current, draft)).rejects.toThrow("disk full");
+	const saved = await kept.read();
+	if (saved === undefined) throw new Error("The request should still be saved");
+	expect(saved.thread).toBeUndefined();
+	expect(await starting.resume(saved.key)).toEqual({ key: saved.key, thread: "accepted" });
+	const original = upload(send.mock.calls[0]?.[0]);
+	const replay = upload(send.mock.calls[1]?.[0]);
+	expect(replay.contentType).toBe(original.contentType);
+	expect(await replay.body.arrayBuffer()).toEqual(await original.body.arrayBuffer());
 });
 
-it("persists the receipt before preparation and never repeats preparation during recovery", async () => {
+it("coalesces local sends and preserves a saved submission across concurrent attempts", async () => {
 	const kept = store();
-	const accept = mock(async () => "accepted-thread");
-	const prepare = mock(async (thread: string) => {
-		expect((await kept.read())?.thread).toBe(thread);
-		throw new Error("preparation disconnected");
-	});
-	const starting = new NewThread(client(), kept, accept);
-	await expect(starting.sendWorktree({}, draft, worktree, prepare)).rejects.toThrow("preparation disconnected");
-	expect(await new NewThread(client(), kept, accept).resume()).toBe("accepted-thread");
-	expect(accept).toHaveBeenCalledTimes(1);
-	expect(prepare).toHaveBeenCalledTimes(1);
+	const send = mock<SendRequest>(async () => accepted);
+	const starting = new NewThread(send, kept);
+	const first = starting.send({}, current, draft);
+	expect(starting.send({}, current, draft)).toBe(first);
+	const parallel = new NewThread(send, kept).send({}, current, { ...draft, text: "different" });
+	await expect(parallel).rejects.toThrow("already saved");
+	await first;
+	expect((await kept.read())?.draft.text).toBe(draft.text);
+	expect(send).toHaveBeenCalledTimes(1);
+});
+
+it("uses the displayed key when resuming or removing a saved submission", async () => {
+	const kept = store();
+	const send = mock<SendRequest>(async () => accepted);
+	const starting = new NewThread(send, kept);
+	const first = await starting.send({}, current, draft);
+	await starting.clear(first.key);
+	const next = await starting.send({}, current, { ...draft, text: "new task" });
+	await expect(starting.resume(first.key)).rejects.toThrow("has changed");
+	await starting.clear(first.key);
+	expect((await starting.read())?.key).toBe(next.key);
+	expect(send).toHaveBeenCalledTimes(2);
 });

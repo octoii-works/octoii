@@ -924,9 +924,9 @@ export type Standing = { account?: string, plan?: string, limits: Array<Limit>, 
 export type Start = { request: StartRequest, token: string, previous: string | null, state: StartState, };
 
 /**
- * Accept saves input without executing Git or the Agent. Prepare and retry are explicit writes.
+ * Prepare or inspect a worktree for an accepted Thread. Prepare and retry are explicit writes.
  */
-export type StartAction = { "action": "accept", key: string, config: Config, content: Array<InputContent>, worktree: CreateWorktree, } | { "action": "prepare", thread: string, token: string, } | { "action": "retry", thread: string, token: string, } | { "action": "inspect", thread: string, };
+export type StartAction = { "action": "prepare", thread: string, token: string, } | { "action": "retry", thread: string, token: string, } | { "action": "inspect", thread: string, };
 
 /**
  * An extension's accepted preparation request. Octoii does not interpret its payload.
@@ -939,7 +939,7 @@ export type StartRequest = { owner: string, payload: JsonValue, };
 export type StartState = { "state": "pending" } | { "state": "failed", reason: string, } | { "state": "cancelled" } | { "state": "ready", directory: StartWorkspace, };
 
 /**
- * The final directory and project identity, resolved by the preparing extension.
+ * The resolved directory and project identity in which a thread runs.
  */
 export type StartWorkspace = { workspace: string, project: string | null, };
 

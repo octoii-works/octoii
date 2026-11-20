@@ -174,6 +174,7 @@ fn failed(error: &crate::threads::Error) -> Error {
     let code = match error {
         crate::threads::Error::NoSuchThread => "no_such_thread",
         crate::threads::Error::NotGiven(_) => "not_given",
+        crate::threads::Error::WorkspaceFixed => "workspace_fixed",
         _ => "failed",
     };
     refusal(code, &error.to_string())

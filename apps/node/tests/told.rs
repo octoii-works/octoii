@@ -78,6 +78,7 @@ async fn what_the_model_is_told() {
     let siphon = octoii_node::serve::siphon(&home, octoii::providers::SignInSetup::default()).expect("Octoii");
     let new = NewThread {
         actor: "person".into(),
+        project: Some(workspace.display().to_string()),
         config: Config {
             workspace: Some(workspace.display().to_string()),
             ..Config::default()
@@ -101,6 +102,7 @@ async fn an_extension_switched_off_tells_the_model_nothing() {
     let siphon = octoii_node::serve::siphon(&home, octoii::providers::SignInSetup::default()).expect("Octoii");
     let new = NewThread {
         actor: "person".into(),
+        project: Some(folder.path().display().to_string()),
         config: Config {
             workspace: Some(folder.path().display().to_string()),
             ..Config::default()

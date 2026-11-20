@@ -12,7 +12,7 @@ use crate::agent::{
     DelegatedFiber, Gather, ModelRequest, Sources, ThreadFiber, TitleFiber, TurnFiber, answer_gather, answer_model, answer_review,
 };
 use crate::machine::Host as Machine;
-use crate::threads::{CallStatus, Config, Entry, Mode, NewThread, Outcome, Threads, Turn};
+use crate::threads::{CallStatus, Config, Entry, Mode, NewThread, Outcome, StartDirectory, StartWorkspace, Threads, Turn};
 use crate::tools::{Asks, Exec, ExecuteTool, Permission, ReadTool, Review, ScriptFiber, ShellTool, Tools, WriteTool, answer_exec};
 use bytes::Bytes;
 use futures::future::BoxFuture;
@@ -1353,8 +1353,67 @@ impl crate::tools::Tool for ThreadTool {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_bound_start_gives_the_first_turn_its_workspace_and_attachment() {
+    let script = script(vec![
+        Ok(vec![calls(
+            "c1",
+            "write",
+            &serde_json::json!({ "path": "answer.txt", "content": "first reply" }),
+        )]),
+        Ok(vec![says("written")]),
+    ]);
+    let runtime = runtime(&script);
+    let threads = Threads::<ThreadFiber>::new(runtime.runtime_handle());
+    let volume = crate::volume::Volume {
+        runtime: runtime.runtime_handle(),
+    };
+    let (_folder, workspace) = folder();
+    let new = NewThread {
+        actor: "person".into(),
+        config: Config {
+            model: Some("test/m".into()),
+            title: Some("First reply".into()),
+            mode: Some(Mode::FullAccess),
+            ..Config::default()
+        },
+        ..NewThread::default()
+    };
+    let attachment = Bytes::from_static(b"first attachment");
+    let id = volume
+        .start_thread(
+            "test-session",
+            "first-message",
+            &new,
+            vec![
+                InputContent::text("write answer.txt").into(),
+                crate::threads::InputPart::Attachment {
+                    bytes: attachment.clone(),
+                    media_type: "text/plain".into(),
+                    filename: Some("context.txt".into()),
+                },
+            ],
+            StartDirectory::Current(StartWorkspace {
+                workspace: workspace.to_string_lossy().into_owned(),
+                project: None,
+            }),
+        )
+        .await
+        .unwrap();
+    until(&threads, &id, Turn::Replied).await;
+    assert_eq!(std::fs::read_to_string(workspace.join("answer.txt")).unwrap(), "first reply");
+    let reference = crate::threads::files::reference_of(&attachment);
+    assert!(script.asked.lock().unwrap()[0].input.iter().any(|item| {
+        matches!(item, Item::Message(Message::User { content }) if content.iter().any(
+            |part| matches!(part, InputContent::InputFile { file } if file.reference == reference)
+        ))
+    }));
+    assert_eq!(volume.read_file(&id, &reference).unwrap(), Some(attachment));
+    runtime.close().expect("closed");
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn startup_gate_holds_all_input_until_the_final_workspace_is_bound() {
-    use crate::threads::{StartRequest, StartWorkspace};
+    use crate::threads::StartRequest;
 
     let script = Arc::new(Script::default());
     script.replies.lock().unwrap().push_back(Ok(vec![says("done")]));
@@ -1374,8 +1433,10 @@ async fn startup_gate_holds_all_input_until_the_final_workspace_is_bound() {
         },
         ..NewThread::default()
     };
-    let (id, start) = volume
-        .prepare_thread(
+    let id = volume
+        .start_thread(
+            "test-session",
+            "agent-startup",
             &new,
             vec![
                 InputContent::text("first").into(),
@@ -1385,14 +1446,14 @@ async fn startup_gate_holds_all_input_until_the_final_workspace_is_bound() {
                     filename: Some("context.txt".into()),
                 },
             ],
-            StartRequest {
+            StartDirectory::Prepare(StartRequest {
                 owner: "test".into(),
                 payload: serde_json::json!({}),
-            },
-            "agent-startup",
+            }),
         )
         .await
         .unwrap();
+    let start = volume.thread_start(&id).unwrap().unwrap();
     threads
         .deliver(&id, "person", vec![InputContent::text("second")], "extra-input")
         .await

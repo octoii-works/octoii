@@ -1,10 +1,14 @@
-//! Accepting a thread and its first input behind a startup gate. The main process alone advances that gate,
-//! consuming durable control messages before inputs.
+//! Accepting a thread and its first input. A thread with preparation waits behind a startup gate that its main
+//! process advances, consuming durable control messages before inputs.
 
+use std::path::Path;
+
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use bytes::Bytes;
 use octoii_siphon_lib::{Batch, Changes, CommitEvent, Fiber, Run};
 use octoii_siphon_lib::{Directory, Range, Snapshot};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use crate::volume::commit_checked;
 
@@ -19,6 +23,7 @@ use super::{
 };
 
 const ANNOTATION: &[u8] = b"siphon.start";
+const CLAIMS: &str = "octoii.start";
 
 /// An extension's accepted preparation request. Octoii does not interpret its payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
@@ -27,11 +32,28 @@ pub struct StartRequest {
     pub payload: serde_json::Value,
 }
 
-/// The final directory and project identity, resolved by the preparing extension.
+/// The resolved directory and project identity in which a thread runs.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct StartWorkspace {
     pub workspace: String,
     pub project: Option<String>,
+}
+
+impl StartWorkspace {
+    fn validate(&self) -> Result<(), &'static str> {
+        if Path::new(&self.workspace).is_absolute() && self.project.as_deref().is_none_or(|path| Path::new(path).is_absolute()) {
+            Ok(())
+        } else {
+            Err("startup paths must be absolute")
+        }
+    }
+}
+
+/// Where a thread starts. A current directory is already resolved by the host.
+#[derive(Debug, Clone)]
+pub enum StartDirectory {
+    Current(StartWorkspace),
+    Prepare(StartRequest),
 }
 
 /// Preparation never runs the agent until it becomes ready.
@@ -74,74 +96,83 @@ struct StartClaim {
 }
 
 impl<M: Fiber<Input = MainInput>> Threads<M> {
-    /// Atomically accepts a thread and its first input, without permitting execution.
-    /// The immutable claim has no time-based expiry; deleting its thread never recreates it on replay.
+    /// Atomically accepts a thread, the first input, and any attachments. The thread starts in its resolved
+    /// directory or waits for preparation to bind it. The caller's key is claimed with the same commit.
     ///
     /// # Errors
     /// A reused key with different input, a missing deleted thread, or a storage failure.
-    pub async fn prepare(
+    pub async fn start(
         &self,
+        caller: &str,
+        key: &str,
         new: &NewThread,
         content: Vec<InputPart>,
-        request: StartRequest,
-        key: &str,
-    ) -> Result<(String, Start), Error> {
-        let runtime = self.runtime();
-        idempotency::done_before(&*runtime.snapshot()?, key, "threads.prepare", None)?;
-        if request.owner.trim().is_empty() || content.is_empty() {
-            return Err(Error::Start("preparation requires an owner and initial input".into()));
+        directory: StartDirectory,
+    ) -> Result<String, Error> {
+        idempotency::validate_key(key)?;
+        if caller.trim().is_empty() || content.is_empty() {
+            return Err(Error::Start("startup requires a caller and initial input".into()));
         }
-        let path: Bytes = [b"siphon.start/", key.as_bytes()].concat().into();
+        let key = Sha256::digest(serde_json::to_vec(&(caller, key))?);
+        let path = Bytes::from(format!("{CLAIMS}/{}", URL_SAFE_NO_PAD.encode(key)));
+        let preparation = match &directory {
+            StartDirectory::Current(_) => None,
+            StartDirectory::Prepare(request) => Some(request),
+        };
+        let fingerprint = input::fingerprint(new, &content, preparation)?;
+        let runtime = self.runtime();
+        let snapshot = runtime.snapshot()?;
+        if let Some(thread) = claimed(&snapshot, &path, &fingerprint)? {
+            return Ok(thread);
+        }
+
+        let mut bound = new.clone();
+        let preparation = match directory {
+            StartDirectory::Current(workspace) => {
+                workspace.validate().map_err(|reason| Error::Start(reason.into()))?;
+                bound.config.workspace = Some(workspace.workspace);
+                bound.project = workspace.project;
+                None
+            }
+            StartDirectory::Prepare(request) => {
+                validate_preparation(new, &request)?;
+                Some(request)
+            }
+        };
         let claim = StartClaim {
-            fingerprint: input::fingerprint(new, &content, &request)?,
+            fingerprint,
             thread: runtime.new_id()?,
         };
-        if let Some(bytes) = runtime.snapshot()?.read_range(&path, 0, u64::MAX)? {
-            return self.claimed(&bytes, &claim);
-        }
-        let start = Start {
-            request,
-            token: runtime.new_id()?,
-            previous: None,
-            state: StartState::Pending,
-        };
         let mut changes = Changes::new()?;
-        Self::made(&mut changes, &claim.thread, &runtime.new_id()?, new)?;
-        made(&mut changes, &claim.thread, &start)?;
-        let content = input::keep(&*runtime.snapshot()?, &mut changes, &claim.thread, content)?;
+        Self::made(&mut changes, &claim.thread, &runtime.new_id()?, &bound)?;
+        if let Some(request) = preparation {
+            let start = Start {
+                request,
+                token: runtime.new_id()?,
+                previous: None,
+                state: StartState::Pending,
+            };
+            made(&mut changes, &claim.thread, &start)?;
+        }
+        let content = input::keep(&snapshot, &mut changes, &claim.thread, content)?;
         inbox::put(
             &mut changes,
             &claim.thread,
             &runtime.new_id()?,
             &Inbound::Input {
-                actor: new.actor.clone(),
+                actor: bound.actor,
                 content,
                 reply_to: None,
                 joins: Joins::Step,
             },
         )?;
-        changes
-            .mkdir(b"siphon.start")?
-            .write(&path, serde_json::to_vec(&claim)?)?
-            .seal(&path)?;
+        // The sealed claim rejects a racing writer in the same commit as the thread and its files.
+        changes.mkdir(CLAIMS)?.write(&path, serde_json::to_vec(&claim)?)?.seal(&path)?;
+        drop(snapshot);
         if let Err(error) = runtime.commit(changes).await {
-            if let Some(bytes) = runtime.snapshot()?.read_range(&path, 0, u64::MAX)? {
-                return self.claimed(&bytes, &claim);
-            }
-            return Err(error.into());
+            return claimed(&*runtime.snapshot()?, &path, &fingerprint)?.ok_or_else(|| error.into());
         }
-        Ok((claim.thread, start))
-    }
-
-    fn claimed(&self, bytes: &[u8], asked: &StartClaim) -> Result<(String, Start), Error> {
-        let kept: StartClaim = serde_json::from_slice(bytes)?;
-        if kept.fingerprint != asked.fingerprint {
-            return Err(Error::Start("startup key was used with different input".into()));
-        }
-        let start = self
-            .start_state(&kept.thread)?
-            .ok_or_else(|| Error::Start("missing startup state".into()))?;
-        Ok((kept.thread, start))
+        Ok(claim.thread)
     }
 
     /// Reads startup state without exposing its storage paths.
@@ -198,6 +229,31 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
         }
         Ok(())
     }
+}
+
+fn validate_preparation(new: &NewThread, request: &StartRequest) -> Result<(), Error> {
+    if new.project.as_deref().is_some_and(|project| !Path::new(project).is_absolute()) {
+        return Err(Error::Start("the project path must be absolute".into()));
+    }
+    if request.owner.trim().is_empty() {
+        return Err(Error::Start("preparation requires an owner".into()));
+    }
+    if new.config.workspace.is_some() {
+        return Err(Error::Start("preparation supplies the workspace".into()));
+    }
+    Ok(())
+}
+
+fn claimed(snapshot: &Snapshot, path: &[u8], fingerprint: &[u8; 32]) -> Result<Option<String>, Error> {
+    let Some(bytes) = snapshot.read_range(path, 0, u64::MAX)? else {
+        return Ok(None);
+    };
+    let kept: StartClaim = serde_json::from_slice(&bytes)?;
+    if &kept.fingerprint != fingerprint {
+        return Err(Error::Start("startup key was used with different input".into()));
+    }
+    thread::directory(snapshot, &kept.thread)?.ok_or(Error::NoSuchThread)?;
+    Ok(Some(kept.thread))
 }
 
 /// Stages cancellation in the same commit as a stop issued by a call's plan.
@@ -325,14 +381,7 @@ fn transitioned(start: &Start, command: Command) -> Result<Start, String> {
     let mut next = start.clone();
     next.state = match (&start.state, command.action) {
         (StartState::Pending, Action::Ready(directory)) => {
-            if !std::path::Path::new(&directory.workspace).is_absolute()
-                || directory
-                    .project
-                    .as_ref()
-                    .is_some_and(|path| !std::path::Path::new(path).is_absolute())
-            {
-                return Err("startup paths must be absolute".into());
-            }
+            directory.validate()?;
             StartState::Ready { directory }
         }
         (StartState::Ready { directory: before }, Action::Ready(after)) if before == &after => return Ok(next),

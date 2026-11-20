@@ -13,7 +13,7 @@ octoii::methods! {
     "git.branches" GitBranches(InFolder) -> Branches, Some(Scope::FilesRead);
     /// Resolve stable task parameters on this node without creating a branch or directory.
     "git.worktree-plan" GitWorktreePlan(WorktreePlan) -> CreateWorktree, Some(Scope::FilesRead);
-    /// Accept, explicitly prepare, retry or inspect a worktree-backed Thread; also requires threads.operate.
+    /// Explicitly prepare, retry or inspect a worktree-backed Thread; also requires threads.operate.
     "git.start" GitStart(crate::start::StartAction) -> crate::start::ThreadStart, Some(Scope::GitOperate);
     /// List the repository's registered worktrees.
     "git.worktrees" GitWorktrees(InFolder) -> Worktrees, Some(Scope::FilesRead);

@@ -1,6 +1,6 @@
 import type { PendingThread, PendingThreadStore } from "./submission.ts";
 
-const DATABASE = "octoii.pending-threads";
+const DATABASE = "octoii.thread-starts";
 const STORE = "submissions";
 
 function open(): Promise<IDBDatabase> {
@@ -13,7 +13,7 @@ function open(): Promise<IDBDatabase> {
 	});
 }
 
-/** IndexedDB keeps attachment Blobs alongside the immutable submission, scoped to its paired session. */
+/** IndexedDB keeps the immutable multipart Blob, scoped to its paired session. */
 export function pendingThreadStore(session: string, project: string | undefined): PendingThreadStore {
 	const key = JSON.stringify([session, project ?? null]);
 	async function transaction<T>(mode: IDBTransactionMode, action: (store: IDBObjectStore, result: (value: T) => void) => void): Promise<T> {
@@ -42,18 +42,6 @@ export function pendingThreadStore(session: string, project: string | undefined)
 	return {
 		read,
 		exclusive: (action) => navigator.locks.request(`${DATABASE}:${key}`, action),
-		begin: (pending) =>
-			transaction("readwrite", (store, result) => {
-				const request = store.get(key);
-				request.onsuccess = () => {
-					if (request.result !== undefined) {
-						store.transaction.abort();
-						return;
-					}
-					store.add(pending, key);
-					result(pending);
-				};
-			}),
 		write: (pending) =>
 			transaction("readwrite", (store, result) => {
 				store.put(pending, key);

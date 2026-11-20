@@ -145,18 +145,21 @@ impl std::fmt::Debug for Setup {
 
 // The Thread startup capability uses the host's registered ThreadFiber.
 impl crate::volume::Volume {
-    /// Accepts a thread, its ordered initial input and fitted attachments in one commit behind a startup gate.
+    /// Accepts a thread, its ordered initial input, fitted attachments and the caller's key in one commit.
+    /// A thread with a preparation request waits for its workspace before executing.
+    /// `new` holds the original request. The host's resolved current directory is bound at first acceptance.
     ///
     /// # Errors
     /// Invalid/reused input, a deleted thread, or a storage failure.
-    pub async fn prepare_thread(
+    pub async fn start_thread(
         &self,
+        caller: &str,
+        key: &str,
         new: &crate::threads::NewThread,
         content: Vec<crate::threads::InputPart>,
-        request: crate::threads::StartRequest,
-        key: &str,
-    ) -> anyhow::Result<(String, crate::threads::Start)> {
-        Ok(self.starting_threads().prepare(new, content, request, key).await?)
+        directory: crate::threads::StartDirectory,
+    ) -> anyhow::Result<String> {
+        Ok(self.starting_threads().start(caller, key, new, content, directory).await?)
     }
 
     /// Reads the startup state; none for a normally created thread.
