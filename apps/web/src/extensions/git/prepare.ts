@@ -1,6 +1,6 @@
 /** Called by the explicit first send, never by mounting a Thread or reconnecting. */
 import type { Client } from "@octoii-works/octoii-client";
-import { preparingWorktree } from "../../components/state/worktree-preparation.ts";
+import { preparingWorktree } from "./worktree-preparation.ts";
 export async function prepareWorktree(client: Client, thread: string, open: () => void): Promise<void> {
 	const finished = preparingWorktree(client, thread);
 	try {

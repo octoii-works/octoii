@@ -2,7 +2,7 @@
 import { type ReactNode, useState } from "react";
 import type { Listed, Start, ThreadStart, WorktreeEntry } from "@octoii-works/octoii-client";
 import { useClient, useConnection } from "@octoii-works/octoii-client/react";
-import { useWorktreePreparing } from "../../components/state/worktree-preparation.ts";
+import { useWorktreePreparing } from "./worktree-preparation.ts";
 import { LoaderCircle } from "lucide-react";
 import { failureOf } from "../../components/effects/read.ts";
 

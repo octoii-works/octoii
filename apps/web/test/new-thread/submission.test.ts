@@ -1,7 +1,7 @@
 import type { Client, MethodName, ParamsOf, ResultOf } from "@octoii-works/octoii-client";
 import { describe, expect, it, mock, spyOn } from "bun:test";
-import { NewThread, type PendingThread, type PendingThreadStore } from "../src/core/new-thread.ts";
-import { EMPTY_DRAFT } from "../src/core/drafts.ts";
+import { NewThread, type PendingThread, type PendingThreadStore } from "../../src/screens/new-thread/submission.ts";
+import { EMPTY_DRAFT } from "../../src/core/drafts.ts";
 
 const unexpectedWorktree = async (): Promise<string> => {
 	throw new Error("Unexpected worktree submission");

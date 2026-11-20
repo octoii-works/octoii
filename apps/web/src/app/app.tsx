@@ -16,7 +16,7 @@ import { Sidebar } from "../components/sidebar/sidebar.tsx";
 import { useDevice } from "../components/state/device.ts";
 import { go, useRoute } from "../components/state/navigation.ts";
 import { TooltipProvider } from "../components/ui/tooltip.tsx";
-import { NewThreadScreen } from "../screens/new-thread.tsx";
+import { NewThreadScreen } from "../screens/new-thread/screen.tsx";
 import { ThreadScreen } from "../screens/thread.tsx";
 import { ConnectionLine, PairingPage, unpaired } from "./access.tsx";
 import { NoticesProvider } from "../components/ui/notices.tsx";

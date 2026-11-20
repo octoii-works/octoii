@@ -3,8 +3,8 @@ import { useState, type ReactNode } from "react";
 import { ChevronDown, FolderPlus } from "lucide-react";
 import type { Project } from "../../core/threads.ts";
 import { folderName } from "../../core/threads.ts";
-import { Command, CommandSearch, CommandList, CommandItem, CommandGroup } from "../ui/command.tsx";
-import { Popover, PopoverTrigger, PopoverPopup } from "../ui/popover.tsx";
+import { Command, CommandSearch, CommandList, CommandItem, CommandGroup } from "../../components/ui/command.tsx";
+import { Popover, PopoverTrigger, PopoverPopup } from "../../components/ui/popover.tsx";
 
 export function DraftProject(props: {
 	readonly folder: string | undefined;

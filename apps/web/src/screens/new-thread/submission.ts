@@ -1,10 +1,8 @@
 import type { Client, Config, CreateWorktree, InputContent } from "@octoii-works/octoii-client";
-import { contentOf } from "./attachments.ts";
-import type { Draft } from "./drafts.ts";
+import { contentOf } from "../../core/attachments.ts";
+import type { Draft } from "../../core/drafts.ts";
+import type { WorktreeSubmission } from "../../extensions/git/submit.ts";
 
-export type WorktreeBase = { readonly path: string; readonly base: string; readonly label: string };
-
-export type WorktreeSubmission = { readonly key: string; readonly config: Config; readonly draft: Draft; readonly worktree: CreateWorktree };
 export type AcceptWorktree = (submission: WorktreeSubmission) => Promise<string>;
 
 /** The immutable submitted message and the acknowledgements saved while starting its thread. */

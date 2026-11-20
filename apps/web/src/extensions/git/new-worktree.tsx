@@ -6,7 +6,8 @@ import { Menu, MenuTrigger, MenuPopup, MenuRadioGroup, MenuRadioItem } from "../
 import { Popover, PopoverTrigger, PopoverPopup } from "../../components/ui/popover.tsx";
 import { Command, CommandSearch, CommandList, CommandGroup, CommandItem } from "../../components/ui/command.tsx";
 
-import type { WorktreeBase } from "../../core/new-thread.ts";
+export type WorktreeBase = { readonly path: string; readonly base: string; readonly label: string };
+
 const CONTROL =
 	"inline-flex h-control-sm min-w-0 max-w-full items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50";
 

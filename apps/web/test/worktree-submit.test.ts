@@ -1,7 +1,6 @@
 import { capturedElement } from "./fixtures.ts";
 import { expect, it, mock, spyOn } from "bun:test";
-import { acceptWorktree } from "../src/extensions/git/submit.ts";
-import type { WorktreeSubmission } from "../src/core/new-thread.ts";
+import { acceptWorktree, type WorktreeSubmission } from "../src/extensions/git/submit.ts";
 import type { SendRequest } from "../src/components/state/reach.ts";
 
 const submission: WorktreeSubmission = {

@@ -1,11 +1,13 @@
 /** Atomic initial messages use the same authenticated HTTP transport locally and through a tunnel. */
-import type { InputContent } from "@octoii-works/octoii-client";
+import type { Config, CreateWorktree, InputContent } from "@octoii-works/octoii-client";
 import { Type } from "typebox";
-import type { WorktreeSubmission } from "../../core/new-thread.ts";
 import { fileAddress } from "../../core/attachments.ts";
+import type { Draft } from "../../core/drafts.ts";
 import { elementEvidence } from "../../core/element-feedback.ts";
 import { matches } from "../../core/schema.ts";
 import { jsonOf, succeeded, wordsOf, type SendRequest } from "../../components/state/reach.ts";
+
+export type WorktreeSubmission = { readonly key: string; readonly config: Config; readonly draft: Draft; readonly worktree: CreateWorktree };
 
 type Part = { type: "content"; content: InputContent } | { type: "attachment"; index: number; media_type: string; filename: string };
 const Accepted = Type.Object({ thread: Type.String({ minLength: 1 }) });

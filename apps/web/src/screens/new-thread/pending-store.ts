@@ -1,4 +1,4 @@
-import type { PendingThread, PendingThreadStore } from "../../core/new-thread.ts";
+import type { PendingThread, PendingThreadStore } from "./submission.ts";
 
 const DATABASE = "octoii.pending-threads";
 const STORE = "submissions";

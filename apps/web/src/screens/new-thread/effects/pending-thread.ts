@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Client } from "@octoii-works/octoii-client";
 import { useConnection } from "@octoii-works/octoii-client/react";
-import { NewThread, type PendingThread, type AcceptWorktree } from "../../core/new-thread.ts";
-import { pendingThreadStore } from "../state/pending-thread.ts";
+import { NewThread, type PendingThread, type AcceptWorktree } from "../submission.ts";
+import { pendingThreadStore } from "../pending-store.ts";
 
 /** Reads the saved submission only after the node identifies the paired session; reconnects keep its identity. */
 export function usePendingThread(client: Client, project: string | undefined, acceptWorktree: AcceptWorktree) {
