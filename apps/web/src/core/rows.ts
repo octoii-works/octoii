@@ -171,7 +171,7 @@ function sameRow(a: TimelineRow, b: TimelineRow): boolean {
 function sameNow(a: Now, b: Now): boolean {
 	const sameThread = (x: Listed, y: Listed): boolean => x.id === y.id && x.config.title === y.config.title && x.status.began_at === y.status.began_at;
 	return (
-		sameItems(a.waiting, b.waiting, (x, y) => sameThread(x, y) && sameItems(x.status.asks, y.status.asks, (p, q) => p.key === q.key)) &&
+		sameItems(a.waiting, b.waiting, (x, y) => sameThread(x, y) && sameItems(x.status.asks, y.status.asks, (p, q) => p.id === q.id)) &&
 		sameItems(a.terminals, b.terminals, (x, y) => x.id === y.id && x.line === y.line) &&
 		sameItems(a.threads, b.threads, sameThread)
 	);

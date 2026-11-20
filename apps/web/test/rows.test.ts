@@ -4,6 +4,7 @@
  * the same objects.
  */
 import { describe, expect, it } from "bun:test";
+import type { Listed } from "@octoii-works/octoii-client";
 import { rowsOf, steadyRows, type TimelineRow } from "../src/core/rows.ts";
 import type { CallLine, Said, TimelineItem, TimelineTurn } from "../src/core/timeline.ts";
 
@@ -127,6 +128,29 @@ describe("the timeline's rows", () => {
 		const completed = rowsOf([{ kind: "turn", key: "t1", turn: turnOf({ said: [words], work: [line] }) }]);
 		expect(completed[1]?.key).toBe(held.rows[1]?.key);
 		expect(completed[1]?.kind === "work" ? completed[1].work.working : undefined).toBe(false);
+	});
+
+	it("updates a waiting sub-thread when a new request uses the same key", () => {
+		const waitingRows = (id: string): readonly TimelineRow[] => {
+			const thread: Listed = {
+				id: "sub-thread",
+				parent: { kind: "general_purpose", thread: "parent", call: "delegate" },
+				config: { title: "Check the files" },
+				marks: { pinned: false, archived: false },
+				status: {
+					turn: "running",
+					began_at: 1_000,
+					inbox: [],
+					asks: [{ id, key: "permission", name: "siphon.permission", payload: null, answer_schema: null }],
+					compacting: false,
+				},
+			};
+			return rowsOf([{ kind: "now", key: "now", now: { waiting: [thread], terminals: [], threads: [] } }]);
+		};
+		const held = steadyRows(waitingRows("request-1"), new Map());
+		expect(steadyRows(waitingRows("request-1"), held.byKey).rows[0]).toBe(held.rows[0]);
+		const [updated] = steadyRows(waitingRows("request-2"), held.byKey).rows;
+		expect(updated?.kind === "now" ? updated.now.waiting[0]?.status.asks[0]?.id : undefined).toBe("request-2");
 	});
 
 	it("uses a useful label without timestamps and keeps failure details outside completed work", () => {
