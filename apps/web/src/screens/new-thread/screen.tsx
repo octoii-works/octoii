@@ -6,7 +6,6 @@ import type { Device } from "../../core/device.ts";
 import { recentModelsOf } from "../../core/models.ts";
 import type { AcceptWorktree, NewThread, PendingThread } from "./submission.ts";
 import { usePendingThread } from "./effects/pending-thread.ts";
-import { useOutcome } from "../../components/effects/read.ts";
 import { failed } from "../../components/state/notices.ts";
 import { clearPendingDraft } from "../../components/state/draft.ts";
 import { thingsOf } from "../../core/mentions.ts";
@@ -22,9 +21,9 @@ import { DraftProject } from "./draft-project.tsx";
 import { DetailsToggle, DetailsFloat, DetailRow } from "../../components/thread/details.tsx";
 import { useNewThreadOptions } from "./options.ts";
 import { useReach } from "../../components/state/reach.ts";
-import { prepareWorktree } from "../../extensions/git/prepare.ts";
+import { planWorktree, prepareWorktree } from "../../extensions/git/prepare.ts";
 import { acceptWorktree } from "../../extensions/git/submit.ts";
-import { WorkspaceChoice, BaseBranchChoice } from "../../extensions/git/new-worktree.tsx";
+import { SeparateDirectory } from "../../extensions/git/new-worktree.tsx";
 import { ServersMenu } from "../../extensions/mcp/servers-menu.tsx";
 import type { Draft } from "../../core/drafts.ts";
 
@@ -42,31 +41,42 @@ export function NewThreadScreen(props: NewThreadScreenProps): ReactNode {
 	const rows = useThreads() ?? [];
 	const reachesThreads = useExtension("thread");
 	const mcp = useExtension("mcp");
+	const git = useExtension("git");
 	const settings = useSettings();
 	const folder = options.chosen === undefined ? props.project : options.chosen.folder;
 	const model = options.model ?? recentModelsOf(rows)[0];
 	const mode = options.mode ?? settings?.environment.thread_mode;
 	const projects = projectsOf(rows);
-	const branches = useDraftBranches(folder);
+	const worktree = options.worktree;
+	const worktreeAllowed =
+		git &&
+		connection.status === "open" &&
+		["files.read", "git.operate", "threads.operate"].every((scope) => connection.scopes.some((value) => value === scope));
+	const locked = sending || saved.pending !== undefined;
 	const choose = (next: string | undefined): void => {
-		change({ chosen: { folder: next }, worktree: undefined });
+		if (next !== folder) change({ chosen: { folder: next }, worktree: undefined });
 		setChoosing(false);
 	};
-	const projectPicker = <DraftProject folder={folder} projects={projects} onChoose={choose} onAnother={() => setChoosing(true)} />;
-	const workspace =
-		branches !== undefined && "result" in branches && folder !== undefined ? (
-			<WorkspaceChoice folder={folder} branches={branches.result} value={options.worktree} onChange={(worktree) => change({ worktree })} />
-		) : null;
-	const branch =
-		branches !== undefined && "result" in branches && folder !== undefined ? (
-			<BaseBranchChoice folder={folder} branches={branches.result} value={options.worktree} onChange={(worktree) => change({ worktree })} />
-		) : null;
+	const directoryAction =
+		worktree !== undefined
+			? { label: "Use project directory", select: () => change({ worktree: undefined }) }
+			: worktreeAllowed && folder !== undefined
+				? { label: "Work in a separate directory", select: () => change({ worktree: { path: folder } }) }
+				: undefined;
+	const projectPicker = (
+		<DraftProject
+			folder={folder}
+			projects={projects}
+			onChoose={choose}
+			onAnother={() => setChoosing(true)}
+			directoryAction={directoryAction}
+			disabled={locked}
+		/>
+	);
 	const details = (
 		<DraftDetails
 			machine={connection.status === "open" ? connection.machine.name : "This machine"}
 			project={projectPicker}
-			workspace={workspace}
-			branch={branch}
 			servers={mcp ? <ServersMenu folder={folder} /> : null}
 		/>
 	);
@@ -78,14 +88,14 @@ export function NewThreadScreen(props: NewThreadScreenProps): ReactNode {
 				{...(folder === undefined ? {} : { project: { folder, name: folderName(folder) } })}
 				actions={
 					<DetailsToggle>
-						<fieldset disabled={sending || saved.pending !== undefined}>{details}</fieldset>
+						<fieldset disabled={locked}>{details}</fieldset>
 					</DetailsToggle>
 				}
 			/>
 			<div className="flex min-h-0 flex-1">
 				<div className="flex min-w-0 flex-1 items-center justify-center overflow-y-auto px-4 py-8">
 					<div className="w-full max-w-(--chat-width)">
-						<fieldset disabled={sending || saved.pending !== undefined} className="min-w-0 border-0 p-0">
+						<fieldset disabled={locked} className="min-w-0 border-0 p-0">
 							<DraftHeadline folder={folder} project={projectPicker} onNone={() => choose(undefined)} />
 						</fieldset>
 						{!saved.loaded ? (
@@ -109,23 +119,27 @@ export function NewThreadScreen(props: NewThreadScreenProps): ReactNode {
 									onSend={submit}
 									onStop={() => undefined}
 								/>
-								<fieldset disabled={sending} className="mt-1 flex min-w-0 flex-wrap items-center justify-between gap-1 border-0 p-0">
-									<div className="min-w-0">{workspace}</div>
-									<div className="flex min-w-0 max-w-full items-center gap-1">
-										{branch}
-										{mode === undefined ? null : <ModeControl mode={mode} onChoose={(mode) => change({ mode })} />}
-									</div>
-								</fieldset>
-								{branches !== undefined && "failure" in branches ? (
-									<p role="alert" className="mt-2 text-xs text-muted-foreground">
-										{branches.failure}
-									</p>
+								{worktree !== undefined || mode !== undefined ? (
+									<fieldset disabled={sending} className="mt-1 flex min-w-0 flex-wrap items-center gap-1 border-0 p-0">
+										{worktree === undefined ? null : (
+											<SeparateDirectory
+												worktree={worktree}
+												disabled={sending}
+												onBaseChange={worktreeAllowed ? (base) => change({ worktree: { ...worktree, base } }) : undefined}
+											/>
+										)}
+										{mode === undefined ? null : (
+											<div className="ms-auto">
+												<ModeControl mode={mode} onChoose={(mode) => change({ mode })} />
+											</div>
+										)}
+									</fieldset>
 								) : null}
 							</>
 						)}
 					</div>
 				</div>
-				<fieldset disabled={sending || saved.pending !== undefined} className="contents">
+				<fieldset disabled={locked} className="contents">
 					<DetailsFloat>{details}</DetailsFloat>
 				</fieldset>
 			</div>
@@ -169,7 +183,7 @@ function PendingTask({
 			</p>
 			{pending.worktree === undefined ? null : (
 				<p className="mt-2 break-all text-muted-foreground">
-					New worktree: {pending.worktree.branch} · {pending.worktree.destination}
+					Separate directory · {pending.worktree.branch} · {pending.worktree.destination}
 				</p>
 			)}
 			<p className="my-3 text-muted-foreground">
@@ -223,19 +237,7 @@ function PendingTask({
 	);
 }
 
-function DraftDetails({
-	machine,
-	project,
-	workspace,
-	branch,
-	servers,
-}: {
-	readonly machine: string;
-	readonly project: ReactNode;
-	readonly workspace: ReactNode;
-	readonly branch: ReactNode;
-	readonly servers: ReactNode;
-}): ReactNode {
+function DraftDetails({ machine, project, servers }: { readonly machine: string; readonly project: ReactNode; readonly servers: ReactNode }): ReactNode {
 	return (
 		<div className="divide-y divide-border text-ui">
 			<section className="p-1.5">
@@ -244,12 +246,8 @@ function DraftDetails({
 					<Folder className="size-4 shrink-0 text-muted-foreground" />
 					{project}
 				</div>
-				{workspace}
 			</section>
-			<section className="flex flex-col items-start gap-1 p-1.5">
-				{branch}
-				{servers}
-			</section>
+			{servers === null ? null : <section className="flex flex-col items-start gap-1 p-1.5">{servers}</section>}
 		</div>
 	);
 }
@@ -304,21 +302,6 @@ function draftConfig(
 	};
 }
 
-function useDraftBranches(folder: string | undefined) {
-	const git = useExtension("git");
-	const connection = useConnection();
-	const allowed =
-		git &&
-		connection.status === "open" &&
-		["files.read", "git.operate", "threads.operate"].every((scope) => connection.scopes.some((value) => value === scope));
-	const repository = useOutcome("git.repository", allowed && folder !== undefined ? { path: folder } : undefined);
-	const branches = useOutcome(
-		"git.branches",
-		repository !== undefined && "result" in repository && repository.result.repository !== undefined && folder !== undefined ? { path: folder } : undefined,
-	);
-	return branches;
-}
-
 function useDraftSubmit(
 	saved: ReturnType<typeof usePendingThread>,
 	folder: string | undefined,
@@ -334,15 +317,12 @@ function useDraftSubmit(
 		try {
 			const config = draftConfig(folder, model, options);
 			const selected = options.worktree;
-			if (selected !== undefined && selected.path !== folder) throw new Error("Choose a base branch for this project.");
+			if (selected !== undefined && selected.path !== folder) throw new Error("Choose the work directory for this project.");
 			const thread =
 				selected === undefined
 					? await starting.send(config, draft)
-					: await starting.sendWorktree(
-							config,
-							draft,
-							await client.call("git.worktree-plan", { path: selected.path, base: selected.base, key: crypto.randomUUID() }),
-							(thread) => prepareWorktree(client, thread, () => go({ place: "thread", thread })),
+					: await starting.sendWorktree(config, draft, await planWorktree(client, selected), (thread) =>
+							prepareWorktree(client, thread, () => go({ place: "thread", thread })),
 						);
 			if (selected === undefined) go({ place: "thread", thread });
 			await starting.acknowledge();
