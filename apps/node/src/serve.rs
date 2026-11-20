@@ -138,7 +138,7 @@ pub fn building(home: &Home, sign_in: SignInSetup) -> anyhow::Result<octoii::Bui
         .extension(FilesExtension)
         .extension(MemoryExtension)
         .extension(GitExtension {
-            worktrees: std::path::absolute(home.worktrees())?,
+            worktrees: std::path::absolute(temporary.join("worktrees"))?,
         })
         .extension(WebSearchExtension)
         .extension(SkillsExtension {

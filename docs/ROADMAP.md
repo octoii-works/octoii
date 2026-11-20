@@ -2,6 +2,8 @@
 
 更新：2026-11-17。当前排期以本文为准；具体工具契约见 [PRODUCT_TOOLS.md](PRODUCT_TOOLS.md)，已有桌面验收记录见 [DESKTOP_ACCEPTANCE.md](DESKTOP_ACCEPTANCE.md)。
 
+Octoii 产品层重构的边界、实施批次和切换验收见 [OCTOII_REBUILD.md](OCTOII_REBUILD.md)。
+
 ## 产品方向
 
 Octoii 是 run anywhere 的持久化 Agent。用户围绕一个任务与自己的 Octoii 持续协作，查看过程、介入操作、检查结果，并从另一台设备接续。

@@ -2,6 +2,7 @@
 use axum::http::StatusCode;
 use http_body_util::BodyExt as _;
 use octoii::protocol::{Machine, Scope};
+use octoii::testing::Client;
 use octoii_node::{
     home::Home,
     http::{self, Node},
@@ -10,7 +11,7 @@ use serde_json::{Value, json};
 use tower::ServiceExt as _;
 
 struct TestNode {
-    _home: tempfile::TempDir,
+    home: tempfile::TempDir,
     siphon: octoii::Octoii,
     address: String,
     router: axum::Router,
@@ -48,7 +49,7 @@ impl TestNode {
             axum::serve(listener, app).await.unwrap();
         });
         Self {
-            _home: folder,
+            home: folder,
             siphon,
             address,
             router,
@@ -95,6 +96,52 @@ fn multipart(manifest: &Value, files: &[(&str, &[u8])]) -> Vec<u8> {
     }
     body.extend_from_slice(b"--octoii-test--\r\n");
     body
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn worktree_plans_use_the_nodes_temporary_directory() {
+    let node = TestNode::start().await;
+    let repo = tempfile::tempdir().unwrap();
+    let git = |args: &[&str]| {
+        let output = std::process::Command::new("git")
+            .current_dir(repo.path())
+            .args(args)
+            .output()
+            .expect("ran git");
+        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        String::from_utf8(output.stdout).unwrap()
+    };
+    git(&["init", "--quiet", "--template="]);
+    git(&[
+        "-c",
+        "user.name=Octoii Test",
+        "-c",
+        "user.email=test@example.invalid",
+        "-c",
+        "commit.gpgSign=false",
+        "commit",
+        "--allow-empty",
+        "--no-verify",
+        "--quiet",
+        "-m",
+        "Initial commit",
+    ]);
+    let head = git(&["rev-parse", "HEAD"]);
+    let key = "12345678-1234-1234-1234-123456789abc";
+    let mut client = Client::connect(&node.siphon, vec![Scope::FilesRead], 64);
+    client.message().await;
+    let id = client
+        .call(
+            "git.worktree-plan",
+            json!({"path": repo.path().canonicalize().unwrap(), "key": key, "base": head.trim()}),
+        )
+        .await;
+    let reply = client.answer(&id).await;
+    let root = Home::at(node.home.path()).temporary().unwrap().join("worktrees");
+    let expected = std::path::absolute(root.join(key)).unwrap();
+    assert_eq!(reply["result"]["destination"], json!(expected), "{reply}");
+    assert!(!root.exists(), "planning a task does not create a checkout");
+    node.close().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
