@@ -56,14 +56,13 @@ impl Fiber for TitleFiber {
             run.request(&key, &request)?;
             return Ok(Ending::Wait(key.clone(), Wait::new().mail(key)));
         };
-        let Some(answer) = run.answer::<ModelRequest>(&key)? else {
+        let Some(answer) = run.take_answer::<ModelRequest>(&key)? else {
             return Ok(Ending::Wait(key.clone(), Wait::new().mail(key)));
         };
-        run.discard_mail(&key)?;
         let Answer::Given(response) = answer else {
             return Ok(Ending::Done(None));
         };
-        charge(run, &response);
+        charge(run, &response)?;
         let title = title_of(&response.words());
         if title.is_empty() || config.title.is_some() {
             return Ok(Ending::Done(None));

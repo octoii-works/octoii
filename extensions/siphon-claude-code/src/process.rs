@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 
-use octoii::machine::{Coprocess, Machine, Stderr, Variables};
+use octoii::machine::{Commands, Coprocess, Machine, Stderr, Variables};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader, Lines};
@@ -30,11 +30,12 @@ pub struct Launch {
     pub variables: Vec<(String, String)>,
 }
 
-/// What a session hears of its `claude`: a message it wrote, or a call of a tool it now holds.
+/// What a session hears of its `claude`.
 #[derive(Debug)]
 pub enum Heard {
     Told(Told),
     Held(String),
+    Failed(String),
 }
 
 /// A message `claude` writes, as far as a session reads it.
@@ -133,32 +134,39 @@ impl std::fmt::Debug for Order {
 }
 
 impl Process {
-    /// `launch` started on `machine` at `time`, its MCP server offering `tools`, and what it answered `initialize`:
+    /// `launch` started on `machine`, its MCP server offering `tools`, and what it answered `initialize`:
     /// with what it is heard to write.
     ///
     /// # Errors
     /// Where it could not be started, or ended or failed before it answered `initialize`: why, with what it wrote to
     /// its errors.
     pub async fn start(
+        commands: &Commands,
         machine: &Machine,
-        time: i64,
         launch: Launch,
         tools: Vec<Value>,
         initialize: Value,
     ) -> Result<(Self, Value, mpsc::UnboundedReceiver<Heard>), Started> {
         let mut argv = vec![launch.program];
         argv.extend(launch.arguments);
-        let Coprocess { stdin, stdout, stderr } = machine
-            .coprocess(time, b"", argv, &launch.cwd, Variables::Only(launch.variables))
+        let Coprocess { mut stdin, stdout, stderr } = commands
+            .coprocess(machine, argv, &launch.cwd, Variables::Only(launch.variables))
             .map_err(|error| match error {
                 octoii::machine::RunError::MissingProgram(_) => Started::Missing,
                 other => Started::Failed(other.to_string()),
             })?;
         let (orders, taken) = mpsc::unbounded_channel();
         let (heard, hearing) = mpsc::unbounded_channel();
+        let (input, mut queued) = mpsc::unbounded_channel::<String>();
+        let writing = async move {
+            while let Some(line) = queued.recv().await {
+                stdin.write_all(line.as_bytes()).await?;
+            }
+            Ok(())
+        };
         let stop = CancellationToken::new();
         let owner = Owner {
-            stdin,
+            input,
             tools,
             pending: HashMap::new(),
             held: HashMap::new(),
@@ -166,7 +174,7 @@ impl Process {
             next: 0,
             heard,
         };
-        tokio::spawn(owner.run(BufReader::new(stdout).lines(), taken, stop.clone()));
+        tokio::spawn(owner.run(BufReader::new(stdout).lines(), taken, writing, stop.clone()));
         let process = Self {
             orders,
             stderr,
@@ -225,7 +233,7 @@ const ENDED: &str = "Claude Code ended";
 /// The task that owns a `claude`: its input, the tools its MCP server offers, its requests waiting for their answers,
 /// its calls held by the model's call each is of, and results given before their calls were made.
 struct Owner {
-    stdin: octoii::machine::Stdin,
+    input: mpsc::UnboundedSender<String>,
     tools: Vec<Value>,
     pending: HashMap<String, oneshot::Sender<Result<Value, String>>>,
     /// Each call held: the control request it came in, and its JSON-RPC id.
@@ -240,37 +248,44 @@ impl Owner {
         mut self,
         mut stdout: Lines<BufReader<octoii::machine::Stdout>>,
         mut orders: mpsc::UnboundedReceiver<Order>,
+        writing: impl Future<Output = std::io::Result<()>>,
         stop: CancellationToken,
     ) {
-        loop {
+        tokio::pin!(writing);
+        let failure = loop {
             tokio::select! {
-                () = stop.cancelled() => break,
-                line = stdout.next_line() => {
-                    let Ok(Some(line)) = line else { break };
-                    self.read(&line).await;
-                }
-                Some(order) = orders.recv() => self.take(order).await,
+                () = stop.cancelled() => break None,
+                result = &mut writing => break result.err().map(|error| format!("Claude Code input failed: {error}")),
+                line = stdout.next_line() => match line {
+                    Ok(Some(line)) => self.read(&line),
+                    Ok(None) => break None,
+                    Err(error) => break Some(format!("Claude Code output failed: {error}")),
+                },
+                Some(order) = orders.recv() => self.take(order),
             }
+        };
+        if let Some(error) = &failure {
+            let _ = self.heard.send(Heard::Failed(error.clone()));
         }
+        let reason = failure.as_deref().unwrap_or(ENDED);
         for (_, answer) in self.pending.drain() {
-            let _ = answer.send(Err(ENDED.to_owned()));
+            let _ = answer.send(Err(reason.to_owned()));
         }
     }
 
-    async fn write(&mut self, value: &Value) {
+    fn write(&self, value: &Value) {
         let mut line = value.to_string();
         line.push('\n');
-        let _ = self.stdin.write_all(line.as_bytes()).await;
+        let _ = self.input.send(line);
     }
 
-    async fn take(&mut self, order: Order) {
+    fn take(&mut self, order: Order) {
         match order {
             Order::Ask(request, answer) => {
                 self.next += 1;
                 let id = format!("octoii-{}", self.next);
                 self.pending.insert(id.clone(), answer);
-                self.write(&json!({ "type": "control_request", "request_id": id, "request": request }))
-                    .await;
+                self.write(&json!({ "type": "control_request", "request_id": id, "request": request }));
             }
             Order::Say(content) => {
                 let message = json!({
@@ -280,12 +295,11 @@ impl Owner {
                     "parent_tool_use_id": null,
                     "client_composed": true,
                 });
-                self.write(&message).await;
+                self.write(&message);
             }
             Order::Give(call, result) => match self.held.remove(&call) {
                 Some((request, id)) => {
-                    self.answer_mcp(&request, &json!({ "jsonrpc": "2.0", "id": id, "result": result }))
-                        .await;
+                    self.answer_mcp(&request, &json!({ "jsonrpc": "2.0", "id": id, "result": result }));
                 }
                 None => {
                     self.given.insert(call, result);
@@ -295,7 +309,7 @@ impl Owner {
     }
 
     /// Reads a line it wrote: an answer to a request of ours, a request of its own, or a message heard.
-    async fn read(&mut self, line: &str) {
+    fn read(&mut self, line: &str) {
         let Ok(value) = serde_json::from_str::<Value>(line) else { return };
         match value["type"].as_str() {
             Some("control_response") => {
@@ -310,7 +324,7 @@ impl Owner {
                 };
                 let _ = answer.send(answered);
             }
-            Some("control_request") => self.asked(&value).await,
+            Some("control_request") => self.asked(&value),
             Some("control_cancel_request") => {}
             _ => {
                 if let Ok(told) = serde_json::from_value::<Told>(value) {
@@ -321,7 +335,7 @@ impl Owner {
     }
 
     /// Answers a request of its own: a message to our MCP server; anything else refused, as nothing else was offered.
-    async fn asked(&mut self, value: &Value) {
+    fn asked(&mut self, value: &Value) {
         let request = value["request_id"].as_str().unwrap_or_default().to_owned();
         let asked = &value["request"];
         if asked["subtype"] != "mcp_message" || asked["server_name"] != SERVER {
@@ -329,13 +343,13 @@ impl Owner {
                 "type": "control_response",
                 "response": { "subtype": "error", "request_id": request, "error": "not offered" },
             });
-            self.write(&refused).await;
+            self.write(&refused);
             return;
         }
         let message = &asked["message"];
         let Some(id) = message.get("id").cloned() else {
             // A notification: told it was taken, as nothing answers one.
-            self.answer_mcp(&request, &json!({ "jsonrpc": "2.0", "result": {}, "id": 0 })).await;
+            self.answer_mcp(&request, &json!({ "jsonrpc": "2.0", "result": {}, "id": 0 }));
             return;
         };
         let result = match message["method"].as_str().unwrap_or_default() {
@@ -350,13 +364,11 @@ impl Owner {
                 let Some(call) = message["params"]["_meta"][TOOL_USE_ID].as_str().map(str::to_owned) else {
                     let failed =
                         json!({ "content": [{ "type": "text", "text": "The call came with no id to hold it by." }], "isError": true });
-                    self.answer_mcp(&request, &json!({ "jsonrpc": "2.0", "id": id, "result": failed }))
-                        .await;
+                    self.answer_mcp(&request, &json!({ "jsonrpc": "2.0", "id": id, "result": failed }));
                     return;
                 };
                 if let Some(result) = self.given.remove(&call) {
-                    self.answer_mcp(&request, &json!({ "jsonrpc": "2.0", "id": id, "result": result }))
-                        .await;
+                    self.answer_mcp(&request, &json!({ "jsonrpc": "2.0", "id": id, "result": result }));
                 } else {
                     self.held.insert(call.clone(), (request, id));
                     let _ = self.heard.send(Heard::Held(call));
@@ -365,21 +377,19 @@ impl Owner {
             }
             method => {
                 let error = json!({ "code": -32601, "message": format!("no method {method}") });
-                self.answer_mcp(&request, &json!({ "jsonrpc": "2.0", "id": id, "error": error }))
-                    .await;
+                self.answer_mcp(&request, &json!({ "jsonrpc": "2.0", "id": id, "error": error }));
                 return;
             }
         };
-        self.answer_mcp(&request, &json!({ "jsonrpc": "2.0", "id": id, "result": result }))
-            .await;
+        self.answer_mcp(&request, &json!({ "jsonrpc": "2.0", "id": id, "result": result }));
     }
 
     /// Answers its control request `request` with the JSON-RPC message `message` of our MCP server's.
-    async fn answer_mcp(&mut self, request: &str, message: &Value) {
+    fn answer_mcp(&self, request: &str, message: &Value) {
         let response = json!({
             "type": "control_response",
             "response": { "subtype": "success", "request_id": request, "response": { "mcp_response": message } },
         });
-        self.write(&response).await;
+        self.write(&response);
     }
 }

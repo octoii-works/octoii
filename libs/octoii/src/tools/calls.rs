@@ -7,7 +7,7 @@
 use crate::machine::paths::Base;
 use crate::threads::{CallKey, CallStatus, Mode, Parent, thread};
 use octoii_ai::vocabulary::InputContent;
-use octoii_siphon_lib::{Answer, Run, Wait};
+use octoii_siphon_lib::{Answer, FiberRecord, Run, Wait, fiber_path};
 use serde::{Deserialize, Serialize};
 
 use crate::tools::effect::{Effect, Line};
@@ -241,7 +241,7 @@ impl Calls {
                         run,
                         setting,
                         ended(CallStatus::Interrupted, "the turn was stopped before it ran"),
-                    );
+                    )?;
                 }
                 State::Awaiting(awaited) => {
                     setting.primitives.withdraw(run, awaited)?;
@@ -250,7 +250,7 @@ impl Calls {
                         run,
                         setting,
                         ended(CallStatus::Interrupted, "stopped, and the thread's work on it with it"),
-                    );
+                    )?;
                 }
                 _ => {}
             }
@@ -294,10 +294,9 @@ impl Calls {
         let next = match call.state {
             State::Asking => {
                 let key = format!("{}.permission", call.key);
-                let Some(answer) = run.answer::<Permission>(&key)? else {
+                let Some(answer) = run.take_answer::<Permission>(&key)? else {
                     return Ok(());
                 };
-                run.discard_mail(&key)?;
                 match answer {
                     Answer::Given(Decision::Allow { always }) => {
                         if always && let Some(folder) = setting.project {
@@ -305,7 +304,7 @@ impl Calls {
                                 .tools
                                 .effect(&call.tool, &serde_json::from_str(&call.arguments)?, setting.base)?;
                             let granted = projects::grant(run.snapshot(), folder, patterns_of(&effect))?;
-                            run.changes.extend(granted);
+                            run.changes.extend(granted)?;
                         }
                         self.exec(at, run, setting, Writes::Anywhere)?
                     }
@@ -323,11 +322,12 @@ impl Calls {
             }
             State::Judging => {
                 let key = format!("{}.review", call.key);
-                let Some(answer) = run.answer::<Review>(&key)? else { return Ok(()) };
-                run.discard_mail(&key)?;
+                let Some(answer) = run.take_answer::<Review>(&key)? else {
+                    return Ok(());
+                };
                 if let Answer::Given(Judgment { usage: Some(used), .. }) = &answer {
-                    let process = bytes::Bytes::copy_from_slice(run.path());
-                    run.changes.charge(process, crate::threads::ThreadUsage::counters_of(used));
+                    let fiber = run.id().clone();
+                    run.changes.charge(&fiber, crate::threads::ThreadUsage::counters_of(used))?;
                 }
                 match answer {
                     Answer::Given(judgment) if judgment.allow => self.exec(at, run, setting, Writes::Anywhere)?,
@@ -338,10 +338,9 @@ impl Calls {
                 }
             }
             State::Running if setting.tools.asks(&call.tool, &serde_json::from_str(&call.arguments)?).is_some() => {
-                let Some(answer) = run.answer::<Asks>(&call.key)? else {
+                let Some(answer) = run.take_answer::<Asks>(&call.key)? else {
                     return Ok(());
                 };
-                run.discard_mail(&call.key)?;
                 match answer {
                     Answer::Given(given) => result(
                         CallStatus::Ok,
@@ -352,10 +351,9 @@ impl Calls {
                 }
             }
             State::Running => {
-                let Some(answer) = run.answer::<Exec>(&call.key)? else {
+                let Some(answer) = run.take_answer::<Exec>(&call.key)? else {
                     return Ok(());
                 };
-                run.discard_mail(&call.key)?;
                 match answer {
                     Answer::Given(told) => planned(run, setting, &call.key, told)?,
                     Answer::Failed(words) => ended(CallStatus::ToolError, words),
@@ -367,27 +365,28 @@ impl Calls {
                 None => return Ok(()),
             },
             State::Fiber => {
-                let process = octoii_siphon_lib::process_path(run.path(), call.key.as_bytes());
-                let Some(outcome) = run
-                    .snapshot()
-                    .fiber(&process)?
-                    .filter(crate::volume::reapable)
-                    .and_then(|record| record.outcome)
+                let path = fiber_path(run.id().path(), call.key.as_bytes());
+                let Some(FiberRecord {
+                    id: fiber,
+                    reapable: true,
+                    outcome: Some(outcome),
+                    ..
+                }) = run.snapshot().fiber(&path)?
                 else {
                     return Ok(());
                 };
-                run.changes.reap(process);
+                run.changes.reap(&fiber)?;
                 let finished = setting.tools.finished(&call.tool, &outcome);
                 result(finished.status, finished.told)
             }
             State::Waiting | State::Ended { .. } => return Ok(()),
         };
-        self.transition(at, run, setting, next);
+        self.transition(at, run, setting, next)?;
         Ok(())
     }
 
     /// Records the next state, bounding model output once as the call ends, with the whole saved in the same commit.
-    fn transition(&mut self, at: usize, run: &mut Run<'_>, setting: &Setting<'_>, mut next: State) {
+    fn transition(&mut self, at: usize, run: &mut Run<'_>, setting: &Setting<'_>, mut next: State) -> octoii_siphon_lib::Result<()> {
         if let State::Ended { output, .. } = &mut next {
             *output = crate::tools::outlet::bounded(
                 &mut run.changes,
@@ -395,9 +394,10 @@ impl Calls {
                 &self.0[at].key,
                 setting.threads,
                 std::mem::take(output),
-            );
+            )?;
         }
         self.0[at].state = next;
+        Ok(())
     }
 
     /// Applies the thread's immutable scope before starting calls or accepting any recovered answers and grants.
@@ -418,8 +418,10 @@ impl Calls {
                 State::Judging => Some(format!("{}.review", call.key)),
                 State::Running => Some(call.key.clone()),
                 State::Fiber => {
-                    run.changes
-                        .remove(octoii_siphon_lib::process_path(run.path(), call.key.as_bytes()), None);
+                    let path = fiber_path(run.id().path(), call.key.as_bytes());
+                    if let Some(record) = run.snapshot().fiber(&path)? {
+                        run.changes.remove(&record.id, None)?;
+                    }
                     None
                 }
                 State::Awaiting(ref awaited) => {
@@ -430,13 +432,13 @@ impl Calls {
             };
             if let Some(key) = request {
                 run.cancel_request(&key)?;
-                run.discard_mail(&key)?;
+                run.take_mail(key.as_bytes())?;
             }
             let refusal = ended(
                 CallStatus::Unavailable,
                 format!("the tool {} is not available to this sub-thread", call.tool),
             );
-            self.transition(at, run, setting, refusal);
+            self.transition(at, run, setting, refusal)?;
         }
         Ok(())
     }
@@ -457,14 +459,14 @@ impl Calls {
                         } else {
                             CallStatus::Unavailable
                         };
-                        self.transition(at, run, setting, ended(status, refusal.0));
+                        self.transition(at, run, setting, ended(status, refusal.0))?;
                     }
                     Ok(effect) => {
                         let acts = !matches!(effect, Effect::Reads | Effect::Delegates);
                         self.0[at].acts = Some(acts);
                         if !(acting || (acts && unended)) {
                             let next = self.start(at, run, setting, &effect)?;
-                            self.transition(at, run, setting, next);
+                            self.transition(at, run, setting, next)?;
                         }
                     }
                 }
@@ -522,7 +524,7 @@ impl Calls {
     fn exec(&self, at: usize, run: &mut Run<'_>, setting: &Setting<'_>, writes: Writes) -> anyhow::Result<State> {
         let call = &self.0[at];
         let arguments: serde_json::Value = serde_json::from_str(&call.arguments)?;
-        let parent = bytes::Bytes::copy_from_slice(run.path());
+        let parent = run.id().clone();
         if let Some(started) = setting
             .tools
             .start(&mut run.changes, &parent, &call.key, &call.tool, &arguments, setting)

@@ -4,6 +4,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::agent::compaction::{AwaitCompaction, answer_compaction};
 use crate::agent::{CompactFiber, Gather, ModelRequest, Sources, ThreadFiber, TitleFiber, TurnFiber, answer_gather, answer_model};
 use crate::machine::Host as Machine;
 use crate::threads::{Config, Mode, NewThread, Threads, Turn};
@@ -14,7 +15,7 @@ use octoii_ai::drivers::OPENROUTER;
 use octoii_ai::host::{Credential, Credentials, Files, NoSuchFile, Unavailable};
 use octoii_ai::models::{Host, Models, Provider};
 use octoii_ai::vocabulary::InputContent;
-use octoii_siphon_lib::{Asked, Runtime};
+use octoii_siphon_lib::{Asked, Runtime, fiber_path};
 
 /// The key in the environment, as the host's credentials.
 struct Environment;
@@ -88,48 +89,51 @@ fn runtime(models: &Arc<Models>) -> Runtime {
     };
     let execs = tools.clone();
     let answering = Arc::clone(models);
-    {
-        let mut builder = octoii_siphon_lib::Builder::new().expect("a builder");
+    crate::testing::start_runtime(None, |builder, runtime| {
+        let gather_runtime = runtime.clone();
+        let model_runtime = runtime.clone();
+        let exec_runtime = runtime.clone();
+        let compaction_runtime = runtime.clone();
+        let executor = tokio::runtime::Handle::current();
         builder
-            .fiber(ThreadFiber)
-            .expect("registered")
+            .fiber(ThreadFiber)?
             .fiber(TurnFiber {
                 tools,
                 machine: crate::machine::Host::default(),
                 models: Arc::clone(models),
                 writables: Vec::new(),
-            })
-            .expect("registered")
+            })?
             .fiber(ScriptFiber {
                 tools: inner,
                 primitives: std::sync::Arc::new(crate::agent::ThreadPrimitives),
-            })
-            .expect("registered")
+            })?
             .fiber(TitleFiber {
                 instruction: crate::testing::PROMPTS.title,
-            })
-            .expect("registered")
+            })?
             .fiber(CompactFiber {
                 instruction: crate::testing::PROMPTS.recap,
-            })
-            .expect("registered")
-            .handle(&tokio::runtime::Handle::current(), move |asked: Asked<Gather>| {
+            })?
+            .handle(&executor, move |asked: Asked<Gather>| {
                 let sources = sources.clone();
-                async move { answer_gather(&sources, asked).await }
-            })
-            .expect("registered")
-            .handle(&tokio::runtime::Handle::current(), move |asked: Asked<ModelRequest>| {
+                let runtime = gather_runtime.clone();
+                async move { answer_gather(&sources, &runtime, asked).await }
+            })?
+            .handle(&executor, move |asked: Asked<ModelRequest>| {
                 let models = Arc::clone(&answering);
-                async move { answer_model(&models, asked).await }
-            })
-            .expect("registered")
-            .handle(&tokio::runtime::Handle::current(), move |asked: Asked<Exec>| {
+                let runtime = model_runtime.clone();
+                async move { answer_model(&models, &runtime, asked).await }
+            })?
+            .handle(&executor, move |asked: Asked<Exec>| {
                 let tools = execs.clone();
-                async move { answer_exec(&tools, &Machine::default(), asked).await }
-            })
-            .expect("registered");
-        crate::tests::open_runtime(builder, None)
-    }
+                let runtime = exec_runtime.clone();
+                async move { answer_exec(&tools, &Machine::default(), &runtime, asked).await }
+            })?
+            .handle(&executor, move |asked: Asked<AwaitCompaction>| {
+                let runtime = compaction_runtime.clone();
+                async move { answer_compaction(&runtime, asked).await }
+            })?;
+        Ok(())
+    })
     .expect("started")
 }
 
@@ -158,14 +162,14 @@ async fn the_agent_reads_a_file_and_writes_what_it_found() {
         .deliver(&id, "person", vec![InputContent::text(asked)], "d1")
         .await
         .expect("delivered");
-    let mut committed = runtime.committed().expect("a commit watch");
+    let mut committed = runtime.commits().expect("a commit watch");
     let ended = async {
         loop {
             let turn = threads.listed(&id).expect("listed").status.turn;
             if matches!(turn, Turn::Replied | Turn::Failed | Turn::Stopped) {
                 return turn;
             }
-            committed.next().await.expect("the runtime runs");
+            committed.next().await.expect("commit event").expect("the runtime runs");
         }
     };
     let turn = tokio::time::timeout(Duration::from_mins(3), ended).await.expect("ended in time");
@@ -175,11 +179,11 @@ async fn the_agent_reads_a_file_and_writes_what_it_found() {
     }
     let titled = async {
         while threads.listed(&id).expect("listed").config.title.is_none() {
-            committed.next().await.expect("the runtime runs");
+            committed.next().await.expect("commit event").expect("the runtime runs");
         }
     };
     let titled = tokio::time::timeout(Duration::from_mins(1), titled).await.is_ok();
-    let titling = octoii_siphon_lib::process_path(&crate::threads::thread::main(&id), TitleFiber::KEY.as_bytes());
+    let titling = fiber_path(&crate::threads::thread::main(&id), TitleFiber::KEY.as_bytes());
     eprintln!(
         "the title process: {:?}",
         runtime

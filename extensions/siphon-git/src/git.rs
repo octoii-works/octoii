@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 use ts_rs::TS;
 
-use octoii::machine::{Machine, Program, RunError};
+use octoii::machine::{Launcher, Machine, Program, RunError};
 
 /// The most commits of a branch told at once.
 const COMMITS_MAX: usize = 200;
@@ -166,12 +166,11 @@ pub enum GitError {
     Run(#[from] RunError),
 }
 
-/// Git on the machine: runs recorded under the process `under`, at the time `time`, stopped as `cancelled` says.
+/// Git on the machine, launched by its host or request owner and stopped as `cancelled` says.
 #[derive(Debug)]
 pub struct Git<'a> {
     pub machine: &'a Machine,
-    pub under: &'a [u8],
-    pub time: i64,
+    pub commands: &'a dyn Launcher,
     pub cancelled: CancellationToken,
 }
 
@@ -360,10 +359,7 @@ impl Git<'_> {
             "core.quotepath=off".to_owned(),
         ];
         argv.extend(arguments.iter().map(|argument| (*argument).to_owned()));
-        let ran = self
-            .machine
-            .run(self.time, self.under, &Program::new(argv, cwd), &self.cancelled)
-            .await?;
+        let ran = self.machine.run(self.commands, &Program::new(argv, cwd), &self.cancelled).await?;
         match ran.exit {
             octoii::machine::Exit::Code(code) if succeeded(code) => Ok(ran.output),
             _ => Err(GitError::Refused {
@@ -389,8 +385,10 @@ impl Git<'_> {
     /// # Errors
     /// Where git could not tell.
     pub async fn repository(&self, folder: &Path) -> Result<Option<Repository>, GitError> {
-        let Ok(top) = self.output(folder, &["rev-parse", "--show-toplevel"]).await else {
-            return Ok(None);
+        let top = match self.output(folder, &["rev-parse", "--show-toplevel"]).await {
+            Ok(top) => top,
+            Err(GitError::Refused { .. }) => return Ok(None),
+            Err(error) => return Err(error),
         };
         let root = text(&top).trim().to_owned();
         let status = self

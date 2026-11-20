@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use crate::agent::compaction::{AwaitCompaction, answer_compaction};
 use crate::agent::{
     DelegatedFiber, Gather, ModelRequest, Sources, ThreadFiber, TitleFiber, TurnFiber, answer_gather, answer_model, answer_review,
 };
@@ -24,7 +25,7 @@ use octoii_ai::vocabulary::{
     Failure, FailureKind, FunctionCall, Incomplete, InputContent, Item, Message, OutputContent, Request, Response, ResponseStatus, Tool,
     Usage,
 };
-use octoii_siphon_lib::{Asked, Runtime};
+use octoii_siphon_lib::{Asked, Runtime, fiber_path};
 
 /// What a scripted reply says to stand for one its output limit cut off.
 const CUT_OFF: &str = "cut off";
@@ -201,64 +202,64 @@ fn runtime(script: &Arc<Script>) -> Runtime {
         models: Arc::clone(&models),
     };
     let execs = tools.clone();
-    {
-        let mut builder = octoii_siphon_lib::Builder::new().expect("a builder");
+    crate::testing::start_runtime(None, |builder, runtime| {
+        let gather_runtime = runtime.clone();
+        let model_runtime = runtime.clone();
+        let review_runtime = runtime.clone();
+        let exec_runtime = runtime.clone();
+        let compaction_runtime = runtime.clone();
+        let executor = tokio::runtime::Handle::current();
         builder
-            .fiber(ThreadFiber)
-            .expect("registered")
+            .fiber(ThreadFiber)?
             .fiber(TurnFiber {
                 tools,
                 machine: crate::machine::Host::default(),
                 models: Arc::clone(&models),
                 writables: Vec::new(),
-            })
-            .expect("registered")
+            })?
             .fiber(ScriptFiber {
                 tools: inner,
                 primitives: std::sync::Arc::new(crate::agent::ThreadPrimitives),
-            })
-            .expect("registered")
+            })?
             .fiber(TitleFiber {
                 instruction: crate::testing::PROMPTS.title,
-            })
-            .expect("registered")
+            })?
             .fiber(crate::agent::CompactFiber {
                 instruction: crate::testing::PROMPTS.recap,
-            })
-            .expect("registered")
-            .fiber(DelegatedFiber)
-            .expect("registered")
-            .fiber(crate::agent::ResumeFiber)
-            .expect("registered")
-            .handle(&tokio::runtime::Handle::current(), move |asked: Asked<Gather>| {
+            })?
+            .fiber(DelegatedFiber)?
+            .fiber(crate::agent::ResumeFiber)?
+            .handle(&executor, move |asked: Asked<Gather>| {
                 let sources = sources.clone();
-                async move { answer_gather(&sources, asked).await }
-            })
-            .expect("registered")
-            .handle(&tokio::runtime::Handle::current(), {
+                let runtime = gather_runtime.clone();
+                async move { answer_gather(&sources, &runtime, asked).await }
+            })?
+            .handle(&executor, {
                 let models = Arc::clone(&models);
                 move |asked: Asked<ModelRequest>| {
                     let models = Arc::clone(&models);
-                    async move { answer_model(&models, asked).await }
+                    let runtime = model_runtime.clone();
+                    async move { answer_model(&models, &runtime, asked).await }
                 }
-            })
-            .expect("registered")
-            .handle(&tokio::runtime::Handle::current(), move |asked: Asked<Review>| {
+            })?
+            .handle(&executor, move |asked: Asked<Review>| {
                 let models = Arc::clone(&models);
-                async move { answer_review(&models, crate::testing::PROMPTS.review, asked).await }
-            })
-            .expect("registered")
-            .handle(&tokio::runtime::Handle::current(), move |asked: Asked<Exec>| {
+                let runtime = review_runtime.clone();
+                async move { answer_review(&models, crate::testing::PROMPTS.review, &runtime, asked).await }
+            })?
+            .handle(&executor, move |asked: Asked<Exec>| {
                 let tools = execs.clone();
-                async move { answer_exec(&tools, &Machine::default(), asked).await }
-            })
-            .expect("registered")
-            .ask_person::<Permission>()
-            .expect("registered")
-            .ask_person::<Asks>()
-            .expect("registered");
-        crate::tests::open_runtime(builder, None)
-    }
+                let runtime = exec_runtime.clone();
+                async move { answer_exec(&tools, &Machine::default(), &runtime, asked).await }
+            })?
+            .handle(&executor, move |asked: Asked<AwaitCompaction>| {
+                let runtime = compaction_runtime.clone();
+                async move { answer_compaction(&runtime, asked).await }
+            })?
+            .ask_person::<Permission>()?
+            .ask_person::<Asks>()?;
+        Ok(())
+    })
     .expect("started")
 }
 
@@ -313,10 +314,10 @@ async fn made(threads: &Threads<ThreadFiber>, workspace: &std::path::Path, mode:
 
 /// Waits till the thread `id`'s turn stands as `turn`.
 async fn until(threads: &Threads<ThreadFiber>, id: &str, turn: Turn) {
-    let mut committed = threads.runtime().committed().expect("a commit watch");
+    let mut committed = threads.runtime().commits().expect("a commit watch");
     let waiting = async {
         while threads.listed(id).expect("listed").status.turn != turn {
-            committed.next().await.expect("the runtime runs");
+            committed.next().await.expect("commit event").expect("the runtime runs");
         }
     };
     tokio::time::timeout(Duration::from_secs(20), waiting).await.expect("in time");
@@ -461,10 +462,10 @@ async fn a_turn_takes_on_the_calls_its_replies_make_and_asks_again_till_one_call
         .expect("delivered");
     until(&threads, &id, Turn::Replied).await;
     assert_eq!(std::fs::read_to_string(workspace.join("a.txt")).expect("written"), "hello\n");
-    let mut titled = threads.runtime().committed().expect("a commit watch");
+    let mut titled = threads.runtime().commits().expect("a commit watch");
     tokio::time::timeout(Duration::from_secs(10), async {
         while threads.listed(&id).expect("listed").config.title.is_none() {
-            titled.next().await.expect("the runtime runs");
+            titled.next().await.expect("commit event").expect("the runtime runs");
         }
     })
     .await
@@ -682,6 +683,38 @@ async fn a_quota_used_up_ends_the_turn_with_the_failure_and_the_next_before_it_a
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_turn_uses_its_remaining_budget_before_asking_the_model_again() {
+    let script = script(vec![Ok(vec![says(CUT_OFF)]), Ok(vec![says("asked again")])]);
+    let runtime = runtime(&script);
+    let threads = Threads::<ThreadFiber>::new(runtime.runtime_handle());
+    let (_folder, workspace) = folder();
+    let new = NewThread {
+        actor: "person".into(),
+        config: Config {
+            model: Some("test/m".into()),
+            workspace: Some(workspace.to_string_lossy().into_owned()),
+            title: Some("Budget test".into()),
+            budget_nanodollars: Some(50),
+            ..Config::default()
+        },
+        ..NewThread::default()
+    };
+    let id = threads.create(&new, "budget").await.expect("made");
+    threads
+        .deliver(&id, "person", vec![InputContent::text("work within the budget")], "d1")
+        .await
+        .expect("delivered");
+    until(&threads, &id, Turn::Stopped).await;
+    assert_eq!(script.asked.lock().expect("held").len(), 1);
+    assert!(matches!(
+        entries(&threads, &id).iter().rev().find(|entry| matches!(entry, Entry::TurnEnd { .. })),
+        Some(Entry::TurnEnd { outcome: Outcome::Stopped, reason: Some(reason), .. })
+            if reason == "its thread's budget ran out"
+    ));
+    runtime.close().expect("closed");
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_stop_ends_the_turn_with_every_call_it_made_answered() {
     let script = script(vec![Ok(vec![
         calls("c1", "shell", &serde_json::json!({ "command": "sleep 30" })),
@@ -696,10 +729,10 @@ async fn a_stop_ends_the_turn_with_every_call_it_made_answered() {
         .deliver(&id, "person", vec![InputContent::text("wait")], "d1")
         .await
         .expect("delivered");
-    let mut committed = runtime.committed().expect("a commit watch");
+    let mut committed = runtime.commits().expect("a commit watch");
     tokio::time::timeout(Duration::from_secs(10), async {
         while !entries(&threads, &id).iter().any(|entry| matches!(entry, Entry::Reply { .. })) {
-            committed.next().await.expect("the runtime runs");
+            committed.next().await.expect("commit event").expect("the runtime runs");
         }
     })
     .await
@@ -708,7 +741,11 @@ async fn a_stop_ends_the_turn_with_every_call_it_made_answered() {
     threads.stop(&id, "person").await.expect("stopped");
     until(&threads, &id, Turn::Stopped).await;
     let all = entries(&threads, &id);
-    let results: Vec<(String, CallStatus)> = all
+    let end = all
+        .iter()
+        .rposition(|entry| matches!(entry, Entry::TurnEnd { .. }))
+        .expect("a turn end");
+    let results: Vec<(String, CallStatus)> = all[..end]
         .iter()
         .filter_map(|entry| match entry {
             Entry::Result { output, status, .. } => Some((output.call_id.clone(), *status)),
@@ -716,15 +753,16 @@ async fn a_stop_ends_the_turn_with_every_call_it_made_answered() {
         })
         .collect();
     assert_eq!(results.len(), 2, "{all:?}");
+    assert!(!all[end + 1..].iter().any(|entry| matches!(entry, Entry::Result { .. })), "{all:?}");
     assert_eq!(results[1], ("c2".into(), CallStatus::Interrupted));
     assert!(!workspace.join("never.txt").exists());
     assert!(
         matches!(
-            all.last(),
-            Some(Entry::TurnEnd {
+            all[end],
+            Entry::TurnEnd {
                 outcome: Outcome::Stopped,
                 ..
-            })
+            }
         ),
         "{all:?}"
     );
@@ -791,7 +829,7 @@ async fn a_window_too_full_for_its_next_request_is_compacted_and_the_model_asked
         .deliver(&id, "person", vec![InputContent::text(long.clone())], "d2")
         .await
         .expect("delivered");
-    let mut committed = runtime.committed().expect("a commit watch");
+    let mut committed = runtime.commits().expect("a commit watch");
     tokio::time::timeout(Duration::from_secs(20), async {
         while entries(&threads, &id)
             .iter()
@@ -799,7 +837,7 @@ async fn a_window_too_full_for_its_next_request_is_compacted_and_the_model_asked
             .count()
             < 2
         {
-            committed.next().await.expect("the runtime runs");
+            committed.next().await.expect("commit event").expect("the runtime runs");
         }
     })
     .await
@@ -936,7 +974,7 @@ async fn a_task_delegated_in_the_background_is_answered_at_once_and_its_end_deli
         .deliver(&id, "person", vec![InputContent::text("delegate it")], "d1")
         .await
         .expect("delivered");
-    let mut committed = runtime.committed().expect("a commit watch");
+    let mut committed = runtime.commits().expect("a commit watch");
     tokio::time::timeout(Duration::from_secs(20), async {
         while entries(&threads, &id)
             .iter()
@@ -944,7 +982,7 @@ async fn a_task_delegated_in_the_background_is_answered_at_once_and_its_end_deli
             .count()
             < 2
         {
-            committed.next().await.expect("the runtime runs");
+            committed.next().await.expect("commit event").expect("the runtime runs");
         }
     })
     .await
@@ -991,7 +1029,7 @@ async fn an_input_queued_while_a_turn_works_waits_for_it_to_end_and_begins_the_n
         .queue(&id, "person", vec![InputContent::text("and then this")], "d2")
         .await
         .expect("queued");
-    let mut committed = runtime.committed().expect("a commit watch");
+    let mut committed = runtime.commits().expect("a commit watch");
     tokio::time::timeout(Duration::from_secs(20), async {
         while entries(&threads, &id)
             .iter()
@@ -999,7 +1037,7 @@ async fn an_input_queued_while_a_turn_works_waits_for_it_to_end_and_begins_the_n
             .count()
             < 2
         {
-            committed.next().await.expect("the runtime runs");
+            committed.next().await.expect("commit event").expect("the runtime runs");
         }
     })
     .await
@@ -1045,7 +1083,7 @@ async fn a_thread_started_by_another_takes_its_message_and_its_end_is_told_back(
         .deliver(&id, "person", vec![InputContent::text("start a thread")], "d1")
         .await
         .expect("delivered");
-    let mut committed = runtime.committed().expect("a commit watch");
+    let mut committed = runtime.commits().expect("a commit watch");
     tokio::time::timeout(Duration::from_secs(20), async {
         while entries(&threads, &id)
             .iter()
@@ -1053,7 +1091,7 @@ async fn a_thread_started_by_another_takes_its_message_and_its_end_is_told_back(
             .count()
             < 2
         {
-            committed.next().await.expect("the runtime runs");
+            committed.next().await.expect("commit event").expect("the runtime runs");
         }
     })
     .await
@@ -1115,11 +1153,12 @@ async fn a_thread_sends_no_message_to_one_whose_mode_reaches_further() {
 
 /// Arms the resume of the thread `id` to go on `after` from now.
 async fn arm(runtime: &Runtime, id: &str, after: i64) {
-    let snapshot = runtime.snapshot().expect("a snapshot");
-    let input = crate::agent::ResumeInput::now(&snapshot, id, runtime.now_ms().expect("time") + after, "person").expect("read");
-    let mut changes = octoii_siphon_lib::Changes::new();
-    crate::agent::resume::arm(&snapshot, &mut changes, &input).expect("armed");
-    runtime.commit(changes).await.expect("committed");
+    let at = runtime.now_ms().expect("time") + after;
+    crate::volume::commit_checked(&runtime.runtime_handle(), |snapshot, changes| {
+        crate::agent::resume::reschedule(snapshot, changes, id, Some(at), "person")
+    })
+    .await
+    .expect("armed");
 }
 
 fn words_given(threads: &Threads<ThreadFiber>, id: &str) -> Vec<String> {
@@ -1154,8 +1193,8 @@ async fn a_resume_goes_on_at_its_time_unless_the_person_went_on_first() {
         .await
         .expect("delivered");
     until(&threads, &other, Turn::Replied).await;
-    let resume = octoii_siphon_lib::process_path(&crate::threads::thread::main(&other), crate::agent::ResumeFiber::KEY.as_bytes());
-    let mut committed = runtime.committed().expect("a commit watch");
+    let resume = fiber_path(&crate::threads::thread::main(&other), crate::agent::ResumeFiber::KEY.as_bytes());
+    let mut committed = runtime.commits().expect("a commit watch");
     tokio::time::timeout(Duration::from_secs(10), async {
         while runtime
             .snapshot()
@@ -1165,7 +1204,7 @@ async fn a_resume_goes_on_at_its_time_unless_the_person_went_on_first() {
             .and_then(|record| record.outcome)
             .is_none()
         {
-            committed.next().await.expect("the runtime runs");
+            committed.next().await.expect("commit event").expect("the runtime runs");
         }
     })
     .await
@@ -1427,41 +1466,57 @@ async fn compaction_keeps_its_slot_while_descendants_are_exiting() {
     struct Family;
     impl octoii_siphon_lib::Fiber for Family {
         const KIND: &'static str = "test.family";
+        const OPTIONS: octoii_siphon_lib::Options = octoii_siphon_lib::Options {
+            stop_handler: true,
+            ..octoii_siphon_lib::Options::DEFAULT
+        };
         type Input = bool;
         type Checkpoint = ();
         type Output = ();
 
         fn run(
             &self,
-            _: &mut octoii_siphon_lib::Run<'_>,
+            run: &mut octoii_siphon_lib::Run<'_>,
             finish: bool,
             _: Option<()>,
         ) -> anyhow::Result<octoii_siphon_lib::Ending<(), ()>> {
-            Ok(if finish {
+            Ok(if finish && run.snapshot().read(b"finish")?.is_some() {
                 octoii_siphon_lib::Ending::Done(())
+            } else if finish {
+                octoii_siphon_lib::Ending::Wait((), octoii_siphon_lib::Wait::new().change(b"finish"))
             } else {
                 octoii_siphon_lib::Ending::Wait((), octoii_siphon_lib::Wait::new().deadline(i64::MAX))
             })
         }
     }
 
-    let mut builder = octoii_siphon_lib::Builder::new().unwrap();
-    builder.fiber(Family).unwrap();
-    let runtime = builder.memory().unwrap();
+    let runtime = crate::testing::start_runtime(None, |builder, _| {
+        builder.fiber(Family)?;
+        Ok(())
+    })
+    .unwrap();
     let id = "test";
-    let directory = thread::path(id);
     let main = thread::main(id);
-    let compact = compaction::path(id);
-    let mut changes = octoii_siphon_lib::Changes::new();
+    let compact = fiber_path(&main, thread::COMPACTION_KEY.as_bytes());
+    let mut changes = octoii_siphon_lib::Changes::new().unwrap();
     changes
-        .mkdir(&directory)
-        .start::<Family>(&directory, thread::MAIN_KEY, &false)
+        .mkdir(thread::path(id))
         .unwrap()
-        .start::<Family>(&main, thread::COMPACTION_KEY, &true)
-        .unwrap()
-        .start::<Family>(&compact, "child", &false)
+        .start::<Family>(None, thread::main_key(id), &false)
         .unwrap();
-    let mut committed = runtime.committed().unwrap();
+    runtime.commit(changes).await.unwrap();
+    let parent = runtime.snapshot().unwrap().fiber(&main).unwrap().unwrap().id;
+    let mut changes = octoii_siphon_lib::Changes::new().unwrap();
+    changes.start::<Family>(Some(&parent), thread::COMPACTION_KEY, &true).unwrap();
+    runtime.commit(changes).await.unwrap();
+    let parent = runtime.snapshot().unwrap().fiber(&compact).unwrap().unwrap().id;
+    let mut changes = octoii_siphon_lib::Changes::new().unwrap();
+    changes
+        .start::<Family>(Some(&parent), "child", &false)
+        .unwrap()
+        .write(b"finish", b"")
+        .unwrap();
+    let mut committed = runtime.commits().unwrap();
     runtime.commit(changes).await.unwrap();
     let snapshot = tokio::time::timeout(std::time::Duration::from_secs(5), async {
         loop {
@@ -1473,12 +1528,12 @@ async fn compaction_keeps_its_slot_while_descendants_are_exiting() {
             {
                 break snapshot;
             }
-            committed.next().await.unwrap();
+            committed.next().await.unwrap().unwrap();
         }
     })
     .await
     .expect("the compaction records its result before its child exits");
-    let mut changes = octoii_siphon_lib::Changes::new();
+    let mut changes = octoii_siphon_lib::Changes::new().unwrap();
     compaction::start(&snapshot, &mut changes, id).unwrap();
     assert!(changes.is_empty(), "the compaction still holds its slot");
 }

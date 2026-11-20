@@ -126,13 +126,13 @@ impl ClaudeCode {
         };
         let (events, told) = mpsc::unbounded_channel();
         if aside {
-            let (session, told) = start_at_known(&account, call.now_ms, &asked, &plan, true).await?;
+            let (session, told) = start_at_known(&account, &asked, &plan, true).await?;
             tokio::spawn(answer_aside(account, session, told, asked.schema.is_some(), events));
         } else {
             let prefix = plan.last.map_or_else(|| plan.root.clone(), |at| plan.chain[at].clone());
             let (session, told) = match account.take_live(&prefix, &asked.settings).await {
                 Some(session) => (session, conversation::told_after(&plan.messages, plan.last)),
-                None => start_at_known(&account, call.now_ms, &asked, &plan, false).await?,
+                None => start_at_known(&account, &asked, &plan, false).await?,
             };
             let end = plan.chain.last().cloned().unwrap_or(plan.root);
             let answering = Answering {
@@ -149,7 +149,7 @@ impl ClaudeCode {
     /// window of a model never asked of before asked of the one `claude` that tells the models, in turn.
     async fn listed(&self, call: &Call) -> Result<Vec<Model>, Failure> {
         let account = self.account(&call.provider)?;
-        let (process, answer) = account.asked(call.now_ms).await?;
+        let (process, answer) = account.asked().await?;
         let rows: Vec<Value> = answer["models"].as_array().cloned().unwrap_or_default();
         let kept = account.kept().windows.0.clone();
         let mut told = HashMap::new();
@@ -182,7 +182,7 @@ impl ClaudeCode {
                 ..Standing::default()
             });
         }
-        let (process, answer) = account.asked(call.now_ms).await?;
+        let (process, answer) = account.asked().await?;
         let Some(email) = answer["account"]["email"].as_str() else {
             return Ok(Standing {
                 guidance: Some(Guidance {
@@ -211,7 +211,7 @@ impl ClaudeCode {
             return Ok(());
         }
         let account = self.account(&call.provider)?;
-        account.sign_out(call.now_ms).await?;
+        account.sign_out().await?;
         self.accounts
             .lock()
             .expect("no holder of the accounts panics")
@@ -309,7 +309,7 @@ fn listed_tools(tools: &[Tool]) -> Vec<Value> {
 
 /// A session started at the longest prefix of the conversation a session still holds — forked, for an answer aside or
 /// behind a session's tip; in place at its tip, any live one of it closed — or anew; and what it is given.
-async fn start_at_known(account: &Account, time: i64, asked: &Asked, plan: &Plan, aside: bool) -> Result<(Session, Told), Failure> {
+async fn start_at_known(account: &Account, asked: &Asked, plan: &Plan, aside: bool) -> Result<(Session, Told), Failure> {
     let known = longest_present(account, plan);
     let begin = match &known {
         None => Begin::New,
@@ -327,7 +327,7 @@ async fn start_at_known(account: &Account, time: i64, asked: &Asked, plan: &Plan
             }
         }
     };
-    let session = account.start(time, asked, &begin).await?;
+    let session = account.start(asked, &begin).await?;
     let told = conversation::told_after(&plan.messages, known.map(|(at, _)| at));
     Ok((session, told))
 }

@@ -15,6 +15,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parent.parent
 RELEASES = "https://github.com/octoii-works/octoii-siphon-lib/releases/download"
+ABI = 6
 
 
 def version():
@@ -33,7 +34,12 @@ def host_target():
 def files(target):
     if target == "x86_64-pc-windows-msvc":
         return {"siphon_native.lib": "sha256", "siphon_ffi.dll": "dll_sha256"}
-    if target in {"aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu"}:
+    if target in {
+        "aarch64-apple-darwin",
+        "x86_64-apple-darwin",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-unknown-linux-gnu",
+    }:
         return {"libsiphon_native.a": "sha256"}
     raise SystemExit(f"No published native distribution for {target}")
 
@@ -41,7 +47,7 @@ def files(target):
 def verify(directory, target, names):
     try:
         manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
-        return manifest["abi"] == 5 and manifest["target"] == target and all(
+        return manifest["abi"] == ABI and manifest["target"] == target and all(
             hashlib.sha256((directory / name).read_bytes()).hexdigest() == manifest[checksum]
             for name, checksum in names.items()
         )

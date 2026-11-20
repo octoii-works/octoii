@@ -1,21 +1,37 @@
 //! The volume as an extension reaches it: read as it stands, ids minted from it, its time — and written only through
 //! Octoii's primitives, which hold the rules of what may be written: a delivery, a plan of a call's, the person's trust,
-//! a record of runs while they run. An extension is given this, never the runtime nor the kernel, which write anything.
-
-use std::future::Future;
+//! and a thread's startup and attachments.
 
 use bytes::Bytes;
 use octoii_ai::vocabulary::FileRef;
-use octoii_siphon_lib::{Changes, RuntimeHandle};
+use octoii_siphon_lib::{Batch, Changes, RuntimeHandle, Status};
 
 use crate::threads::{files, thread};
 
 /// What the volume's reads give, and how the volume and the machine's commands fail, as Beak tells it.
 pub use octoii_siphon_lib::{Error, Result, Snapshot};
 
-/// A Fiber can be reaped once it and all its descendants have ended.
-pub(crate) fn reapable(record: &octoii_siphon_lib::FiberRecord) -> bool {
-    record.reapable
+/// Plans a write from one snapshot and retries when a concurrent commit changes the head.
+/// Staging can run again, so callers keep effects outside the volume out of the plan.
+pub(crate) async fn commit_checked<T, E: From<Error>>(
+    runtime: &RuntimeHandle,
+    mut plan: impl FnMut(&Snapshot, &mut Batch<'_>) -> std::result::Result<T, E>,
+) -> std::result::Result<T, E> {
+    loop {
+        let snapshot = runtime.snapshot()?;
+        let mut changes = Changes::new()?;
+        let result = plan(&snapshot, &mut changes)?;
+        if changes.is_empty() {
+            return Ok(result);
+        }
+        changes.expect(&snapshot)?;
+        drop(snapshot);
+        match runtime.commit(changes).await {
+            Ok(_) => return Ok(result),
+            Err(error) if error.status() == Status::Conflict => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
 }
 
 /// The volume, as an extension reaches it.
@@ -113,9 +129,7 @@ impl Volume {
     /// # Errors
     /// The volume could not be read, or the stored configuration is invalid.
     pub fn thread_config(&self, id: &str) -> anyhow::Result<Option<crate::threads::Config>> {
-        self.snapshot()?
-            .stat(&thread::path(id))?
-            .and_then(|entry| entry.directory)
+        thread::directory(&*self.snapshot()?, id)?
             .map(|directory| crate::threads::Config::of(&directory))
             .transpose()
             .map_err(Into::into)
@@ -157,7 +171,7 @@ impl Volume {
         }
         let size = bytes.len() as u64;
         let media_type = files::media_type(name, &bytes);
-        let mut changes = Changes::new();
+        let mut changes = Changes::new()?;
         let reference = files::keep(&snapshot, &mut changes, thread, bytes)?;
         if !changes.is_empty() {
             self.runtime.commit(changes).await?;
@@ -187,7 +201,7 @@ impl Volume {
         if bytes.len() > files::BYTES_MAX {
             return Err(files::Refused::TooLarge);
         }
-        let mut changes = Changes::new();
+        let mut changes = Changes::new()?;
         let kept = files::keep_image(&snapshot, &mut changes, thread, bytes, name)?;
         if !changes.is_empty() {
             self.runtime.commit(changes).await?;
@@ -207,7 +221,7 @@ impl Volume {
         name: Option<&str>,
     ) -> std::result::Result<FileRef, files::Refused> {
         let snapshot = self.file_snapshot(thread)?;
-        let mut changes = Changes::new();
+        let mut changes = Changes::new()?;
         let file = files::keep_given(&snapshot, &mut changes, thread, bytes, media_type, name)?;
         if !changes.is_empty() {
             self.runtime.commit(changes).await?;
@@ -229,28 +243,5 @@ impl Volume {
             return Err(files::Refused::NoSuchThread);
         }
         Ok(snapshot)
-    }
-
-    /// What `work` comes to, given a record of the kind `kind` for the runs it makes — the commands a run of git makes,
-    /// held under it while they run — made for it and taken away after it.
-    ///
-    /// # Errors
-    /// The volume's failure to make the record.
-    pub async fn recorded<F, Done, T>(&self, kind: &str, work: F) -> octoii_siphon_lib::Result<T>
-    where
-        F: FnOnce(Bytes) -> Done,
-        Done: Future<Output = T>,
-    {
-        let id = self.runtime.new_id()?;
-        let record = Bytes::from(format!("{kind}:{id}"));
-        let mut changes = Changes::new();
-        changes.mkdir(record.clone());
-        self.runtime.commit(changes).await?;
-        let done = work(record.clone()).await;
-        let mut changes = Changes::new();
-        changes.force_remove(record, None);
-        // A record left by a failed removal goes as the volume collects what nothing holds.
-        let _ = self.runtime.commit(changes).await;
-        Ok(done)
     }
 }

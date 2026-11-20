@@ -23,7 +23,21 @@ pub use octoii_siphon_lib::Runtime;
 /// # Errors
 /// The runtime builder or in-memory volume could not be opened.
 pub fn memory_runtime() -> octoii_siphon_lib::Result<Runtime> {
-    octoii_siphon_lib::Builder::new()?.memory()
+    start_runtime(None, |_, _| Ok(()))
+}
+
+/// Opens a test volume and registers its execution before starting the local machine.
+pub(crate) fn start_runtime(
+    directory: Option<&std::path::Path>,
+    register: impl FnOnce(&mut octoii_siphon_lib::Builder, &octoii_siphon_lib::RuntimeHandle) -> octoii_siphon_lib::Result<()>,
+) -> octoii_siphon_lib::Result<Runtime> {
+    let runtime = Runtime::open(directory, None)?;
+    let handle = runtime.runtime_handle();
+    let mut builder = octoii_siphon_lib::Builder::new(&handle)?;
+    builder.local_machine()?;
+    register(&mut builder, &handle)?;
+    builder.start()?;
+    Ok(runtime)
 }
 
 /// Explicit instructions for runtime tests; production instructions belong to the base extension.
@@ -293,28 +307,27 @@ impl Calling {
             .with(crate::tools::ShellTool)
             .with(crate::tools::ExecuteTool));
         let execs = tools.clone();
-        let mut builder = octoii_siphon_lib::Builder::new().expect("a builder");
-        builder
-            .fiber(Caller { tools: tools.clone() })
-            .expect("caller registered")
-            .fiber(crate::tools::ScriptFiber {
-                tools,
-                primitives: Arc::new(crate::agent::ThreadPrimitives),
-            })
-            .expect("script registered")
-            .fiber(crate::trust::TrustFiber)
-            .expect("trust registered")
-            .ask_person::<crate::trust::Trust>()
-            .expect("person request registered")
-            .handle(
-                &tokio::runtime::Handle::current(),
-                move |asked: octoii_siphon_lib::Asked<crate::tools::Exec>| {
-                    let tools = execs.clone();
-                    async move { crate::tools::answer_exec(&tools, &crate::machine::Host::default(), asked).await }
-                },
-            )
-            .expect("handler registered");
-        let runtime = builder.memory().expect("started");
+        let runtime = start_runtime(None, |builder, state| {
+            let state = state.clone();
+            builder
+                .fiber(Caller { tools: tools.clone() })?
+                .fiber(crate::tools::ScriptFiber {
+                    tools,
+                    primitives: Arc::new(crate::agent::ThreadPrimitives),
+                })?
+                .fiber(crate::trust::TrustFiber)?
+                .ask_person::<crate::trust::Trust>()?
+                .handle(
+                    &tokio::runtime::Handle::current(),
+                    move |asked: octoii_siphon_lib::Asked<crate::tools::Exec>| {
+                        let tools = execs.clone();
+                        let state = state.clone();
+                        async move { crate::tools::answer_exec(&tools, &crate::machine::Host::default(), &state, asked).await }
+                    },
+                )?;
+            Ok(())
+        })
+        .expect("started");
         Self { runtime }
     }
 
@@ -331,21 +344,22 @@ impl Calling {
         calls: Vec<(String, String, String)>,
     ) -> Vec<Called> {
         let asking = Asking { workspace, catalog, calls };
-        let mut changes = octoii_siphon_lib::Changes::new();
+        let mut changes = octoii_siphon_lib::Changes::new().expect("a batch");
         changes
             .mkdir(crate::threads::thread::path("t1"))
-            .mkdir(crate::threads::inbox::path("t1"));
-        changes.start::<Caller>(Bytes::new(), key, &asking).expect("an input");
+            .and_then(|changes| changes.mkdir(crate::threads::inbox::path("t1")))
+            .and_then(|changes| changes.start::<Caller>(None, key, &asking))
+            .expect("a thread and input");
         self.runtime.commit(changes).await.expect("started");
-        let path = octoii_siphon_lib::process_path(b"", key.as_bytes());
-        let mut committed = self.runtime.committed().expect("a commit watch");
+        let path = octoii_siphon_lib::fiber_path(b"", key.as_bytes());
+        let mut committed = self.runtime.commits().expect("a commit watch");
         let waiting = async {
             loop {
                 let record = self.runtime.snapshot().expect("a snapshot").fiber(&path).expect("a record");
                 if let Some(octoii_siphon_lib::Outcome::Completed(Some(result))) = record.and_then(|record| record.outcome) {
                     return serde_json::from_slice(&result).expect("what it came to");
                 }
-                committed.next().await.expect("the runtime runs");
+                assert!(matches!(committed.next().await, Ok(Some(octoii_siphon_lib::CommitEvent::Head(_)))));
             }
         };
         tokio::time::timeout(Duration::from_secs(30), waiting).await.expect("ended in time")
@@ -379,13 +393,13 @@ impl Calling {
     /// Where the volume fails, or it is not asked and decided in 10 s each.
     pub async fn decide(&self, trust: &crate::trust::Trust, trusted: bool) {
         let key = crate::trust::TrustFiber::KEY.as_bytes();
-        let mut changes = octoii_siphon_lib::Changes::new();
+        let mut changes = octoii_siphon_lib::Changes::new().expect("a batch");
         changes
-            .start::<crate::trust::TrustFiber>(Bytes::new(), crate::trust::TrustFiber::KEY, trust)
+            .start::<crate::trust::TrustFiber>(None, crate::trust::TrustFiber::KEY, trust)
             .expect("an input");
         self.runtime.commit(changes).await.expect("started");
-        let process = octoii_siphon_lib::process_path(b"", key);
-        let mut committed = self.runtime.committed().expect("a commit watch");
+        let process = octoii_siphon_lib::fiber_path(b"", key);
+        let mut committed = self.runtime.commits().expect("a commit watch");
         let asked = async {
             loop {
                 let snapshot = self.runtime.snapshot().expect("a snapshot");
@@ -398,7 +412,7 @@ impl Calling {
                 {
                     return prompt.id;
                 }
-                committed.next().await.expect("the runtime runs");
+                assert!(matches!(committed.next().await, Ok(Some(octoii_siphon_lib::CommitEvent::Head(_)))));
             }
         };
         let request = tokio::time::timeout(Duration::from_secs(10), asked).await.expect("asked in time");
@@ -415,7 +429,7 @@ impl Calling {
                 {
                     break;
                 }
-                committed.next().await.expect("the runtime runs");
+                assert!(matches!(committed.next().await, Ok(Some(octoii_siphon_lib::CommitEvent::Head(_)))));
             }
         };
         tokio::time::timeout(Duration::from_secs(10), decided)

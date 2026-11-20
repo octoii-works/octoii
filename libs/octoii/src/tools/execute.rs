@@ -10,9 +10,8 @@ use std::fmt::Write as _;
 
 use crate::machine::paths::Base;
 use crate::threads::{Mode, Parent, SubThreadKind, thread};
-use bytes::Bytes;
 use octoii_ai::vocabulary::InputContent;
-use octoii_siphon_lib::{Batch, Ending, Fiber, Run};
+use octoii_siphon_lib::{Batch, Ending, Fiber, FiberId, Run};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use siphon_script::{Host, Limits, Progress, Script};
@@ -128,7 +127,7 @@ impl Tool for ExecuteTool {
     fn start(
         &self,
         changes: &mut Batch<'_>,
-        parent: &Bytes,
+        parent: &FiberId,
         key: &str,
         args: &ExecuteArgs,
         setting: &Setting<'_>,
@@ -145,7 +144,7 @@ impl Tool for ExecuteTool {
             mode: setting.mode,
             confines: setting.confines,
         };
-        Some(changes.start::<ScriptFiber>(parent.clone(), key, &input).map(|_| ()))
+        Some(changes.start::<ScriptFiber>(Some(parent), key, &input).map(|_| ()))
     }
 
     fn finished(&self, outcome: &octoii_siphon_lib::Outcome) -> Finished {

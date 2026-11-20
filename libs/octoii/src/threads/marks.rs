@@ -78,7 +78,7 @@ impl Marks {
 
 impl MarksChange {
     /// Adds what makes this change of the thread `id`, snoozed now as `snoozed`, to `changes`, at `now`.
-    pub(crate) fn add(&self, changes: &mut Batch<'_>, id: &str, snoozed: bool, now: i64) {
+    pub(crate) fn add(&self, changes: &mut Batch<'_>, id: &str, snoozed: bool, now: i64) -> octoii_siphon_lib::Result<()> {
         let flag = |name: &'static str, on: bool| (Bytes::from_static(name.as_bytes()), Some(thread::flag(on)));
         let labels: Vec<Named> = [
             self.pinned.map(|on| flag(PINNED_LABEL, on)),
@@ -97,15 +97,16 @@ impl MarksChange {
         .flatten()
         .collect();
         if !labels.is_empty() || !annotations.is_empty() {
-            changes.meta(thread::path(id), labels, annotations);
+            changes.meta(thread::path(id), labels, annotations)?;
         }
         if let Some(until) = self.snoozed_until {
             let snooze = thread::within(id, SNOOZE_NAME);
             if until > now {
-                changes.write(snooze.clone(), Bytes::new()).expire(snooze, Some(until));
+                changes.write(&snooze, Bytes::new())?.expire(snooze, Some(until))?;
             } else if snoozed {
-                changes.delete(snooze);
+                changes.delete(snooze)?;
             }
         }
+        Ok(())
     }
 }

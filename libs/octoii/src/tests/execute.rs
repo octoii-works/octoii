@@ -2,7 +2,7 @@
 //! exec'd as every call is, a call that waits on the person waited for as the script is run again from its start, and
 //! the script's end what it returned or threw, with what it wrote to its console.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::machine::Host;
@@ -14,7 +14,7 @@ use crate::tools::{
 use bytes::Bytes;
 use octoii_ai::vocabulary::InputContent;
 use octoii_siphon_lib::Outcome;
-use octoii_siphon_lib::{Asked, Changes, Ending, Fiber, Run, Runtime};
+use octoii_siphon_lib::{Asked, Changes, Ending, Fiber, Run, Runtime, fiber_path};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -102,32 +102,29 @@ impl Fiber for Caller {
     }
 }
 
-fn runtime(directory: Option<std::path::PathBuf>) -> Runtime {
+fn runtime(directory: Option<&Path>) -> Runtime {
     runtime_on(directory, Host::default())
 }
 
-fn runtime_on(directory: Option<std::path::PathBuf>, host: Host) -> Runtime {
-    {
-        let mut builder = octoii_siphon_lib::Builder::new().expect("a builder");
+fn runtime_on(directory: Option<&Path>, host: Host) -> Runtime {
+    crate::testing::start_runtime(directory, |builder, runtime| {
+        let exec_runtime = runtime.clone();
         builder
             .fiber(Caller {
                 threads: host.threads.clone(),
-            })
-            .expect("registered")
+            })?
             .fiber(ScriptFiber {
                 tools: inner(),
                 primitives: std::sync::Arc::new(crate::agent::ThreadPrimitives),
-            })
-            .expect("registered")
+            })?
             .handle(&tokio::runtime::Handle::current(), move |asked: Asked<Exec>| {
                 let host = host.clone();
-                async move { answer_exec(&inner(), &host, asked).await }
-            })
-            .expect("registered")
-            .ask_person::<Permission>()
-            .expect("registered");
-        crate::tests::open_runtime(builder, directory)
-    }
+                let runtime = exec_runtime.clone();
+                async move { answer_exec(&inner(), &host, &runtime, asked).await }
+            })?
+            .ask_person::<Permission>()?;
+        Ok(())
+    })
     .expect("started")
 }
 
@@ -136,22 +133,27 @@ async fn executed(runtime: &Runtime, workspace: PathBuf, code: &str) -> Bytes {
 }
 
 async fn executed_as(runtime: &Runtime, key: &str, workspace: PathBuf, code: &str) -> Bytes {
-    let mut changes = Changes::new();
+    let mut changes = Changes::new().expect("a batch");
     let asking = Asking {
         workspace,
         code: code.into(),
     };
-    changes.mkdir(crate::threads::thread::path("t1")).meta(
-        crate::threads::thread::path("t1"),
-        vec![(
-            Bytes::from_static(crate::threads::thread::PROJECT_LABEL.as_bytes()),
-            Some(Bytes::new()),
-        )],
-        vec![],
-    );
-    changes.start::<Caller>(Bytes::new(), key, &asking).expect("an input");
+    let path = crate::threads::thread::path("t1");
+    changes
+        .mkdir(&path)
+        .expect("a directory")
+        .meta(
+            &path,
+            [(
+                Bytes::from_static(crate::threads::thread::PROJECT_LABEL.as_bytes()),
+                Some(Bytes::new()),
+            )],
+            [],
+        )
+        .expect("a project label");
+    changes.start::<Caller>(None, key, &asking).expect("an input");
     runtime.commit(changes).await.expect("started");
-    octoii_siphon_lib::process_path(b"", key.as_bytes())
+    fiber_path(b"", key.as_bytes())
 }
 
 async fn ended(runtime: &Runtime, path: &[u8]) -> (CallStatus, String) {
@@ -160,14 +162,14 @@ async fn ended(runtime: &Runtime, path: &[u8]) -> (CallStatus, String) {
 }
 
 async fn ended_call(runtime: &Runtime, path: &[u8]) -> CallResult {
-    let mut committed = runtime.committed().expect("a commit watch");
+    let mut committed = runtime.commits().expect("a commit watch");
     let waiting = async {
         loop {
             let record = runtime.snapshot().expect("a snapshot").fiber(path).expect("a record");
             if let Some(Outcome::Completed(Some(result))) = record.and_then(|record| record.outcome) {
                 return serde_json::from_slice(&result).expect("what it said");
             }
-            committed.next().await.expect("the runtime runs");
+            committed.next().await.expect("commit event").expect("the runtime runs");
         }
     };
     tokio::time::timeout(Duration::from_secs(20), waiting).await.expect("ended in time")
@@ -610,8 +612,8 @@ async fn structured_results_survive_restart_without_repeating_completed_calls() 
     let (_outside_folder, outside) = folder();
     std::fs::write(workspace.join("read.txt"), "before restart").expect("file");
     let storage = tempfile::tempdir().expect("durable volume");
-    let directory = Some(storage.path().to_owned());
-    let first = runtime(directory.clone());
+    let directory = Some(storage.path());
+    let first = runtime(directory);
     let code = format!(
         r"
         const read = await tools.read({{ path: 'read.txt' }});

@@ -1,5 +1,5 @@
 //! Git as an extension of Octoii's: the repository a folder of the machine's is in, as git tells of it — its changes, a
-//! file's patch and its two versions, a branch's commits — each run of git recorded while it runs, for the Diff view.
+//! file's patch and its two versions, a branch's commits — for the Diff view.
 
 mod context;
 pub mod git;
@@ -61,9 +61,6 @@ impl Extension for GitExtension {
     }
 }
 
-/// The kind of the directory a run of git is recorded under.
-const RECORD_KIND: &str = "siphon.git";
-
 fn failed(error: impl std::fmt::Display) -> Error {
     refusal("failed", &error.to_string())
 }
@@ -75,13 +72,13 @@ fn told(error: &GitError) -> Error {
     }
 }
 
-/// Does the git method `method` for the client of `caller`, its runs recorded while they run.
+/// Does the git method `method` for the client of `caller`.
 async fn answered(caller: &Caller, method: Method, worktrees: &Path) -> Result<serde_json::Value, Error> {
-    let volume = caller.volume();
+    let commands = caller.volume().commands();
     let machine = match &method {
         Method::GitCreateWorktree(_) => {
             caller.require_scope(octoii::protocol::Scope::GitOperate)?;
-            volume.commands().open(
+            commands.open(
                 caller.host(),
                 Base {
                     workspace: "/".into(),
@@ -93,19 +90,12 @@ async fn answered(caller: &Caller, method: Method, worktrees: &Path) -> Result<s
         _ => caller.person_machine(),
     }
     .map_err(failed)?;
-    let time = volume.now_ms().map_err(failed)?;
-    volume
-        .recorded(RECORD_KIND, |record| async move {
-            let git = Git {
-                machine: &machine,
-                under: &record,
-                time,
-                cancelled: CancellationToken::new(),
-            };
-            told_by(&git, method, worktrees).await
-        })
-        .await
-        .map_err(failed)?
+    let git = Git {
+        machine: &machine,
+        commands: &commands,
+        cancelled: CancellationToken::new(),
+    };
+    told_by(&git, method, worktrees).await
 }
 
 fn json(value: &impl Serialize) -> Result<serde_json::Value, Error> {

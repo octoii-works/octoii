@@ -132,31 +132,32 @@ pub async fn add(runtime: &RuntimeHandle, host: &[Provider], provider: &str, nam
         return Err(Error::TakesNoAccounts);
     }
     let name = named(name)?;
-    if let Some(done) = idempotency::done_before(&*runtime.snapshot()?, key, "accounts.add", None)? {
-        return Ok(done.result);
-    }
-    let id = runtime.new_id()?;
-    let account = path(&id).ok_or(Error::NoSuchAccount)?;
-    let mut changes = Changes::new();
-    changes.mkdir(account.clone()).meta(
-        account,
-        vec![(
-            Bytes::from_static(DRIVER_LABEL.as_bytes()),
-            Some(Bytes::copy_from_slice(provider.as_bytes())),
-        )],
-        vec![(
-            Bytes::from_static(NAME_ANNOTATION.as_bytes()),
-            Some(Bytes::copy_from_slice(name.as_bytes())),
-        )],
-    );
-    let done = Done {
-        method: "accounts.add".into(),
-        thread: None,
-        result: id.clone(),
-    };
-    idempotency::record(&mut changes, key, &done, runtime.now_ms()?)?;
-    runtime.commit(changes).await?;
-    Ok(id)
+    crate::volume::commit_checked(runtime, |snapshot, changes| {
+        if let Some(done) = idempotency::done_before(snapshot, key, "accounts.add", None)? {
+            return Ok(done.result);
+        }
+        let id = runtime.new_id()?;
+        let account = path(&id).ok_or(Error::NoSuchAccount)?;
+        changes.mkdir(&account)?.meta(
+            &account,
+            [(
+                Bytes::from_static(DRIVER_LABEL.as_bytes()),
+                Some(Bytes::copy_from_slice(provider.as_bytes())),
+            )],
+            [(
+                Bytes::from_static(NAME_ANNOTATION.as_bytes()),
+                Some(Bytes::copy_from_slice(name.as_bytes())),
+            )],
+        )?;
+        let done = Done {
+            method: "accounts.add".into(),
+            thread: None,
+            result: id.clone(),
+        };
+        idempotency::record(changes, key, &done, runtime.now_ms()?)?;
+        Ok(id)
+    })
+    .await
 }
 
 /// The directory of the account `id`, where there is one.
@@ -180,7 +181,7 @@ fn account(snapshot: &Snapshot, id: &str) -> Result<Bytes, Error> {
 pub async fn rename(runtime: &RuntimeHandle, id: &str, name: &str) -> Result<(), Error> {
     let name = named(name)?;
     let account = account(&*runtime.snapshot()?, id)?;
-    let mut changes = Changes::new();
+    let mut changes = Changes::new()?;
     changes.meta(
         account,
         Vec::new(),
@@ -188,7 +189,7 @@ pub async fn rename(runtime: &RuntimeHandle, id: &str, name: &str) -> Result<(),
             Bytes::from_static(NAME_ANNOTATION.as_bytes()),
             Some(Bytes::copy_from_slice(name.as_bytes())),
         )],
-    );
+    )?;
     runtime.commit(changes).await?;
     Ok(())
 }
@@ -199,8 +200,8 @@ pub async fn rename(runtime: &RuntimeHandle, id: &str, name: &str) -> Result<(),
 /// `NoSuchAccount`; the commit's failure.
 pub async fn remove(runtime: &RuntimeHandle, id: &str) -> Result<(), Error> {
     let account = account(&*runtime.snapshot()?, id)?;
-    let mut changes = Changes::new();
-    changes.delete(account);
+    let mut changes = Changes::new()?;
+    changes.delete(account)?;
     runtime.commit(changes).await?;
     Ok(())
 }
@@ -220,15 +221,15 @@ pub fn keep_used_up(snapshot: &Snapshot, changes: &mut Batch<'_>, provider: &str
         return Ok(());
     };
     if snapshot.stat(&directory)?.is_none() {
-        changes.mkdir(directory.clone()).meta(
-            directory,
+        changes.mkdir(&directory)?.meta(
+            &directory,
             vec![(Bytes::from_static(DRIVER_LABEL.as_bytes()), Some(Bytes::new()))],
             Vec::new(),
-        );
+        )?;
     }
     changes
-        .write(file.clone(), serde_json::to_vec(&used_up)?)
-        .expire(file, Some(used_up.reset_at_ms));
+        .write(&file, serde_json::to_vec(&used_up)?)?
+        .expire(&file, Some(used_up.reset_at_ms))?;
     Ok(())
 }
 

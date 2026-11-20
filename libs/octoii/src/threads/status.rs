@@ -31,22 +31,30 @@ pub const BEGAN_AT_ANNOTATION: &str = "siphon.began_at";
 pub const ENDED_AT_ANNOTATION: &str = "siphon.ended_at";
 
 /// The changes that mark a turn of the thread `id` begun at `at`: running, its last end let go of.
-pub fn began(changes: &mut Batch<'_>, id: &str, at: i64) {
+///
+/// # Errors
+/// The volume's failure.
+pub fn began(changes: &mut Batch<'_>, id: &str, at: i64) -> octoii_siphon_lib::Result<()> {
     let annotations = vec![
-        named(TURN_ANNOTATION, Some(serde_json::to_vec(&Turn::Running).unwrap_or_default())),
+        named(TURN_ANNOTATION, Some(serde_json::to_vec(&Turn::Running)?)),
         named(BEGAN_AT_ANNOTATION, Some(at.to_string().into_bytes())),
         named(ENDED_AT_ANNOTATION, None),
     ];
-    changes.meta(thread::path(id), Vec::new(), annotations);
+    changes.meta(thread::path(id), Vec::new(), annotations)?;
+    Ok(())
 }
 
 /// The changes that mark the turn of the thread `id` ended as `turn` at `at`.
-pub fn ended(changes: &mut Batch<'_>, id: &str, turn: Turn, at: i64) {
+///
+/// # Errors
+/// The volume's failure.
+pub fn ended(changes: &mut Batch<'_>, id: &str, turn: Turn, at: i64) -> octoii_siphon_lib::Result<()> {
     let annotations = vec![
-        named(TURN_ANNOTATION, Some(serde_json::to_vec(&turn).unwrap_or_default())),
+        named(TURN_ANNOTATION, Some(serde_json::to_vec(&turn)?)),
         named(ENDED_AT_ANNOTATION, Some(at.to_string().into_bytes())),
     ];
-    changes.meta(thread::path(id), Vec::new(), annotations);
+    changes.meta(thread::path(id), Vec::new(), annotations)?;
+    Ok(())
 }
 
 fn named(name: &'static str, value: Option<Vec<u8>>) -> Named {
@@ -230,13 +238,14 @@ fn status(runtime: &RuntimeHandle, snapshot: &Snapshot, id: &str, directory: &Di
         .map(|value| serde_json::from_slice(value))
         .transpose()?
         .unwrap_or_default();
-    let usage = snapshot.fiber(&thread::main(id))?.and_then(|record| ThreadUsage::of(&record.usage));
+    let main = thread::main(id);
+    let usage = snapshot.fiber(&main)?.and_then(|record| ThreadUsage::of(&record.usage));
     let inbox = inbox::waiting(snapshot, id)?
         .into_iter()
         .map(|Waiting { id, inbound }| (id, inbound))
         .collect();
     let running = |key: &str| -> Result<Option<octoii_siphon_lib::FiberRecord>, Error> {
-        let record = snapshot.fiber(&octoii_siphon_lib::process_path(&thread::main(id), key.as_bytes()))?;
+        let record = snapshot.fiber(&octoii_siphon_lib::fiber_path(&main, key.as_bytes()))?;
         Ok(record.filter(|record| record.outcome.is_none()))
     };
     Ok(Status {
@@ -246,17 +255,16 @@ fn status(runtime: &RuntimeHandle, snapshot: &Snapshot, id: &str, directory: &Di
         ended_at: time(directory, ENDED_AT_ANNOTATION),
         usage,
         inbox,
-        asks: asks(runtime, snapshot, id)?,
-        compacting: running(thread::COMPACTION_KEY)?.is_some(),
+        asks: asks(runtime, snapshot, &main)?,
+        compacting: crate::agent::compaction::running(snapshot, id)?,
         resuming_at: running(thread::RESUME_KEY)?.and_then(|record| record.waits_until),
     })
 }
 
-/// What the thread `id` asks the person: each request of its processes a person answers, in the order of their paths.
-fn asks(runtime: &RuntimeHandle, snapshot: &Snapshot, id: &str) -> Result<Vec<Ask>, Error> {
-    let under = thread::path(id);
+/// What the thread asks the person: each request of its Fibers in the order of their paths.
+fn asks(runtime: &RuntimeHandle, snapshot: &Snapshot, main: &[u8]) -> Result<Vec<Ask>, Error> {
     runtime
-        .person_requests(snapshot, &under)?
+        .person_requests(snapshot, main)?
         .into_iter()
         .map(|prompt| {
             Ok(Ask {

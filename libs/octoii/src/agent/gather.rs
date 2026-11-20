@@ -122,11 +122,12 @@ impl std::fmt::Debug for Sources {
 /// Answers the gather request `asked` from `sources`.
 ///
 /// # Errors
-/// `Failed` where the thread cannot be read.
-pub async fn answer_gather(sources: &Sources, asked: Asked<Gather>) -> Result<Told, Unanswered> {
-    gathered(sources, &asked.runtime, &asked.payload.thread)
-        .await
-        .map_err(|error| Unanswered::Failed(error.to_string()))
+/// `Failed` where the thread cannot be read, or `Interrupted` when a stop cuts gathering short.
+pub async fn answer_gather(sources: &Sources, runtime: &RuntimeHandle, asked: Asked<Gather>) -> Result<Told, Unanswered> {
+    tokio::select! {
+        () = asked.stop.requested() => Err(Unanswered::Interrupted),
+        result = gathered(sources, runtime, &asked.payload.thread) => result.map_err(|error| Unanswered::Failed(error.to_string())),
+    }
 }
 
 /// Whether `model`'s provider runs the tool `native` for it, as its facts say.
@@ -150,6 +151,7 @@ pub async fn gathered(sources: &Sources, runtime: &RuntimeHandle, id: &str) -> a
     let config = Config::of(&directory)?;
     let kind = Parent::of(&directory)?.map(|parent| parent.kind);
     let disabled = crate::settings::environment(&snapshot)?.disabled_extensions;
+    drop(snapshot);
     let on = |extension: &str| (extension == CORE || extension == BASE) || !disabled.iter().any(|off| off == extension);
     let place = config
         .workspace

@@ -4,7 +4,7 @@ members = ["libs/*", "apps/node", "extensions/*"]
 
 [workspace.dependencies]
 octoii-ai = "0.0.2"
-octoii-siphon-lib = "=0.0.3"
+octoii-siphon-lib = "=0.0.4"
 octoii = { path = "libs/octoii" }
 siphon-script = { path = "libs/siphon-script" }
 siphon-shell = { path = "libs/siphon-shell" }

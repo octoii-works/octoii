@@ -192,7 +192,7 @@ impl Sink {
 pub(crate) struct Builder {
     pub(crate) handle: RuntimeHandle,
     pub(crate) machine: Host,
-    pub(crate) runtime: octoii_siphon_lib::Builder,
+    pub(crate) execution: octoii_siphon_lib::Builder,
     pub(crate) tools: Tools,
     pub(crate) owners: HashMap<String, String>,
     pub(crate) providers: Vec<Provider>,

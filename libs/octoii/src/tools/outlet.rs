@@ -9,9 +9,9 @@ use std::path::{Path, PathBuf};
 use crate::machine::Host;
 use crate::machine::paths::Base;
 use crate::threads::thread;
-use bytes::Bytes;
 use octoii_ai::vocabulary::InputContent;
-use octoii_siphon_lib::{Asked, Unanswered};
+use octoii_siphon_lib::{Asked, RuntimeHandle, Unanswered};
+use tokio_util::sync::CancellationToken;
 
 use crate::tools::requests::Exec;
 use crate::tools::told::Told;
@@ -23,12 +23,14 @@ pub const TEXT_CHARS_MAX: usize = 30_000;
 /// Answers the exec request `asked` with `tools`, on the machine `host` gives.
 ///
 /// # Errors
-/// `Failed` with the tool's refusal.
-pub async fn answer_exec(tools: &Tools, host: &Host, asked: Asked<Exec>) -> Result<Told, Unanswered> {
+/// `Failed` if the request's command capability is unavailable or the tool refuses. `Interrupted` if the request
+/// stops before the tool starts.
+pub async fn answer_exec(tools: &Tools, host: &Host, runtime: &RuntimeHandle, asked: Asked<Exec>) -> Result<Told, Unanswered> {
+    let request_commands = asked.commands().map_err(|error| Unanswered::Failed(error.to_string()))?;
+    let cancelled = CancellationToken::new();
     let exec = asked.payload;
     let context = Context {
         thread: exec.thread,
-        process: Bytes::copy_from_slice(asked.id.path()),
         call: exec.call,
         base: Base {
             workspace: PathBuf::from(&exec.workspace),
@@ -37,13 +39,28 @@ pub async fn answer_exec(tools: &Tools, host: &Host, asked: Asked<Exec>) -> Resu
         writes: exec.writes,
         places: exec.places,
         host: host.clone(),
-        runtime: asked.runtime,
-        cancelled: asked.cancelled,
+        runtime: runtime.clone(),
+        request_commands,
+        cancelled: cancelled.clone(),
     };
-    tools
-        .exec(&exec.tool, context, exec.arguments)
-        .await
-        .map_err(|refusal| Unanswered::Failed(refusal.0))
+    let execution = async {
+        if cancelled.is_cancelled() {
+            return Err(Unanswered::Interrupted);
+        }
+        tools
+            .exec(&exec.tool, context, exec.arguments)
+            .await
+            .map_err(|refusal| Unanswered::Failed(refusal.0))
+    };
+    tokio::pin!(execution);
+    tokio::select! {
+        biased;
+        () = asked.stop.requested() => {
+            cancelled.cancel();
+            execution.await
+        }
+        result = &mut execution => result,
+    }
 }
 
 /// `given` as the model is told it: its text, past `TEXT_CHARS_MAX`, cut to its head and its newest tail, the whole kept
@@ -54,7 +71,7 @@ pub(super) fn bounded(
     call: &str,
     threads: Option<&Path>,
     given: Vec<InputContent>,
-) -> Vec<InputContent> {
+) -> octoii_siphon_lib::Result<Vec<InputContent>> {
     let whole: String = given
         .iter()
         .filter_map(|part| match part {
@@ -65,7 +82,7 @@ pub(super) fn bounded(
         .join("\n");
     let chars = whole.chars().count();
     if chars <= TEXT_CHARS_MAX {
-        return given;
+        return Ok(given);
     }
     let half = TEXT_CHARS_MAX / 2;
     let head: String = whole.chars().take(half).collect();
@@ -74,7 +91,7 @@ pub(super) fn bounded(
         "{head}\n<system-reminder>… {} characters left out …</system-reminder>\n{tail}",
         chars - TEXT_CHARS_MAX
     );
-    match keep(changes, thread, call, threads, Bytes::from(whole)) {
+    match keep(changes, thread, call, threads, &whole)? {
         Some(place) => {
             let _ = write!(
                 cut,
@@ -87,15 +104,21 @@ pub(super) fn bounded(
     }
     let mut out = vec![InputContent::text(cut)];
     out.extend(given.into_iter().filter(|part| !matches!(part, InputContent::InputText { .. })));
-    out
+    Ok(out)
 }
 
 /// Keeps `whole` with the call's result: where the model reads it through the threads view, where the host exposes one.
-fn keep(changes: &mut Batch<'_>, thread: &str, call: &str, threads: Option<&Path>, whole: Bytes) -> Option<String> {
+fn keep(
+    changes: &mut Batch<'_>,
+    thread: &str,
+    call: &str,
+    threads: Option<&Path>,
+    whole: &str,
+) -> octoii_siphon_lib::Result<Option<String>> {
     let outputs = thread::within(thread, "outputs");
     let file = format!("{call}.txt");
     changes
-        .mkdir(outputs.clone())
-        .write([&outputs[..], b"/", file.as_bytes()].concat(), whole);
-    threads.map(|folder| folder.join(thread).join("outputs").join(&file).display().to_string())
+        .mkdir(&outputs)?
+        .write([&outputs[..], b"/", file.as_bytes()].concat(), whole)?;
+    Ok(threads.map(|folder| folder.join(thread).join("outputs").join(&file).display().to_string()))
 }

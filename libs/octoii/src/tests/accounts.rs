@@ -10,7 +10,12 @@ use octoii_siphon_lib::Changes;
 async fn an_account_is_another_instance_of_a_host_s_provider_and_a_quota_used_up_stands_on_its_directory() {
     let runtime = crate::testing::memory_runtime().expect("started");
     let host = [Provider::of(std::sync::Arc::new(OPENAI)), Provider::of(std::sync::Arc::new(OLLAMA))];
-    let work = add(&runtime, &host, "openai", "  Work  ", "add-1").await.expect("added");
+    let (work, duplicate) = tokio::join!(
+        add(&runtime, &host, "openai", "  Work  ", "add-1"),
+        add(&runtime, &host, "openai", "  Work  ", "add-1"),
+    );
+    let work = work.expect("added");
+    assert_eq!(duplicate.expect("same account"), work);
     assert_eq!(
         add(&runtime, &host, "openai", "Other", "add-1").await.expect("added"),
         work,
@@ -45,7 +50,7 @@ async fn an_account_is_another_instance_of_a_host_s_provider_and_a_quota_used_up
         window_minutes: Some(300),
     };
     for provider in ["openai", work.as_str()] {
-        let mut changes = Changes::new();
+        let mut changes = Changes::new().expect("a batch");
         keep_used_up(&runtime.snapshot().expect("a snapshot"), &mut changes, provider, spent).expect("kept");
         runtime.commit(changes).await.expect("committed");
     }

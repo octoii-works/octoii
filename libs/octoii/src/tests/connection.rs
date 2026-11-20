@@ -365,6 +365,10 @@ async fn a_thread_goes_on_at_a_time_as_its_status_tells_and_its_window_is_told_p
     client.message().await;
     let id = client.call("threads.create", json!({ "config": {}, "key": "k1" })).await;
     let thread = client.answer(&id).await["result"]["thread"].as_str().expect("an id").to_owned();
+    let mut list_client = Client::connect(&siphon, ALL.to_vec(), 64);
+    list_client.message().await;
+    let list = list_client.subscribe(json!({ "type": "threads" })).await;
+    list_client.event(&list, |event| event["event"] == "threads").await;
     let id = client
         .call("subscribe", json!({ "topic": { "type": "thread", "thread": thread } }))
         .await;
@@ -386,6 +390,20 @@ async fn a_thread_goes_on_at_a_time_as_its_status_tells_and_its_window_is_told_p
             event["event"] == "status" && event["status"]["resuming_at"] == at
         })
         .await;
+    list_client
+        .event(&list, |event| {
+            event["event"] == "thread" && event["thread"]["id"] == thread && event["thread"]["status"]["resuming_at"] == at
+        })
+        .await;
+    let later = at + 60_000;
+    let id = client.call("threads.resume", json!({ "thread": thread, "at": later })).await;
+    assert_eq!(client.answer(&id).await["result"], json!({}));
+    client
+        .event(&followed, |event| {
+            event["event"] == "status" && event["status"]["resuming_at"] == later
+        })
+        .await;
+
     let id = client.call("threads.resume", json!({ "thread": thread })).await;
     client.answer(&id).await;
     client
@@ -419,6 +437,36 @@ async fn a_thread_goes_on_at_a_time_as_its_status_tells_and_its_window_is_told_p
         .collect();
     assert!(parts.contains(&"messages"), "{composition}");
     assert!(composition["tokens"].as_u64().is_some_and(|tokens| tokens > 0), "{composition}");
+    siphon.runtime.close().expect("closed");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_resume_survives_a_rejected_replacement() {
+    let siphon = siphon();
+    let mut client = Client::connect(&siphon, ALL.to_vec(), 64);
+    client.message().await;
+    let id = client.call("threads.create", json!({ "config": {}, "key": "k1" })).await;
+    let thread = client.answer(&id).await["result"]["thread"].as_str().expect("an id").to_owned();
+    let at = 4_102_444_800_000_i64;
+    let id = client.call("threads.resume", json!({ "thread": thread, "at": at })).await;
+    assert_eq!(client.answer(&id).await["result"], json!({}));
+
+    let path = octoii_siphon_lib::fiber_path(&crate::threads::thread::main(&thread), crate::agent::ResumeFiber::KEY.as_bytes());
+    let resume = || siphon.runtime.snapshot().unwrap().fiber(&path).unwrap().expect("the armed resume");
+    let original = resume();
+    let mut changes = octoii_siphon_lib::Changes::new().unwrap();
+    changes
+        .meta(
+            crate::threads::thread::path(&thread),
+            [],
+            [(crate::threads::window::FROM_ANNOTATION.into(), Some("{".into()))],
+        )
+        .unwrap();
+    siphon.runtime.commit(changes).await.unwrap();
+
+    let id = client.call("threads.resume", json!({ "thread": thread, "at": at + 60_000 })).await;
+    assert_eq!(client.answer(&id).await["error"]["code"], "failed");
+    assert_eq!(resume().id, original.id);
     siphon.runtime.close().expect("closed");
 }
 

@@ -66,7 +66,7 @@ pub(crate) fn keep(snapshot: &Snapshot, changes: &mut Batch<'_>, id: &str, bytes
     let reference = reference_of(&bytes);
     let at = path(id, &reference).unwrap_or_default();
     if snapshot.stat(&at)?.is_none() {
-        changes.mkdir(thread::within(id, "files")).write(at, bytes);
+        changes.mkdir(thread::within(id, "files"))?.write(at, bytes)?;
     }
     Ok(reference)
 }

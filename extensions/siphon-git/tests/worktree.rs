@@ -65,21 +65,13 @@ impl Worktrees {
     }
 
     async fn create(&self, folder: &Path, destination: &Path, branch: &str, base: &str) -> Result<Worktree, GitError> {
-        let volume = self.calling.volume();
-        let time = volume.now_ms().unwrap();
-        volume
-            .recorded("siphon.git", |under| async move {
-                Git {
-                    machine: &self.machine,
-                    under: &under,
-                    time,
-                    cancelled: CancellationToken::new(),
-                }
-                .create_worktree(folder, destination, branch, base)
-                .await
-            })
-            .await
-            .expect("recorded")
+        Git {
+            machine: &self.machine,
+            commands: &self.calling.volume().commands(),
+            cancelled: CancellationToken::new(),
+        }
+        .create_worktree(folder, destination, branch, base)
+        .await
     }
 }
 

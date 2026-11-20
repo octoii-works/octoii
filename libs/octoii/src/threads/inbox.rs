@@ -83,17 +83,16 @@ pub const ENDED_MAIL: &str = "siphon.ended";
 /// # Errors
 /// The volume's failure.
 pub fn tell(snapshot: &Snapshot, changes: &mut Batch<'_>, reply_to: &ReplyTo, ended: &Ended) -> octoii_siphon_lib::Result<()> {
-    let process = Bytes::copy_from_slice(reply_to.process.as_bytes());
-    let lives = snapshot
-        .fiber(&process)?
-        .is_some_and(|record| record.outcome.is_none() && reply_to.started.is_none_or(|started| record.created_seq == started));
-    if lives {
+    if let Some(record) = snapshot.fiber(reply_to.process.as_bytes())?
+        && record.outcome.is_none()
+        && reply_to.started.is_none_or(|started| record.created_seq == started)
+    {
         let mail = Mail {
             key: Bytes::copy_from_slice(reply_to.key.as_bytes()),
             name: Bytes::from_static(ENDED_MAIL.as_bytes()),
-            payload: serde_json::to_vec(ended).unwrap_or_default().into(),
+            payload: serde_json::to_vec(ended)?.into(),
         };
-        changes.send(process, mail, reply_to.started);
+        changes.send(&record.id, mail)?;
     }
     Ok(())
 }
@@ -104,11 +103,11 @@ pub fn tell(snapshot: &Snapshot, changes: &mut Batch<'_>, reply_to: &ReplyTo, en
 /// # Errors
 /// The volume's failure; a mail not as `tell` writes it.
 pub fn ended_mail(run: &mut octoii_siphon_lib::Run<'_>, key: &str) -> anyhow::Result<Option<Ended>> {
-    let Some(mail) = run.mail(key.as_bytes())? else { return Ok(None) };
+    let Some(mail) = run.take_mail(key.as_bytes())? else {
+        return Ok(None);
+    };
     anyhow::ensure!(mail.name == ENDED_MAIL.as_bytes(), "unexpected completion mail name");
-    let ended = serde_json::from_slice(&mail.payload)?;
-    run.discard_mail(key)?;
-    Ok(Some(ended))
+    Ok(Some(serde_json::from_slice(&mail.payload)?))
 }
 
 /// How the turn of the thread `thread` that took an input ended, as `ended` says — none, the thread deleted before it
@@ -152,9 +151,9 @@ pub fn file(id: &str, delivery: &str) -> Bytes {
 /// the caller sees runs.
 ///
 /// # Errors
-/// What cannot be written as JSON.
-pub fn put(changes: &mut Batch<'_>, id: &str, delivery: &str, inbound: &Inbound) -> serde_json::Result<()> {
-    changes.write(file(id, delivery), serde_json::to_vec(inbound)?);
+/// The volume's failure or what cannot be written as JSON.
+pub fn put(changes: &mut Batch<'_>, id: &str, delivery: &str, inbound: &Inbound) -> octoii_siphon_lib::Result<()> {
+    changes.write(file(id, delivery), serde_json::to_vec(inbound)?)?;
     Ok(())
 }
 
@@ -226,7 +225,7 @@ fn take_of(run: &mut Run<'_>, id: &str, writer: &mut Writer, waiting: Vec<Waitin
     let mut config = Config::of(&directory)?;
     let mut taken = Vec::new();
     for each in waiting {
-        run.changes.delete(file(id, &each.id));
+        run.changes.delete(file(id, &each.id))?;
         let entry = match each.inbound {
             Inbound::Input {
                 actor, content, reply_to, ..
@@ -243,7 +242,7 @@ fn take_of(run: &mut Run<'_>, id: &str, writer: &mut Writer, waiting: Vec<Waitin
                     continue;
                 }
                 config = after;
-                run.changes.meta(thread::path(id), Vec::new(), changed.annotations());
+                run.changes.meta(thread::path(id), Vec::new(), changed.annotations())?;
                 Entry::Config {
                     id: run.new_id()?,
                     actor,

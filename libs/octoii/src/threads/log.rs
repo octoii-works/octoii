@@ -265,24 +265,27 @@ impl Writer {
     /// last would pass its bound, the last sealed. Where the entry is.
     ///
     /// # Errors
-    /// An entry that cannot be written as JSON.
-    pub fn append(&mut self, changes: &mut Batch<'_>, entry: &Entry) -> serde_json::Result<Address> {
+    /// The volume's failure or an entry that cannot be written as JSON.
+    pub fn append(&mut self, changes: &mut Batch<'_>, entry: &Entry) -> Result<Address, Error> {
         let mut line = serde_json::to_vec(entry)?;
         line.push(b'\n');
         let length = line.len() as u64;
-        let fits = self.last.as_ref().is_some_and(|(_, used)| used + length <= SEGMENT_BYTES_MAX);
-        if !fits && let Some((full, _)) = self.last.take() {
-            changes.seal(segment(&self.thread, &full));
-        }
-        let (name, used) = self.last.get_or_insert_with(|| (format!("{}{SEGMENT_EXTENSION}", entry.id()), 0));
-        changes.append(segment(&self.thread, name), line);
-        let address = Address {
-            segment: name.clone(),
-            offset: *used,
-            length,
+        let (name, offset) = match &self.last {
+            Some((name, used)) if used + length <= SEGMENT_BYTES_MAX => (name.clone(), *used),
+            last => {
+                if let Some((full, _)) = last {
+                    changes.seal(segment(&self.thread, full))?;
+                }
+                (format!("{}{SEGMENT_EXTENSION}", entry.id()), 0)
+            }
         };
-        *used += length;
-        Ok(address)
+        changes.append(segment(&self.thread, &name), line)?;
+        self.last = Some((name.clone(), offset + length));
+        Ok(Address {
+            segment: name,
+            offset,
+            length,
+        })
     }
 }
 

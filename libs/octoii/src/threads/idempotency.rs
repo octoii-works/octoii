@@ -69,11 +69,12 @@ pub fn done_before(snapshot: &Snapshot, key: &str, method: &str, thread: Option<
 /// Keeps what `done` did under `key` for a day from `now`, with `changes`.
 ///
 /// # Errors
-/// What cannot be written as JSON.
-pub fn record(changes: &mut Batch<'_>, key: &str, done: &Done, now: i64) -> serde_json::Result<()> {
+/// The volume's failure or what cannot be written as JSON.
+pub fn record(changes: &mut Batch<'_>, key: &str, done: &Done, now: i64) -> Result<(), Error> {
+    let path = file(key);
     changes
-        .mkdir(Bytes::from_static(DIRECTORY.as_bytes()))
-        .write(file(key), serde_json::to_vec(done)?)
-        .expire(file(key), Some(now + RETENTION_MS));
+        .mkdir(DIRECTORY)?
+        .write(&path, serde_json::to_vec(done)?)?
+        .expire(path, Some(now + RETENTION_MS))?;
     Ok(())
 }

@@ -51,7 +51,7 @@ async fn the_environment_s_settings_are_shared_and_a_device_s_merged_as_a_patch(
     assert!(matches!(set(&runtime, "s1", &large).await, Err(Error::TooLarge)));
     assert!(matches!(set(&runtime, "s1", &SettingsChange::default()).await, Err(Error::Nothing)));
     assert!(matches!(set(&runtime, "../x", &patch).await, Err(Error::InvalidSession)));
-    let mut changes = Changes::new();
+    let mut changes = Changes::new().expect("a batch");
     forget(&snapshot, &mut changes, "s1").expect("forgotten");
     runtime.commit(changes).await.expect("committed");
     assert_eq!(device(&runtime.snapshot().expect("a snapshot"), "s1").expect("read"), json!({}));

@@ -63,8 +63,7 @@ impl Tool for ShellTool {
             ..Program::new(vec!["bash".into(), "-c".into(), args.command], &context.base.workspace)
         };
         let machine = context.machine()?;
-        let time = context.runtime.now_ms().map_err(|error| Refusal(error.to_string()))?;
-        let ran = machine.run(time, &context.process, &program, &context.cancelled).await;
+        let ran = machine.run(context.commands(), &program, &context.cancelled).await;
         let (output, end) = match ran {
             Ok(ran) => {
                 let end = match ran.exit {
@@ -77,6 +76,7 @@ impl Tool for ShellTool {
             Err(RunError::Stopped) => (String::new(), CommandEnd::Stopped),
             Err(RunError::MissingProgram(program)) => return Err(Refusal(format!("no {program} on the machine"))),
             Err(RunError::OutputTooLarge(bytes)) => (String::new(), CommandEnd::TooLarge { bytes }),
+            Err(error @ RunError::OutputLost { .. }) => return Err(Refusal(error.to_string())),
             Err(RunError::Beak(error)) => return Err(Refusal(error.to_string())),
         };
         let ended = match end {

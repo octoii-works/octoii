@@ -1,14 +1,12 @@
 # Package boundaries
 
-Three local Cargo workspaces separate the product, private Siphon and its internal Beak source. The root owns apps,
-extensions, Octoii and its processing libraries. `siphon/` is a pinned submodule. `octoii-ai` 0.0.2 is a crates.io
-dependency with an independent workspace in its public repository.
+The root Cargo workspace owns the Octoii host, extensions, apps and processing libraries.
+It uses the crates.io packages `octoii-ai` and `octoii-siphon-lib`. The private Siphon repository
+contains the runtime and its internal Beak workspace.
 
 | Location | Responsibility |
 | --- | --- |
-| `siphon/beak/` | Complete Beak source with an independent Cargo workspace |
-| `siphon/crates/siphon-runtime/` | Durable execution, requests and recovery on Beak; no AI dependency |
-| `siphon/crates/siphon-ffi/` | Binary interface for the public `octoii-siphon-lib` package |
+| crates.io `octoii-siphon-lib` | Safe Rust interface to the released Siphon binary for storage, Fiber execution and machine operations |
 | crates.io `octoii-ai` | Model vocabulary, providers and transports; no local source directory |
 | `libs/siphon-{script,shell,text,image}/` | Octoii's script engine, shell parsing, text operations and image processing |
 | `vendor/quickjs-ng/` | QuickJS sources built by `libs/siphon-script` |
@@ -20,30 +18,15 @@ dependency with an independent workspace in its public repository.
 
 ## Rust dependencies
 
-Each workspace declares its own package defaults, lints, profiles and dependencies, and keeps its own Cargo.lock.
-The product builds the processing libraries in its own workspace and still uses Siphon and Beak through path
-dependencies into `siphon/`. Siphon's execution crates depend on Beak. Octoii consumes AI as a public registry dependency.
-
-The repositories are extracted and pinned. Controlled storage, machine and authorization mechanisms still need
-boundary convergence. Existing licensing is retained. See [SOURCE_REPOSITORIES.md](SOURCE_REPOSITORIES.md).
-
-- Kernel packages depend only on other kernel packages within this workspace.
-- AI must not depend on private implementation packages. Foundational processing libraries may depend on one another, never on AI, runtime, Octoii, extensions or apps.
-- `siphon-runtime` may depend on the kernel, never on AI or the product.
-- `octoii` may depend on core libraries and the kernel, never on concrete extensions or apps.
+- Octoii uses `octoii-siphon-lib` for volume and execution. Extensions reach those capabilities through Octoii's
+  public interface. Only Octoii directly depends on the SDK.
+- Foundational processing libraries may depend on one another.
 - Extensions may depend on Octoii's public host interface, `octoii-ai`, and other extension packages. Cargo rejects cycles.
-  They must not depend directly on Beak, `siphon-runtime`, or other core implementation libraries. Shared helpers such
-  as `siphon-html` are libraries, not necessarily independently enabled extensions.
-- Apps assemble core and extensions. Libraries never depend on an app; apps do not depend on other apps.
+  Neither extensions nor Octoii depend on private runtime or Beak source.
+- Apps assemble Octoii and extensions. Libraries never depend on an app; apps do not depend on other apps.
 
-An extension reaches the volume and execution machinery through the existing public primitives, now hosted in Octoii. The node is the trusted
-composition root and still has lower-layer dependencies for initialization, files and access records; these are tracked in
-[SIPHON_BOUNDARIES.md](SIPHON_BOUNDARIES.md), not permission to expand access.
-
-Run `python3 tools/check-rust-layers.py` to validate these rules. CI runs it before Rust compilation. The check uses
-`cargo metadata --no-deps --locked --offline`, combines members from all three local workspaces, reads actual local dependency identities rather than aliases or manifest
-text, and includes normal, build, dev, optional and platform-specific dependencies. New core packages require an
-explicit classification. Cargo enforces dependency resolution and cycles; this check additionally enforces direction.
+Run `python3 tools/check-rust-layers.py` to validate the resolved dependency graph. The check includes build, test,
+optional and target-specific dependencies.
 
 ## Frontend boundary
 
@@ -54,33 +37,26 @@ backend packages need not match one-to-one.
 The current web app still contains product UI modules under `apps/web/src/extensions` and shared components. Independent UI packages are deferred; keep clear module boundaries inside the web app. This directory migration does
 not introduce a dynamic plugin loader or change execution behavior.
 
-## Proposed source-distribution boundary
+## Siphon boundary
 
-The proposed closed Siphon implementation and public Octoii/extension boundary, including current coupling and
-binary distribution prerequisites, is documented in [SIPHON_DISTRIBUTION.md](SIPHON_DISTRIBUTION.md).
-The [cutover plan](SIPHON_CUTOVER.md) sets the order for replacing the source dependency with the public package.
-Each release uses one current volume format, native ABI and client protocol. Update their callers together and
-reject unsupported versions at the corresponding entry points.
-Siphon uses a pinned submodule and AI uses a public registry package; interface convergence remains separate work.
-Moved kernel files retain the existing core-stability review intent; moving directories is not permission to change
-runtime behavior without the separately scoped confirmation. AGENTS.md is unchanged.
+Octoii pins Siphon SDK 0.0.4 and ABI 6. Install the matching native release as described in
+[CONTRIBUTING.md](../CONTRIBUTING.md). The installer and SDK verify the native files before linking.
+This build requires a current-format volume. Start it with a separate Octoii home when testing alongside an ABI 5 node.
+
+Octoii opens the volume and registers extensions and provider state before starting Fiber execution. Thread records,
+logs and files live in the volume's data paths. Each Thread's root Fiber has an independently derived execution
+address. Starts, stops and deliveries use SDK Fiber identities, and Thread removal commits data and Fiber
+deletion together. Client status subscriptions observe commit heads because execution-only changes may have no
+data path in the journal.
+
+Host operations that decide what to write from a snapshot commit the whole batch against that snapshot's head.
+On conflict they read again and re-evaluate the operation. This keeps request receipts with their writes, pairing
+link consumption with session creation, and resume replacement with removal of the earlier schedule.
+
+Commands for an active tool request use that request's SDK capability. Host-owned terminals and service
+processes use the host's machine interface.
 
 ## Validation
 
-Run cargo fmt, clippy and test for the root manifest and `siphon/Cargo.toml`;
-root --workspace does not select Siphon tests. AI's independent tests run in its own repository. `cargo build -p octoii-node --bin octoii --locked` remains the product build command.
-Siphon has its own toolchain/format/lint configuration and target directory. Both local workspaces currently pin Rust 1.100.0.
-
-Local extraction validation (2026-11-17): Cargo resolves 16 product members and 8 Siphon members; both locked
-workspaces pass all-target checks, formatting and Clippy. Siphon tests: 153 passed / 1 existing ignored;
-product tests: 154 passed / 2 existing ignored. Migration preserved 188 implementation/header/binary files byte
-for byte and introduced no dependency-version changes. Two existing Node tests assumed eight access scopes;
-the current nine-scope policy is unchanged, and the tests now compare the complete declared scope set.
-
-A1 migration: `Octoii` is the public Agent host type. The runtime remains `siphon-runtime`; no empty
-Siphon facade is introduced. Existing low-level access moved with the host is tracked debt, not new access
-authorization. See [SIPHON_EXTRACTION.md](SIPHON_EXTRACTION.md) for scope and follow-up gates.
-
-A1 validation (2026-11-17): 17 product members and 7 private-workspace members; checks and Clippy pass.
-Product tests: 262 passed / 3 existing ignored; private tests: 45 passed. Generated protocol declarations
-are unchanged (four documentation comments rename the host). No new third-party dependency versions.
+Run formatting, Clippy and workspace tests for the product's root manifest. The private Siphon and public AI
+workspaces validate independently. `cargo build -p octoii-node --bin octoii --locked` builds the product node.

@@ -3958,9 +3958,9 @@ dependencies = [
 
 [[package]]
 name = "octoii-siphon-lib"
-version = "0.0.3"
+version = "0.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0db77555e5327a8e44b8b2a3191a0c5819f742065973b35c92ec2d1a334c2362"
+checksum = "f4792c85986141450de500cc1c8d6287006e25417c856baa2a140ca62cfdcc7d"
 dependencies = [
  "anyhow",
  "bytes",

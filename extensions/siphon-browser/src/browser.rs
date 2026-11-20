@@ -1162,21 +1162,14 @@ fn launch(host: &BrowserHost) -> Result<Running, BrowserError> {
         std::fs::create_dir_all(own).map_err(|error| BrowserError::Folders(error.to_string()))?;
     }
     let spec = Spec {
-        stdio: Stdio::Channel,
+        stdio: Some(Stdio::Channel),
         ..Spec::new(Exec::Argv(argv), home.to_string_lossy())
     };
-    let (command, told) = host.commands.spawn(now_ms(), b"", machine.namespace(), &spec)?;
+    let (command, told) = host.commands.spawn(machine.namespace(), &spec)?;
     let (cdp, events) = connect(command, told);
     Ok(Running {
         cdp,
         events,
         _machine: machine,
     })
-}
-
-fn now_ms() -> i64 {
-    let since = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default();
-    i64::try_from(since.as_millis()).unwrap_or(i64::MAX)
 }

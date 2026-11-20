@@ -78,18 +78,18 @@ pub(crate) fn result_path(id: &str, key: &str) -> Bytes {
     [results(id).as_ref(), b"/", key.as_bytes()].concat().into()
 }
 
-pub(crate) fn keep(changes: &mut Batch<'_>, id: &str, start: &Start) -> serde_json::Result<()> {
+pub(crate) fn keep(changes: &mut Batch<'_>, id: &str, start: &Start) -> octoii_siphon_lib::Result<()> {
     changes.meta(
         thread::path(id),
         vec![],
         vec![(Bytes::from_static(ANNOTATION), Some(serde_json::to_vec(start)?.into()))],
-    );
+    )?;
     Ok(())
 }
 
-pub(crate) fn made(changes: &mut Batch<'_>, id: &str, start: &Start) -> serde_json::Result<()> {
+pub(crate) fn made(changes: &mut Batch<'_>, id: &str, start: &Start) -> octoii_siphon_lib::Result<()> {
     keep(changes, id, start)?;
-    changes.mkdir(commands(id)).mkdir(results(id));
+    changes.mkdir(commands(id))?.mkdir(results(id))?;
     Ok(())
 }
 
@@ -148,7 +148,9 @@ pub(crate) fn advance(run: &mut Run<'_>, id: &str) -> anyhow::Result<Gate> {
             }
             start = next.clone();
         }
-        run.changes.write(result_path(id, key), serde_json::to_vec(&result)?).delete(path);
+        run.changes
+            .write(result_path(id, key), serde_json::to_vec(&result)?)?
+            .delete(path)?;
     }
     keep(&mut run.changes, id, &start)?;
     Ok(Gate::Changed)
@@ -208,7 +210,7 @@ fn bind(run: &mut Run<'_>, id: &str, directory: &StartWorkspace) -> anyhow::Resu
             Some(Bytes::copy_from_slice(directory.project.as_deref().unwrap_or_default().as_bytes())),
         )],
         changed.annotations(),
-    );
+    )?;
     if !changed.is_empty() {
         let entry = Entry::Config {
             id: run.new_id()?,

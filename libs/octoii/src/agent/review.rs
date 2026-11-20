@@ -13,7 +13,7 @@ use crate::tools::{Judgment, Review};
 use octoii_ai::models::Models;
 use octoii_ai::stream::Event;
 use octoii_ai::vocabulary::{Format, InputContent, Item, Message, Request, ResponseStatus};
-use octoii_siphon_lib::{Asked, Unanswered};
+use octoii_siphon_lib::{Asked, RuntimeHandle, Unanswered};
 use serde::Deserialize;
 
 /// The most bytes of the thread's transcript the judge reads; past them the oldest are left out, but the person's first
@@ -30,9 +30,15 @@ struct Verdict {
 ///
 /// # Errors
 /// `Failed` where no model is named, the thread cannot be read, the model failed, or it gave no verdict.
-pub async fn answer_review(models: &Arc<Models>, policy: &str, asked: Asked<Review>) -> Result<Judgment, Unanswered> {
+/// `Interrupted` if a stop cuts the review short.
+pub async fn answer_review(
+    models: &Arc<Models>,
+    policy: &str,
+    runtime: &RuntimeHandle,
+    asked: Asked<Review>,
+) -> Result<Judgment, Unanswered> {
     let failed = |words: String| Unanswered::Failed(words);
-    let snapshot = asked.runtime.snapshot().map_err(|error| failed(error.to_string()))?;
+    let snapshot = runtime.snapshot().map_err(|error| failed(error.to_string()))?;
     let environment = crate::settings::environment(&snapshot).map_err(|error| failed(error.to_string()))?;
     let model = environment
         .review_model
@@ -45,6 +51,7 @@ pub async fn answer_review(models: &Arc<Models>, policy: &str, asked: Asked<Revi
         .unwrap_or_default();
     let workspace = Config::of(&directory).ok().and_then(|config| config.workspace);
     let window = Window::read(&snapshot, id).map_err(|error| failed(error.to_string()))?;
+    drop(snapshot);
     let mut told = String::new();
     if let Some(folder) = workspace {
         let _ = writeln!(told, "<workspace>{folder}</workspace>");
@@ -86,11 +93,14 @@ pub async fn answer_review(models: &Arc<Models>, policy: &str, asked: Asked<Revi
         prompt_cache_key: None,
     };
     // What is judged is told in words: the review names no file of the thread's.
-    let mut stream = models.text(&request, None).await;
+    let mut stream = tokio::select! {
+        () = asked.stop.requested() => return Err(Unanswered::Interrupted),
+        stream = models.text(&request, None) => stream,
+    };
     let response = loop {
         let event = tokio::select! {
             event = stream.next() => event,
-            () = asked.cancelled.cancelled() => return Err(Unanswered::Interrupted),
+            () = asked.stop.requested() => return Err(Unanswered::Interrupted),
         };
         match event {
             Some(Event::Finished(response)) => break response,

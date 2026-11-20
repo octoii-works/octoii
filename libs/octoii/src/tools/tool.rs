@@ -10,9 +10,8 @@ use std::sync::Arc;
 
 use crate::machine::paths::Base;
 use crate::machine::{Host, Machine};
-use bytes::Bytes;
 use octoii_ai::vocabulary::{FileRef, ImageDetail, InputContent};
-use octoii_siphon_lib::{Batch, RuntimeHandle};
+use octoii_siphon_lib::{Batch, FiberId, RequestCommands, RuntimeHandle};
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 use tokio_util::sync::CancellationToken;
@@ -55,14 +54,11 @@ impl Finished {
     }
 }
 
-/// What a call's exec is given: the thread whose model called it; the process the call is of, under which what it runs
-/// on the machine is recorded; its key, which names this call alone; where its paths start; where it may write, as its
-/// weighing said; the machine and the runtime; and its cancellation — a stop cuts it off, and it gives at once what has
-/// come.
+/// What a call's exec is given: the thread whose model called it, its key, where its paths start, where it may write,
+/// and the command capability for its request. A stop cancels its token so it can return what has come.
 #[derive(Debug, Clone)]
 pub struct Context {
     pub thread: String,
-    pub process: Bytes,
     pub call: String,
     pub base: Base,
     pub writes: Writes,
@@ -70,10 +66,17 @@ pub struct Context {
     pub places: Vec<PathBuf>,
     pub host: Host,
     pub(crate) runtime: RuntimeHandle,
+    pub(crate) request_commands: RequestCommands,
     pub cancelled: CancellationToken,
 }
 
 impl Context {
+    /// The command capability for this exact call's execution request.
+    #[must_use]
+    pub fn commands(&self) -> &RequestCommands {
+        &self.request_commands
+    }
+
     /// The volume, as an extension reaches it.
     #[must_use]
     pub fn volume(&self) -> crate::volume::Volume {
@@ -228,7 +231,7 @@ pub trait Tool: Send + Sync + 'static {
 
     /// For a tool that runs as a program of its own: adds to `changes` the start of its process for a call with
     /// `args`, keyed `key`, under `parent`, the caller, its calls weighed as `setting` says; none for a tool exec'd.
-    fn start(&self, _: &mut Batch<'_>, _: &Bytes, _: &str, _: &Self::Args, _: &Setting<'_>) -> Option<octoii_siphon_lib::Result<()>> {
+    fn start(&self, _: &mut Batch<'_>, _: &FiberId, _: &str, _: &Self::Args, _: &Setting<'_>) -> Option<octoii_siphon_lib::Result<()>> {
         None
     }
 
@@ -299,7 +302,7 @@ trait Erased: Send + Sync {
     fn start(
         &self,
         changes: &mut Batch<'_>,
-        parent: &Bytes,
+        parent: &FiberId,
         key: &str,
         arguments: &serde_json::Value,
         setting: &Setting<'_>,
@@ -333,7 +336,7 @@ impl<T: Tool> Erased for T {
     fn start(
         &self,
         changes: &mut Batch<'_>,
-        parent: &Bytes,
+        parent: &FiberId,
         key: &str,
         arguments: &serde_json::Value,
         setting: &Setting<'_>,
@@ -533,7 +536,7 @@ impl Tools {
     pub fn start(
         &self,
         changes: &mut Batch<'_>,
-        parent: &Bytes,
+        parent: &FiberId,
         key: &str,
         name: &str,
         arguments: &serde_json::Value,

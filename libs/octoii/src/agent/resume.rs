@@ -4,9 +4,8 @@
 //! model they give the thread, ends it first, as they went on themselves.
 
 use crate::threads::inbox::{self, Inbound, Joins};
-use crate::threads::{Entry, Window, thread};
-use octoii_siphon_lib::Snapshot;
-use octoii_siphon_lib::{Batch, Ending, Fiber, Run, Wait};
+use crate::threads::{Entry, Error, Window, thread};
+use octoii_siphon_lib::{Batch, Ending, Fiber, Run, Snapshot, Status, Wait, fiber_path};
 use serde::{Deserialize, Serialize};
 
 /// The person's word it goes on with.
@@ -23,21 +22,6 @@ pub struct ResumeInput {
     pub after: Option<String>,
 }
 
-impl ResumeInput {
-    /// The resume of the thread `id` at `at`, delivering `actor`'s word, armed as `snapshot` leaves its log.
-    ///
-    /// # Errors
-    /// The volume's failure; a log not as Octoii writes it.
-    pub fn now(snapshot: &Snapshot, id: &str, at: i64, actor: &str) -> anyhow::Result<Self> {
-        Ok(Self {
-            thread: id.to_owned(),
-            at,
-            actor: actor.to_owned(),
-            after: Window::read(snapshot, id)?.last().map(str::to_owned),
-        })
-    }
-}
-
 /// The fiber of a thread's resume, keyed `KEY` under its main process.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ResumeFiber;
@@ -46,40 +30,34 @@ impl ResumeFiber {
     pub const KEY: &'static str = thread::RESUME_KEY;
 }
 
-/// Why a resume was not armed.
-#[derive(Debug, thiserror::Error)]
-pub enum ArmError {
-    #[error("a resume is armed for the thread already")]
-    Armed,
-    #[error(transparent)]
-    Beak(#[from] octoii_siphon_lib::Error),
-    #[error(transparent)]
-    Json(#[from] serde_json::Error),
-}
-
-/// Adds to `changes` the resume of `input` armed, one that ended reaped as it is armed anew.
+/// Stages replacing the thread's resume at `at`, or cancelling it when the deadline is absent.
 ///
 /// # Errors
-/// `Armed` while a prior Fiber remains active or is still exiting, or the volume's failure.
-pub fn arm(snapshot: &Snapshot, changes: &mut Batch<'_>, input: &ResumeInput) -> Result<(), ArmError> {
-    let path = octoii_siphon_lib::process_path(&thread::main(&input.thread), ResumeFiber::KEY.as_bytes());
-    match snapshot.fiber(&path)? {
-        Some(record) if !crate::volume::reapable(&record) => return Err(ArmError::Armed),
-        Some(_) => {
-            changes.reap(path);
-        }
-        None => {}
+/// An unreadable window, a missing parent for the replacement, or the volume's failure.
+pub(crate) fn reschedule(snapshot: &Snapshot, changes: &mut Batch<'_>, id: &str, at: Option<i64>, actor: &str) -> Result<(), Error> {
+    let main = thread::main(id);
+    let replacement = if let Some(at) = at {
+        let input = ResumeInput {
+            thread: id.to_owned(),
+            at,
+            actor: actor.to_owned(),
+            after: Window::read(snapshot, id)?.last().map(str::to_owned),
+        };
+        let parent = snapshot
+            .fiber(&main)?
+            .ok_or_else(|| octoii_siphon_lib::Error::new(Status::NotFound, "the thread's main Fiber is missing"))?;
+        Some((parent.id, input))
+    } else {
+        None
+    };
+    let path = fiber_path(&main, ResumeFiber::KEY.as_bytes());
+    if let Some(record) = snapshot.fiber(&path)? {
+        changes.force_remove(&record.id, None)?;
     }
-    changes.start::<ResumeFiber>(thread::main(&input.thread), ResumeFiber::KEY, input)?;
+    if let Some((parent, input)) = replacement {
+        changes.start::<ResumeFiber>(Some(&parent), ResumeFiber::KEY, &input)?;
+    }
     Ok(())
-}
-
-/// Adds to `changes` the resume of the thread `id` let go of, where one is armed.
-pub fn disarm(changes: &mut Batch<'_>, id: &str) {
-    changes.force_remove(
-        octoii_siphon_lib::process_path(&thread::main(id), ResumeFiber::KEY.as_bytes()),
-        None,
-    );
 }
 
 impl Fiber for ResumeFiber {

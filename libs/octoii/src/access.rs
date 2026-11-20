@@ -177,9 +177,9 @@ impl Access {
         let path = path(kind, &id);
         let annotation = (Bytes::from_static(KEPT.as_bytes()), Some(Bytes::from(serde_json::to_vec(kept)?)));
         changes
-            .mkdir(path.clone())
-            .meta(path.clone(), Vec::new(), vec![annotation])
-            .expire(path, Some(kept.expires_at));
+            .mkdir(&path)?
+            .meta(&path, [], [annotation])?
+            .expire(&path, Some(kept.expires_at))?;
         Ok((id.clone(), format!("{id}.{secret}")))
     }
 
@@ -197,7 +197,7 @@ impl Access {
             made_at: now,
             expires_at: now + millis(lasts),
         };
-        let mut changes = Changes::new();
+        let mut changes = Changes::new()?;
         let (id, credential) = self.made(&mut changes, LINK_KIND, &mut kept)?;
         self.runtime.commit(changes).await?;
         Ok(Made {
@@ -229,7 +229,7 @@ impl Access {
     /// # Errors
     /// The volume's failure.
     pub async fn issue(&self, label: Option<String>, scopes: Vec<Scope>) -> Result<Made, Refused> {
-        let mut changes = Changes::new();
+        let mut changes = Changes::new()?;
         let made = self.session(&mut changes, scopes, label, Holder::Bearer)?;
         self.runtime.commit(changes).await?;
         Ok(made)
@@ -243,16 +243,16 @@ impl Access {
     pub async fn redeem(&self, credential: &str, holder: Holder) -> Result<Made, Refused> {
         let (id, secret) = credential.split_once('.').ok_or(Refused::NoSuchLink)?;
         let link = path(LINK_KIND, id);
-        let kept = kept(&*self.runtime.snapshot()?, &link)?.ok_or(Refused::NoSuchLink)?;
-        if !same(&kept.digest, &digest(secret)) || kept.expires_at <= self.runtime.now_ms()? {
-            return Err(Refused::NoSuchLink);
-        }
-        let mut changes = Changes::new();
-        // The link's deletion fails where another took it first, and the session with it.
-        changes.delete(link);
-        let made = self.session(&mut changes, kept.scopes, kept.label, holder)?;
-        self.runtime.commit(changes).await.map_err(|_| Refused::NoSuchLink)?;
-        Ok(made)
+        let presented = digest(secret);
+        crate::volume::commit_checked(&self.runtime, |snapshot, changes| {
+            let kept = kept(snapshot, &link)?.ok_or(Refused::NoSuchLink)?;
+            if !same(&kept.digest, &presented) || kept.expires_at <= self.runtime.now_ms()? {
+                return Err(Refused::NoSuchLink);
+            }
+            changes.delete(&link)?;
+            self.session(changes, kept.scopes, kept.label, holder)
+        })
+        .await
     }
 
     /// The session `credential` holds, where it holds one that has not gone.
@@ -275,6 +275,7 @@ impl Access {
     /// # Errors
     /// The volume's failure.
     pub fn list(&self) -> Result<(Vec<AccessEntry>, Vec<AccessEntry>), Refused> {
+        let snapshot = self.runtime.snapshot()?;
         let now = self.runtime.now_ms()?;
         let live = |all: Vec<(String, Kept)>| {
             all.into_iter()
@@ -282,22 +283,21 @@ impl Access {
                 .map(|(id, kept)| shown(&id, &kept))
                 .collect()
         };
-        Ok((live(self.all(SESSION_KIND)?), live(self.all(LINK_KIND)?)))
+        Ok((live(Self::all(&snapshot, SESSION_KIND)?), live(Self::all(&snapshot, LINK_KIND)?)))
     }
 
     /// Every directory of `kind`, with what it keeps.
-    fn all(&self, kind: &str) -> Result<Vec<(String, Kept)>, Refused> {
+    fn all(snapshot: &Snapshot, kind: &str) -> Result<Vec<(String, Kept)>, Refused> {
         let prefix = format!("{kind}:");
         let range = Range {
             prefix: prefix.as_bytes(),
             limit: usize::MAX,
             ..Range::default()
         };
-        let snapshot = self.runtime.snapshot()?;
         let mut out = Vec::new();
         for entry in snapshot.list(b"", &range)?.unwrap_or_default() {
             let id = String::from_utf8_lossy(&entry.name[prefix.len()..]).into_owned();
-            if let Some(kept) = kept(&snapshot, &path(kind, &id))? {
+            if let Some(kept) = kept(snapshot, &path(kind, &id))? {
                 out.push((id, kept));
             }
         }
@@ -309,16 +309,40 @@ impl Access {
     /// # Errors
     /// `NoSuch` where there is neither; the volume's failure.
     pub async fn revoke(&self, id: &str) -> Result<&'static str, Refused> {
-        let snapshot = self.runtime.snapshot()?;
-        for (kind, what) in [(SESSION_KIND, "session"), (LINK_KIND, "link")] {
-            let path = path(kind, id);
-            if kept(&snapshot, &path)?.is_some() {
-                let mut changes = Changes::new();
-                changes.delete(path);
-                self.runtime.commit(changes).await?;
-                return Ok(what);
+        crate::volume::commit_checked(&self.runtime, |snapshot, changes| {
+            for (kind, what) in [(SESSION_KIND, "session"), (LINK_KIND, "link")] {
+                let path = path(kind, id);
+                if kept(snapshot, &path)?.is_some() {
+                    changes.delete(path)?;
+                    return Ok(what);
+                }
             }
-        }
-        Err(Refused::NoSuch)
+            Err(Refused::NoSuch)
+        })
+        .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_pairing_link_grants_one_session_when_redeemed_concurrently() {
+        let runtime = crate::testing::memory_runtime().expect("started");
+        let access = Access::new(runtime.runtime_handle());
+        let link = access.link(None, vec![Scope::ThreadsRead], LINK_LASTS).await.expect("link issued");
+        let (first, second) = tokio::join!(
+            access.redeem(&link.credential, Holder::Cookie),
+            access.redeem(&link.credential, Holder::Cookie),
+        );
+        let session = match (first, second) {
+            (Ok(session), Err(Refused::NoSuchLink)) | (Err(Refused::NoSuchLink), Ok(session)) => session,
+            (first, second) => panic!("expected one success and one used link, got {:?}", (first.err(), second.err())),
+        };
+        let (sessions, links) = access.list().expect("access listed");
+        assert_eq!(sessions, [session.shown]);
+        assert_eq!(links, [] as [AccessEntry; 0]);
+        runtime.close().expect("closed");
     }
 }

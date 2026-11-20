@@ -201,13 +201,13 @@ fn annotations(change: &EnvironmentChange) -> Result<Vec<Named>, Error> {
 /// # Errors
 /// A change that disables `base`, invalid device settings, an empty change, or the commit's failure.
 pub async fn set(runtime: &RuntimeHandle, session: &str, change: &SettingsChange) -> Result<(), Error> {
-    let mut changes = Changes::new();
-    changes.mkdir(Bytes::from_static(DIRECTORY.as_bytes()));
+    let mut changes = Changes::new()?;
+    changes.mkdir(DIRECTORY)?;
     let mut sets_any = false;
     if let Some(environment) = &change.environment {
         let annotations = annotations(environment)?;
         sets_any |= !annotations.is_empty();
-        changes.meta(Bytes::from_static(DIRECTORY.as_bytes()), Vec::new(), annotations);
+        changes.meta(DIRECTORY, [], annotations)?;
     }
     if let Some(patch) = &change.device {
         let mut document = device(&*runtime.snapshot()?, session)?;
@@ -219,9 +219,7 @@ pub async fn set(runtime: &RuntimeHandle, session: &str, change: &SettingsChange
         if bytes.len() > DEVICE_BYTES_MAX {
             return Err(Error::TooLarge);
         }
-        changes
-            .mkdir(Bytes::from(format!("{DIRECTORY}/devices")))
-            .write(device_file(session)?, bytes);
+        changes.mkdir(format!("{DIRECTORY}/devices"))?.write(device_file(session)?, bytes)?;
         sets_any = true;
     }
     if !sets_any {
@@ -238,7 +236,7 @@ pub async fn set(runtime: &RuntimeHandle, session: &str, change: &SettingsChange
 pub fn forget(snapshot: &Snapshot, changes: &mut Batch<'_>, session: &str) -> Result<(), Error> {
     let file = device_file(session)?;
     if snapshot.stat(&file)?.is_some() {
-        changes.delete(file);
+        changes.delete(file)?;
     }
     Ok(())
 }
@@ -264,15 +262,17 @@ mod tests {
         assert!(switched_on(&snapshot, BASE));
         assert!(!switched_on(&snapshot, "git"));
 
-        let mut changes = Changes::new();
-        changes.meta(
-            Bytes::from_static(DIRECTORY.as_bytes()),
-            Vec::new(),
-            vec![(
-                Bytes::from_static(DISABLED_EXTENSIONS.as_bytes()),
-                Some(Bytes::from_static(br#"["base","git"]"#)),
-            )],
-        );
+        let mut changes = Changes::new().unwrap();
+        changes
+            .meta(
+                DIRECTORY,
+                [],
+                [(
+                    Bytes::from_static(DISABLED_EXTENSIONS.as_bytes()),
+                    Some(Bytes::from_static(br#"["base","git"]"#)),
+                )],
+            )
+            .unwrap();
         runtime.commit(changes).await.unwrap();
         assert!(matches!(environment(&runtime.snapshot().unwrap()), Err(Error::RequiredExtension)));
         runtime.close().unwrap();

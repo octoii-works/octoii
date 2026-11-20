@@ -7,9 +7,10 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use bytes::{Bytes, BytesMut};
-use octoii_siphon_lib::{CommandEvent, Exec, Namespace, RuntimeHandle, Spec, Stdio};
+use octoii_siphon_lib::{Command, CommandEvent, CommandEvents, Exec, Namespace, RuntimeHandle, Signal, Spec, Stdio};
 use tokio_util::sync::CancellationToken;
 
+use crate::machine::commands::Launcher;
 use crate::machine::paths::Base;
 
 /// The machine as the host gives it: the home folder of the person it runs for and their shell; their own ignore file,
@@ -87,7 +88,6 @@ pub struct ThreadsView<'a> {
 #[derive(Debug)]
 pub struct Machine {
     pub(crate) namespace: Namespace,
-    pub(crate) runtime: RuntimeHandle,
     pub base: Base,
     pub(crate) excludes: Option<PathBuf>,
 }
@@ -101,6 +101,8 @@ pub enum RunError {
     TimedOut(Duration),
     #[error("it wrote more than {0} bytes")]
     OutputTooLarge(usize),
+    #[error("command output at offsets {from}..{through} was lost")]
+    OutputLost { from: u64, through: u64 },
     #[error("it was stopped")]
     Stopped,
     #[error(transparent)]
@@ -142,6 +144,21 @@ impl Program {
             errors: Errors::Kept,
         }
     }
+
+    fn spec(&self) -> Spec {
+        let mut spec = Spec::new(Exec::Argv(self.argv.clone()), self.cwd.to_string_lossy());
+        spec.set = (!self.set.is_empty()).then(|| self.set.clone());
+        spec.stdio = Some(match self.errors {
+            Errors::Kept => Stdio::Coprocess,
+            Errors::WithOutput => {
+                // Keep the prefix so the collector can recover any skipped events within its limit.
+                spec.head_bytes = Some(self.output_max);
+                spec.tail_bytes = Some(0);
+                Stdio::Pipe
+            }
+        });
+        spec
+    }
 }
 
 /// How a program ran: how it ended, what it wrote to its output, whole, and the head and tail of its errors.
@@ -180,7 +197,6 @@ impl Machine {
         }
         Ok(Self {
             namespace,
-            runtime: runtime.clone(),
             base,
             excludes: host.excludes.clone(),
         })
@@ -213,71 +229,30 @@ impl Machine {
         &self.namespace
     }
 
-    /// Runs `program` to its end at `time`, held to what the namespace reaches, recorded under `under`: its output
-    /// taken whole as it comes, its errors kept; ended where it runs past its time, writes past what is taken, or
+    /// Runs `program` with `commands` in the namespace. Collects its output until it exits, exceeds its limits, or
     /// `cancelled` says stop.
     ///
     /// # Errors
-    /// `MissingProgram`, `TimedOut`, `OutputTooLarge`, `Stopped`; Beak's failure to start it.
-    pub async fn run(&self, time: i64, under: &[u8], program: &Program, cancelled: &CancellationToken) -> Result<Ran, RunError> {
-        let spec = Spec {
-            set: program.set.clone(),
-            stdio: match program.errors {
-                Errors::Kept => Stdio::Coprocess,
-                Errors::WithOutput => Stdio::Pipe,
-            },
-            ..Spec::new(Exec::Argv(program.argv.clone()), program.cwd.to_string_lossy())
-        };
-        let (command, mut events) = self.spawn(time, under, &spec)?;
+    /// A launch failure, broken output, or the program was stopped.
+    pub async fn run(&self, commands: &dyn Launcher, program: &Program, cancelled: &CancellationToken) -> Result<Ran, RunError> {
+        if cancelled.is_cancelled() {
+            return Err(RunError::Stopped);
+        }
+        let (command, events) = self.spawn_with(commands, &program.spec())?;
         command.close_input()?;
-        let mut output = BytesMut::new();
-        let deadline = tokio::time::sleep(program.timeout);
-        tokio::pin!(deadline);
-        let exit = loop {
-            tokio::select! {
-                event = events.next() => match event? {
-                    Some(CommandEvent::Output(bytes)) => {
-                        if output.len() + bytes.len() > program.output_max {
-                            command.signal(octoii_siphon_lib::Signal::Kill)?;
-                            return Err(RunError::OutputTooLarge(program.output_max));
-                        }
-                        output.extend_from_slice(&bytes);
-                    }
-                    Some(CommandEvent::Title(_)) => {}
-                    Some(CommandEvent::Exit(exit)) => break exit,
-                    None => return Err(RunError::Stopped),
-                },
-                () = &mut deadline => {
-                    command.signal(octoii_siphon_lib::Signal::Kill)?;
-                    return Err(RunError::TimedOut(program.timeout));
-                }
-                () = cancelled.cancelled() => {
-                    command.signal(octoii_siphon_lib::Signal::Kill)?;
-                    return Err(RunError::Stopped);
-                }
-            }
+        let result = tokio::select! {
+            ran = collect(&command, events, program) => ran,
+            () = tokio::time::sleep(program.timeout) => Err(RunError::TimedOut(program.timeout)),
+            () = cancelled.cancelled() => Err(RunError::Stopped),
         };
-        let errors = match program.errors {
-            Errors::Kept => command.output()?,
-            Errors::WithOutput => Bytes::new(),
-        };
-        Ok(Ran {
-            exit,
-            output: output.freeze(),
-            errors,
-        })
+        if result.is_err() {
+            let _ = command.signal(Signal::Kill);
+        }
+        result
     }
-}
 
-impl Machine {
-    /// Starts the command `spec` describes at `time`, held to what the namespace reaches, recorded under `under`.
-    pub(crate) fn spawn(
-        &self,
-        time: i64,
-        under: &[u8],
-        spec: &Spec,
-    ) -> Result<(octoii_siphon_lib::Command, octoii_siphon_lib::CommandEvents), RunError> {
-        self.runtime.spawn(time, under, &self.namespace, spec).map_err(|error| {
+    pub(super) fn spawn_with(&self, commands: &dyn Launcher, spec: &Spec) -> Result<(Command, CommandEvents), RunError> {
+        commands.spawn(&self.namespace, spec).map_err(|error| {
             if error.status() == octoii_siphon_lib::Status::MissingProgram {
                 let program = match &spec.exec {
                     Exec::Argv(argv) => argv.first().cloned().unwrap_or_default(),
@@ -291,8 +266,107 @@ impl Machine {
     }
 }
 
+async fn collect(command: &Command, mut events: CommandEvents, program: &Program) -> Result<Ran, RunError> {
+    let mut output = BytesMut::new();
+    let exit = loop {
+        match events.next().await? {
+            Some(CommandEvent::Output(chunk)) => {
+                if chunk.offset != output.len() as u64 {
+                    return Err(RunError::OutputLost {
+                        from: output.len() as u64,
+                        through: chunk.offset,
+                    });
+                }
+                if chunk.bytes.len() > program.output_max - output.len() {
+                    return Err(RunError::OutputTooLarge(program.output_max));
+                }
+                output.extend_from_slice(&chunk.bytes);
+            }
+            Some(CommandEvent::Gap { through, .. }) if program.errors == Errors::WithOutput => {
+                recover_output(command, &mut output, through, program.output_max)?;
+            }
+            Some(CommandEvent::Gap { from, through }) => return Err(RunError::OutputLost { from, through }),
+            Some(CommandEvent::Title(_)) => {}
+            Some(CommandEvent::Exit(exit)) => break exit,
+            None => return Err(RunError::Stopped),
+        }
+    };
+    let errors = match program.errors {
+        Errors::Kept => command.output()?,
+        Errors::WithOutput => Bytes::new(),
+    };
+    Ok(Ran {
+        exit,
+        output: output.freeze(),
+        errors,
+    })
+}
+
+fn recover_output(command: &Command, output: &mut BytesMut, through: u64, limit: usize) -> Result<(), RunError> {
+    let through_len = usize::try_from(through).map_err(|_| RunError::OutputTooLarge(limit))?;
+    if through_len > limit {
+        return Err(RunError::OutputTooLarge(limit));
+    }
+    while output.len() < through_len {
+        let from = output.len() as u64;
+        let chunk = command.read_output_at(from)?;
+        if chunk.offset != from || chunk.bytes.is_empty() {
+            return Err(RunError::OutputLost { from, through });
+        }
+        let remaining = through_len - output.len();
+        output.extend_from_slice(&chunk.bytes[..chunk.bytes.len().min(remaining)]);
+    }
+    Ok(())
+}
+
 /// The namespace's path of the absolute `place`: the place without its root.
 #[must_use]
 pub fn inside(place: &Path) -> String {
     place.to_string_lossy().trim_start_matches('/').to_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_pipe_recovers_retained_output_when_its_live_reader_is_behind() {
+        let runtime = crate::testing::memory_runtime().expect("started");
+        let commands = crate::testing::commands(&runtime);
+        let machine = commands
+            .open(
+                &Host::default(),
+                Base {
+                    workspace: "/".into(),
+                    home: None,
+                },
+                &Writes::Anywhere,
+            )
+            .expect("a namespace");
+        let program = Program {
+            errors: Errors::WithOutput,
+            ..Program::new(
+                vec![
+                    "sh".into(),
+                    "-c".into(),
+                    "dd if=/dev/zero bs=65536 count=64 2>/dev/null && printf end".into(),
+                ],
+                "/",
+            )
+        };
+        let (command, events) = commands.spawn(machine.namespace(), &program.spec()).expect("launched");
+        let count = 4 << 20;
+        let ran = tokio::time::timeout(Duration::from_secs(10), async {
+            while command.read_output_at(count as u64).expect("retained output").bytes != b"end"[..] {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            collect(&command, events, &program).await.expect("complete output")
+        })
+        .await
+        .expect("output arrives without a live reader");
+        assert_eq!(ran.exit, octoii_siphon_lib::Exit::Code(0));
+        assert_eq!(ran.output.len(), count + 3);
+        assert!(ran.output[..count].iter().all(|&byte| byte == 0));
+        assert_eq!(&ran.output[count..], b"end");
+    }
 }

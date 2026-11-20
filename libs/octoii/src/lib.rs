@@ -28,6 +28,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use crate::agent::compaction::{AwaitCompaction, answer_compaction};
 use crate::agent::{
     CORE, CompactFiber, DelegatedFiber, Gather, ModelRequest, ResumeFiber, Sources, ThreadFiber, TitleFiber, Told, TurnFiber,
     answer_gather, answer_model, answer_review,
@@ -43,7 +44,7 @@ use octoii_ai::catalogue::Model;
 use octoii_ai::host::Credentials;
 use octoii_ai::models::{Host as Network, Models, Provider};
 use octoii_ai::transport::Transport;
-use octoii_siphon_lib::{Asked, Runtime, Status};
+use octoii_siphon_lib::{Asked, Runtime, RuntimeHandle, Status};
 
 pub use extension::{Caller, Extension, Full, Lagged, Registrar, Sink, Subscription};
 pub use kept::{Ends, Kept};
@@ -164,11 +165,11 @@ pub struct HostCaller {
 /// Octoii being built: what its extensions add to, and what it is started with.
 pub struct Building {
     builder: extension::Builder,
+    runtime: Runtime,
     sign_in: providers::SignInSetup,
     credentials: Arc<dyn Credentials>,
     network: Network,
     catalogue: Vec<Model>,
-    directory: Option<PathBuf>,
 }
 
 impl std::fmt::Debug for Octoii {
@@ -203,8 +204,9 @@ impl Octoii {
             catalogue,
             directory,
         } = setup;
-        let runtime = octoii_siphon_lib::Builder::new()?;
-        let handle = runtime.runtime_handle()?;
+        let runtime = Runtime::open(directory.as_deref(), None)?;
+        let handle = runtime.runtime_handle();
+        let registry = octoii_siphon_lib::Builder::new(&handle)?;
         let (minting, clock) = (handle.clone(), handle.clone());
         let network = Network {
             credentials: Arc::clone(&credentials),
@@ -215,7 +217,7 @@ impl Octoii {
         let mut builder = extension::Builder {
             handle,
             machine,
-            runtime,
+            execution: registry,
             tools: Tools::new(),
             owners: HashMap::new(),
             providers,
@@ -236,11 +238,11 @@ impl Octoii {
         builder.topics(CORE, Scope::ThreadsRead, connection::told);
         Ok(Building {
             builder,
+            runtime,
             sign_in,
             credentials,
             network,
             catalogue,
-            directory,
         })
     }
 }
@@ -322,17 +324,17 @@ impl Building {
         }
         let Building {
             builder,
+            runtime,
             sign_in,
             credentials,
             network,
             catalogue,
-            directory,
         } = self;
         builder.writable_folders.finish(builder.writables.clone())?;
         let extension::Builder {
-            handle: _,
+            handle,
             machine,
-            runtime,
+            execution,
             tools,
             owners,
             providers,
@@ -352,11 +354,7 @@ impl Building {
             natives,
             models: Arc::clone(&models),
         };
-        let runtime = register_fibers_and_handlers(runtime, &machine, &models, sources.clone(), tools, writables, prompts)?;
-        let runtime = match directory {
-            Some(directory) => runtime.open(&directory)?,
-            None => runtime.memory()?,
-        };
+        let execution = register_fibers_and_handlers(execution, handle, &machine, sources.clone(), tools, writables, prompts)?;
         let siphon = Octoii {
             machine,
             threads: Threads::new(runtime.runtime_handle()),
@@ -373,6 +371,7 @@ impl Building {
         if let Err(providers::Refused::Beak(error)) = providers::refreshed(&siphon) {
             return Err(error);
         }
+        execution.start()?;
         Ok(siphon)
     }
 }
@@ -392,8 +391,8 @@ fn own(registrar: &mut Registrar<'_>) {
 /// answered by the machine and the models, and those the person answers.
 fn register_fibers_and_handlers(
     mut runtime: octoii_siphon_lib::Builder,
+    state: RuntimeHandle,
     machine: &Host,
-    models: &Arc<Models>,
     sources: Sources,
     tools: Tools,
     writables: Vec<crate::agent::Writable>,
@@ -401,14 +400,18 @@ fn register_fibers_and_handlers(
 ) -> octoii_siphon_lib::Result<octoii_siphon_lib::Builder> {
     let executor =
         tokio::runtime::Handle::try_current().map_err(|error| octoii_siphon_lib::Error::new(Status::Invalid, error.to_string()))?;
-    let (gathering, asking, reviewing) = (sources, Arc::clone(models), Arc::clone(models));
+    let models = Arc::clone(&sources.models);
+    let (gathering, asking, reviewing) = (sources, Arc::clone(&models), Arc::clone(&models));
     let (execs, host) = (tools.clone(), machine.clone());
+    let (gathering_state, asking_state, reviewing_state) = (state.clone(), state.clone(), state.clone());
+    let compaction_state = state.clone();
     runtime
+        .local_machine()?
         .fiber(ThreadFiber)?
         .fiber(TurnFiber {
             tools: tools.clone(),
             machine: machine.clone(),
-            models: Arc::clone(models),
+            models,
             writables,
         })?
         .fiber(ScriptFiber {
@@ -425,19 +428,27 @@ fn register_fibers_and_handlers(
         .fiber(ResumeFiber)?
         .handle(&executor, move |asked: Asked<Gather>| {
             let sources = gathering.clone();
-            async move { answer_gather(&sources, asked).await }
+            let state = gathering_state.clone();
+            async move { answer_gather(&sources, &state, asked).await }
         })?
         .handle(&executor, move |asked: Asked<ModelRequest>| {
             let models = Arc::clone(&asking);
-            async move { answer_model(&models, asked).await }
+            let state = asking_state.clone();
+            async move { answer_model(&models, &state, asked).await }
+        })?
+        .handle(&executor, move |asked: Asked<AwaitCompaction>| {
+            let state = compaction_state.clone();
+            async move { answer_compaction(&state, asked).await }
         })?
         .handle(&executor, move |asked: Asked<Review>| {
             let models = Arc::clone(&reviewing);
-            async move { answer_review(&models, prompts.review, asked).await }
+            let state = reviewing_state.clone();
+            async move { answer_review(&models, prompts.review, &state, asked).await }
         })?
         .handle(&executor, move |asked: Asked<Exec>| {
             let (tools, host) = (execs.clone(), host.clone());
-            async move { answer_exec(&tools, &host, asked).await }
+            let state = state.clone();
+            async move { answer_exec(&tools, &host, &state, asked).await }
         })?
         .ask_person::<Permission>()?
         .ask_person::<Asks>()?

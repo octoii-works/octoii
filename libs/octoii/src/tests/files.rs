@@ -1,40 +1,31 @@
 //! Original files kept through a call's namespace: no model image fitting, byte limits, denied paths, and the bytes
 //! still kept after the source changes and the volume is reopened.
 
-use crate::machine::{Base, Host};
 use crate::threads::files;
 use crate::tools::Context;
 use crate::tools::permissions::Writes;
 use bytes::Bytes;
 use octoii_siphon_lib::{Changes, Runtime};
-use tokio_util::sync::CancellationToken;
 
 async fn context(folder: &std::path::Path) -> (Runtime, Context) {
     let workspace = folder.join("workspace");
     std::fs::create_dir(&workspace).expect("a workspace");
-    let runtime =
-        crate::tests::open_runtime(octoii_siphon_lib::Builder::new().expect("a builder"), Some(folder.join("volume"))).expect("started");
-    let mut changes = Changes::new();
-    changes.mkdir(crate::threads::thread::path("t1")).meta(
-        crate::threads::thread::path("t1"),
-        vec![(
-            Bytes::from_static(crate::threads::thread::PROJECT_LABEL.as_bytes()),
-            Some(Bytes::new()),
-        )],
-        vec![],
-    );
+    let (runtime, context) = crate::tests::tool_context(Some(&folder.join("volume")), workspace, Writes::Workspace).await;
+    let path = crate::threads::thread::path("t1");
+    let mut changes = Changes::new().expect("a batch");
+    changes
+        .mkdir(&path)
+        .unwrap()
+        .meta(
+            &path,
+            [(
+                Bytes::from_static(crate::threads::thread::PROJECT_LABEL.as_bytes()),
+                Some(Bytes::new()),
+            )],
+            [],
+        )
+        .unwrap();
     runtime.commit(changes).await.expect("a thread");
-    let context = Context {
-        thread: "t1".into(),
-        process: crate::threads::thread::path("t1"),
-        call: "c1".into(),
-        base: Base { workspace, home: None },
-        writes: Writes::Workspace,
-        places: Vec::new(),
-        host: Host::default(),
-        runtime: runtime.runtime_handle(),
-        cancelled: CancellationToken::new(),
-    };
     (runtime, context)
 }
 
@@ -70,8 +61,7 @@ async fn the_public_image_primitive_fits_deduplicates_and_keeps_images_only_in_e
     owner.close().expect("closed");
     drop(volume);
     drop(context);
-    let reopened =
-        crate::tests::open_runtime(octoii_siphon_lib::Builder::new().expect("a builder"), Some(root.join("volume"))).expect("reopened");
+    let reopened = Runtime::open(Some(&root.join("volume")), None).expect("reopened");
     assert_eq!(
         files::read(&reopened.snapshot().expect("a snapshot"), "t1", &file.reference).expect("the historical image"),
         Some(bytes)
@@ -186,8 +176,7 @@ async fn original_files_are_content_addressed_and_survive_source_changes_and_a_r
     owner.close().expect("closed");
     drop(context);
 
-    let reopened =
-        crate::tests::open_runtime(octoii_siphon_lib::Builder::new().expect("a builder"), Some(root.join("volume"))).expect("reopened");
+    let reopened = Runtime::open(Some(&root.join("volume")), None).expect("reopened");
     let snapshot = reopened.snapshot().expect("a snapshot");
     for ((_, bytes, _), file) in originals.iter().zip(&kept) {
         assert_eq!(
@@ -244,11 +233,10 @@ async fn invalid_missing_hidden_nonregular_oversized_and_unstored_files_are_refu
     );
     drop(snapshot);
     std::fs::write(context.base.workspace.join("unkept.txt"), "not kept").expect("written");
-    let mut changes = Changes::new();
-    changes.write(
-        crate::threads::thread::within("t1", "files"),
-        Bytes::from_static(b"a file blocks blob storage"),
-    );
+    let mut changes = Changes::new().expect("a batch");
+    changes
+        .write(crate::threads::thread::within("t1", "files"), b"a file blocks blob storage")
+        .unwrap();
     context.runtime.commit(changes).await.expect("a blocked storage directory");
     assert!(
         context.keep_file("unkept.txt").await.is_err(),

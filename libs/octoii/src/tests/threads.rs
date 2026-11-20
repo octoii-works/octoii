@@ -3,14 +3,15 @@
 //! them marked on their directory, stopped, deleted with what they delegated, and their log read on a page at a time.
 
 use crate::tests::WithRuntime;
+use std::path::Path;
 use std::time::Duration;
 
 use crate::threads::config::{Changed, ConfigChange, ConfigChanged};
 use crate::threads::log::{self, Entry, Writer};
-use crate::threads::{Config, MainInput, MarksChange, Mode, NewThread, Parent, Threads, Turn, inbox};
+use crate::threads::{Config, MainInput, MarksChange, Mode, NewThread, Parent, Threads, Turn, inbox, thread};
 use bytes::Bytes;
 use octoii_ai::vocabulary::{InputContent, ReasoningEffort};
-use octoii_siphon_lib::{Ending, Fiber, Run, Runtime, Wait};
+use octoii_siphon_lib::{Changes, Ending, Fiber, Outcome, Run, Runtime, Wait, fiber_path};
 
 /// A main process that takes its inbox into its log as it changes, and does nothing more.
 struct Taker;
@@ -37,18 +38,21 @@ impl Fiber for Idle {
     type Checkpoint = ();
     type Output = ();
 
-    fn run(&self, _: &mut Run<'_>, _: MainInput, _: Option<()>) -> anyhow::Result<Ending<(), ()>> {
-        Ok(Ending::Wait((), Wait::new().deadline(i64::MAX)))
+    fn run(&self, _: &mut Run<'_>, input: MainInput, _: Option<()>) -> anyhow::Result<Ending<(), ()>> {
+        Ok(Ending::Wait((), Wait::new().change(inbox::path(&input.thread))))
     }
 }
 
 fn threads<M: Fiber<Input = MainInput>>(main: M) -> WithRuntime<Threads<M>> {
+    threads_at(None, main)
+}
+
+fn threads_at<M: Fiber<Input = MainInput>>(directory: Option<&Path>, main: M) -> WithRuntime<Threads<M>> {
     WithRuntime::new(
-        {
-            let mut builder = octoii_siphon_lib::Builder::new().expect("a builder");
-            builder.fiber(main).expect("registered");
-            crate::tests::open_runtime(builder, None)
-        }
+        crate::testing::start_runtime(directory, |builder, _| {
+            builder.fiber(main)?;
+            Ok(())
+        })
         .expect("started"),
         Threads::new,
     )
@@ -75,13 +79,12 @@ impl Fiber for ApplyPlan {
     }
 }
 
-fn organizing_threads(directory: Option<std::path::PathBuf>) -> WithRuntime<Threads<Taker>> {
+fn organizing_threads(directory: Option<&Path>) -> WithRuntime<Threads<Taker>> {
     WithRuntime::new(
-        {
-            let mut builder = octoii_siphon_lib::Builder::new().expect("a builder");
-            builder.fiber(Taker).expect("registered").fiber(ApplyPlan).expect("registered");
-            crate::tests::open_runtime(builder, directory)
-        }
+        crate::testing::start_runtime(directory, |builder, _| {
+            builder.fiber(Taker)?.fiber(ApplyPlan)?.fiber(crate::agent::ThreadFiber)?;
+            Ok(())
+        })
         .unwrap(),
         Threads::new,
     )
@@ -89,26 +92,22 @@ fn organizing_threads(directory: Option<std::path::PathBuf>) -> WithRuntime<Thre
 
 async fn applied(runtime: &Runtime, own: &str, plan: crate::tools::Plan) -> Result<(), String> {
     let key = runtime.new_id().unwrap();
-    let process = octoii_siphon_lib::process_path(b"", key.as_bytes());
-    let mut changes = octoii_siphon_lib::Changes::new();
-    changes.start::<ApplyPlan>(Bytes::new(), &key, &(own.to_owned(), plan)).unwrap();
+    let process = fiber_path(b"", key.as_bytes());
+    let mut changes = Changes::new().unwrap();
+    changes.start::<ApplyPlan>(None, &key, &(own.to_owned(), plan)).unwrap();
     runtime.commit(changes).await.unwrap();
-    let mut committed = runtime.committed().expect("a commit watch");
+    let mut commits = runtime.commits().expect("a commit watch");
     tokio::time::timeout(Duration::from_secs(10), async {
         loop {
-            if let Some(outcome) = runtime
-                .snapshot()
-                .unwrap()
-                .fiber(&process)
-                .unwrap()
-                .and_then(|record| record.outcome)
+            if let Some(record) = runtime.snapshot().unwrap().fiber(&process).unwrap()
+                && let Some(outcome) = record.decode_outcome::<ApplyPlan>().unwrap()
             {
-                let octoii_siphon_lib::Outcome::Completed(Some(result)) = outcome else {
+                let Outcome::Completed(Some(result)) = outcome else {
                     panic!("the plan failed to run: {outcome:?}")
                 };
-                return serde_json::from_slice(&result).unwrap();
+                return result;
             }
-            committed.next().await.unwrap();
+            commits.next().await.unwrap().expect("the runtime runs");
         }
     })
     .await
@@ -116,10 +115,10 @@ async fn applied(runtime: &Runtime, own: &str, plan: crate::tools::Plan) -> Resu
 }
 
 async fn inbox_empty(threads: &Threads<Taker>, id: &str) {
-    let mut committed = threads.runtime().committed().expect("a commit watch");
+    let mut commits = threads.runtime().commits().expect("a commit watch");
     tokio::time::timeout(Duration::from_secs(10), async {
         while !threads.listed(id).unwrap().status.inbox.is_empty() {
-            committed.next().await.unwrap();
+            commits.next().await.unwrap().expect("the runtime runs");
         }
     })
     .await
@@ -128,30 +127,12 @@ async fn inbox_empty(threads: &Threads<Taker>, id: &str) {
 
 /// Establishes an absent main process for revival tests, without waiting for graceful termination.
 async fn force_remove_main(runtime: &Runtime, id: &str) {
-    let mut changes = octoii_siphon_lib::Changes::new();
-    changes.force_remove(crate::threads::thread::main(id), None);
+    let main = thread::main(id);
+    let record = runtime.snapshot().unwrap().fiber(&main).unwrap().unwrap();
+    let mut changes = Changes::new().unwrap();
+    changes.force_remove(&record.id, None).unwrap();
     runtime.commit(changes).await.unwrap();
-    let mut committed = runtime.committed().expect("a commit watch");
-    tokio::time::timeout(Duration::from_secs(10), async {
-        while runtime
-            .snapshot()
-            .unwrap()
-            .fiber(&crate::threads::thread::main(id))
-            .unwrap()
-            .is_some()
-        {
-            committed.next().await.unwrap();
-        }
-    })
-    .await
-    .unwrap_or_else(|error| {
-        let snapshot = runtime.snapshot().unwrap();
-        panic!(
-            "the main process was not removed: {error}; record={:?}; directory={:?}",
-            snapshot.fiber(&crate::threads::thread::main(id)).unwrap(),
-            snapshot.stat(&crate::threads::thread::main(id)).unwrap()
-        );
-    });
+    assert!(runtime.snapshot().unwrap().fiber(&main).unwrap().is_none());
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -376,8 +357,8 @@ async fn an_own_title_request_and_repeated_marks_apply_once_and_survive_reopenin
     use crate::tools::Plan;
 
     let storage = tempfile::tempdir().unwrap();
-    let directory = Some(storage.path().to_owned());
-    let first = organizing_threads(directory.clone());
+    let directory = Some(storage.path());
+    let first = organizing_threads(directory);
     let own = first.create(&person(Config::default()), "own").await.unwrap();
     let volume = crate::volume::Volume {
         runtime: first.runtime().runtime_handle(),
@@ -414,16 +395,24 @@ async fn an_own_title_request_and_repeated_marks_apply_once_and_survive_reopenin
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn rename_and_deliver_revive_a_target_once_and_removing_targets_are_refused() {
+async fn rename_and_deliver_revive_a_target_once_and_deleted_targets_are_refused() {
     use crate::tools::{Plan, Report};
 
     let threads = organizing_threads(None);
     let own = threads.create(&person(Config::default()), "own").await.unwrap();
-    let target = threads.create(&person(Config::default()), "target").await.unwrap();
-    force_remove_main(threads.runtime(), &target).await;
     let volume = crate::volume::Volume {
         runtime: threads.runtime().runtime_handle(),
     };
+    let (target, _) = volume
+        .prepare_thread(
+            &person(Config::default()),
+            vec![InputContent::text("Paused during preparation").into()],
+            startup_request(),
+            "target",
+        )
+        .await
+        .unwrap();
+    force_remove_main(threads.runtime(), &target).await;
     let mut plan = Plan::default();
     plan.rename(&volume, &target, "First").unwrap();
     plan.rename(&volume, &target, "Second").unwrap();
@@ -439,23 +428,20 @@ async fn rename_and_deliver_revive_a_target_once_and_removing_targets_are_refuse
     let row = threads.listed(&target).unwrap();
     assert_eq!(
         row.status.inbox.len(),
-        3,
-        "the revived agent fiber is not registered in this test runtime"
+        4,
+        "the revived thread keeps each delivery behind the startup gate"
     );
-    let main = threads
-        .runtime()
-        .snapshot()
-        .unwrap()
-        .fiber(&crate::threads::thread::main(&target))
-        .unwrap()
-        .unwrap();
-    let mut changes = octoii_siphon_lib::Changes::new();
-    changes.meta(
-        crate::threads::thread::path(&target),
-        vec![(Bytes::from_static(b"system.removing"), Some(Bytes::from_static(b"true")))],
-        Vec::new(),
+    let main = thread::main(&target);
+    assert!(
+        threads
+            .runtime()
+            .snapshot()
+            .unwrap()
+            .fiber(&main)
+            .unwrap()
+            .is_some_and(|record| record.outcome.is_none())
     );
-    threads.runtime().commit(changes).await.unwrap();
+    threads.delete(&target).await.unwrap();
     for plan in [
         {
             let mut plan = Plan::default();
@@ -478,23 +464,17 @@ async fn rename_and_deliver_revive_a_target_once_and_removing_targets_are_refuse
             applied(threads.runtime(), &own, plan).await.unwrap_err(),
             format!("no thread {target}")
         );
-        assert_eq!(inbox::waiting(&threads.runtime().snapshot().unwrap(), &target).unwrap().len(), 3);
+        let snapshot = threads.runtime().snapshot().unwrap();
+        assert_eq!(inbox::waiting(&snapshot, &target).unwrap(), []);
+        assert!(snapshot.fiber(&main).unwrap().is_none());
     }
-    let after = threads
-        .runtime()
-        .snapshot()
-        .unwrap()
-        .fiber(&crate::threads::thread::main(&target))
-        .unwrap()
-        .unwrap();
-    assert_eq!((after.created_seq, after.outcome), (main.created_seq, main.outcome));
     threads.runtime().close().expect("closed");
 }
 
 /// The entries of the log of the thread `id`, once `done` holds of them.
 async fn entries<M>(threads: &Threads<M>, id: &str, done: impl Fn(&[Entry]) -> bool) -> Vec<Entry> {
     let runtime = threads.runtime();
-    let mut committed = runtime.committed().expect("a commit watch");
+    let mut commits = runtime.commits().expect("a commit watch");
     let waiting = async {
         loop {
             let read = log::read_after(&runtime.snapshot().expect("a snapshot"), id, None, u64::MAX).expect("read");
@@ -502,7 +482,7 @@ async fn entries<M>(threads: &Threads<M>, id: &str, done: impl Fn(&[Entry]) -> b
             if done(&entries) {
                 return entries;
             }
-            committed.next().await.expect("the runtime runs");
+            commits.next().await.unwrap().expect("the runtime runs");
         }
     };
     tokio::time::timeout(Duration::from_secs(10), waiting).await.expect("in time")
@@ -523,7 +503,10 @@ async fn a_thread_is_made_once_for_its_key_its_log_begun_with_how_it_runs() {
         title: Some("Plans".into()),
         ..Config::default()
     };
-    let id = threads.create(&person(config.clone()), "make-1").await.expect("made");
+    let new = person(config.clone());
+    let (first, second) = tokio::join!(threads.create(&new, "make-1"), threads.create(&new, "make-1"));
+    let id = first.expect("made");
+    assert_eq!(second.expect("replayed"), id, "concurrent creation shares its receipt");
     assert_eq!(
         threads.create(&person(Config::default()), "make-1").await.expect("made"),
         id,
@@ -550,6 +533,17 @@ async fn a_thread_is_made_once_for_its_key_its_log_begun_with_how_it_runs() {
         threads.deliver(&id, "person", vec![InputContent::text("hi")], "make-1").await,
         Err(crate::threads::Error::Idempotency(crate::threads::idempotency::Error::Reused))
     ));
+    let (first, second) = tokio::join!(
+        threads.deliver(&id, "person", vec![InputContent::text("one input")], "deliver-1"),
+        threads.deliver(&id, "person", vec![InputContent::text("one input")], "deliver-1"),
+    );
+    assert_eq!(first.expect("delivered"), second.expect("replayed"));
+    assert_eq!(
+        inbox::waiting(&threads.runtime().snapshot().expect("a snapshot"), &id)
+            .expect("inbox")
+            .len(),
+        1
+    );
     assert_eq!(threads.list().expect("listed").len(), 1);
     threads.runtime().close().expect("closed");
 }
@@ -734,6 +728,12 @@ async fn a_thread_is_deleted_with_every_thread_under_it() {
     );
     let gone = threads.delete(&parent).await.expect("deleted");
     assert_eq!(gone, [parent.clone(), child, grandchild]);
+    let snapshot = threads.runtime().snapshot().unwrap();
+    for id in &gone {
+        assert!(snapshot.stat(&thread::path(id)).unwrap().is_none());
+        assert!(snapshot.fiber(&thread::main(id)).unwrap().is_none());
+    }
+    assert!(snapshot.fiber(&thread::main(&other)).unwrap().is_some());
     let left: Vec<String> = threads.list().expect("listed").into_iter().map(|listed| listed.id).collect();
     assert_eq!(left, [other]);
     assert!(matches!(threads.listed(&parent), Err(crate::threads::Error::NoSuchThread)));
@@ -741,18 +741,98 @@ async fn a_thread_is_deleted_with_every_thread_under_it() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn an_answer_targets_its_own_threads_exact_fiber() {
+    use octoii_siphon_lib::{AskedOfPerson, FiberId, Request, RequestId, Status};
+
+    #[derive(serde::Serialize, serde::Deserialize)]
+    struct Question;
+    impl Request for Question {
+        const NAME: &'static str = "test.question";
+        type Answer = bool;
+    }
+    impl AskedOfPerson for Question {
+        fn answer_schema(&self) -> serde_json::Value {
+            serde_json::json!({"type": "boolean"})
+        }
+    }
+
+    struct Questioner;
+    impl Fiber for Questioner {
+        const KIND: &'static str = "test.questioner";
+        type Input = ();
+        type Checkpoint = ();
+        type Output = ();
+
+        fn run(&self, run: &mut Run<'_>, (): (), checkpoint: Option<()>) -> anyhow::Result<Ending<(), ()>> {
+            let key = "choice";
+            if checkpoint.is_none() {
+                run.request(key, &Question)?;
+            } else if run.take_answer::<Question>(key)?.is_some() {
+                return Ok(Ending::Done(()));
+            }
+            Ok(Ending::Wait((), Wait::new().mail(key)))
+        }
+    }
+
+    async fn ask(threads: &Threads<Idle>, parent: &FiberId) -> String {
+        let runtime = threads.runtime();
+        let mut commits = runtime.commits().unwrap();
+        let mut changes = Changes::new().unwrap();
+        changes.start::<Questioner>(Some(parent), "ask", &()).unwrap();
+        runtime.commit(changes).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                if let Some(ask) = threads.listed("thread-other").unwrap().status.asks.pop() {
+                    return ask.id;
+                }
+                commits.next().await.unwrap().expect("the runtime runs");
+            }
+        })
+        .await
+        .expect("the child requests an answer")
+    }
+
+    let runtime = crate::testing::start_runtime(None, |builder, _| {
+        builder.fiber(Idle)?.fiber(Questioner)?.ask_person::<Question>()?;
+        Ok(())
+    })
+    .unwrap();
+    let threads = Threads::<Idle>::new(runtime.runtime_handle());
+    let mut changes = Changes::new().unwrap();
+    for id in ["thread", "thread-other"] {
+        Threads::<Idle>::made(&mut changes, id, &runtime.new_id().unwrap(), &person(Config::default())).unwrap();
+    }
+    runtime.commit(changes).await.unwrap();
+    let parent = runtime
+        .snapshot()
+        .unwrap()
+        .fiber(&thread::main("thread-other"))
+        .unwrap()
+        .unwrap()
+        .id;
+
+    let previous = ask(&threads, &parent).await;
+    let answer = serde_json::json!(true);
+    let rejected = |error| matches!(error, crate::threads::Error::NotGiven(error) if error.status() == Status::NotFound);
+    assert_eq!(threads.listed("thread").unwrap().status.asks, []);
+    assert!(rejected(threads.answer("thread", &previous, &answer).await.unwrap_err()));
+
+    let old = RequestId::from_token(&previous).unwrap();
+    let mut changes = Changes::new().unwrap();
+    changes.force_remove(old.fiber(), None).unwrap();
+    runtime.commit(changes).await.unwrap();
+    let current = ask(&threads, &parent).await;
+    assert_ne!(RequestId::from_token(&current).unwrap().fiber(), old.fiber());
+    assert!(rejected(threads.answer("thread-other", &previous, &answer).await.unwrap_err()));
+    threads.answer("thread-other", &current, &answer).await.unwrap();
+    runtime.close().unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn sub_thread_kinds_survive_configuration_changes_and_reopening() {
     let storage = tempfile::tempdir().unwrap();
-    let directory = Some(storage.path().to_owned());
-    let first = WithRuntime::new(
-        {
-            let mut builder = octoii_siphon_lib::Builder::new().expect("a builder");
-            builder.fiber(Taker).expect("registered");
-            crate::tests::open_runtime(builder, directory.clone())
-        }
-        .unwrap(),
-        Threads::<Taker>::new,
-    );
+    let directory = Some(storage.path());
+    let first = threads_at(directory, Taker);
     let mut children = Vec::new();
     for kind in [
         crate::threads::SubThreadKind::Explorer,
@@ -789,15 +869,7 @@ async fn sub_thread_kinds_survive_configuration_changes_and_reopening() {
     }
     first.runtime().close().expect("closed");
     drop(first);
-    let reopened = WithRuntime::new(
-        {
-            let mut builder = octoii_siphon_lib::Builder::new().expect("a builder");
-            builder.fiber(Taker).expect("registered");
-            crate::tests::open_runtime(builder, directory)
-        }
-        .unwrap(),
-        Threads::<Taker>::new,
-    );
+    let reopened = threads_at(directory, Taker);
     let volume = crate::volume::Volume {
         runtime: reopened.runtime().runtime_handle(),
     };
@@ -826,17 +898,15 @@ async fn missing_and_invalid_sub_thread_kinds_are_refused() {
         runtime: threads.runtime().runtime_handle(),
     };
     let annotation = Bytes::from_static(crate::threads::thread::SUB_THREAD_KIND_ANNOTATION.as_bytes());
-    let mut changes = octoii_siphon_lib::Changes::new();
-    changes.meta(crate::threads::thread::path(&id), Vec::new(), vec![(annotation.clone(), None)]);
+    let mut changes = Changes::new().unwrap();
+    changes.meta(thread::path(&id), [], [(annotation.clone(), None)]).unwrap();
     threads.runtime().commit(changes).await.unwrap();
     assert!(matches!(threads.listed(&id), Err(crate::threads::Error::MissingSubThreadKind)));
     assert!(crate::agent::parent_of(&volume, &id).is_err());
-    let mut changes = octoii_siphon_lib::Changes::new();
-    changes.meta(
-        crate::threads::thread::path(&id),
-        Vec::new(),
-        vec![(annotation, Some(Bytes::from_static(b"\"invalid\"")))],
-    );
+    let mut changes = Changes::new().unwrap();
+    changes
+        .meta(thread::path(&id), [], [(annotation, Some(Bytes::from_static(b"\"invalid\"")))])
+        .unwrap();
     threads.runtime().commit(changes).await.unwrap();
     assert!(matches!(threads.listed(&id), Err(crate::threads::Error::Json(_))));
     assert!(crate::agent::parent_of(&volume, &id).is_err());
@@ -902,7 +972,7 @@ async fn a_thread_s_files_are_read_by_their_reference_as_its_conversation_names_
     let id = threads.create(&person(Config::default()), "k1").await.expect("made");
     let other = threads.create(&person(Config::default()), "k2").await.expect("made");
     let runtime = threads.runtime();
-    let mut changes = octoii_siphon_lib::Changes::new();
+    let mut changes = Changes::new().unwrap();
     let reference = crate::threads::files::keep(
         &runtime.snapshot().expect("a snapshot"),
         &mut changes,
@@ -930,9 +1000,9 @@ async fn history_pages_cross_segments_and_hold_the_snapshot_they_opened() {
     let threads = threads(Idle);
     let id = threads.create(&person(Config::default()), "history").await.unwrap();
     let runtime = threads.runtime();
-    let mut changes = octoii_siphon_lib::Changes::new();
-    changes.delete(log::path(&id));
-    changes.mkdir(log::path(&id));
+    let mut changes = Changes::new().unwrap();
+    changes.delete(log::path(&id)).unwrap();
+    changes.mkdir(log::path(&id)).unwrap();
     let entries: Vec<Entry> = (0..150)
         .map(|at| Entry::Input {
             id: format!("{at:03}"),
@@ -951,7 +1021,9 @@ async fn history_pages_cross_segments_and_hold_the_snapshot_they_opened() {
             bytes.extend(serde_json::to_vec(entry).unwrap());
             bytes.push(b'\n');
         }
-        changes.write(log::segment(&id, &format!("{}.jsonl", chunk[0].id())), bytes);
+        changes
+            .write(log::segment(&id, &format!("{}.jsonl", chunk[0].id())), bytes)
+            .unwrap();
     }
     runtime.commit(changes).await.unwrap();
     let volume = crate::volume::Volume {
@@ -973,8 +1045,8 @@ async fn history_pages_cross_segments_and_hold_the_snapshot_they_opened() {
     assert_eq!(history.before(None, 0).unwrap(), Vec::<Entry>::new());
     assert_eq!(history.after(None, 0).unwrap(), Vec::<Entry>::new());
     assert!(crate::threads::History::open(&volume, "missing").unwrap().is_none());
-    let mut changes = octoii_siphon_lib::Changes::new();
-    changes.delete(log::path(&id));
+    let mut changes = Changes::new().unwrap();
+    changes.delete(log::path(&id)).unwrap();
     runtime.commit(changes).await.unwrap();
     assert_eq!(history.before(None, 60).unwrap(), entries[90..]);
     assert_eq!(
@@ -995,12 +1067,15 @@ fn startup_request() -> crate::threads::StartRequest {
     }
 }
 
-fn startup_volume(directory: Option<std::path::PathBuf>) -> WithRuntime<crate::volume::Volume> {
-    let mut builder = octoii_siphon_lib::Builder::new().unwrap();
-    builder.fiber(crate::agent::ThreadFiber).unwrap();
-    WithRuntime::new(crate::tests::open_runtime(builder, directory).unwrap(), |runtime| {
-        crate::volume::Volume { runtime }
-    })
+fn startup_volume(directory: Option<&Path>) -> WithRuntime<crate::volume::Volume> {
+    WithRuntime::new(
+        crate::testing::start_runtime(directory, |builder, _| {
+            builder.fiber(crate::agent::ThreadFiber)?;
+            Ok(())
+        })
+        .unwrap(),
+        |runtime| crate::volume::Volume { runtime },
+    )
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1020,8 +1095,12 @@ async fn startup_refuses_a_claim_without_input_part_discriminants() {
     let fingerprint: [u8; 32] = Sha256::digest(serde_json::to_vec(&(&new, content, &request)).unwrap()).into();
     let record = serde_json::json!({ "thread": thread, "fingerprint": fingerprint });
     let path = Bytes::from_static(b"siphon.start/claim");
-    let mut changes = octoii_siphon_lib::Changes::new();
-    changes.write(path.clone(), serde_json::to_vec(&record).unwrap()).seal(path);
+    let mut changes = Changes::new().unwrap();
+    changes
+        .write(&path, serde_json::to_vec(&record).unwrap())
+        .unwrap()
+        .seal(path)
+        .unwrap();
     volume.runtime.commit(changes).await.unwrap();
 
     let error = volume.prepare_thread(&new, parts, request, "claim").await.unwrap_err();
@@ -1038,8 +1117,8 @@ async fn startup_claim_is_atomic_fenced_and_survives_reopening() {
     use crate::threads::{StartState, StartWorkspace};
 
     let storage = tempfile::tempdir().unwrap();
-    let directory = Some(storage.path().to_owned());
-    let volume = startup_volume(directory.clone());
+    let directory = Some(storage.path());
+    let volume = startup_volume(directory);
     let new = person(Config::default());
     let inputs = vec![InputContent::text("keep this")];
     let (a, b) = tokio::join!(
@@ -1138,8 +1217,8 @@ async fn stopping_or_deleting_preparation_cannot_be_undone_by_a_late_result() {
         )
         .await
         .unwrap();
-    let mut changes = octoii_siphon_lib::Changes::new();
-    crate::threads::thread::stop_turn(&volume.runtime.snapshot().unwrap(), &mut changes, &tool_stopped).unwrap();
+    let mut changes = Changes::new().unwrap();
+    thread::stop_turn(&volume.runtime.snapshot().unwrap(), &mut changes, &tool_stopped).unwrap();
     volume.runtime.commit(changes).await.unwrap();
     assert!(
         volume
@@ -1171,8 +1250,8 @@ async fn initial_attachments_commit_with_ordered_input_and_survive_reopening() {
     use crate::threads::{InputPart, files};
 
     let storage = tempfile::tempdir().unwrap();
-    let directory = Some(storage.path().to_owned());
-    let volume = startup_volume(directory.clone());
+    let directory = Some(storage.path());
+    let volume = startup_volume(directory);
     let mut png = Vec::new();
     image::RgbImage::from_pixel(2048, 2048, image::Rgb([40, 100, 200]))
         .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)

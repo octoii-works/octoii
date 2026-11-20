@@ -15,7 +15,7 @@ use crate::tools::{
 use bytes::Bytes;
 use octoii_ai::vocabulary::InputContent;
 use octoii_siphon_lib::Outcome;
-use octoii_siphon_lib::{Asked, Changes, Ending, Fiber, Run, Runtime, Wait};
+use octoii_siphon_lib::{Asked, Changes, Ending, Fiber, Run, Runtime, Wait, fiber_path};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -217,56 +217,51 @@ fn said(call: crate::tools::Call) -> (CallStatus, String) {
 /// A runtime whose caller's tools are exec'd, whose permissions the person answers, and whose second model lets every
 /// command go ahead but one that removes.
 fn runtime() -> Runtime {
-    {
-        let mut builder = octoii_siphon_lib::Builder::new().expect("a builder");
+    crate::testing::start_runtime(None, |builder, runtime| {
+        let exec_runtime = runtime.clone();
+        let executor = tokio::runtime::Handle::current();
         builder
-            .fiber(Caller { tools: tools() })
-            .expect("registered")
-            .fiber(RecoveredCaller)
-            .expect("registered")
+            .fiber(Caller { tools: tools() })?
+            .fiber(RecoveredCaller)?
             .fiber(ScriptFiber {
                 tools: tools(),
                 primitives: std::sync::Arc::new(crate::agent::ThreadPrimitives),
-            })
-            .expect("registered")
-            .handle(&tokio::runtime::Handle::current(), |asked: Asked<Exec>| async move {
-                answer_exec(&tools(), &Host::default(), asked).await
-            })
-            .expect("registered")
-            .ask_person::<Permission>()
-            .expect("registered")
-            .ask_person::<crate::tools::Asks>()
-            .expect("registered")
-            .handle(&tokio::runtime::Handle::current(), |asked: Asked<Review>| async move {
+            })?
+            .handle(&executor, move |asked: Asked<Exec>| {
+                let runtime = exec_runtime.clone();
+                async move { answer_exec(&tools(), &Host::default(), &runtime, asked).await }
+            })?
+            .ask_person::<Permission>()?
+            .ask_person::<crate::tools::Asks>()?
+            .handle(&executor, |asked: Asked<Review>| async move {
                 let removes = asked.payload.shown.does.iter().any(|does| does.contains(" rm "));
                 Ok(Judgment {
                     allow: !removes,
                     reason: if removes { "it removes files".into() } else { "it builds".into() },
                     usage: None,
                 })
-            })
-            .expect("registered");
-        crate::tests::open_runtime(builder, None)
-    }
+            })?;
+        Ok(())
+    })
     .expect("started")
 }
 
 async fn caller(runtime: &Runtime, key: &str, asking: &Asking) -> Bytes {
-    let mut changes = Changes::new();
-    changes.start::<Caller>(Bytes::new(), key, asking).expect("an input");
+    let mut changes = Changes::new().expect("a batch");
+    changes.start::<Caller>(None, key, asking).expect("an input");
     runtime.commit(changes).await.expect("started");
-    octoii_siphon_lib::process_path(b"", key.as_bytes())
+    fiber_path(b"", key.as_bytes())
 }
 
 async fn ended(runtime: &Runtime, path: &[u8]) -> Vec<(CallStatus, String)> {
-    let mut committed = runtime.committed().expect("a commit watch");
+    let mut committed = runtime.commits().expect("a commit watch");
     let waiting = async {
         loop {
             let record = runtime.snapshot().expect("a snapshot").fiber(path).expect("a record");
             if let Some(Outcome::Completed(Some(result))) = record.and_then(|record| record.outcome) {
                 return serde_json::from_slice(&result).expect("what it said");
             }
-            committed.next().await.expect("the runtime runs");
+            committed.next().await.expect("commit event").expect("the runtime runs");
         }
     };
     tokio::time::timeout(Duration::from_secs(10), waiting).await.expect("ended in time")
@@ -302,18 +297,23 @@ fn folder() -> (tempfile::TempDir, PathBuf) {
 }
 
 async fn sub_thread(runtime: &Runtime, id: &str, kind: SubThreadKind) {
-    let mut changes = Changes::new();
-    changes.mkdir(crate::threads::thread::path(id)).meta(
-        crate::threads::thread::path(id),
-        vec![(
-            Bytes::from_static(crate::threads::thread::PARENT_LABEL.as_bytes()),
-            Some(Bytes::from_static(b"parent")),
-        )],
-        vec![(
-            Bytes::from_static(crate::threads::thread::SUB_THREAD_KIND_ANNOTATION.as_bytes()),
-            Some(serde_json::to_vec(&kind).unwrap().into()),
-        )],
-    );
+    let mut changes = Changes::new().expect("a batch");
+    let path = crate::threads::thread::path(id);
+    changes
+        .mkdir(&path)
+        .unwrap()
+        .meta(
+            &path,
+            [(
+                Bytes::from_static(crate::threads::thread::PARENT_LABEL.as_bytes()),
+                Some(Bytes::from_static(b"parent")),
+            )],
+            [(
+                Bytes::from_static(crate::threads::thread::SUB_THREAD_KIND_ANNOTATION.as_bytes()),
+                Some(serde_json::to_vec(&kind).unwrap().into()),
+            )],
+        )
+        .unwrap();
     runtime.commit(changes).await.unwrap();
 }
 
@@ -484,10 +484,10 @@ async fn recovered_explorer_approval_cannot_grant_or_execute_an_unavailable_tool
         workspace: workspace.clone(),
         calls: vec![call("write", "write", &json!({ "path": target, "content": "changed" }))],
     };
-    let mut changes = Changes::new();
-    changes.start::<RecoveredCaller>(Bytes::new(), "restore", &asking).unwrap();
+    let mut changes = Changes::new().expect("a batch");
+    changes.start::<RecoveredCaller>(None, "restore", &asking).unwrap();
     runtime.commit(changes).await.unwrap();
-    let path = octoii_siphon_lib::process_path(b"", b"restore");
+    let path = fiber_path(b"", b"restore");
     let request = asked(&runtime, &path, b"siphon.permission").await;
     runtime
         .answer(&request.id, &json!({ "decision": "allow", "always": true }))
@@ -642,8 +642,8 @@ async fn in_auto_a_second_model_judges_what_would_ask() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_call_s_long_output_is_cut_to_its_head_and_tail_the_whole_kept_in_its_thread() {
     let runtime = runtime();
-    let mut changes = Changes::new();
-    changes.mkdir(crate::threads::thread::path("t1"));
+    let mut changes = Changes::new().expect("a batch");
+    changes.mkdir(crate::threads::thread::path("t1")).expect("staged");
     runtime.commit(changes).await.expect("a thread's directory");
     let (_folder, workspace) = folder();
     let asking = Asking {

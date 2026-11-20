@@ -104,7 +104,7 @@ impl Session {
         }
         let heard = self.heard.recv().await;
         match &heard {
-            None => self.closed = true,
+            Some(Heard::Failed(_)) | None => self.closed = true,
             Some(Heard::Told(process::Told::Result(ended))) => {
                 for (model, usage) in &ended.model_usage {
                     if usage.context_window > 0 {
@@ -168,7 +168,7 @@ impl Session {
                 break;
             }
             match self.next(measured).await {
-                None => return Settled::Closed,
+                Some(Heard::Failed(_)) | None => return Settled::Closed,
                 Some(Heard::Told(process::Told::Result(_))) => break,
                 Some(Heard::Told(process::Told::Assistant {
                     message,
@@ -187,12 +187,17 @@ impl Session {
     /// Answers aside with the JSON of a schema its turn ends with, as one message's text onto `events`.
     pub async fn answer_structured(&mut self, events: &Events, measured: &mut HashMap<String, u64>) {
         loop {
-            let Some(heard) = self.next(measured).await else {
-                let _ = events.send(Err(Failure::new(FailureKind::Server, "Claude Code ended without an answer")));
-                return;
-            };
-            let Heard::Told(process::Told::Result(ended)) = heard else {
-                continue;
+            let ended = match self.next(measured).await {
+                Some(Heard::Told(process::Told::Result(ended))) => ended,
+                Some(Heard::Failed(error)) => {
+                    let _ = events.send(Err(Failure::new(FailureKind::Server, error)));
+                    return;
+                }
+                None => {
+                    let _ = events.send(Err(Failure::new(FailureKind::Server, "Claude Code ended without an answer")));
+                    return;
+                }
+                Some(_) => continue,
             };
             if ended.subtype != "success" || ended.is_error {
                 let _ = events.send(Err(result_failure(&ended, &self.limit)));
@@ -266,7 +271,11 @@ impl Answering {
     /// # Errors
     /// The failure the answer ends with.
     fn take(&mut self, heard: Heard, limit: &RateLimit, events: &Events) -> Result<(), Failure> {
-        let Heard::Told(told) = heard else { return Ok(()) };
+        let told = match heard {
+            Heard::Told(told) => told,
+            Heard::Failed(error) => return Err(Failure::new(FailureKind::Server, error)),
+            Heard::Held(_) => return Ok(()),
+        };
         match told {
             process::Told::StreamEvent {
                 event,

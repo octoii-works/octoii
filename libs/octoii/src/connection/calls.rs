@@ -138,16 +138,12 @@ async fn threads_answered(siphon: &Octoii, method: Method) -> Result<serde_json:
         Method::ReadThread(read) => json(&read_thread(siphon, &read.thread, read.before.as_deref(), read.limit)?),
         Method::ThreadContext(of) => {
             let snapshot = siphon.runtime.snapshot().map_err(|error| refusal("failed", &error.to_string()))?;
-            threads.listed(&of.thread).map_err(|error| failed(&error))?;
+            threads.listed_at(&snapshot, &of.thread).map_err(|error| failed(&error))?;
             let window = crate::threads::Window::read(&snapshot, &of.thread).map_err(|error| refusal("failed", &error.to_string()))?;
             json(&crate::agent::context::composition(&window))
         }
         Method::CompactThread(of) => {
-            threads.listed(&of.thread).map_err(|error| failed(&error))?;
-            let snapshot = siphon.runtime.snapshot().map_err(|error| refusal("failed", &error.to_string()))?;
-            let mut changes = octoii_siphon_lib::Changes::new();
-            crate::agent::compaction::start(&snapshot, &mut changes, &of.thread).map_err(|error| refusal("failed", &error.to_string()))?;
-            commit(siphon, changes).await?;
+            compact_thread(siphon, &of.thread).await?;
             json(&Nothing {})
         }
         Method::ResumeThread(resume) => {
@@ -158,10 +154,21 @@ async fn threads_answered(siphon: &Octoii, method: Method) -> Result<serde_json:
     }
 }
 
+/// Starts a compaction against an observed Thread and its current execution state.
+async fn compact_thread(siphon: &Octoii, thread: &str) -> Result<(), Error> {
+    crate::volume::commit_checked(siphon.threads.runtime(), |snapshot, changes| {
+        siphon.threads.listed_at(snapshot, thread)?;
+        crate::agent::compaction::start(snapshot, changes, thread)?;
+        Ok(())
+    })
+    .await
+    .map_err(|error| failed(&error))
+}
+
 /// A page of the thread `thread`'s entries, the latest `limit` before the entry `before`, and where its log ends.
 fn read_thread(siphon: &Octoii, thread: &str, before: Option<&str>, limit: u32) -> Result<ThreadRead, Error> {
     let snapshot = siphon.runtime.snapshot().map_err(|error| refusal("failed", &error.to_string()))?;
-    siphon.threads.listed(thread).map_err(|error| failed(&error))?;
+    siphon.threads.listed_at(&snapshot, thread).map_err(|error| failed(&error))?;
     let limit = usize::try_from(limit).unwrap_or(usize::MAX);
     let (lines, complete) = log::read_before(&snapshot, thread, before, limit).map_err(|error| refusal("failed", &error.to_string()))?;
     let entries = lines
@@ -173,29 +180,14 @@ fn read_thread(siphon: &Octoii, thread: &str, before: Option<&str>, limit: u32) 
     Ok(ThreadRead { entries, complete, end })
 }
 
-/// Has the thread `thread` go on at `at`, unless the person goes on first — the time it went on at before let go of —
-/// or at no time, where `at` is none.
+/// Replaces the thread's resume schedule or cancels it when the deadline is absent.
 async fn resume_thread(siphon: &Octoii, thread: &str, at: Option<i64>) -> Result<(), Error> {
-    siphon.threads.listed(thread).map_err(|error| failed(&error))?;
-    let mut changes = octoii_siphon_lib::Changes::new();
-    crate::agent::resume::disarm(&mut changes, thread);
-    commit(siphon, changes).await?;
-    let Some(at) = at else { return Ok(()) };
-    let snapshot = siphon.runtime.snapshot().map_err(|error| refusal("failed", &error.to_string()))?;
-    let input = crate::agent::ResumeInput::now(&snapshot, thread, at, PERSON).map_err(|error| refusal("failed", &error.to_string()))?;
-    let mut changes = octoii_siphon_lib::Changes::new();
-    crate::agent::resume::arm(&snapshot, &mut changes, &input).map_err(|error| refusal("failed", &error.to_string()))?;
-    commit(siphon, changes).await
-}
-
-/// Commits `changes` to Octoii's volume.
-async fn commit(siphon: &Octoii, changes: octoii_siphon_lib::Changes) -> Result<(), Error> {
-    siphon
-        .runtime
-        .commit(changes)
-        .await
-        .map(|_| ())
-        .map_err(|error| refusal("failed", &error.to_string()))
+    crate::volume::commit_checked(siphon.threads.runtime(), |snapshot, changes| {
+        siphon.threads.listed_at(snapshot, thread)?;
+        crate::agent::resume::reschedule(snapshot, changes, thread, at, PERSON)
+    })
+    .await
+    .map_err(|error| failed(&error))
 }
 
 /// Why an operation on threads was not done, as a client is told.

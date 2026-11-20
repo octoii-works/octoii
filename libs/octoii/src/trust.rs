@@ -9,7 +9,7 @@
 
 use bytes::Bytes;
 use octoii_siphon_lib::Snapshot;
-use octoii_siphon_lib::{Answer, AskedOfPerson, Changes, Ending, Fiber, Request, Run, Wait};
+use octoii_siphon_lib::{Answer, AskedOfPerson, Changes, Ending, Fiber, Request, Run, Wait, fiber_path};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -117,13 +117,12 @@ impl Fiber for TrustFiber {
             run.request(Self::KEY, &trust)?;
             return Ok(Ending::Wait((), wait));
         }
-        let Some(answer) = run.answer::<Trust>(Self::KEY)? else {
+        let Some(answer) = run.take_answer::<Trust>(Self::KEY)? else {
             return Ok(Ending::Wait((), wait));
         };
-        run.discard_mail(Self::KEY)?;
         if let Answer::Given(Trusted { trusted }) = answer {
             let decision = decide(run.snapshot(), &trust.folder, &trust.digest, trusted)?;
-            run.changes.extend(decision);
+            run.changes.extend(decision)?;
         }
         Ok(Ending::Done(()))
     }
@@ -135,13 +134,16 @@ impl Fiber for TrustFiber {
 /// # Errors
 /// The volume's failure.
 pub async fn ask(volume: &crate::volume::Volume, thread: &str, trust: &Trust) -> anyhow::Result<()> {
-    let main = thread::main(thread);
-    let asking = octoii_siphon_lib::process_path(&main, TrustFiber::KEY.as_bytes());
-    if volume.snapshot()?.fiber(&asking)?.is_some() {
+    let snapshot = volume.snapshot()?;
+    let main = snapshot
+        .fiber(&thread::main(thread))?
+        .ok_or_else(|| anyhow::anyhow!("the thread's main Fiber is missing"))?;
+    let asking = fiber_path(main.id.path(), TrustFiber::KEY.as_bytes());
+    if snapshot.fiber(&asking)?.is_some() {
         return Ok(());
     }
-    let mut changes = Changes::new();
-    changes.start::<TrustFiber>(main, TrustFiber::KEY, trust)?;
+    let mut changes = Changes::new()?;
+    changes.start::<TrustFiber>(Some(&main.id), TrustFiber::KEY, trust)?;
     volume.runtime.commit(changes).await?;
     Ok(())
 }

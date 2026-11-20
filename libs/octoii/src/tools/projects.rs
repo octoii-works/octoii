@@ -79,16 +79,16 @@ pub fn annotation(snapshot: &Snapshot, folder: &str, name: &str) -> octoii_sipho
 /// # Errors
 /// The volume's failure.
 pub fn annotate(snapshot: &Snapshot, folder: &str, name: &str, value: Bytes) -> octoii_siphon_lib::Result<Changes> {
-    let mut changes = Changes::new();
+    let mut changes = Changes::new()?;
     let project = path(folder);
     if snapshot.stat(&project)?.is_none() {
-        changes.mkdir(project.clone());
+        changes.mkdir(&project)?;
     }
     let label = (
         Bytes::from_static(FOLDER_LABEL.as_bytes()),
         Some(Bytes::copy_from_slice(folder.as_bytes())),
     );
-    changes.meta(project, vec![label], vec![(Bytes::copy_from_slice(name.as_bytes()), Some(value))]);
+    changes.meta(project, [label], [(Bytes::copy_from_slice(name.as_bytes()), Some(value))])?;
     Ok(changes)
 }
 

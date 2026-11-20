@@ -177,20 +177,18 @@ impl Account {
         }
     }
 
-    /// Starts a session asked `asked`, beginning as `begin` says, at `time`.
+    /// Starts a session asked `asked`, beginning as `begin` says.
     ///
     /// # Errors
     /// Where `claude` is not installed, or failed before it answered.
-    pub async fn start(&self, time: i64, asked: &Asked, begin: &Begin) -> Result<Session, Failure> {
+    pub async fn start(&self, asked: &Asked, begin: &Begin) -> Result<Session, Failure> {
         let names = asked
             .tools
             .iter()
             .filter_map(|tool| tool["name"].as_str().map(str::to_owned))
             .collect::<HashSet<_>>();
         let initialize = initialize(asked, &names);
-        let (process, _, heard) = self
-            .launched(time, arguments(asked, begin), asked.tools.clone(), initialize)
-            .await?;
+        let (process, _, heard) = self.launched(arguments(asked, begin), asked.tools.clone(), initialize).await?;
         Ok(Session::new(process, heard, asked.settings.clone(), names))
     }
 
@@ -199,7 +197,7 @@ impl Account {
     ///
     /// # Errors
     /// As `start`.
-    pub async fn asked(&self, time: i64) -> Result<(Process, Value), Failure> {
+    pub async fn asked(&self) -> Result<(Process, Value), Failure> {
         let arguments = [
             "--output-format=stream-json",
             "--verbose",
@@ -212,15 +210,14 @@ impl Account {
         .map(str::to_owned)
         .to_vec();
         let initialize = json!({ "subtype": "initialize", "skills": [] });
-        let (process, answer, _) = self.launched(time, arguments, Vec::new(), initialize).await?;
+        let (process, answer, _) = self.launched(arguments, Vec::new(), initialize).await?;
         Ok((process, answer))
     }
 
-    /// `claude` started with `arguments` at `time` in the work folder, its MCP server offering `tools`, initialized
+    /// `claude` started with `arguments` in the work folder, its MCP server offering `tools`, initialized
     /// with `initialize`: with its answer, and what it is heard to write.
     async fn launched(
         &self,
-        time: i64,
         arguments: Vec<String>,
         tools: Vec<Value>,
         initialize: Value,
@@ -235,7 +232,7 @@ impl Account {
             cwd: self.place.work(),
             variables: self.variables(),
         };
-        Process::start(&machine, time, launch, tools, initialize)
+        Process::start(&self.place.commands, &machine, launch, tools, initialize)
             .await
             .map_err(|started| match started {
                 Started::Missing => self.not_installed(),
@@ -256,12 +253,12 @@ impl Account {
             .map_err(|error| Failure::new(FailureKind::Server, error.to_string()))
     }
 
-    /// Signs this account's Claude Code out of the login its configuration keeps, at `time` — one the person added,
+    /// Signs this account's Claude Code out of the login its configuration keeps, one the person added,
     /// whose keychain entry Claude Code names by its configuration's folder — never the person's own.
     ///
     /// # Errors
     /// Where `claude auth logout` failed.
-    pub async fn sign_out(&self, time: i64) -> Result<(), Failure> {
+    pub async fn sign_out(&self) -> Result<(), Failure> {
         let (Some(program), Some(config)) = (&self.place.program, &self.config) else {
             return Ok(());
         };
@@ -273,7 +270,7 @@ impl Account {
         };
         let ran = self
             .machine()?
-            .run(time, b"", &signing_out, &tokio_util::sync::CancellationToken::new())
+            .run(&self.place.commands, &signing_out, &tokio_util::sync::CancellationToken::new())
             .await
             .map_err(|error| Failure::new(FailureKind::Server, format!("`claude auth logout` failed: {error}")))?;
         if ran.exit != octoii::machine::Exit::Code(0) {

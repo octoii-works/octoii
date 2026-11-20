@@ -4,7 +4,6 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::machine::Host;
 use crate::machine::paths::Base;
 use crate::tools::permissions::Writes;
 use crate::tools::{Context, EditTool, Effect, GlobTool, GrepTool, ReadTool, ShellTool, Tools, WriteTool};
@@ -12,7 +11,6 @@ use bytes::Bytes;
 use octoii_ai::vocabulary::InputContent;
 use octoii_siphon_lib::{Changes, Runtime};
 use serde_json::json;
-use tokio_util::sync::CancellationToken;
 
 fn tools() -> Tools {
     Tools::new()
@@ -26,23 +24,14 @@ fn tools() -> Tools {
 
 /// A context working in a fresh folder for the thread `t1`, writing as `writes` says; the folder held.
 async fn context(writes: Writes) -> (Runtime, Context, tempfile::TempDir) {
-    let runtime = crate::testing::memory_runtime().expect("started");
-    let mut changes = Changes::new();
-    changes.mkdir(crate::threads::thread::path("t1"));
-    runtime.commit(changes).await.expect("a thread's directory");
     let folder = tempfile::tempdir().expect("a folder");
     let workspace = folder.path().canonicalize().expect("its real path");
-    let context = Context {
-        thread: "t1".into(),
-        process: crate::threads::thread::path("t1"),
-        call: "c1".into(),
-        base: Base { workspace, home: None },
-        writes,
-        places: Vec::new(),
-        host: Host::default(),
-        runtime: runtime.runtime_handle(),
-        cancelled: CancellationToken::new(),
-    };
+    let (runtime, context) = crate::tests::tool_context(None, workspace, writes).await;
+    let mut changes = Changes::new().expect("a batch");
+    changes
+        .mkdir(crate::threads::thread::path(&context.thread))
+        .expect("a thread's directory");
+    runtime.commit(changes).await.expect("stored");
     (runtime, context, folder)
 }
 

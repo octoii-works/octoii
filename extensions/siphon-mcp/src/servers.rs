@@ -367,20 +367,12 @@ async fn connect(volume: Volume, host: Host, server: Server) -> Result<Connectio
                 workspace: cwd.clone(),
                 home: host.home.clone(),
             };
-            let machine = volume
-                .commands()
-                .open(&host, base, &Writes::Anywhere)
-                .map_err(|error| error.to_string())?;
+            let commands = volume.commands();
+            let machine = commands.open(&host, base, &Writes::Anywhere).map_err(|error| error.to_string())?;
             let mut argv = vec![command.clone()];
             argv.extend(args.iter().cloned());
-            let coprocess = machine
-                .coprocess(
-                    volume.now_ms().map_err(|error| error.to_string())?,
-                    b"",
-                    argv,
-                    cwd,
-                    Variables::Over(env.clone()),
-                )
+            let coprocess = commands
+                .coprocess(&machine, argv, cwd, Variables::Over(env.clone()))
                 .map_err(|error| error.to_string())?;
             let serving = ().serve((coprocess.stdout, coprocess.stdin));
             match tokio::time::timeout(CONNECTING_MAX, serving).await {

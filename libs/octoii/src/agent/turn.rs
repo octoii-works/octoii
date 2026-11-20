@@ -20,10 +20,10 @@ use crate::tools::{Calls, Setting, State, Tools};
 use octoii_ai::vocabulary::{
     Failure, FailureKind, FunctionCallOutput, Incomplete, InputContent, Item, ItemStatus, Response, ResponseStatus,
 };
-use octoii_siphon_lib::{Answer, Ending, Fiber, Retries, Run, Wait};
+use octoii_siphon_lib::{Answer, Ending, Fiber, FiberId, Retries, Run, Unanswered, Wait};
 use serde::{Deserialize, Serialize};
 
-use crate::agent::compaction;
+use crate::agent::compaction::{self, AwaitCompaction, CompactFiber, CompactInput};
 use crate::agent::model::ModelRequest;
 
 /// How many times a turn asks again after its model failed in a way that may pass, before the turn fails.
@@ -39,11 +39,14 @@ const RETRY_AFTER_MOST_MS: i64 = 15 * 60_000;
 pub struct TurnInput {
     pub thread: String,
     pub catalog: Vec<String>,
+    /// What the thread's budget leaves this turn, in billionths of a dollar.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub budget_nanodollars: Option<u64>,
 }
 
 /// Where a turn stands: about to ask, its `attempt` counting the failures that may pass, `compacted` where its window
-/// was compacted for this request; asked, by the request of `key`; waiting for the thread's compaction to end; or
-/// taking on the calls of a reply, those before `appended` with their results in the log.
+/// was compacted for this request; asked, by the request of `key`; waiting for a compaction child or a manual
+/// compaction; or taking on the calls of a reply, those before `appended` with their results in the log.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "state", rename_all = "kebab-case")]
 pub enum TurnState {
@@ -60,6 +63,11 @@ pub enum TurnState {
     },
     Compacting {
         attempt: u32,
+    },
+    AwaitingCompaction {
+        key: String,
+        attempt: u32,
+        fiber: FiberId,
     },
     Calling {
         calls: Calls,
@@ -104,45 +112,90 @@ impl Fiber for TurnFiber {
     type Output = Ended;
 
     fn run(&self, run: &mut Run<'_>, input: TurnInput, state: Option<TurnState>) -> anyhow::Result<Ending<TurnState, Ended>> {
-        let state = state.unwrap_or(TurnState::FRESH);
         if run.is_stop_handler() {
-            return self.stop(run, &input, state);
+            // Siphon commits a charge and its phase's writes before stopping on a limit. The stop handler sees
+            // the previous checkpoint, whose answer may already have been consumed in that commit.
+            if let Some(limit) = input.budget_nanodollars
+                && run
+                    .snapshot()
+                    .fiber(run.id().path())?
+                    .and_then(|record| ThreadUsage::of(&record.usage))
+                    .is_some_and(|usage| usage.cost_nanodollars > limit)
+            {
+                return Ok(Ending::Stopped(None));
+            }
+            return self.stop(run, &input, state.unwrap_or(TurnState::FRESH));
         }
-        match state {
+        if state.is_none()
+            && let Some(left) = input.budget_nanodollars
+        {
+            let fiber = run.id().clone();
+            run.changes.limit(&fiber, b"cost-nanodollars", left)?;
+        }
+        match state.unwrap_or(TurnState::FRESH) {
             TurnState::Asking { attempt, compacted } => self.ask(run, &input.thread, attempt, compacted),
             TurnState::Asked { key, attempt, compacted } => self.answered(run, &input, &key, attempt, compacted),
-            TurnState::Compacting { attempt } => compaction_ended(run, &input.thread, attempt),
+            TurnState::Compacting { attempt } => compaction_ended(run, attempt),
+            TurnState::AwaitingCompaction { key, attempt, fiber } => compaction_answered(run, key, attempt, fiber),
             TurnState::Calling { calls, appended } => self.calling(run, &input, calls, appended),
         }
     }
 }
 
-/// Has the thread's window compacted — its compaction started where it is not running — and sleeps on it: not the
-/// turn's own process, it is waited on by its record's changes.
+/// Joins a manual compaction in progress or starts a compaction child of the turn.
 fn compact(run: &mut Run<'_>, id: &str, attempt: u32) -> anyhow::Result<Ending<TurnState, Ended>> {
-    let mut started = octoii_siphon_lib::Changes::new();
-    compaction::start(run.snapshot(), &mut started, id)?;
-    run.changes.extend(started);
+    if let Some(manual) = compaction::child(run.snapshot(), &thread::main(id))?.filter(|record| !record.reapable) {
+        return await_compaction(run, manual.id, attempt);
+    }
+    run.changes.expect(run.snapshot())?;
+    run.start::<CompactFiber>(CompactFiber::KEY, &CompactInput { thread: id.to_owned() })?;
     Ok(Ending::Wait(
         TurnState::Compacting { attempt },
-        Wait::new().change(compaction::path(id)),
+        Wait::new().child(CompactFiber::KEY),
     ))
 }
 
 /// The thread's compaction ended: the model asked on the window it began; the turn fails as it failed.
-fn compaction_ended(run: &Run<'_>, id: &str, attempt: u32) -> anyhow::Result<Ending<TurnState, Ended>> {
-    let record = run.snapshot().fiber(&compaction::path(id))?;
-    match record.and_then(|record| record.outcome) {
-        None => Ok(Ending::Wait(
+fn compaction_ended(run: &mut Run<'_>, attempt: u32) -> anyhow::Result<Ending<TurnState, Ended>> {
+    let Some(record) = compaction::child(run.snapshot(), run.id().path())? else {
+        return Ok(Ending::Fail("its window's compaction is missing".into()));
+    };
+    if !record.reapable {
+        return Ok(Ending::Wait(
             TurnState::Compacting { attempt },
-            Wait::new().change(compaction::path(id)),
-        )),
-        Some(octoii_siphon_lib::Outcome::Completed(_)) => Ok(Ending::Next(TurnState::Asking { attempt, compacted: true })),
-        Some(octoii_siphon_lib::Outcome::Failed { error, .. }) => Ok(Ending::Fail(format!(
-            "its window could not be compacted: {}",
-            String::from_utf8_lossy(&error.unwrap_or_default())
-        ))),
-        Some(octoii_siphon_lib::Outcome::Stopped { .. }) => Ok(Ending::Fail("its window's compaction was stopped".into())),
+            Wait::new().child(CompactFiber::KEY),
+        ));
+    }
+    run.changes.reap(&record.id)?;
+    Ok(after_compaction(compaction::result(&record), attempt))
+}
+
+fn await_compaction(run: &mut Run<'_>, fiber: FiberId, attempt: u32) -> anyhow::Result<Ending<TurnState, Ended>> {
+    let key = run.new_id()?;
+    run.request(&key, &AwaitCompaction { fiber: fiber.clone() })?;
+    let wait = Wait::new().mail(key.clone());
+    Ok(Ending::Wait(TurnState::AwaitingCompaction { key, attempt, fiber }, wait))
+}
+
+fn compaction_answered(run: &mut Run<'_>, key: String, attempt: u32, fiber: FiberId) -> anyhow::Result<Ending<TurnState, Ended>> {
+    let Some(answer) = run.take_answer::<AwaitCompaction>(&key)? else {
+        let wait = Wait::new().mail(key.clone());
+        return Ok(Ending::Wait(TurnState::AwaitingCompaction { key, attempt, fiber }, wait));
+    };
+    let result = match answer {
+        Answer::Given(()) => Ok(()),
+        Answer::Failed(reason) => Err(Unanswered::Failed(reason)),
+        // Reopening can interrupt the host-side wait while the manual Fiber itself survives.
+        Answer::Interrupted => return await_compaction(run, fiber, attempt),
+    };
+    Ok(after_compaction(result, attempt))
+}
+
+fn after_compaction(result: Result<(), Unanswered>, attempt: u32) -> Ending<TurnState, Ended> {
+    match result {
+        Ok(()) => Ending::Next(TurnState::Asking { attempt, compacted: true }),
+        Err(Unanswered::Failed(reason)) => Ending::Fail(reason),
+        Err(Unanswered::Interrupted) => Ending::Fail("waiting for its window's compaction was interrupted".into()),
     }
 }
 
@@ -193,7 +246,7 @@ impl TurnFiber {
         attempt: u32,
         compacted: bool,
     ) -> anyhow::Result<Ending<TurnState, Ended>> {
-        let Some(answer) = run.answer::<ModelRequest>(key)? else {
+        let Some(answer) = run.take_answer::<ModelRequest>(key)? else {
             let wait = Wait::new().mail(key.to_owned());
             let state = TurnState::Asked {
                 key: key.to_owned(),
@@ -202,13 +255,12 @@ impl TurnFiber {
             };
             return Ok(Ending::Wait(state, wait));
         };
-        run.discard_mail(key)?;
         let response = match answer {
             Answer::Given(response) => response,
             Answer::Interrupted => return Ok(Ending::Next(TurnState::Asking { attempt, compacted })),
             Answer::Failed(words) => return Ok(Ending::Fail(words)),
         };
-        charge(run, &response);
+        charge(run, &response)?;
         let id = &input.thread;
         let mut writer = Writer::open(run.snapshot(), id)?;
         if response.status == ResponseStatus::Failed {
@@ -307,17 +359,16 @@ impl TurnFiber {
     fn stop(&self, run: &mut Run<'_>, input: &TurnInput, state: TurnState) -> anyhow::Result<Ending<TurnState, Ended>> {
         let mut writer = Writer::open(run.snapshot(), &input.thread)?;
         match state {
-            TurnState::Asking { .. } | TurnState::Compacting { .. } => Ok(Ending::Stopped(None)),
+            TurnState::Asking { .. } | TurnState::Compacting { .. } | TurnState::AwaitingCompaction { .. } => Ok(Ending::Stopped(None)),
             TurnState::Asked { key, attempt, compacted } => {
-                let Some(answer) = run.answer::<ModelRequest>(&key)? else {
+                let Some(answer) = run.take_answer::<ModelRequest>(&key)? else {
                     let wait = Wait::new().mail(key.clone());
                     return Ok(Ending::Wait(TurnState::Asked { key, attempt, compacted }, wait));
                 };
-                run.discard_mail(&key)?;
                 let Answer::Given(response) = answer else {
                     return Ok(Ending::Stopped(None));
                 };
-                charge(run, &response);
+                charge(run, &response)?;
                 let keys = keyed(run, &response)?;
                 let entry = if response.status == ResponseStatus::Failed || response.output.is_empty() {
                     Entry::Discarded {
@@ -509,13 +560,14 @@ fn append_unrun(run: &mut Run<'_>, writer: &mut Writer, call: &CallKey, why: &st
 
 /// Charges what `response` says its request used to the process of `run` and every group above it, as a cgroup
 /// charges its ancestors.
-pub(crate) fn charge(run: &mut Run<'_>, response: &Response) {
-    let Some(used) = &response.usage else { return };
+pub(crate) fn charge(run: &mut Run<'_>, response: &Response) -> octoii_siphon_lib::Result<()> {
+    let Some(used) = &response.usage else { return Ok(()) };
     let counters = ThreadUsage::counters_of(used);
     if !counters.is_empty() {
-        let process = bytes::Bytes::copy_from_slice(run.path());
-        run.changes.charge(process, counters);
+        let fiber = run.id().clone();
+        run.changes.charge(&fiber, counters)?;
     }
+    Ok(())
 }
 
 /// Keeps the quota of the account of `response`'s model used up, where its failure says it is till a time to come.
@@ -531,9 +583,12 @@ fn keep_used_up(run: &mut Run<'_>, response: &Response) -> anyhow::Result<()> {
         reset_at_ms,
         window_minutes: failure.window_minutes,
     };
-    let mut kept = octoii_siphon_lib::Changes::new();
-    crate::accounts::keep_used_up(run.snapshot(), &mut kept, crate::accounts::provider_of(&response.model), used_up)?;
-    run.changes.extend(kept);
+    crate::accounts::keep_used_up(
+        run.snapshot(),
+        &mut run.changes,
+        crate::accounts::provider_of(&response.model),
+        used_up,
+    )?;
     Ok(())
 }
 

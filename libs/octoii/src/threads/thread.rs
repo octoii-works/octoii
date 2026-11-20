@@ -1,6 +1,6 @@
 //! Where a thread is kept: a directory `siphon.thread:<id>` at the volume's root, labelled so the label index finds
-//! threads by project, by parent and by how the person keeps them, annotated with how it runs and how it stands; in
-//! it its inbox, its log and its main process.
+//! threads by project, by parent and by how the person keeps them, annotated with how it runs and how it stands.
+//! The directory holds the inbox and log. A root Fiber runs the thread.
 
 use bytes::Bytes;
 use octoii_siphon_lib::Directory;
@@ -31,9 +31,6 @@ pub const PARENT_CALL_ANNOTATION: &str = "siphon.parent_call";
 /// The fixed kind of a sub-thread, written only when its parent metadata is made.
 pub const SUB_THREAD_KIND_ANNOTATION: &str = "siphon.sub_thread_kind";
 
-/// The key of a thread's main process.
-pub const MAIN_KEY: &str = "main";
-
 /// The key of a thread's compaction, a process under its main process: one at a time.
 pub const COMPACTION_KEY: &str = "compact";
 
@@ -50,20 +47,12 @@ pub fn path(id: &str) -> Bytes {
     format!("{KIND}:{id}").into()
 }
 
-/// The thread's directory in this snapshot, until removal begins.
+/// The thread's directory in this snapshot.
 ///
 /// # Errors
 /// The volume's failure.
 pub(crate) fn directory(snapshot: &Snapshot, id: &str) -> octoii_siphon_lib::Result<Option<Directory>> {
-    Ok(snapshot
-        .stat(&path(id))?
-        .and_then(|entry| entry.directory)
-        .filter(|directory| !removing(directory)))
-}
-
-/// Whether removal of the directory is already in progress.
-pub(crate) fn removing(directory: &Directory) -> bool {
-    directory.removing
+    Ok(snapshot.stat(&path(id))?.and_then(|entry| entry.directory))
 }
 
 /// The id of the thread whose directory, or anything in it, is at `path`; none for a path outside every thread.
@@ -74,10 +63,16 @@ pub fn id_of(path: &[u8]) -> Option<&str> {
     std::str::from_utf8(&rest[..end]).ok()
 }
 
-/// The thread's main process.
+/// The key of the thread's root Fiber.
+#[must_use]
+pub fn main_key(id: &str) -> Bytes {
+    path(id)
+}
+
+/// The execution address of the thread's main Fiber.
 #[must_use]
 pub fn main(id: &str) -> Bytes {
-    octoii_siphon_lib::process_path(&path(id), MAIN_KEY.as_bytes())
+    octoii_siphon_lib::fiber_path(b"", &main_key(id))
 }
 
 /// `name` within the thread `id`'s directory.
@@ -97,7 +92,7 @@ pub(crate) fn flag(on: bool) -> Bytes {
 /// # Errors
 /// The volume's failure or unreadable startup state.
 pub fn stop_turn(snapshot: &Snapshot, changes: &mut octoii_siphon_lib::Batch<'_>, id: &str) -> Result<(), super::operations::Error> {
-    if let Some(directory) = snapshot.stat(&path(id))?.and_then(|entry| entry.directory)
+    if let Some(directory) = directory(snapshot, id)?
         && let Some(start) = super::Start::of(&directory)?
         && matches!(start.state, super::StartState::Pending | super::StartState::Failed { .. })
     {
@@ -106,11 +101,11 @@ pub fn stop_turn(snapshot: &Snapshot, changes: &mut octoii_siphon_lib::Batch<'_>
             token: start.token,
             action: super::start::Action::Cancel,
         };
-        changes.write(super::start::command_path(id, "0-stop"), serde_json::to_vec(&command)?);
+        changes.write(super::start::command_path(id, "0-stop"), serde_json::to_vec(&command)?)?;
     }
     let main = main(id);
-    for path in snapshot.fibers(&main, TURN_KIND.as_bytes())? {
-        changes.signal(path, octoii_siphon_lib::Signal::Terminate, Some(Bytes::from_static(b"stopped")));
+    for fiber in snapshot.fibers(&main, TURN_KIND.as_bytes())? {
+        changes.signal(&fiber, octoii_siphon_lib::Signal::Terminate, Some(Bytes::from_static(b"stopped")))?;
     }
     Ok(())
 }

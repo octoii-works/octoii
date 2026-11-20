@@ -7,8 +7,9 @@ use std::collections::HashMap;
 
 use bytes::BytesMut;
 use chromiumoxide_types::Command as CdpCommand;
-use octoii::machine::{Command, CommandEvent, CommandEvents};
+use octoii::machine::{Command, CommandEvent, CommandEvents, Stdin};
 use serde_json::Value;
+use tokio::io::AsyncWriteExt as _;
 use tokio::sync::{mpsc, oneshot};
 
 /// Why a call came to nothing.
@@ -19,6 +20,10 @@ pub enum CdpError {
     Refused { code: i64, message: String },
     #[error("the browser ended")]
     Ended,
+    #[error("the browser pipe failed: {0}")]
+    Transport(String),
+    #[error("the browser lost output at offsets {from}..{through}")]
+    OutputLost { from: u64, through: u64 },
     /// No answer came in time, as a page a dialog holds gives none.
     #[error("the browser gave no answer in {0:?}")]
     TimedOut(std::time::Duration),
@@ -47,7 +52,7 @@ impl Cdp {
     /// Calls `method` with `params`, of the browser's own or of the target of `session`: what it gave.
     ///
     /// # Errors
-    /// `Refused` with the browser's words; `Ended` where it ended first; `TimedOut` past `CALL_TIMEOUT`.
+    /// A browser refusal, transport failure, or a timeout past `CALL_TIMEOUT`.
     pub async fn call(&self, session: Option<&str>, method: &str, params: Value) -> Result<Value, CdpError> {
         self.call_within(session, method, params, CALL_TIMEOUT).await
     }
@@ -100,13 +105,27 @@ pub(crate) fn connect(command: Command, told: CommandEvents) -> (Cdp, mpsc::Unbo
 
 /// Owns the pipe till the browser ends, or every handle to it goes.
 async fn own(command: Command, mut told: CommandEvents, mut calls: mpsc::UnboundedReceiver<Call>, events: mpsc::UnboundedSender<Value>) {
-    let mut waiting: HashMap<u64, oneshot::Sender<Result<Value, CdpError>>> = HashMap::new();
+    let (outgoing, mut input) = mpsc::unbounded_channel::<Vec<u8>>();
+    let writing = async move {
+        let mut stdin = Stdin::new(command.into());
+        while let Some(bytes) = input.recv().await {
+            stdin.write_all(&bytes).await?;
+        }
+        Ok::<_, std::io::Error>(())
+    };
+    tokio::pin!(writing);
+    let mut pending: HashMap<u64, oneshot::Sender<Result<Value, CdpError>>> = HashMap::new();
     let mut next_id = 1_u64;
     let mut unended = BytesMut::new();
-    loop {
+    let mut offset = 0;
+    let end = loop {
         tokio::select! {
+            result = &mut writing => break match result {
+                Ok(()) => CdpError::Ended,
+                Err(error) => CdpError::Transport(error.to_string()),
+            },
             call = calls.recv() => {
-                let Some(call) = call else { break };
+                let Some(call) = call else { break CdpError::Ended };
                 let id = next_id;
                 next_id += 1;
                 let mut message = serde_json::json!({ "id": id, "method": call.method, "params": call.params });
@@ -115,37 +134,42 @@ async fn own(command: Command, mut told: CommandEvents, mut calls: mpsc::Unbound
                 }
                 let mut bytes = serde_json::to_vec(&message).unwrap_or_default();
                 bytes.push(0);
-                if command.write(&bytes).is_err() {
-                    let _ = call.reply.send(Err(CdpError::Ended));
-                    continue;
-                }
-                waiting.insert(id, call.reply);
+                let _ = outgoing.send(bytes);
+                pending.insert(id, call.reply);
             }
             event = told.next() => match event {
-                Ok(Some(CommandEvent::Output(bytes))) => {
-                    unended.extend_from_slice(&bytes);
+                Ok(Some(CommandEvent::Output(chunk))) if chunk.offset == offset => {
+                    offset += chunk.bytes.len() as u64;
+                    unended.extend_from_slice(&chunk.bytes);
                     while let Some(end) = unended.iter().position(|&byte| byte == 0) {
                         let message = unended.split_to(end + 1);
-                        handle(&message[..end], &mut waiting, &events);
+                        handle(&message[..end], &mut pending, &events);
                     }
                 }
+                Ok(Some(CommandEvent::Output(chunk))) => break CdpError::OutputLost { from: offset, through: chunk.offset },
+                Ok(Some(CommandEvent::Gap { from, through })) => break CdpError::OutputLost { from, through },
                 Ok(Some(CommandEvent::Title(_))) => {}
-                Ok(Some(CommandEvent::Exit(_)) | None) | Err(_) => break,
+                Ok(Some(CommandEvent::Exit(_)) | None) => break CdpError::Ended,
+                Err(error) => break CdpError::Transport(error.to_string()),
             },
         }
+    };
+    calls.close();
+    for (_, reply) in pending.drain() {
+        let _ = reply.send(Err(end.clone()));
     }
-    for (_, reply) in waiting.drain() {
-        let _ = reply.send(Err(CdpError::Ended));
+    while let Ok(call) = calls.try_recv() {
+        let _ = call.reply.send(Err(end.clone()));
     }
 }
 
 /// Hands on one message of the browser's: an answer to what waits for it, an event to whoever hears the browser.
-fn handle(message: &[u8], waiting: &mut HashMap<u64, oneshot::Sender<Result<Value, CdpError>>>, events: &mpsc::UnboundedSender<Value>) {
+fn handle(message: &[u8], pending: &mut HashMap<u64, oneshot::Sender<Result<Value, CdpError>>>, events: &mpsc::UnboundedSender<Value>) {
     let Ok(mut value) = serde_json::from_slice::<Value>(message) else {
         return;
     };
     if let Some(id) = value.get("id").and_then(Value::as_u64) {
-        let Some(reply) = waiting.remove(&id) else { return };
+        let Some(reply) = pending.remove(&id) else { return };
         let answer = match value.get_mut("error") {
             Some(error) => Err(CdpError::Refused {
                 code: error.get("code").and_then(Value::as_i64).unwrap_or_default(),

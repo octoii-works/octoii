@@ -82,10 +82,11 @@ pub(crate) async fn answer(caller: &Caller, action: StartAction) -> anyhow::Resu
         StartAction::Retry { token, .. } => start = volume.retry_thread_start(&thread, token).await?,
         _ => {}
     }
+    let commands = volume.commands();
     let machine = if matches!(action, StartAction::Inspect { .. }) {
         caller.person_machine()?
     } else {
-        volume.commands().open(
+        commands.open(
             caller.host(),
             Base {
                 workspace: "/".into(),
@@ -94,54 +95,47 @@ pub(crate) async fn answer(caller: &Caller, action: StartAction) -> anyhow::Resu
             &Writes::Anywhere,
         )?
     };
-    let time = volume.now_ms()?;
-    volume
-        .clone()
-        .recorded(crate::RECORD_KIND, |under| async move {
-            let git = Git {
-                machine: &machine,
-                under: &under,
-                time,
-                cancelled: tokio_util::sync::CancellationToken::new(),
-            };
-            if matches!(action, StartAction::Inspect { .. }) {
-                let worktrees = git.worktrees(Path::new(&request.path)).await?;
-                return Ok(ThreadStart {
-                    thread,
-                    start,
-                    worktrees: Some(worktrees),
-                });
-            }
-            let made = async {
-                let source = git
-                    .repository(Path::new(&request.path))
-                    .await?
-                    .ok_or_else(|| anyhow::anyhow!("source is not a repository"))?;
-                let worktree = git
-                    .create_worktree(
-                        Path::new(&request.path),
-                        Path::new(&request.destination),
-                        &request.branch,
-                        &request.base,
-                    )
-                    .await?;
-                Ok::<_, anyhow::Error>(StartWorkspace {
-                    workspace: worktree.path,
-                    project: Some(source.root),
-                })
-            }
-            .await;
-            let start = match made {
-                Ok(directory) => volume.finish_thread_start(&thread, &start.token, directory).await?,
-                Err(error) => volume.fail_thread_start(&thread, &start.token, error.to_string()).await?,
-            };
-            Ok::<_, anyhow::Error>(ThreadStart {
-                thread,
-                start,
-                worktrees: None,
-            })
+    let git = Git {
+        machine: &machine,
+        commands: &commands,
+        cancelled: tokio_util::sync::CancellationToken::new(),
+    };
+    if matches!(action, StartAction::Inspect { .. }) {
+        let worktrees = git.worktrees(Path::new(&request.path)).await?;
+        return Ok(ThreadStart {
+            thread,
+            start,
+            worktrees: Some(worktrees),
+        });
+    }
+    let made = async {
+        let source = git
+            .repository(Path::new(&request.path))
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("source is not a repository"))?;
+        let worktree = git
+            .create_worktree(
+                Path::new(&request.path),
+                Path::new(&request.destination),
+                &request.branch,
+                &request.base,
+            )
+            .await?;
+        Ok::<_, anyhow::Error>(StartWorkspace {
+            workspace: worktree.path,
+            project: Some(source.root),
         })
-        .await?
+    }
+    .await;
+    let start = match made {
+        Ok(directory) => volume.finish_thread_start(&thread, &start.token, directory).await?,
+        Err(error) => volume.fail_thread_start(&thread, &start.token, error.to_string()).await?,
+    };
+    Ok(ThreadStart {
+        thread,
+        start,
+        worktrees: None,
+    })
 }
 
 pub(crate) fn authorize(caller: &Caller) -> Result<(), octoii::protocol::Error> {

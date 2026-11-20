@@ -10,7 +10,7 @@ use crate::threads::Window;
 use octoii_ai::models::Models;
 use octoii_ai::stream::{Event, Part};
 use octoii_ai::vocabulary::{Item, Response};
-use octoii_siphon_lib::{Asked, Request, Unanswered};
+use octoii_siphon_lib::{Asked, Request, RuntimeHandle, Unanswered};
 use serde::{Deserialize, Serialize};
 
 use crate::agent::render;
@@ -45,11 +45,14 @@ pub enum Streamed<'a> {
 /// thread; under a stop, what had come.
 ///
 /// # Errors
-/// `Failed` where the window cannot be read, or no longer holds the entry the request asks up to.
-pub async fn answer_model(models: &Arc<Models>, asked: Asked<ModelRequest>) -> Result<Response, Unanswered> {
+/// `Failed` where the window cannot be read or no longer holds the named entry. `Interrupted` when stopped before
+/// the model opens a stream.
+pub async fn answer_model(models: &Arc<Models>, runtime: &RuntimeHandle, asked: Asked<ModelRequest>) -> Result<Response, Unanswered> {
     let request = &asked.payload;
-    let snapshot = asked.runtime.snapshot().map_err(|error| Unanswered::Failed(error.to_string()))?;
-    let mut window = Window::read(&snapshot, &request.thread).map_err(|error| Unanswered::Failed(error.to_string()))?;
+    let mut window = {
+        let snapshot = runtime.snapshot().map_err(|error| Unanswered::Failed(error.to_string()))?;
+        Window::read(&snapshot, &request.thread).map_err(|error| Unanswered::Failed(error.to_string()))?
+    };
     let end = window
         .conversation
         .iter()
@@ -65,14 +68,17 @@ pub async fn answer_model(models: &Arc<Models>, asked: Asked<ModelRequest>) -> R
         request.instruction.as_deref(),
     );
     let files = crate::threads::files::OfThread {
-        runtime: asked.runtime.clone(),
+        runtime: runtime.clone(),
         thread: request.thread.clone(),
     };
-    let mut stream = models.text(&rendered, Some(Arc::new(files))).await;
+    let mut stream = tokio::select! {
+        () = asked.stop.requested() => return Err(Unanswered::Interrupted),
+        stream = models.text(&rendered, Some(Arc::new(files))) => stream,
+    };
     loop {
         let event = tokio::select! {
             event = stream.next() => event,
-            () = asked.cancelled.cancelled() => return Ok(stream.cancel()),
+            () = asked.stop.requested() => return Ok(stream.cancel()),
         };
         let told = match &event {
             Some(Event::Began { index, item }) => Streamed::Began { index: *index, item },

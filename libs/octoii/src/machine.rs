@@ -14,7 +14,7 @@ pub(crate) use namespace::{Errors, ThreadsView};
 pub(crate) use search::{GrepOptions, Grepped};
 
 /// What extensions and hosts use of it.
-pub use commands::Commands;
+pub use commands::{Commands, Launcher};
 pub use coprocess::{Coprocess, Stderr, Stdin, Stdout, Variables};
 pub use files::{Error, Read, ReadOptions, media_type};
 pub use namespace::{Host, Machine, Program, RunError, Writes, inside};

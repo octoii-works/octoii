@@ -259,26 +259,27 @@ async fn a_program_runs_to_its_end_and_what_the_host_hides_is_denied() {
         ..Host::default()
     };
     let (machine, _folder, workspace) = machine(&runtime, &host);
+    let commands = crate::testing::commands(&runtime);
     let never = CancellationToken::new();
     let echo = Program::new(
         vec!["sh".into(), "-c".into(), "printf out; printf err >&2; exit 3".into()],
         &workspace,
     );
-    let ran = machine.run(1_000, b"", &echo, &never).await.expect("ran");
+    let ran = machine.run(&commands, &echo, &never).await.expect("ran");
     assert_eq!(
         (ran.exit, &ran.output[..], &ran.errors[..]),
         (octoii_siphon_lib::Exit::Code(3), &b"out"[..], &b"err"[..])
     );
     let missing = Program::new(vec!["no-such-program-anywhere".into()], &workspace);
     assert!(matches!(
-        machine.run(1_000, b"", &missing, &never).await,
+        machine.run(&commands, &missing, &never).await,
         Err(RunError::MissingProgram(_))
     ));
     let slow = Program {
         timeout: Duration::from_millis(200),
         ..Program::new(vec!["sleep".into(), "30".into()], &workspace)
     };
-    assert!(matches!(machine.run(1_000, b"", &slow, &never).await, Err(RunError::TimedOut(_))));
+    assert!(matches!(machine.run(&commands, &slow, &never).await, Err(RunError::TimedOut(_))));
     let key = machine.path(&hidden_place.join("key").to_string_lossy());
     assert!(
         machine.read(&key, &ReadOptions::default()).is_err(),
@@ -314,7 +315,11 @@ async fn work_held_to_its_workspace_writes_there_and_reads_everywhere_else() {
     let never = CancellationToken::new();
     let line = format!("echo made > made-too.txt && echo changed > {}", outside.join("notes.txt").display());
     let ran = machine
-        .run(1_000, b"", &Program::new(vec!["sh".into(), "-c".into(), line], &workspace), &never)
+        .run(
+            &crate::testing::commands(&runtime),
+            &Program::new(vec!["sh".into(), "-c".into(), line], &workspace),
+            &never,
+        )
         .await;
     if octoii_siphon_lib::machine_confines() {
         let ran = ran.expect("ran");
@@ -337,8 +342,9 @@ async fn a_coprocess_reads_what_it_is_given_answers_on_its_output_keeps_its_erro
         "printf started >&2; while read line; do echo \"$WORD $line\"; done".into(),
     ];
     let variables = crate::machine::Variables::Over(vec![("WORD".into(), "heard".into())]);
+    let commands = crate::testing::commands(&runtime);
     let crate::machine::Coprocess { mut stdin, stdout, stderr } =
-        machine.coprocess(1_000, b"", argv, &workspace, variables).expect("started");
+        commands.coprocess(&machine, argv, &workspace, variables).expect("started");
     let mut stdout = BufReader::new(stdout);
     stdin.write_all(b"one\n").await.expect("written");
     let mut line = String::new();
@@ -349,9 +355,8 @@ async fn a_coprocess_reads_what_it_is_given_answers_on_its_output_keeps_its_erro
     let mut rest = String::new();
     stdout.read_to_string(&mut rest).await.expect("read to its end");
     assert_eq!(rest, "", "its output ends as it does");
-    let missing = machine.coprocess(
-        1_000,
-        b"",
+    let missing = commands.coprocess(
+        &machine,
         vec!["no-such-program-anywhere".into()],
         &workspace,
         crate::machine::Variables::Over(Vec::new()),
@@ -368,10 +373,40 @@ async fn a_coprocess_given_its_variables_alone_runs_with_those_alone() {
     let (machine, _folder, workspace) = machine(&runtime, &Host::default());
     let argv = vec!["/bin/sh".into(), "-c".into(), "printf '%s|%s' \"$WORD\" \"${HOME-none}\"".into()];
     let only = crate::machine::Variables::Only(vec![("WORD".into(), "alone".into())]);
-    let mut coprocess = machine.coprocess(1_000, b"", argv, &workspace, only).expect("started");
+    let mut coprocess = crate::testing::commands(&runtime)
+        .coprocess(&machine, argv, &workspace, only)
+        .expect("started");
     let mut told = String::new();
     coprocess.stdout.read_to_string(&mut told).await.expect("read");
     assert_eq!(told, "alone|none", "nothing of the machine's own");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_coprocess_keeps_a_write_larger_than_the_input_queue_limit() {
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+
+    let runtime = memory_runtime().expect("a runtime");
+    let (machine, _folder, workspace) = machine(&runtime, &Host::default());
+    let commands = crate::testing::commands(&runtime);
+    let args = vec!["sh".into(), "-c".into(), "sleep 0.05; exec cat".into()];
+    let crate::machine::Coprocess { mut stdin, mut stdout, .. } = commands
+        .coprocess(&machine, args, &workspace, crate::machine::Variables::Over(Vec::new()))
+        .expect("started");
+    let bytes: Vec<_> = (0..128u8).flat_map(|byte| std::iter::repeat_n(byte, 8192)).collect();
+    let mut received = Vec::new();
+    tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::try_join!(
+            async {
+                stdin.write_all(&bytes).await?;
+                stdin.shutdown().await
+            },
+            stdout.read_to_end(&mut received),
+        )
+    })
+    .await
+    .expect("finished in time")
+    .expect("written and read");
+    assert_eq!(received, bytes);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -397,8 +432,8 @@ async fn a_folder_bound_back_over_what_the_host_hides_is_reached_by_a_command_an
         kept.display()
     );
     let argv = vec!["/bin/sh".into(), "-c".into(), line];
-    let mut coprocess = machine
-        .coprocess(1_000, b"", argv, &workspace, crate::machine::Variables::Over(Vec::new()))
+    let mut coprocess = crate::testing::commands(&runtime)
+        .coprocess(&machine, argv, &workspace, crate::machine::Variables::Over(Vec::new()))
         .expect("started");
     let mut told = String::new();
     coprocess.stdout.read_to_string(&mut told).await.expect("read");

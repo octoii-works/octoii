@@ -11,7 +11,7 @@ use crate::agent::waiting::{DelegatedFiber, Waiting, directory_of, label};
 use crate::threads::inbox::{self, Inbound, ReplyTo};
 use crate::threads::{Config, ConfigChange, MarksChange, Mode, NewThread, Parent, Threads, thread};
 use crate::tools::{Awaited, Plan, Primitives, Report, Spawned, Step};
-use octoii_siphon_lib::{Batch, Changes, Run};
+use octoii_siphon_lib::{Batch, Changes, Run, fiber_path};
 
 /// Delivers `content` from `actor` to the inbox of the thread `thread` at once, outside any call — as a terminal tells
 /// its thread that the command it ran ended: it joins the thread's work at its next step, and no one is told of it.
@@ -30,7 +30,7 @@ pub async fn deliver(
         reply_to: None,
         joins: crate::threads::inbox::Joins::Step,
     };
-    let mut changes = Changes::new();
+    let mut changes = Changes::new()?;
     inbox::put(&mut changes, thread, &volume.new_id()?, &inbound)?;
     volume.runtime.commit(changes).await?;
     Ok(())
@@ -63,7 +63,7 @@ impl Primitives for ThreadPrimitives {
         let mut made = HashSet::new();
         let mut awakened = HashSet::new();
         let mut snoozed = HashMap::new();
-        let mut changes = Changes::new();
+        let mut changes = Changes::new()?;
         for step in &plan.steps {
             let refused = match step {
                 Step::Spawn {
@@ -146,18 +146,16 @@ impl Primitives for ThreadPrimitives {
                 return Ok(Err(refused));
             }
         }
-        run.changes.extend(changes);
+        run.changes.extend(changes)?;
         Ok(Ok(()))
     }
 
     fn withdraw(&self, run: &mut Run<'_>, awaited: &Awaited) -> anyhow::Result<()> {
         let waiting = inbox::file(&awaited.thread, &awaited.delivery);
         if run.snapshot().stat(&waiting)?.is_some() {
-            run.changes.delete(waiting);
+            run.changes.delete(waiting)?;
         } else {
-            let mut stopping = Changes::new();
-            thread::stop_turn(run.snapshot(), &mut stopping, &awaited.thread)?;
-            run.changes.extend(stopping);
+            thread::stop_turn(run.snapshot(), &mut run.changes, &awaited.thread)?;
         }
         Ok(())
     }
@@ -220,7 +218,7 @@ fn mark(
             .stat(&thread::within(thread, crate::threads::marks::SNOOZE_NAME))?
             .is_some(),
     );
-    change.add(changes, thread, *current, run.time_ms());
+    change.add(changes, thread, *current, run.time_ms())?;
     if let Some(until) = change.snoozed_until {
         *current = until > run.time_ms();
     }
@@ -267,11 +265,18 @@ fn reply_to(
 ) -> anyhow::Result<Option<ReplyTo>> {
     Ok(match report {
         Report::None => None,
-        Report::Call => Some(ReplyTo {
-            process: String::from_utf8_lossy(run.path()).into_owned(),
-            started: run.snapshot().fiber(run.path())?.map(|record| record.created_seq),
-            key: delivery.to_owned(),
-        }),
+        Report::Call => {
+            let path = run.id().path();
+            let record = run
+                .snapshot()
+                .fiber(path)?
+                .ok_or_else(|| anyhow::anyhow!("the call's Fiber is missing"))?;
+            Some(ReplyTo {
+                process: std::str::from_utf8(path)?.to_owned(),
+                started: Some(record.created_seq),
+                key: delivery.to_owned(),
+            })
+        }
         Report::Inbox => {
             let waiter = format!("told-{delivery}");
             let waiting = Waiting {
@@ -279,9 +284,13 @@ fn reply_to(
                 child: target.to_owned(),
                 task: delivery.to_owned(),
             };
-            changes.start::<DelegatedFiber>(thread::main(own), &waiter, &waiting)?;
+            let main = run
+                .snapshot()
+                .fiber(&thread::main(own))?
+                .ok_or_else(|| anyhow::anyhow!("the thread's main Fiber is missing"))?;
+            changes.start::<DelegatedFiber>(Some(&main.id), &waiter, &waiting)?;
             Some(ReplyTo {
-                process: String::from_utf8_lossy(&octoii_siphon_lib::process_path(&thread::main(own), waiter.as_bytes())).into_owned(),
+                process: std::str::from_utf8(&fiber_path(main.id.path(), waiter.as_bytes()))?.to_owned(),
                 started: None,
                 key: delivery.to_owned(),
             })

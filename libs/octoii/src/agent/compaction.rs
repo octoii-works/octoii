@@ -3,16 +3,18 @@
 //! person's latest input and the latest work, kept as they stand: nothing copied, every entry once in the log. A window
 //! is cut before a step of the conversation — an input, or a reply with what came of it — so a call is never kept
 //! without its result, and a cut within a turn keeps the input that began it as well. One process of the thread
-//! compacts, keyed `compact` beside its main process: the person starts it as they ask, a turn as its window is too full
-//! for its next request or its provider refused one as too long; a thread compacts once at a time. The segments of the
-//! log wholly before the new window expire after the history's retention.
+//! compacts at a time. The person starts it as a child of the thread's main Fiber. A turn starts its own child when
+//! its window is too full or the provider refuses the request, and joins a manual compaction already in progress.
+//! The segments of the log wholly before the new window expire after the history's retention.
 
 use crate::threads::log::{self, Writer};
 use crate::threads::window::{self, FROM_ANNOTATION};
 use crate::threads::{Config, Entry, Window, thread};
 use bytes::Bytes;
-use octoii_siphon_lib::Batch;
-use octoii_siphon_lib::{Answer, Ending, Fiber, Run, Wait};
+use octoii_siphon_lib::{
+    Answer, Asked, Batch, CommitEvent, Ending, Error, Fiber, FiberId, FiberRecord, Outcome, Request, Run, RuntimeHandle, Snapshot, Status,
+    Unanswered, Wait, fiber_path,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::agent::gather::Gather;
@@ -129,7 +131,7 @@ pub enum CompactState {
     },
 }
 
-/// The fiber of a thread's compaction, keyed `KEY` under its main process.
+/// The fiber of a thread's compaction, keyed `KEY` under the Fiber that started it.
 #[derive(Debug, Clone, Copy)]
 pub struct CompactFiber {
     pub instruction: &'static str,
@@ -139,27 +141,109 @@ impl CompactFiber {
     pub const KEY: &'static str = thread::COMPACTION_KEY;
 }
 
-/// The path of the compaction of the thread `id`.
-#[must_use]
-pub fn path(id: &str) -> Bytes {
-    octoii_siphon_lib::process_path(&thread::main(id), CompactFiber::KEY.as_bytes())
+/// This parent's direct compaction child.
+pub(super) fn child(snapshot: &Snapshot, parent: &[u8]) -> octoii_siphon_lib::Result<Option<FiberRecord>> {
+    snapshot.fiber(&fiber_path(parent, CompactFiber::KEY.as_bytes()))
 }
 
-/// Adds to `changes` the compaction of the thread `id` started, where it is not running — one that ended reaped as it
-/// is started anew; where it runs, nothing, as a thread compacts once at a time.
+fn child_running(snapshot: &Snapshot, parent: &[u8]) -> octoii_siphon_lib::Result<bool> {
+    Ok(child(snapshot, parent)?.is_some_and(|record| !record.reapable))
+}
+
+fn turn_compacting(snapshot: &Snapshot, main: &[u8]) -> octoii_siphon_lib::Result<bool> {
+    for turn in snapshot.fibers(main, thread::TURN_KIND.as_bytes())? {
+        if child_running(snapshot, turn.path())? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// Whether the thread is compacting its window in this snapshot.
 ///
 /// # Errors
 /// The volume's failure.
-pub fn start(snapshot: &octoii_siphon_lib::Snapshot, changes: &mut Batch<'_>, id: &str) -> anyhow::Result<()> {
-    match snapshot.fiber(&path(id))? {
-        Some(record) if !crate::volume::reapable(&record) => return Ok(()),
-        Some(_) => {
-            changes.reap(path(id));
+pub fn running(snapshot: &Snapshot, id: &str) -> octoii_siphon_lib::Result<bool> {
+    let main = thread::main(id);
+    Ok(child_running(snapshot, &main)? || turn_compacting(snapshot, &main)?)
+}
+
+/// Stages a manual compaction under the main Fiber, sharing any compaction already in progress.
+///
+/// # Errors
+/// The volume's failure or a missing main Fiber.
+pub fn start(snapshot: &Snapshot, changes: &mut Batch<'_>, id: &str) -> octoii_siphon_lib::Result<()> {
+    let main = snapshot
+        .fiber(&thread::main(id))?
+        .ok_or_else(|| Error::new(Status::NotFound, "the thread's main Fiber is missing"))?;
+    if turn_compacting(snapshot, main.id.path())? {
+        return Ok(());
+    }
+    match child(snapshot, main.id.path())? {
+        Some(record) if !record.reapable => return Ok(()),
+        Some(record) => {
+            changes.reap(&record.id)?;
         }
         None => {}
     }
-    changes.start::<CompactFiber>(thread::main(id), CompactFiber::KEY, &CompactInput { thread: id.to_owned() })?;
+    changes.start::<CompactFiber>(Some(&main.id), CompactFiber::KEY, &CompactInput { thread: id.to_owned() })?;
     Ok(())
+}
+
+/// A turn waiting for an already running manual compaction.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct AwaitCompaction {
+    pub(super) fiber: FiberId,
+}
+
+impl Request for AwaitCompaction {
+    const NAME: &'static str = "siphon.await-compaction";
+    type Answer = ();
+}
+
+/// Waits for the observed manual compaction's result on the volume's commit subscription.
+///
+/// # Errors
+/// The compaction failed or its record was removed. A stop interrupts the wait.
+pub(crate) async fn answer_compaction(runtime: &RuntimeHandle, asked: Asked<AwaitCompaction>) -> Result<(), Unanswered> {
+    let failed = |error: Error| Unanswered::Failed(error.to_string());
+    let mut commits = runtime.commits().map_err(failed)?;
+    let fiber = &asked.payload.fiber;
+    loop {
+        let record = runtime
+            .snapshot()
+            .and_then(|snapshot| snapshot.fiber(fiber.path()))
+            .map_err(failed)?
+            .filter(|record| record.id == *fiber)
+            .ok_or_else(|| Unanswered::Failed("the manual compaction's result no longer exists".into()))?;
+        if record.reapable {
+            return result(&record);
+        }
+        tokio::select! {
+            () = asked.stop.requested() => return Err(Unanswered::Interrupted),
+            event = commits.next() => match event.map_err(failed)? {
+                Some(CommitEvent::Head(_)) => {}
+                Some(CommitEvent::Fault { error, .. }) => return Err(failed(error)),
+                Some(CommitEvent::Closed(_)) | None => return Err(Unanswered::Interrupted),
+            },
+        }
+    }
+}
+
+/// Reads the result of a completed compaction.
+pub(super) fn result(record: &FiberRecord) -> Result<(), Unanswered> {
+    let outcome = record
+        .decode_outcome::<CompactFiber>()
+        .map_err(|error| Unanswered::Failed(error.to_string()))?;
+    match outcome {
+        Some(Outcome::Completed(_)) => Ok(()),
+        Some(Outcome::Failed { error, .. }) => Err(Unanswered::Failed(format!(
+            "its window could not be compacted: {}",
+            String::from_utf8_lossy(&error.unwrap_or_default())
+        ))),
+        Some(Outcome::Stopped { .. }) => Err(Unanswered::Failed("its window's compaction was stopped".into())),
+        None => Err(Unanswered::Failed("its window's compaction has no outcome".into())),
+    }
 }
 
 impl Fiber for CompactFiber {
@@ -210,17 +294,16 @@ fn recap(run: &mut Run<'_>, id: &str, instruction: &str) -> anyhow::Result<Endin
 
 /// The recap came: what the model is told gathered anew; a recap that came to nothing kept, and the compaction failed.
 fn recapped(run: &mut Run<'_>, id: &str, key: String, cut: Cut) -> anyhow::Result<Ending<CompactState, ()>> {
-    let Some(answer) = run.answer::<ModelRequest>(&key)? else {
+    let Some(answer) = run.take_answer::<ModelRequest>(&key)? else {
         let wait = Wait::new().mail(key.clone());
         return Ok(Ending::Wait(CompactState::Recapping { key, cut }, wait));
     };
-    run.discard_mail(&key)?;
     let response = match answer {
         Answer::Given(response) => response,
         Answer::Interrupted => return Ok(Ending::Fail("the recap was cut off".into())),
         Answer::Failed(words) => return Ok(Ending::Fail(words)),
     };
-    charge(run, &response);
+    charge(run, &response)?;
     if response.words().is_empty() {
         let why = response
             .failure
@@ -259,7 +342,7 @@ fn compacted(
     recap: String,
     response: Box<octoii_ai::vocabulary::Response>,
 ) -> anyhow::Result<Ending<CompactState, ()>> {
-    let Some(answer) = run.answer::<Gather>(key)? else {
+    let Some(answer) = run.take_answer::<Gather>(key)? else {
         let state = CompactState::Gathering {
             key: key.to_owned(),
             cut: cut.clone(),
@@ -268,7 +351,6 @@ fn compacted(
         };
         return Ok(Ending::Wait(state, Wait::new().mail(key.to_owned())));
     };
-    run.discard_mail(key)?;
     let told: Told = match answer {
         Answer::Given(told) => told,
         Answer::Interrupted => return Ok(Ending::Fail("gathering what the model is told was cut off".into())),
@@ -303,7 +385,7 @@ fn compacted(
         Bytes::from_static(FROM_ANNOTATION.as_bytes()),
         Some(Bytes::from(serde_json::to_vec(&begins)?)),
     );
-    run.changes.meta(thread::path(id), Vec::new(), vec![annotation]);
+    run.changes.meta(thread::path(id), [], [annotation])?;
     expire_before(run, id, &begins.segment)?;
     Ok(Ending::Done(()))
 }
@@ -321,7 +403,7 @@ fn expire_before(run: &mut Run<'_>, id: &str, segment: &str) -> anyhow::Result<(
     for pair in segments[..=end].windows(2) {
         let Some(last_written) = log::time_of(&pair[1].0) else { continue };
         let at = last_written + i64::from(days) * 86_400_000;
-        run.changes.expire(log::segment(id, &pair[0].0), Some(at));
+        run.changes.expire(log::segment(id, &pair[0].0), Some(at))?;
     }
     Ok(())
 }

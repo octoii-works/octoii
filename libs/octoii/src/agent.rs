@@ -23,7 +23,7 @@ pub(crate) use context::Composition;
 pub(crate) use gather::{CORE, Gather, OwnedTeller, Sources, answer_gather};
 pub(crate) use model::{ModelRequest, Streamed, answer_model};
 pub(crate) use primitives::ThreadPrimitives;
-pub(crate) use resume::{ResumeFiber, ResumeInput};
+pub(crate) use resume::ResumeFiber;
 pub(crate) use review::answer_review;
 pub(crate) use thread::ThreadFiber;
 pub(crate) use title::TitleFiber;

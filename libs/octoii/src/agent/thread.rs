@@ -11,8 +11,7 @@ use crate::threads::inbox::{self, Ended, Inbound};
 use crate::threads::log::Writer;
 use crate::threads::{CallStatus, Config, Entry, MainInput, Outcome as TurnOutcome, ThreadUsage, Turn, Window, thread};
 use octoii_ai::vocabulary::{Failure, FailureKind, FunctionCallOutput, InputContent};
-use octoii_siphon_lib::Outcome;
-use octoii_siphon_lib::{Answer, Ending, Fiber, Retries, Run, Wait};
+use octoii_siphon_lib::{Answer, Ending, Fiber, FiberRecord, Outcome, Retries, Run, Wait, fiber_path};
 use serde::{Deserialize, Serialize};
 
 use crate::agent::gather::Gather;
@@ -113,13 +112,12 @@ fn turn_of(run: &Run<'_>, id: &str) -> anyhow::Result<Turn> {
 /// What the model is told came, by the request of `key`: a turn begun with it; where it could not be gathered, the
 /// inputs that wait ended as a turn that failed before its model was asked.
 fn gathered(run: &mut Run<'_>, id: &str, key: &str) -> anyhow::Result<Ending<MainState, ()>> {
-    let Some(answer) = run.answer::<Gather>(key)? else {
+    let Some(answer) = run.take_answer::<Gather>(key)? else {
         return Ok(Ending::Wait(
             MainState::Gathering { key: key.to_owned() },
             Wait::new().mail(key.to_owned()),
         ));
     };
-    run.discard_mail(key)?;
     match answer {
         Answer::Given(told) => begin(run, id, told),
         Answer::Interrupted => Ok(Ending::Next(MainState::Rest)),
@@ -155,7 +153,7 @@ fn begin(run: &mut Run<'_>, id: &str, told: Told) -> anyhow::Result<Ending<MainS
             .and_then(|entry| entry.directory)
             .unwrap_or_default(),
     )?;
-    let left = budget_left(run, id, &config)?;
+    let left = budget_left(run, &config)?;
     if left == Some(0) {
         return end_before(run, id, &mut writer, &taken, Why::Reason("its thread's budget is spent".into()));
     }
@@ -173,7 +171,7 @@ fn begin(run: &mut Run<'_>, id: &str, told: Told) -> anyhow::Result<Ending<MainS
         return end_before(run, id, &mut writer, &taken, Why::Failure(failure));
     }
     if config.title.is_none() && config.model.is_some() {
-        let titling = octoii_siphon_lib::process_path(run.path(), TitleFiber::KEY.as_bytes());
+        let titling = fiber_path(run.id().path(), TitleFiber::KEY.as_bytes());
         if run.snapshot().fiber(&titling)?.is_none() {
             run.start::<TitleFiber>(TitleFiber::KEY, &TitleInput { thread: id.to_owned() })?;
         }
@@ -184,23 +182,20 @@ fn begin(run: &mut Run<'_>, id: &str, told: Told) -> anyhow::Result<Ending<MainS
         &TurnInput {
             thread: id.to_owned(),
             catalog: told.catalog,
+            budget_nanodollars: left,
         },
     )?;
-    if let Some(left) = left {
-        let process = octoii_siphon_lib::process_path(run.path(), turn.as_bytes());
-        run.changes.limit(process, b"cost-nanodollars", left);
-    }
     let now = run.time_ms();
-    crate::threads::began(&mut run.changes, id, now);
+    crate::threads::began(&mut run.changes, id, now)?;
     Ok(Ending::Wait(MainState::Running { turn: turn.clone() }, Wait::new().child(turn)))
 }
 
 /// What the thread's budget leaves its next turn, in billionths of a dollar; none for a thread with no budget.
-fn budget_left(run: &Run<'_>, id: &str, config: &Config) -> anyhow::Result<Option<u64>> {
+fn budget_left(run: &Run<'_>, config: &Config) -> anyhow::Result<Option<u64>> {
     let Some(budget) = config.budget_nanodollars else { return Ok(None) };
     let used = run
         .snapshot()
-        .fiber(&thread::main(id))?
+        .fiber(run.id().path())?
         .and_then(|record| ThreadUsage::of(&record.usage))
         .map_or(0, |usage| usage.cost_nanodollars);
     Ok(Some(budget.saturating_sub(used)))
@@ -257,35 +252,34 @@ fn end_before(run: &mut Run<'_>, id: &str, writer: &mut Writer, taken: &[Entry],
     };
     writer.append(&mut run.changes, &entry)?;
     let now = run.time_ms();
-    crate::threads::ended(&mut run.changes, id, Turn::Failed, now);
+    crate::threads::ended(&mut run.changes, id, Turn::Failed, now)?;
     tell(run, taken, &ended)?;
     Ok(Ending::Next(MainState::Rest))
 }
 
 /// Tells who waits on each input of `entries` how the turn that took it ended, as `ended` says.
 fn tell(run: &mut Run<'_>, entries: &[Entry], ended: &Ended) -> anyhow::Result<()> {
-    let mut told = octoii_siphon_lib::Changes::new();
     for entry in entries {
         if let Entry::Input {
             reply_to: Some(reply_to), ..
         } = entry
         {
-            inbox::tell(run.snapshot(), &mut told, reply_to, ended)?;
+            inbox::tell(run.snapshot(), &mut run.changes, reply_to, ended)?;
         }
     }
-    run.changes.extend(told);
     Ok(())
 }
 
 /// The turn keyed `turn` running: settled once it ended, and reaped.
 fn running(run: &mut Run<'_>, id: &str, turn: &str) -> anyhow::Result<Ending<MainState, ()>> {
-    let process = octoii_siphon_lib::process_path(run.path(), turn.as_bytes());
-    let outcome = run
-        .snapshot()
-        .fiber(&process)?
-        .filter(crate::volume::reapable)
-        .and_then(|record| record.outcome);
-    let Some(outcome) = outcome else {
+    let path = fiber_path(run.id().path(), turn.as_bytes());
+    let Some(FiberRecord {
+        id: fiber,
+        reapable: true,
+        outcome: Some(outcome),
+        ..
+    }) = run.snapshot().fiber(&path)?
+    else {
         return Ok(Ending::Wait(
             MainState::Running { turn: turn.to_owned() },
             Wait::new().child(turn.to_owned()),
@@ -311,7 +305,7 @@ fn running(run: &mut Run<'_>, id: &str, turn: &str) -> anyhow::Result<Ending<Mai
         ),
     };
     settle(run, id, ended, why, Some(turn))?;
-    run.changes.reap(process);
+    run.changes.reap(&fiber)?;
     Ok(Ending::Next(MainState::Rest))
 }
 
@@ -391,6 +385,6 @@ fn settle(run: &mut Run<'_>, id: &str, ended: TurnOutcome, why: Option<Why>, tur
         TurnOutcome::Stopped => Turn::Stopped,
     };
     let now = run.time_ms();
-    crate::threads::ended(&mut run.changes, id, status, now);
+    crate::threads::ended(&mut run.changes, id, status, now)?;
     Ok(())
 }

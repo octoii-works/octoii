@@ -52,8 +52,3 @@ impl Followed {
         Ok(Since::Paths(paths))
     }
 }
-
-/// Whether `path` is `at`, or lies under it.
-pub(crate) fn is_at_or_under(path: &[u8], at: &[u8]) -> bool {
-    path.strip_prefix(at).is_some_and(|rest| rest.is_empty() || rest.starts_with(b"/"))
-}

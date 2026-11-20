@@ -16,11 +16,13 @@ pub use extension::TerminalsExtension;
 pub use tool::{ACTOR, Action, TerminalEnd, TerminalResult, TerminalTool};
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use bytes::Bytes;
 use octoii::machine::Base;
-use octoii::machine::{Command, CommandEvent, Exec, Spec, Stdio};
+use octoii::machine::{Command, CommandEvent, Exec, Spec, Stdin, Stdio};
 use octoii::machine::{Commands, Host, Machine, Writes};
+use tokio::io::AsyncWriteExt as _;
 use tokio::sync::{broadcast, mpsc, oneshot};
 
 /// How many lines of what scrolls off a terminal's screen it keeps, drawn again with it.
@@ -98,11 +100,14 @@ pub enum Error {
     NoShell,
     #[error("the terminals are gone")]
     Gone,
+    #[error("terminal input failed: {0}")]
+    Input(String),
     #[error(transparent)]
     Beak(#[from] octoii::volume::Error),
 }
 
 type Reply<T> = oneshot::Sender<Result<T, Error>>;
+type Input = (Bytes, Reply<()>);
 
 #[derive(Debug)]
 enum Message {
@@ -280,10 +285,17 @@ struct Terminal {
     size: Size,
     title: String,
     line: Option<String>,
-    written: u64,
-    command: Command,
+    command: Arc<Command>,
+    input: mpsc::UnboundedSender<Input>,
+    io: tokio::task::JoinHandle<()>,
     /// The machine its shell was started in, kept as long as it runs.
     _machine: Machine,
+}
+
+impl Drop for Terminal {
+    fn drop(&mut self) {
+        self.io.abort();
+    }
 }
 
 /// The task that owns the terminals.
@@ -314,9 +326,16 @@ impl Owner {
             } => {
                 let _ = reply.send(self.open(&thread, &cwd, size, running));
             }
-            Message::Write { id, bytes, reply } => {
-                let _ = reply.send(self.find(&id).and_then(|terminal| Ok(terminal.command.write(&bytes)?)));
-            }
+            Message::Write { id, bytes, reply } => match self.find(&id) {
+                Ok(terminal) => {
+                    if let Err(mpsc::error::SendError((_, reply))) = terminal.input.send((bytes, reply)) {
+                        let _ = reply.send(Err(Error::NoSuchTerminal));
+                    }
+                }
+                Err(error) => {
+                    let _ = reply.send(Err(error));
+                }
+            },
             Message::Resize { id, size, reply } => {
                 let _ = reply.send(self.resize(&id, size));
             }
@@ -380,21 +399,23 @@ impl Owner {
         };
         let machine = self.commands.open(&self.host, base, &writes)?;
         let spec = Spec {
-            set: [("TERM".into(), "xterm-256color".into()), ("COLORTERM".into(), "truecolor".into())]
-                .into_iter()
-                .chain(set)
-                .collect(),
-            stdio: Stdio::Terminal {
+            set: Some(
+                [("TERM".into(), "xterm-256color".into()), ("COLORTERM".into(), "truecolor".into())]
+                    .into_iter()
+                    .chain(set)
+                    .collect(),
+            ),
+            stdio: Some(Stdio::Terminal {
                 rows: size.rows,
                 cols: size.cols,
                 scrollback_lines: SCROLLBACK_LINES,
-            },
-            tail_bytes: KEPT_BYTES,
+            }),
+            tail_bytes: Some(KEPT_BYTES),
             ..Spec::new(Exec::Argv(argv), cwd.to_string_lossy())
         };
-        let now = now_ms();
-        let (command, mut events) = self.commands.spawn(now, b"", machine.namespace(), &spec)?;
         let id = self.commands.new_id()?;
+        let (command, mut events) = self.commands.spawn(machine.namespace(), &spec)?;
+        let command = Arc::new(command);
         let taken: Vec<u32> = self
             .terminals
             .iter()
@@ -405,10 +426,27 @@ impl Owner {
         let number = (1..).take(taken.len() + 1).find(|number| !taken.contains(number)).unwrap_or(1);
         let messages = self.messages.clone();
         let told = id.clone();
-        tokio::spawn(async move {
-            while let Ok(Some(event)) = events.next().await {
-                let Some(messages) = messages.upgrade() else { return };
-                let _ = messages.send(Message::Told { id: told.clone(), event });
+        let (input, mut writes) = mpsc::unbounded_channel::<Input>();
+        let mut stdin = Stdin::new(command.clone());
+        let io = tokio::spawn(async move {
+            let read = async {
+                while let Ok(Some(event)) = events.next().await {
+                    let Some(messages) = messages.upgrade() else { return };
+                    let _ = messages.send(Message::Told { id: told.clone(), event });
+                }
+            };
+            let write = async {
+                while let Some((bytes, reply)) = writes.recv().await {
+                    let result = stdin.write_all(&bytes).await.map_err(|error| Error::Input(error.to_string()));
+                    let _ = reply.send(result);
+                }
+            };
+            tokio::select! {
+                () = read => {}
+                () = write => {}
+            }
+            if let Some(messages) = messages.upgrade() {
+                let _ = messages.send(Message::Close { id: told });
             }
         });
         self.terminals.push(Terminal {
@@ -418,8 +456,9 @@ impl Owner {
             size,
             title: String::new(),
             line,
-            written: 0,
             command,
+            input,
+            io,
             _machine: machine,
         });
         self.changed(thread);
@@ -457,18 +496,14 @@ impl Owner {
         let Some(terminal) = self.terminals.iter_mut().find(|terminal| terminal.id == id) else {
             return;
         };
-        match event {
-            CommandEvent::Output(bytes) => {
-                terminal.written += bytes.len() as u64;
-                let _ = self.events.send(Event::Wrote {
-                    id: id.to_owned(),
-                    written: terminal.written,
-                });
-            }
+        let written = match event {
+            CommandEvent::Output(chunk) => chunk.offset + chunk.bytes.len() as u64,
+            CommandEvent::Gap { through, .. } => through,
             CommandEvent::Title(title) => {
                 terminal.title = title;
                 let thread = terminal.thread.clone();
                 self.changed(&thread);
+                return;
             }
             CommandEvent::Exit(exit) => {
                 if let Some(line) = terminal.line.clone() {
@@ -483,8 +518,13 @@ impl Owner {
                     });
                 }
                 self.close(id);
+                return;
             }
-        }
+        };
+        let _ = self.events.send(Event::Wrote {
+            id: id.to_owned(),
+            written,
+        });
     }
 }
 
@@ -496,11 +536,4 @@ fn shown(terminal: &Terminal) -> Shown {
         title: terminal.title.clone(),
         line: terminal.line.clone(),
     }
-}
-
-fn now_ms() -> i64 {
-    let since = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default();
-    i64::try_from(since.as_millis()).unwrap_or(i64::MAX)
 }
