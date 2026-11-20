@@ -16,7 +16,7 @@ use octoii::threads::files;
 use octoii_tunnel::Remote;
 use serde::Deserialize;
 
-use crate::http::{Denied, Node, session};
+use super::{Denied, Node, session};
 
 /// What a file sent is named, where it has a name.
 #[derive(Debug, Deserialize)]

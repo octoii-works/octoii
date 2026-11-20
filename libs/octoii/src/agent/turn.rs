@@ -14,6 +14,7 @@ use octoii_ai::models::Models;
 use crate::agent::primitives::ThreadPrimitives;
 use crate::machine::paths::Base;
 use crate::threads::log::Writer;
+use crate::threads::status::{compaction_child, running_compaction_child};
 use crate::threads::{CallKey, CallStatus, Config, Entry, SIPHON, ThreadUsage, Window, inbox, thread};
 use crate::tools::projects::Place;
 use crate::tools::{Calls, Setting, State, Tools};
@@ -144,7 +145,7 @@ impl Fiber for TurnFiber {
 
 /// Joins a manual compaction in progress or starts a compaction child of the turn.
 fn compact(run: &mut Run<'_>, id: &str, attempt: u32) -> anyhow::Result<Ending<TurnState, Ended>> {
-    if let Some(manual) = compaction::child(run.snapshot(), &thread::main(id))?.filter(|record| !record.reapable) {
+    if let Some(manual) = running_compaction_child(run.snapshot(), &thread::main(id))? {
         return await_compaction(run, manual.id, attempt);
     }
     run.changes.expect(run.snapshot())?;
@@ -157,7 +158,7 @@ fn compact(run: &mut Run<'_>, id: &str, attempt: u32) -> anyhow::Result<Ending<T
 
 /// The thread's compaction ended: the model asked on the window it began; the turn fails as it failed.
 fn compaction_ended(run: &mut Run<'_>, attempt: u32) -> anyhow::Result<Ending<TurnState, Ended>> {
-    let Some(record) = compaction::child(run.snapshot(), run.id().path())? else {
+    let Some(record) = compaction_child(run.snapshot(), run.id().path())? else {
         return Ok(Ending::Fail("its window's compaction is missing".into()));
     };
     if !record.reapable {

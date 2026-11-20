@@ -123,3 +123,16 @@ settings! {
     /// The most its model requests may cost in all, in billionths of a US dollar; no bound, where none.
     budget_nanodollars: u64 => "siphon.budget_nanodollars";
 }
+
+impl crate::volume::Volume {
+    /// The current configuration of one thread; none if the thread does not exist.
+    ///
+    /// # Errors
+    /// The volume could not be read, or the stored configuration is invalid.
+    pub fn thread_config(&self, id: &str) -> anyhow::Result<Option<Config>> {
+        super::thread::directory(&*self.snapshot()?, id)?
+            .map(|directory| Config::of(&directory))
+            .transpose()
+            .map_err(Into::into)
+    }
+}

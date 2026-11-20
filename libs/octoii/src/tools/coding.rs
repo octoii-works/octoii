@@ -13,7 +13,7 @@ use siphon_text::{Bounds, Edit};
 
 use crate::tools::effect::Effect;
 use crate::tools::told::{INSTRUCTIONS_FILE, Instructions, SearchFile, SearchLine, Structured, Told};
-use crate::tools::tool::{Context, Refusal, Tool};
+use crate::tools::{Context, Refusal, Tool};
 
 /// How many files a page of glob gives, matching lines a page of grep, and the characters of a line grep shows.
 const FILES_PAGE: usize = 200;

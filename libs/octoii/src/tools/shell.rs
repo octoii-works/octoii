@@ -12,7 +12,7 @@ use serde::Deserialize;
 
 use crate::tools::effect::Effect;
 use crate::tools::told::{CommandEnd, Structured, Told};
-use crate::tools::tool::{Context, Refusal, Tool};
+use crate::tools::{Context, Refusal, Tool};
 
 /// How long a command line runs where its call says no other time, and at most.
 const TIMEOUT_SECONDS: u64 = 120;

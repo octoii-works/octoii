@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 use octoii::agent::{Shared, Teller, Telling};
 use octoii::protocol::Error;
+use octoii::threads::{SubThreadKind, parent_of};
 use octoii::tools::Place;
 use octoii::tools::{Context, Refusal, Toolset};
 use octoii::volume::Volume;
@@ -75,7 +76,7 @@ impl Teller for Servers {
         place: Option<&'a Place>,
     ) -> Pin<Box<dyn Future<Output = anyhow::Result<Telling>> + Send + 'a>> {
         Box::pin(async move {
-            if octoii::agent::parent_of(volume, thread)?.is_some_and(|parent| parent.kind == octoii::threads::SubThreadKind::Explorer) {
+            if parent_of(volume, thread)?.is_some_and(|parent| parent.kind == SubThreadKind::Explorer) {
                 return Ok(Telling::default());
             }
             // The servers are configured for the person and a project: a thread of no folder has none of a project's.

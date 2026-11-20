@@ -6,8 +6,8 @@
 use std::fmt::Write as _;
 
 use bytes::Bytes;
-use octoii_siphon_lib::Batch;
-use octoii_siphon_lib::Snapshot;
+use octoii_ai::vocabulary::FileRef;
+use octoii_siphon_lib::{Batch, Changes, Snapshot};
 use sha2::{Digest, Sha256};
 
 use crate::threads::thread;
@@ -155,5 +155,93 @@ impl octoii_ai::host::Files for OfThread {
         let missing = || octoii_ai::host::NoSuchFile(reference.to_owned());
         let snapshot = self.runtime.snapshot().map_err(|_| missing())?;
         read(&snapshot, &self.thread, reference).ok().flatten().ok_or_else(missing)
+    }
+}
+
+impl crate::volume::Volume {
+    /// Keeps file bytes in the existing thread, named by their content, without fitting them for a model. Returns
+    /// the reference, detected media type, basename and size only once storage commits.
+    ///
+    /// # Errors
+    /// No such thread, a file past the byte limit, or the volume's failure.
+    pub async fn keep_file(&self, thread: &str, bytes: Bytes, name: &str) -> std::result::Result<(FileRef, u64), Refused> {
+        let snapshot = self.file_snapshot(thread)?;
+        if bytes.len() > BYTES_MAX {
+            return Err(Refused::TooLarge);
+        }
+        let size = bytes.len() as u64;
+        let media_type = media_type(name, &bytes);
+        let mut changes = Changes::new()?;
+        let reference = keep(&snapshot, &mut changes, thread, bytes)?;
+        if !changes.is_empty() {
+            self.runtime.commit(changes).await?;
+        }
+        Ok((
+            FileRef {
+                reference,
+                media_type: media_type.to_owned(),
+                filename: Some(name.to_owned()),
+            },
+            size,
+        ))
+    }
+
+    /// Keeps an image in the existing thread's files, fitted to what every model reads and named by its content.
+    /// Returns its reference and fitted size only once storage commits.
+    ///
+    /// # Errors
+    /// No such thread, an image past the byte limit or one that cannot be read, or the volume's failure.
+    pub async fn keep_image(
+        &self,
+        thread: &str,
+        bytes: &[u8],
+        name: Option<&str>,
+    ) -> std::result::Result<(FileRef, siphon_image::Size), Refused> {
+        let snapshot = self.file_snapshot(thread)?;
+        if bytes.len() > BYTES_MAX {
+            return Err(Refused::TooLarge);
+        }
+        let mut changes = Changes::new()?;
+        let kept = keep_image(&snapshot, &mut changes, thread, bytes, name)?;
+        if !changes.is_empty() {
+            self.runtime.commit(changes).await?;
+        }
+        Ok(kept)
+    }
+
+    /// Keeps an attachment in a thread. Images are fitted for the model and other files keep their original bytes.
+    ///
+    /// # Errors
+    /// A missing thread, an invalid or oversized attachment, or a volume failure.
+    pub async fn keep_attachment(
+        &self,
+        thread: &str,
+        bytes: &[u8],
+        media_type: &str,
+        name: Option<&str>,
+    ) -> std::result::Result<FileRef, Refused> {
+        let snapshot = self.file_snapshot(thread)?;
+        let mut changes = Changes::new()?;
+        let file = keep_given(&snapshot, &mut changes, thread, bytes, media_type, name)?;
+        if !changes.is_empty() {
+            self.runtime.commit(changes).await?;
+        }
+        Ok(file)
+    }
+
+    /// Reads file bytes by the reference kept in this thread.
+    ///
+    /// # Errors
+    /// A missing thread or a volume failure.
+    pub fn read_file(&self, thread: &str, reference: &str) -> std::result::Result<Option<Bytes>, Refused> {
+        Ok(read(&*self.file_snapshot(thread)?, thread, reference)?)
+    }
+
+    fn file_snapshot(&self, thread: &str) -> std::result::Result<octoii_siphon_lib::OwnedSnapshot, Refused> {
+        let snapshot = self.snapshot()?;
+        if thread::directory(&snapshot, thread)?.is_none() {
+            return Err(Refused::NoSuchThread);
+        }
+        Ok(snapshot)
     }
 }

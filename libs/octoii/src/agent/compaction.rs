@@ -8,17 +8,20 @@
 //! The segments of the log wholly before the new window expire after the history's retention.
 
 use crate::threads::log::{self, Writer};
+use crate::threads::status::{compaction_child, turn_compacting};
 use crate::threads::window::{self, FROM_ANNOTATION};
-use crate::threads::{Config, Entry, Window, thread};
+use crate::threads::{Config, Entry, Error as ThreadError, Threads, Window, thread};
+use crate::volume::commit_checked;
 use bytes::Bytes;
 use octoii_siphon_lib::{
     Answer, Asked, Batch, CommitEvent, Ending, Error, Fiber, FiberId, FiberRecord, Outcome, Request, Run, RuntimeHandle, Snapshot, Status,
-    Unanswered, Wait, fiber_path,
+    Unanswered, Wait,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::agent::gather::Gather;
 use crate::agent::model::ModelRequest;
+use crate::agent::thread::ThreadFiber;
 use crate::agent::told::Told;
 use crate::agent::turn::charge;
 
@@ -141,31 +144,14 @@ impl CompactFiber {
     pub const KEY: &'static str = thread::COMPACTION_KEY;
 }
 
-/// This parent's direct compaction child.
-pub(super) fn child(snapshot: &Snapshot, parent: &[u8]) -> octoii_siphon_lib::Result<Option<FiberRecord>> {
-    snapshot.fiber(&fiber_path(parent, CompactFiber::KEY.as_bytes()))
-}
-
-fn child_running(snapshot: &Snapshot, parent: &[u8]) -> octoii_siphon_lib::Result<bool> {
-    Ok(child(snapshot, parent)?.is_some_and(|record| !record.reapable))
-}
-
-fn turn_compacting(snapshot: &Snapshot, main: &[u8]) -> octoii_siphon_lib::Result<bool> {
-    for turn in snapshot.fibers(main, thread::TURN_KIND.as_bytes())? {
-        if child_running(snapshot, turn.path())? {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
-
-/// Whether the thread is compacting its window in this snapshot.
-///
-/// # Errors
-/// The volume's failure.
-pub fn running(snapshot: &Snapshot, id: &str) -> octoii_siphon_lib::Result<bool> {
-    let main = thread::main(id);
-    Ok(child_running(snapshot, &main)? || turn_compacting(snapshot, &main)?)
+/// Starts a compaction against an observed thread and its current execution state.
+pub(crate) async fn compact_thread(threads: &Threads<ThreadFiber>, id: &str) -> Result<(), ThreadError> {
+    commit_checked(threads.runtime(), |snapshot, changes| {
+        threads.listed_at(snapshot, id)?;
+        start(snapshot, changes, id)?;
+        Ok(())
+    })
+    .await
 }
 
 /// Stages a manual compaction under the main Fiber, sharing any compaction already in progress.
@@ -179,7 +165,7 @@ pub fn start(snapshot: &Snapshot, changes: &mut Batch<'_>, id: &str) -> octoii_s
     if turn_compacting(snapshot, main.id.path())? {
         return Ok(());
     }
-    match child(snapshot, main.id.path())? {
+    match compaction_child(snapshot, main.id.path())? {
         Some(record) if !record.reapable => return Ok(()),
         Some(record) => {
             changes.reap(&record.id)?;

@@ -18,8 +18,9 @@ pub(crate) mod thread;
 pub(crate) mod window;
 
 pub(crate) use config::ConfigChange;
+pub(crate) use history::entries_before;
 pub(crate) use log::{CallKey, PERSON, SIPHON, Section};
-pub(crate) use operations::{Error, MainInput, Threads};
+pub(crate) use operations::{Error, MainInput, Threads, stop_turn};
 pub(crate) use status::{TURN_ANNOTATION, began, ended};
 pub(crate) use window::Window;
 
@@ -31,6 +32,6 @@ pub use input::InputPart;
 pub use log::{CallStatus, Entry, Outcome, time_of};
 pub use marks::{Marks, MarksChange};
 pub use operations::{NewThread, list};
-pub use status::{Ask, Listed, Parent, Status, SubThreadKind, ThreadUsage, Turn};
+pub use status::{Ask, Listed, Parent, Status, SubThreadKind, ThreadUsage, Turn, parent_of};
 
 pub use start::{Start, StartRequest, StartState, StartWorkspace};

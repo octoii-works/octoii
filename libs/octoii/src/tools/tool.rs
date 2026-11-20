@@ -1,27 +1,18 @@
-//! A tool a thread's model calls: its name, what it does, the JSON Schema its arguments fit — its arguments' own type's
-//! — what a call of it does to the machine, read from the call's arguments for the call's weighing, and its `exec`,
-//! which gives what the model reads, as the model's vocabulary holds a call's output, or refuses, saying why.
+//! The contract a tool implements and its dispatch from JSON arguments.
 
-use std::collections::BTreeMap;
 use std::future::Future;
-use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use crate::machine::paths::Base;
-use crate::machine::{Host, Machine};
-use octoii_ai::vocabulary::{FileRef, ImageDetail, InputContent};
-use octoii_siphon_lib::{Batch, FiberId, RequestCommands, RuntimeHandle};
+use octoii_ai::vocabulary::InputContent;
+use octoii_siphon_lib::{Batch, FiberId};
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
-use tokio_util::sync::CancellationToken;
 
-use crate::threads::inbox::Ended;
-use crate::threads::{CallStatus, SubThreadKind};
+use crate::machine::Base;
+use crate::threads::{CallStatus, Ended};
 use crate::tools::calls::Setting;
-use crate::tools::effect::Effect;
-use crate::tools::permissions::Writes;
-use crate::tools::told::Told;
+use crate::tools::{Context, Effect, Told};
 
 /// Why a tool did not do what it was asked, in words the model reads.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -42,7 +33,7 @@ pub struct Finished {
 }
 
 impl Finished {
-    fn of(outcome: &octoii_siphon_lib::Outcome) -> Self {
+    pub(super) fn of(outcome: &octoii_siphon_lib::Outcome) -> Self {
         Self {
             status: if matches!(outcome, octoii_siphon_lib::Outcome::Completed(_)) {
                 CallStatus::Ok
@@ -51,136 +42,6 @@ impl Finished {
             },
             told: Told::from(vec![InputContent::text(format!("{outcome:?}"))]),
         }
-    }
-}
-
-/// What a call's exec is given: the thread whose model called it, its key, where its paths start, where it may write,
-/// and the command capability for its request. A stop cancels its token so it can return what has come.
-#[derive(Debug, Clone)]
-pub struct Context {
-    pub thread: String,
-    pub call: String,
-    pub base: Base,
-    pub writes: Writes,
-    /// The places beside the workspace its work writes as freely.
-    pub places: Vec<PathBuf>,
-    pub host: Host,
-    pub(crate) runtime: RuntimeHandle,
-    pub(crate) request_commands: RequestCommands,
-    pub cancelled: CancellationToken,
-}
-
-impl Context {
-    /// The command capability for this exact call's execution request.
-    #[must_use]
-    pub fn commands(&self) -> &RequestCommands {
-        &self.request_commands
-    }
-
-    /// The volume, as an extension reaches it.
-    #[must_use]
-    pub fn volume(&self) -> crate::volume::Volume {
-        crate::volume::Volume {
-            runtime: self.runtime.clone(),
-        }
-    }
-
-    /// The machine, opened for this call: held to the thread's workspace and the places beside it written as freely, or
-    /// writing anywhere, as its weighing said; the threads shown where the host lays them out.
-    ///
-    /// # Errors
-    /// Beak's failure to open its namespace.
-    pub fn machine(&self) -> Result<Machine, Refusal> {
-        Machine::open(
-            &self.runtime,
-            &self.host,
-            self.base.clone(),
-            &self.writes_of(),
-            Some(crate::threads::thread::VIEW),
-        )
-        .map_err(|error| Refusal(format!("the machine: {error}")))
-    }
-
-    /// Where this call's work may write, as its weighing said: its thread's workspace and the places beside it written
-    /// as freely, made where they are not, or anywhere.
-    #[must_use]
-    pub fn writes_of(&self) -> crate::machine::Writes {
-        match self.writes {
-            Writes::Anywhere => crate::machine::Writes::Anywhere,
-            Writes::Workspace => {
-                let places = self.places.iter().filter(|place| made(place)).cloned();
-                crate::machine::Writes::Within(std::iter::once(self.base.workspace.clone()).chain(places).collect())
-            }
-        }
-    }
-
-    /// The variables a thread's commands run with over the machine's own: `TMPDIR`, its scratchpad, so what their work
-    /// leaves for a while goes there rather than into the workspace.
-    #[must_use]
-    pub fn variables(&self) -> Vec<(String, String)> {
-        self.scratchpad()
-            .map(|scratchpad| ("TMPDIR".to_owned(), scratchpad.to_string_lossy().into_owned()))
-            .into_iter()
-            .collect()
-    }
-
-    /// The thread's scratchpad, made where it is not — the system clears its temporary folder.
-    fn scratchpad(&self) -> Option<PathBuf> {
-        self.host.scratchpad_of(&self.thread).filter(made)
-    }
-
-    /// Keeps the original bytes of the regular file at `path`, reached through this call's machine, in the thread's
-    /// files by their content. The file keeps its basename and is never fitted for a model. Its reference and size
-    /// are returned only after storage commits; a call interrupted before its result commits may leave a blob until
-    /// the thread is removed, as `show_image` can.
-    ///
-    /// # Errors
-    /// An invalid path, an inaccessible or non-regular file, more than 32 MiB, or a failure to keep the bytes.
-    pub async fn keep_file(&self, path: &str) -> Result<(FileRef, u64), Refusal> {
-        if path.is_empty() || path.contains('\0') {
-            return Err(Refusal::new("invalid file path"));
-        }
-        let context = self.clone();
-        let path = path.to_owned();
-        let (name, bytes) = tokio::task::spawn_blocking(move || {
-            let machine = context.machine()?;
-            let (path, bytes) = machine
-                .read_file(&machine.path(&path), crate::threads::files::BYTES_MAX as u64)
-                .map_err(|error| Refusal(format!("{}: {error}", machine.shown(&machine.path(&path)))))?;
-            let name = path.rsplit('/').next().unwrap_or(&path).to_owned();
-            Ok::<_, Refusal>((name, bytes))
-        })
-        .await
-        .map_err(|error| Refusal(format!("the file read failed: {error}")))??;
-        self.volume()
-            .keep_file(&self.thread, bytes, &name)
-            .await
-            .map_err(|error| Refusal(format!("{name}: {error}")))
-    }
-
-    /// The image `bytes`, named `name` where it has one, as the model is shown it: fitted to what every model reads,
-    /// kept in the thread's files by its content, after a line saying what it is.
-    ///
-    /// # Errors
-    /// A `Refusal` where it is no image that can be read, or it could not be kept.
-    pub async fn show_image(&self, bytes: &[u8], name: Option<&str>) -> Result<Vec<InputContent>, Refusal> {
-        let (file, size) = self
-            .volume()
-            .keep_image(&self.thread, bytes, name)
-            .await
-            .map_err(|error| Refusal(format!("{}: {error}", name.unwrap_or("the image"))))?;
-        let size = format!("{}×{}", size.width, size.height);
-        let said = match name {
-            Some(name) => format!("{name}, an image of {size}"),
-            None => format!("an image of {size}"),
-        };
-        Ok(vec![
-            InputContent::text(said),
-            InputContent::InputImage {
-                file,
-                detail: ImageDetail::Auto,
-            },
-        ])
     }
 }
 
@@ -247,39 +108,7 @@ pub trait Tool: Send + Sync + 'static {
     }
 }
 
-type Execing = Pin<Box<dyn Future<Output = Result<Told, Refusal>> + Send>>;
-
-/// A tool's `schema` as a call with `arguments` means it: where it is one of several variants, each naming itself by
-/// fixed values — the action of a tool of many actions — the one variant whose fixed values the arguments give, so
-/// arguments that do not fit are told how they miss that variant's fields, not that they fit none; else the whole.
-fn meant<'a>(schema: &'a serde_json::Value, arguments: &serde_json::Value) -> std::borrow::Cow<'a, serde_json::Value> {
-    let Some(variants) = schema.get("oneOf").and_then(serde_json::Value::as_array) else {
-        return std::borrow::Cow::Borrowed(schema);
-    };
-    let named = |variant: &&serde_json::Value| {
-        let fixed: Vec<(&String, &serde_json::Value)> = variant
-            .get("properties")
-            .and_then(serde_json::Value::as_object)
-            .into_iter()
-            .flatten()
-            .filter_map(|(name, property)| Some((name, property.get("const")?)))
-            .collect();
-        !fixed.is_empty() && fixed.iter().all(|(name, value)| arguments.get(name.as_str()) == Some(value))
-    };
-    match variants.iter().filter(named).collect::<Vec<_>>()[..] {
-        // The variant alone, with the definitions the whole holds, which it may refer to.
-        [one] => {
-            let mut narrowed = one.clone();
-            for shared in ["$defs", "definitions"] {
-                if let Some(definitions) = schema.get(shared) {
-                    narrowed[shared] = definitions.clone();
-                }
-            }
-            std::borrow::Cow::Owned(narrowed)
-        }
-        _ => std::borrow::Cow::Borrowed(schema),
-    }
-}
+pub(super) type Execing = Pin<Box<dyn Future<Output = Result<Told, Refusal>> + Send>>;
 
 /// The most characters of a call's arguments told back where they do not fit its tool.
 const GIVEN_CHARS_MAX: usize = 1000;
@@ -294,7 +123,7 @@ pub(crate) fn invalid(error: &serde_json::Error, given: &str) -> Refusal {
 }
 
 /// A tool of any kind, as a table holds it: its arguments as JSON.
-trait Erased: Send + Sync {
+pub(super) trait Erased: Send + Sync {
     fn effect(&self, arguments: &serde_json::Value, base: &Base) -> Result<Effect, Refusal>;
     fn exec(self: Arc<Self>, context: Context, arguments: serde_json::Value) -> Execing;
     fn asks(&self, arguments: &serde_json::Value) -> Option<serde_json::Value>;
@@ -365,22 +194,6 @@ impl<T: Tool> Erased for T {
     }
 }
 
-/// A tool as the model is told of it, and whether it reaches threads.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Declared {
-    pub name: String,
-    pub description: String,
-    pub parameters: serde_json::Value,
-    pub output_schema: Option<serde_json::Value>,
-    pub reaches_threads: bool,
-}
-
-#[derive(Clone)]
-struct Entry {
-    declared: Declared,
-    tool: Arc<dyn Erased>,
-}
-
 /// A set of tools beyond those a thread's model is given one by one, found by their names as the set has them — an MCP
 /// server's, each `<server>.<tool>`: whether a name is one of its, and a call of one done. Each may do anything, as its own end
 /// checks what it is given.
@@ -395,193 +208,4 @@ pub trait Toolset: Send + Sync + 'static {
         name: &'a str,
         arguments: serde_json::Value,
     ) -> Pin<Box<dyn Future<Output = Result<Told, Refusal>> + Send + 'a>>;
-}
-
-/// A tool's parameters as the model is given them: their JSON Schema without what speaks to a schema's reader rather than
-/// to the model — the dialect, and the Rust type's name and doc.
-fn parameters(mut schema: serde_json::Value) -> serde_json::Value {
-    if let Some(object) = schema.as_object_mut() {
-        for key in ["$schema", "title", "description"] {
-            object.remove(key);
-        }
-    }
-    schema
-}
-
-/// The tools a thread's model may call, by name: its own, and those of its toolsets.
-#[derive(Clone, Default)]
-pub struct Tools {
-    entries: Arc<BTreeMap<String, Entry>>,
-    toolsets: Vec<Arc<dyn Toolset>>,
-}
-
-impl std::fmt::Debug for Tools {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_list().entries(self.entries.keys()).finish()
-    }
-}
-
-impl Tools {
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// These tools, `tool` among them; others that share them left as they are.
-    #[must_use]
-    pub fn with<T: Tool>(mut self, tool: T) -> Self {
-        let declared = Declared {
-            name: T::NAME.to_owned(),
-            description: tool.described(),
-            parameters: parameters(schemars::schema_for!(T::Args).to_value()),
-            reaches_threads: T::REACHES_THREADS,
-            output_schema: T::output_schema(),
-        };
-        Arc::make_mut(&mut self.entries).insert(
-            T::NAME.to_owned(),
-            Entry {
-                declared,
-                tool: Arc::new(tool),
-            },
-        );
-        self
-    }
-
-    /// These tools, and those of `toolset`.
-    #[must_use]
-    pub fn with_toolset(mut self, toolset: Arc<dyn Toolset>) -> Self {
-        self.toolsets.push(toolset);
-        self
-    }
-
-    /// The toolset `name` is a tool of: none of these tools', but one a toolset has.
-    fn served(&self, name: &str) -> Option<&Arc<dyn Toolset>> {
-        if self.entries.contains_key(name) {
-            return None;
-        }
-        self.toolsets.iter().find(|toolset| toolset.has(name))
-    }
-
-    /// Whether there is a tool of `name`: one of these, or one a server may have.
-    #[must_use]
-    pub fn has(&self, name: &str) -> bool {
-        self.entries.contains_key(name) || self.served(name).is_some()
-    }
-
-    /// Whether this fixed sub-thread kind may call `name`; ordinary threads retain their tools.
-    pub(crate) fn allows(&self, name: &str, kind: Option<SubThreadKind>) -> bool {
-        let Some(kind) = kind else {
-            return self.has(name);
-        };
-        if let Some(entry) = self.entries.get(name) {
-            return !entry.declared.reaches_threads
-                && match kind {
-                    SubThreadKind::Explorer => matches!(name, "read" | "glob" | "grep" | "execute"),
-                    SubThreadKind::GeneralPurpose => true,
-                };
-        }
-        kind == SubThreadKind::GeneralPurpose && self.served(name).is_some()
-    }
-
-    /// The tools, as the model is told of them, in order by name.
-    #[must_use]
-    pub fn declared(&self) -> Vec<Declared> {
-        self.entries.values().map(|entry| entry.declared.clone()).collect()
-    }
-
-    /// What a call of `name` with `arguments` does to the machine, its arguments checked against the tool's schema;
-    /// a toolset's tool acts, as it may do anything.
-    ///
-    /// # Errors
-    /// A `Refusal` naming no tool there is, or saying how the arguments do not fit.
-    pub fn effect(&self, name: &str, arguments: &serde_json::Value, base: &Base) -> Result<Effect, Refusal> {
-        // A toolset's tool may do anything; its own end checks what it is given.
-        if self.served(name).is_some() {
-            return Ok(Effect::Acts { tool: name.to_owned() });
-        }
-        let entry = self.entries.get(name).ok_or_else(|| Refusal(format!("no tool {name}")))?;
-        let schema = meant(&entry.declared.parameters, arguments);
-        let validator = jsonschema::validator_for(&schema).map_err(|error| Refusal(format!("the tool's schema: {error}")))?;
-        let problems: Vec<String> = validator
-            .iter_errors(arguments)
-            .map(|error| format!("{}: {error}", error.instance_path()))
-            .collect();
-        if !problems.is_empty() {
-            return Err(Refusal(format!("invalid arguments: {}", problems.join("; "))));
-        }
-        entry.tool.effect(arguments, base)
-    }
-
-    /// The JSON Schema the person's answer to a call of `name` with `arguments` fits, where the person answers it.
-    #[must_use]
-    pub fn asks(&self, name: &str, arguments: &serde_json::Value) -> Option<serde_json::Value> {
-        self.entries.get(name)?.tool.asks(arguments)
-    }
-
-    /// The person's `answer` to a call of `name` with `arguments`, as the model reads it.
-    #[must_use]
-    pub fn answered(&self, name: &str, arguments: &serde_json::Value, answer: serde_json::Value) -> Told {
-        match self.entries.get(name) {
-            Some(entry) => entry.tool.answered(arguments, answer),
-            None => Told {
-                content: vec![InputContent::text(answer.to_string())],
-                structured_content: Some(answer),
-                ..Told::default()
-            },
-        }
-    }
-
-    /// Adds to `changes` the start of the process of a call of `name` with `arguments`, keyed `key`, under `parent`,
-    /// where its tool runs as a program; none where it is exec'd.
-    pub fn start(
-        &self,
-        changes: &mut Batch<'_>,
-        parent: &FiberId,
-        key: &str,
-        name: &str,
-        arguments: &serde_json::Value,
-        setting: &Setting<'_>,
-    ) -> Option<octoii_siphon_lib::Result<()>> {
-        self.entries.get(name)?.tool.start(changes, parent, key, arguments, setting)
-    }
-
-    /// What the end of the turn of the thread `thread` that took the delivery of a call of `name` with `arguments` tells,
-    /// as `ended` says.
-    #[must_use]
-    pub fn awaited(&self, name: &str, arguments: &serde_json::Value, thread: &str, ended: Option<&Ended>) -> Told {
-        self.entries.get(name).map_or_else(
-            || Told::from(vec![InputContent::text(crate::threads::inbox::told_of(thread, ended))]),
-            |entry| entry.tool.awaited(arguments, thread, ended),
-        )
-    }
-
-    /// What the end `outcome` of the process of a call of `name` tells.
-    #[must_use]
-    pub fn finished(&self, name: &str, outcome: &octoii_siphon_lib::Outcome) -> Finished {
-        self.entries
-            .get(name)
-            .map_or_else(|| Finished::of(outcome), |entry| entry.tool.finished(outcome))
-    }
-
-    /// Execs a call of `name` with `arguments`.
-    ///
-    /// # Errors
-    /// A `Refusal` naming no tool there is, or the tool's own.
-    pub async fn exec(&self, name: &str, context: Context, arguments: serde_json::Value) -> Result<Told, Refusal> {
-        if let Some(parent) = crate::agent::parent_of(&context.volume(), &context.thread).map_err(|error| Refusal(error.to_string()))?
-            && !self.allows(name, Some(parent.kind))
-        {
-            return Err(Refusal(format!("the tool {name} is not available to this sub-thread")));
-        }
-        if let Some(toolset) = self.served(name) {
-            return toolset.call(&context, name, arguments).await;
-        }
-        let tool = Arc::clone(&self.entries.get(name).ok_or_else(|| Refusal(format!("no tool {name}")))?.tool);
-        tool.exec(context, arguments).await
-    }
-}
-
-/// Whether the folder `folder` is there, made where it was not, as a place work writes must be to be mounted.
-fn made(folder: &PathBuf) -> bool {
-    std::fs::create_dir_all(folder).is_ok()
 }

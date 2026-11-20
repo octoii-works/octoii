@@ -57,9 +57,7 @@ impl Caller {
     /// The volume, as an extension reaches it.
     #[must_use]
     pub fn volume(&self) -> crate::volume::Volume {
-        crate::volume::Volume {
-            runtime: self.siphon.runtime.runtime_handle(),
-        }
+        self.siphon.volume()
     }
 
     /// The machine Octoii runs on, as its host describes it.

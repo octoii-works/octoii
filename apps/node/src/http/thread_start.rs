@@ -11,7 +11,7 @@ use octoii_tunnel::Remote;
 use serde::Deserialize;
 use siphon_git::protocol::CreateWorktree;
 
-use crate::http::{Denied, Node, session};
+use super::{Denied, Node, session};
 
 pub(crate) const BODY_MAX: usize = 64 << 20;
 const MANIFEST_MAX: usize = 1 << 20;

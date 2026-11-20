@@ -7,9 +7,9 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::agent::thread::ThreadFiber;
-use crate::agent::waiting::{DelegatedFiber, Waiting, directory_of, label};
+use crate::agent::waiting::{DelegatedFiber, Waiting, label};
 use crate::threads::inbox::{self, Inbound, ReplyTo};
-use crate::threads::{Config, ConfigChange, MarksChange, Mode, NewThread, Parent, Threads, thread};
+use crate::threads::{Config, ConfigChange, MarksChange, Mode, NewThread, Parent, Threads, stop_turn, thread};
 use crate::tools::{Awaited, Plan, Primitives, Report, Spawned, Step};
 use octoii_siphon_lib::{Batch, Changes, Run, fiber_path};
 
@@ -36,23 +36,13 @@ pub async fn deliver(
     Ok(())
 }
 
-/// The thread that made the thread `thread`, as a sub-thread of one of its calls, on `runtime`; none for a thread of the
-/// person's, or one that is not there.
-///
-/// # Errors
-/// The volume's failure.
-pub fn parent_of(volume: &crate::volume::Volume, thread: &str) -> anyhow::Result<Option<Parent>> {
-    let directory = volume.snapshot()?.stat(&thread::path(thread))?.and_then(|entry| entry.directory);
-    Ok(directory.as_ref().map(Parent::of).transpose()?.flatten())
-}
-
 /// The primitives on threads, as Octoii does them.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ThreadPrimitives;
 
 impl Primitives for ThreadPrimitives {
     fn apply(&self, run: &mut Run<'_>, own: &str, call: &str, plan: &Plan) -> anyhow::Result<Result<(), String>> {
-        let Some(directory) = directory_of(run, own)? else {
+        let Some(directory) = thread::directory(run.snapshot(), own)? else {
             return Ok(Err("the thread is gone".into()));
         };
         if label(&directory, thread::PARENT_LABEL).is_some() {
@@ -131,13 +121,13 @@ impl Primitives for ThreadPrimitives {
                 Step::Stop { thread } => {
                     let refused = if thread == own {
                         Some("a thread stops not itself: end your reply".to_owned())
-                    } else if directory_of(run, thread)?.is_none() {
+                    } else if thread::directory(run.snapshot(), thread)?.is_none() {
                         Some(format!("no thread {thread}"))
                     } else {
                         None
                     };
                     if refused.is_none() {
-                        thread::stop_turn(run.snapshot(), &mut changes, thread)?;
+                        stop_turn(run.snapshot(), &mut changes, thread)?;
                     }
                     refused
                 }
@@ -155,7 +145,7 @@ impl Primitives for ThreadPrimitives {
         if run.snapshot().stat(&waiting)?.is_some() {
             run.changes.delete(waiting)?;
         } else {
-            thread::stop_turn(run.snapshot(), &mut run.changes, &awaited.thread)?;
+            stop_turn(run.snapshot(), &mut run.changes, &awaited.thread)?;
         }
         Ok(())
     }

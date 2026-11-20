@@ -15,7 +15,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::tools::requests::Exec;
 use crate::tools::told::Told;
-use crate::tools::tool::{Context, Tools};
+use crate::tools::{Context, Tools};
 
 /// How many characters of a call's text the model is told at once; past them, its head and its newest tail.
 pub const TEXT_CHARS_MAX: usize = 30_000;

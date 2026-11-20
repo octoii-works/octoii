@@ -7,6 +7,9 @@
 //! files, every path of no file its page. On the loopback a request of a page of another origin is refused, as a
 //! browser lets any page send one to any address; in a tunnel session the key that dialled is who asks.
 
+mod files;
+mod thread_start;
+
 use std::path::PathBuf;
 
 use axum::Router;
@@ -62,14 +65,14 @@ pub fn router(node: Node) -> Router {
         .route("/pair", pairing)
         .route(
             "/threads/{thread}/files",
-            post(crate::files::sent).layer(axum::extract::DefaultBodyLimit::max(octoii::threads::files::BYTES_MAX)),
+            post(files::sent).layer(axum::extract::DefaultBodyLimit::max(octoii::threads::files::BYTES_MAX)),
         )
-        .route("/threads/{thread}/files/{hash}", get(crate::files::kept))
+        .route("/threads/{thread}/files/{hash}", get(files::kept))
         .route(
             "/git/threads",
-            post(crate::thread_start::accepted).layer(axum::extract::DefaultBodyLimit::max(crate::thread_start::BODY_MAX)),
+            post(thread_start::accepted).layer(axum::extract::DefaultBodyLimit::max(thread_start::BODY_MAX)),
         )
-        .route("/machine", get(crate::files::machined))
+        .route("/machine", get(files::machined))
         .route("/auth/callback", get(signed_in))
         .with_state(node);
     if let Some(app) = app {

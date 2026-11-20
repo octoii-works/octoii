@@ -13,8 +13,7 @@ target and file checksums. A standard product checkout uses these public artifac
 
 ## Build Octoii
 
-From the product checkout, follow the [native build instructions](../CONTRIBUTING.md#native-build-dependency).
-The installation and build commands are:
+Follow the [native build instructions](../CONTRIBUTING.md#native-build-dependency) from the product checkout.
 
 ```sh
 export SIPHON_LIB_DIR="$(python3 tools/install-siphon.py)"

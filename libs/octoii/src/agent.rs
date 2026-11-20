@@ -42,6 +42,6 @@ pub struct Prompts {
 
 /// What extensions and hosts use of it.
 pub use gather::{Shared, Teller, Telling};
-pub use primitives::{deliver, parent_of};
+pub use primitives::deliver;
 pub use told::Told;
 pub use waiting::how;

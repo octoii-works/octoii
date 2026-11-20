@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::threads::inbox::Joins;
 use crate::threads::{MarksChange, SubThreadKind};
-use crate::tools::tool::Refusal;
+use crate::tools::Refusal;
 
 /// What a call does to threads, in order, and what it ends with: what its tool told, or how a turn ends.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

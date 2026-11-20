@@ -5,7 +5,6 @@
 pub mod cli;
 pub mod control;
 pub mod credentials;
-mod files;
 pub mod home;
 pub mod http;
 pub mod login;
@@ -13,4 +12,3 @@ pub mod pairing;
 pub mod qr;
 pub mod serve;
 pub mod service;
-mod thread_start;

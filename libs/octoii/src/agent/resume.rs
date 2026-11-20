@@ -3,8 +3,10 @@
 //! inbox, as `at` runs a job at its time, and ends; a turn begins with it. What the person sends meanwhile, or another
 //! model they give the thread, ends it first, as they went on themselves.
 
+use crate::agent::thread::ThreadFiber;
 use crate::threads::inbox::{self, Inbound, Joins};
-use crate::threads::{Entry, Error, Window, thread};
+use crate::threads::{Entry, Error, PERSON, Threads, Window, thread};
+use crate::volume::commit_checked;
 use octoii_siphon_lib::{Batch, Ending, Fiber, Run, Snapshot, Status, Wait, fiber_path};
 use serde::{Deserialize, Serialize};
 
@@ -30,17 +32,26 @@ impl ResumeFiber {
     pub const KEY: &'static str = thread::RESUME_KEY;
 }
 
+/// Replaces the thread's resume schedule or cancels it when the deadline is absent.
+pub(crate) async fn resume_thread(threads: &Threads<ThreadFiber>, id: &str, at: Option<i64>) -> Result<(), Error> {
+    commit_checked(threads.runtime(), |snapshot, changes| {
+        threads.listed_at(snapshot, id)?;
+        reschedule(snapshot, changes, id, at)
+    })
+    .await
+}
+
 /// Stages replacing the thread's resume at `at`, or cancelling it when the deadline is absent.
 ///
 /// # Errors
 /// An unreadable window, a missing parent for the replacement, or the volume's failure.
-pub(crate) fn reschedule(snapshot: &Snapshot, changes: &mut Batch<'_>, id: &str, at: Option<i64>, actor: &str) -> Result<(), Error> {
+fn reschedule(snapshot: &Snapshot, changes: &mut Batch<'_>, id: &str, at: Option<i64>) -> Result<(), Error> {
     let main = thread::main(id);
     let replacement = if let Some(at) = at {
         let input = ResumeInput {
             thread: id.to_owned(),
             at,
-            actor: actor.to_owned(),
+            actor: PERSON.to_owned(),
             after: Window::read(snapshot, id)?.last().map(str::to_owned),
         };
         let parent = snapshot

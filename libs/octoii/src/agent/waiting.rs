@@ -38,14 +38,6 @@ pub fn how(ended: Option<&Ended>) -> String {
     }
 }
 
-/// The directory of the thread `id`, as the run's snapshot holds it.
-///
-/// # Errors
-/// The volume's failure.
-pub fn directory_of(run: &Run<'_>, id: &str) -> anyhow::Result<Option<octoii_siphon_lib::Directory>> {
-    Ok(run.snapshot().stat(&thread::path(id))?.and_then(|entry| entry.directory))
-}
-
 /// The label `name` of `directory`; none where it has none.
 #[must_use]
 pub fn label(directory: &octoii_siphon_lib::Directory, name: &str) -> Option<String> {
@@ -76,7 +68,7 @@ impl Fiber for DelegatedFiber {
                 return Ok(Ending::Wait((), wait));
             }
         };
-        let ours = directory_of(run, &waiting.child)?
+        let ours = thread::directory(run.snapshot(), &waiting.child)?
             .and_then(|child| label(&child, thread::PARENT_LABEL))
             .as_deref()
             == Some(waiting.thread.as_str());

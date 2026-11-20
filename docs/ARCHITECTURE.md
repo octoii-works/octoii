@@ -28,6 +28,14 @@ contains the runtime and its internal Beak workspace.
 Run `python3 tools/check-rust-layers.py` to validate the resolved dependency graph. The check includes build, test,
 optional and target-specific dependencies.
 
+`libs/octoii/src/lib.rs` declares the public modules and exports. `host.rs` holds the running host and
+`host/build.rs` opens the volume, assembles extensions and registers execution. Thread startup and its storage
+rules live in `threads/start.rs`. The Agent owns the execution phases. Tool interfaces, request context and
+registration live in `tools/{tool,context,registry}.rs`, with the same call runner used by turns and scripts.
+
+`apps/node/src/http/` contains handlers used by the loopback and tunnel HTTP router. The local control socket uses
+its own state for node status and access management.
+
 ## Frontend boundary
 
 UI packages stay separate from Rust extensions. Product UI packages consume the client and shared UI contracts, never

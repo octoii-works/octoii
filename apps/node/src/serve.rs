@@ -216,16 +216,18 @@ pub async fn serve_until(served: Served, stop: impl Future<Output = ()> + Send +
         std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o600))?;
     }
     let control = Control {
-        node: node.clone(),
+        access: node.access.clone(),
+        machine_name: node.machine.name.clone(),
         links,
         home: home.root().to_owned(),
     };
-    let (serving, router) = (tunnel.clone(), http::router(node.clone()));
-    tokio::spawn(async move { serving.serve(router).await });
+    let router = http::router(node);
+    let (serving, remote_router) = (tunnel.clone(), router.clone());
+    tokio::spawn(async move { serving.serve(remote_router).await });
     tracing::info!(%loopback, "serving");
     let stopping = tokio_util::sync::CancellationToken::new();
     let (stop_loopback, stop_control) = (stopping.clone(), stopping.clone());
-    let loopback_served = axum::serve(listener, http::router(node)).with_graceful_shutdown(async move { stop_loopback.cancelled().await });
+    let loopback_served = axum::serve(listener, router).with_graceful_shutdown(async move { stop_loopback.cancelled().await });
     let control_served =
         axum::serve(controls, control::router(control)).with_graceful_shutdown(async move { stop_control.cancelled().await });
     tokio::spawn(async move {

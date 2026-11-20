@@ -21,7 +21,7 @@ use crate::threads::CallStatus;
 use crate::tools::calls::{Calls, Setting, State};
 use crate::tools::effect::Effect;
 use crate::tools::told::{Instructions, Told};
-use crate::tools::tool::{Context, Finished, Refusal, Tool, Tools};
+use crate::tools::{Context, Finished, Refusal, Tool, Tools};
 
 /// The arguments of `execute`.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]

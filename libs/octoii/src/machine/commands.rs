@@ -47,6 +47,16 @@ impl Commands {
     }
 }
 
+impl crate::volume::Volume {
+    /// The machine's commands, for what an extension runs on it: they write no volume.
+    #[must_use]
+    pub fn commands(&self) -> Commands {
+        Commands {
+            runtime: self.runtime.clone(),
+        }
+    }
+}
+
 impl Launcher for Commands {
     fn spawn(&self, namespace: &Namespace, spec: &Spec) -> octoii_siphon_lib::Result<(Command, CommandEvents)> {
         self.spawn(namespace, spec)

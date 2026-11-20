@@ -874,7 +874,7 @@ async fn sub_thread_kinds_survive_configuration_changes_and_reopening() {
         runtime: reopened.runtime().runtime_handle(),
     };
     for (id, kind) in children {
-        let parent = crate::agent::parent_of(&volume, &id).unwrap().unwrap();
+        let parent = crate::threads::parent_of(&volume, &id).unwrap().unwrap();
         assert_eq!(parent.kind, kind);
         assert_eq!(parent.thread, "parent");
         assert_eq!(reopened.listed(&id).unwrap().parent, Some(parent));
@@ -902,14 +902,14 @@ async fn missing_and_invalid_sub_thread_kinds_are_refused() {
     changes.meta(thread::path(&id), [], [(annotation.clone(), None)]).unwrap();
     threads.runtime().commit(changes).await.unwrap();
     assert!(matches!(threads.listed(&id), Err(crate::threads::Error::MissingSubThreadKind)));
-    assert!(crate::agent::parent_of(&volume, &id).is_err());
+    assert!(crate::threads::parent_of(&volume, &id).is_err());
     let mut changes = Changes::new().unwrap();
     changes
         .meta(thread::path(&id), [], [(annotation, Some(Bytes::from_static(b"\"invalid\"")))])
         .unwrap();
     threads.runtime().commit(changes).await.unwrap();
     assert!(matches!(threads.listed(&id), Err(crate::threads::Error::Json(_))));
-    assert!(crate::agent::parent_of(&volume, &id).is_err());
+    assert!(crate::threads::parent_of(&volume, &id).is_err());
     threads.runtime().close().expect("closed");
 }
 
@@ -1218,7 +1218,7 @@ async fn stopping_or_deleting_preparation_cannot_be_undone_by_a_late_result() {
         .await
         .unwrap();
     let mut changes = Changes::new().unwrap();
-    thread::stop_turn(&volume.runtime.snapshot().unwrap(), &mut changes, &tool_stopped).unwrap();
+    crate::threads::stop_turn(&volume.runtime.snapshot().unwrap(), &mut changes, &tool_stopped).unwrap();
     volume.runtime.commit(changes).await.unwrap();
     assert!(
         volume

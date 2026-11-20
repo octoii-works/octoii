@@ -16,13 +16,13 @@ use octoii::protocol::Scope;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::http::Node;
-use octoii::access::{self, Refused};
+use octoii::access::{self, Access, Refused};
 
-/// What the control socket serves with: the node, the address of its loopback, its Home's folder, and its tunnel.
+/// What the control socket needs to report node status and manage client access.
 #[derive(Debug, Clone)]
 pub struct Control {
-    pub node: Node,
+    pub access: Access,
+    pub machine_name: String,
     pub links: crate::pairing::Links,
     pub home: std::path::PathBuf,
 }
@@ -57,7 +57,7 @@ fn failed(error: &Refused) -> Response {
 
 /// A link that pairs one client, and the addresses that open it.
 async fn link(State(control): State<Control>, Json(asked): Json<Asked>) -> Response {
-    match control.links.made(&control.node.access, asked.label, asked.scopes).await {
+    match control.links.made(&control.access, asked.label, asked.scopes).await {
         Ok(made) => Json(made).into_response(),
         Err(error) => failed(&error),
     }
@@ -66,7 +66,7 @@ async fn link(State(control): State<Control>, Json(asked): Json<Asked>) -> Respo
 /// A session for a program: its bearer token.
 async fn token(State(control): State<Control>, Json(asked): Json<Asked>) -> Response {
     let scopes = asked.scopes.unwrap_or_else(|| access::ALL.to_vec());
-    match control.node.access.issue(asked.label, scopes).await {
+    match control.access.issue(asked.label, scopes).await {
         Ok(made) => Json(json!({ "session": made.shown, "token": made.credential })).into_response(),
         Err(error) => failed(&error),
     }
@@ -80,7 +80,7 @@ async fn status(State(control): State<Control>) -> Response {
     Json(json!({
         "version": env!("CARGO_PKG_VERSION"),
         "home": control.home,
-        "machine": control.node.machine.name,
+        "machine": control.machine_name,
         "loopback": control.links.loopback,
         "key": control.links.tunnel.key().to_string(),
         "relay": relay,
@@ -91,7 +91,7 @@ async fn status(State(control): State<Control>) -> Response {
 
 /// The sessions and the links.
 async fn listed(State(control): State<Control>) -> Response {
-    match control.node.access.list() {
+    match control.access.list() {
         Ok((sessions, links)) => Json(json!({ "sessions": sessions, "links": links })).into_response(),
         Err(error) => failed(&error),
     }
@@ -99,7 +99,7 @@ async fn listed(State(control): State<Control>) -> Response {
 
 /// A session or a link revoked.
 async fn revoke(State(control): State<Control>, Named(id): Named<String>) -> Response {
-    match control.node.access.revoke(&id).await {
+    match control.access.revoke(&id).await {
         Ok(what) => Json(json!({ "revoked": what })).into_response(),
         Err(error) => failed(&error),
     }

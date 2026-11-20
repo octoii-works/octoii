@@ -2,7 +2,7 @@
 //! its model requests used, what waits in its inbox, and what it asks the person.
 
 use bytes::Bytes;
-use octoii_siphon_lib::{Batch, Named, RuntimeHandle};
+use octoii_siphon_lib::{Batch, FiberRecord, Named, RuntimeHandle, fiber_path};
 use octoii_siphon_lib::{Directory, Snapshot};
 use serde::{Deserialize, Serialize};
 
@@ -11,6 +11,7 @@ use crate::threads::inbox::{self, Waiting};
 use crate::threads::marks::{Marks, SNOOZE_NAME};
 use crate::threads::operations::Error;
 use crate::threads::thread::{self, PARENT_CALL_ANNOTATION, PARENT_LABEL, PROJECT_LABEL, SUB_THREAD_KIND_ANNOTATION};
+use crate::volume::Volume;
 
 /// How a thread's turns stand: none run yet, one running, or how the last ended.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
@@ -189,6 +190,15 @@ impl Parent {
     }
 }
 
+/// The thread and call that delegated `id`, if it belongs to a parent. A missing thread has no parent.
+///
+/// # Errors
+/// The volume's failure, or invalid parent metadata.
+pub fn parent_of(volume: &Volume, id: &str) -> anyhow::Result<Option<Parent>> {
+    let directory = thread::directory(&*volume.snapshot()?, id)?;
+    Ok(directory.as_ref().map(Parent::of).transpose()?.flatten())
+}
+
 /// A thread as a list of them shows it: its id, its project and parent, how it runs, how the person keeps it, and how
 /// it stands.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
@@ -244,8 +254,8 @@ fn status(runtime: &RuntimeHandle, snapshot: &Snapshot, id: &str, directory: &Di
         .into_iter()
         .map(|Waiting { id, inbound }| (id, inbound))
         .collect();
-    let running = |key: &str| -> Result<Option<octoii_siphon_lib::FiberRecord>, Error> {
-        let record = snapshot.fiber(&octoii_siphon_lib::fiber_path(&main, key.as_bytes()))?;
+    let running = |key: &str| -> Result<Option<FiberRecord>, Error> {
+        let record = snapshot.fiber(&fiber_path(&main, key.as_bytes()))?;
         Ok(record.filter(|record| record.outcome.is_none()))
     };
     Ok(Status {
@@ -256,9 +266,28 @@ fn status(runtime: &RuntimeHandle, snapshot: &Snapshot, id: &str, directory: &Di
         usage,
         inbox,
         asks: asks(runtime, snapshot, &main)?,
-        compacting: crate::agent::compaction::running(snapshot, id)?,
+        compacting: running_compaction_child(snapshot, &main)?.is_some() || turn_compacting(snapshot, &main)?,
         resuming_at: running(thread::RESUME_KEY)?.and_then(|record| record.waits_until),
     })
+}
+
+/// The compaction record under `parent`, whether it still holds the slot or can be reaped.
+pub(crate) fn compaction_child(snapshot: &Snapshot, parent: &[u8]) -> octoii_siphon_lib::Result<Option<FiberRecord>> {
+    snapshot.fiber(&fiber_path(parent, thread::COMPACTION_KEY.as_bytes()))
+}
+
+/// A compaction holds its slot until its descendants exit and it can be reaped.
+pub(crate) fn running_compaction_child(snapshot: &Snapshot, parent: &[u8]) -> octoii_siphon_lib::Result<Option<FiberRecord>> {
+    Ok(compaction_child(snapshot, parent)?.filter(|record| !record.reapable))
+}
+
+pub(crate) fn turn_compacting(snapshot: &Snapshot, main: &[u8]) -> octoii_siphon_lib::Result<bool> {
+    for turn in snapshot.fibers(main, thread::TURN_KIND.as_bytes())? {
+        if running_compaction_child(snapshot, turn.path())?.is_some() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// What the thread asks the person: each request of its Fibers in the order of their paths.

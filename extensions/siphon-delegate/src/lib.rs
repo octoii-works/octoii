@@ -13,9 +13,8 @@ mod context;
 use std::future::Future;
 
 use octoii::agent::how;
-use octoii::agent::parent_of;
 use octoii::machine::Base;
-use octoii::threads::{Ended, Joins, SubThreadKind};
+use octoii::threads::{Ended, Joins, SubThreadKind, parent_of};
 use octoii::tools::{Context, Effect, Plan, Refusal, Report, Spawned, Told, Tool};
 use octoii::{Extension, Registrar};
 use octoii_ai::vocabulary::InputContent;

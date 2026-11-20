@@ -10,7 +10,7 @@ use std::fmt::Write as _;
 
 use serde_json::Value;
 
-use crate::tools::tool::Declared;
+use crate::tools::Declared;
 
 /// How deep a schema is written out; below, `unknown`.
 const DEPTH_MAX: usize = 8;

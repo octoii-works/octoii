@@ -1154,11 +1154,8 @@ async fn a_thread_sends_no_message_to_one_whose_mode_reaches_further() {
 /// Arms the resume of the thread `id` to go on `after` from now.
 async fn arm(runtime: &Runtime, id: &str, after: i64) {
     let at = runtime.now_ms().expect("time") + after;
-    crate::volume::commit_checked(&runtime.runtime_handle(), |snapshot, changes| {
-        crate::agent::resume::reschedule(snapshot, changes, id, Some(at), "person")
-    })
-    .await
-    .expect("armed");
+    let threads = Threads::<ThreadFiber>::new(runtime.runtime_handle());
+    crate::agent::resume::resume_thread(&threads, id, Some(at)).await.expect("armed");
 }
 
 fn words_given(threads: &Threads<ThreadFiber>, id: &str) -> Vec<String> {
@@ -1533,6 +1530,8 @@ async fn compaction_keeps_its_slot_while_descendants_are_exiting() {
     })
     .await
     .expect("the compaction records its result before its child exits");
+    let threads = Threads::<ThreadFiber>::new(runtime.runtime_handle());
+    assert!(threads.listed_at(&snapshot, id).unwrap().status.compacting);
     let mut changes = octoii_siphon_lib::Changes::new().unwrap();
     compaction::start(&snapshot, &mut changes, id).unwrap();
     assert!(changes.is_empty(), "the compaction still holds its slot");

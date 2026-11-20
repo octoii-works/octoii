@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 
 use bytes::Bytes;
 use octoii_ai::vocabulary::InputContent;
-use octoii_siphon_lib::{Batch, Changes, CommitEvent, Fiber, RequestId, RuntimeHandle};
+use octoii_siphon_lib::{Batch, Fiber, RequestId, RuntimeHandle, Signal};
 use octoii_siphon_lib::{Query, Range, Snapshot, Status};
 use serde::{Deserialize, Serialize};
 
@@ -14,6 +14,7 @@ use crate::threads::idempotency::{self, Done};
 use crate::threads::inbox::{self, Inbound, Joins};
 use crate::threads::log::{self, Entry, Writer};
 use crate::threads::marks::{MarksChange, SNOOZE_NAME};
+use crate::threads::start;
 use crate::threads::status::{self, Listed, Parent, TURN_ANNOTATION, Turn};
 use crate::threads::thread::{
     self, ARCHIVED_LABEL, KIND, PARENT_CALL_ANNOTATION, PARENT_LABEL, PINNED_LABEL, PROJECT_LABEL, SUB_THREAD_KIND_ANNOTATION,
@@ -77,7 +78,7 @@ impl<M> Threads<M> {
     }
 
     #[must_use]
-    pub fn runtime(&self) -> &RuntimeHandle {
+    pub(crate) fn runtime(&self) -> &RuntimeHandle {
         &self.runtime
     }
 }
@@ -104,118 +105,6 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
             Ok(id)
         })
         .await
-    }
-
-    /// Atomically accepts a thread and its first input, without permitting execution.
-    /// The immutable claim has no time-based expiry; deleting its thread never recreates it on replay.
-    ///
-    /// # Errors
-    /// A reused key with different input, a missing deleted thread, or a storage failure.
-    pub async fn prepare(
-        &self,
-        new: &NewThread,
-        content: Vec<super::InputPart>,
-        request: super::StartRequest,
-        key: &str,
-    ) -> Result<(String, super::Start), Error> {
-        idempotency::done_before(&*self.runtime.snapshot()?, key, "threads.prepare", None)?;
-        if request.owner.trim().is_empty() || content.is_empty() {
-            return Err(Error::Start("preparation requires an owner and initial input".into()));
-        }
-        let path: Bytes = [b"siphon.start/", key.as_bytes()].concat().into();
-        let claim = StartClaim {
-            fingerprint: super::input::fingerprint(new, &content, &request)?,
-            thread: self.runtime.new_id()?,
-        };
-        if let Some(bytes) = self.runtime.snapshot()?.read_range(&path, 0, u64::MAX)? {
-            return self.claimed(&bytes, &claim);
-        }
-        let start = super::Start {
-            request,
-            token: self.runtime.new_id()?,
-            previous: None,
-            state: super::StartState::Pending,
-        };
-        let mut changes = Changes::new()?;
-        Self::made(&mut changes, &claim.thread, &self.runtime.new_id()?, new)?;
-        super::start::made(&mut changes, &claim.thread, &start)?;
-        let content = super::input::keep(&*self.runtime.snapshot()?, &mut changes, &claim.thread, content)?;
-        inbox::put(
-            &mut changes,
-            &claim.thread,
-            &self.runtime.new_id()?,
-            &Inbound::Input {
-                actor: new.actor.clone(),
-                content,
-                reply_to: None,
-                joins: Joins::Step,
-            },
-        )?;
-        changes
-            .mkdir(b"siphon.start")?
-            .write(&path, serde_json::to_vec(&claim)?)?
-            .seal(&path)?;
-        if let Err(error) = self.runtime.commit(changes).await {
-            if let Some(bytes) = self.runtime.snapshot()?.read_range(&path, 0, u64::MAX)? {
-                return self.claimed(&bytes, &claim);
-            }
-            return Err(error.into());
-        }
-        Ok((claim.thread, start))
-    }
-
-    fn claimed(&self, bytes: &[u8], asked: &StartClaim) -> Result<(String, super::Start), Error> {
-        let kept: StartClaim = serde_json::from_slice(bytes)?;
-        if kept.fingerprint != asked.fingerprint {
-            return Err(Error::Start("startup key was used with different input".into()));
-        }
-        let start = self
-            .start_state(&kept.thread)?
-            .ok_or_else(|| Error::Start("missing startup state".into()))?;
-        Ok((kept.thread, start))
-    }
-
-    /// Reads startup state without exposing its storage paths.
-    ///
-    /// # Errors
-    /// A missing thread or invalid stored state.
-    pub fn start_state(&self, id: &str) -> Result<Option<super::Start>, Error> {
-        Ok(super::Start::of(&self.directory(id)?)?)
-    }
-
-    pub(crate) async fn start_command(&self, id: &str, token: &str, action: super::start::Action) -> Result<super::Start, Error> {
-        let command = super::start::Command {
-            token: token.into(),
-            action,
-        };
-        let mut commits = self.runtime.commits()?;
-        let key = commit_checked(&self.runtime, |snapshot, changes| -> Result<_, Error> {
-            let directory = thread::directory(snapshot, id)?.ok_or(Error::NoSuchThread)?;
-            super::Start::of(&directory)?.ok_or_else(|| Error::Start("thread has no startup gate".into()))?;
-            let key = self.runtime.new_id()?;
-            changes.write(super::start::command_path(id, &key), serde_json::to_vec(&command)?)?;
-            Self::revive(snapshot, changes, id)?;
-            Ok(key)
-        })
-        .await?;
-        loop {
-            let snapshot = self.runtime.snapshot()?;
-            if let Some(bytes) = snapshot.read_range(&super::start::result_path(id, &key), 0, u64::MAX)? {
-                let result: Result<super::Start, String> = serde_json::from_slice(&bytes)?;
-                return result.map_err(Error::Start);
-            }
-            thread::directory(&snapshot, id)?.ok_or(Error::NoSuchThread)?;
-            if snapshot.fiber(&thread::main(id))?.is_some_and(|record| record.outcome.is_some()) {
-                return Err(Error::Start("thread process ended before startup completed".into()));
-            }
-            match commits.next().await? {
-                Some(CommitEvent::Head(_)) => {}
-                Some(CommitEvent::Fault { error, .. }) => return Err(error.into()),
-                Some(CommitEvent::Closed(_)) | None => {
-                    return Err(Error::Start("runtime closed before startup completed".into()));
-                }
-            }
-        }
     }
 
     /// Adds to `changes` what makes the thread `id` as `new` says: its directory, labelled and annotated, its inbox, its
@@ -265,11 +154,6 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
         Writer::new_log(id).append(changes, &entry)?;
         changes.start::<M>(None, thread::main_key(id), &MainInput { thread: id.to_owned() })?;
         Ok(())
-    }
-
-    /// The thread `id`'s directory, as it stands.
-    fn directory(&self, id: &str) -> Result<octoii_siphon_lib::Directory, Error> {
-        thread::directory(&*self.runtime.snapshot()?, id)?.ok_or(Error::NoSuchThread)
     }
 
     /// Adds to `changes` `inbound` delivered to the thread `id`, its main process started again where it had ended: its
@@ -407,13 +291,7 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
     /// # Errors
     /// `NoSuchThread`; the commit's failure.
     pub async fn stop(&self, id: &str, actor: &str) -> Result<(), Error> {
-        if let Some(start) = self.start_state(id)?
-            && start.blocks_execution()
-            && let Err(error) = self.start_command(id, &start.token, super::start::Action::Cancel).await
-            && self.start_state(id)?.is_some_and(|current| current.blocks_execution())
-        {
-            return Err(error);
-        }
+        self.cancel_start(id).await?;
         commit_checked(&self.runtime, |snapshot, changes| {
             thread::directory(snapshot, id)?.ok_or(Error::NoSuchThread)?;
             for waiting in inbox::waiting(snapshot, id)? {
@@ -421,7 +299,7 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
                     changes.delete(inbox::file(id, &waiting.id))?;
                 }
             }
-            thread::stop_turn(snapshot, changes, id)
+            stop_turn(snapshot, changes, id)
         })
         .await
     }
@@ -514,6 +392,15 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
     }
 }
 
+/// Stages a cancellation of pending preparation and asks the turn of `id` to stop, where one runs.
+pub(crate) fn stop_turn(snapshot: &Snapshot, changes: &mut Batch<'_>, id: &str) -> Result<(), Error> {
+    start::stage_cancel(snapshot, changes, id)?;
+    for fiber in snapshot.fibers(&thread::main(id), thread::TURN_KIND.as_bytes())? {
+        changes.signal(&fiber, Signal::Terminate, Some(Bytes::from_static(b"stopped")))?;
+    }
+    Ok(())
+}
+
 /// Every thread, as a list shows it, in the order they were made — as the person's thread list shows them, for an
 /// extension's own list of them.
 ///
@@ -539,10 +426,4 @@ fn listed_all(runtime: &RuntimeHandle, snapshot: &octoii_siphon_lib::Snapshot) -
         out.push(status::listed(runtime, snapshot, id, directory)?);
     }
     Ok(out)
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct StartClaim {
-    fingerprint: [u8; 32],
-    thread: String,
 }

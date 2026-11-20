@@ -4,6 +4,17 @@ use super::log::{self, Cursor, Entry};
 use super::thread;
 use crate::volume::Volume;
 
+pub(crate) fn entries_before(
+    snapshot: &octoii_siphon_lib::Snapshot,
+    thread: &str,
+    entry: Option<&str>,
+    limit: usize,
+) -> Result<(Vec<Entry>, bool), log::Error> {
+    let (lines, complete) = log::read_before(snapshot, thread, entry, limit)?;
+    let entries = lines.iter().map(|line| log::entry_of(line)).collect::<Result<_, _>>()?;
+    Ok((entries, complete))
+}
+
 /// A thread's history as it stood when opened. Pages remain consistent while new entries arrive.
 #[derive(Debug)]
 pub struct History {
@@ -35,8 +46,7 @@ impl History {
         if limit == 0 {
             return Ok(Vec::new());
         }
-        let (lines, _) = log::read_before(&self.snapshot, &self.thread, entry, limit)?;
-        Ok(lines.iter().map(|line| log::entry_of(line)).collect::<Result<_, _>>()?)
+        Ok(entries_before(&self.snapshot, &self.thread, entry, limit)?.0)
     }
 
     /// The first `limit` entries strictly after `entry`, or from the beginning if none is given, oldest first.

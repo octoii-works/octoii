@@ -5,6 +5,7 @@
 
 pub(crate) mod calls;
 pub(crate) mod coding;
+mod context;
 pub(crate) mod declarations;
 pub(crate) mod effect;
 pub(crate) mod execute;
@@ -12,6 +13,7 @@ pub(crate) mod outlet;
 pub(crate) mod permissions;
 pub(crate) mod plan;
 pub(crate) mod projects;
+mod registry;
 pub(crate) mod requests;
 pub(crate) mod shell;
 pub(crate) mod told;
@@ -30,10 +32,12 @@ pub(crate) use told::Structured;
 pub use told::{INSTRUCTIONS_FILE, Instructions};
 
 pub use crate::threads::CallStatus;
+pub use context::Context;
 pub use declarations::declarations;
 pub use effect::Effect;
 /// What extensions and hosts use of it.
 pub use plan::{Plan, Report, Spawned};
 pub use projects::{Place, sha256_hex};
+pub use registry::{Declared, Tools};
 pub use told::Told;
-pub use tool::{Context, Declared, Finished, Refusal, Tool, Tools, Toolset};
+pub use tool::{Finished, Refusal, Tool, Toolset};
