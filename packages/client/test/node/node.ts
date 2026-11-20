@@ -6,7 +6,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { type Client, type ClientOptions, createClient, type FileRef } from "../../src/index.ts";
+import { type Client, type ClientOptions, createClient, WATCH_PATH } from "../../src/index.ts";
 
 /** The program the workspace builds. */
 const PROGRAM = resolve(
@@ -66,20 +66,19 @@ export class Node {
 	client(options: Partial<ClientOptions> = {}): Client {
 		const token = this.token();
 		return createClient({
-			open: (protocol) => new WebSocket(`ws://127.0.0.1:${this.port}/ws`, { protocols: [protocol], headers: { authorization: `Bearer ${token}` } }),
+			open: (protocol) => new WebSocket(`ws://127.0.0.1:${this.port}${WATCH_PATH}`, { protocols: [protocol], headers: { authorization: `Bearer ${token}` } }),
+			send: async ({ method, path, contentType, body }) => {
+				const response = await fetch(`http://127.0.0.1:${this.port}${path}`, {
+					method,
+					headers: { authorization: `Bearer ${token}`, ...(contentType === undefined ? {} : { "content-type": contentType }) },
+					...(body === undefined ? {} : { body }),
+				});
+				return { status: response.status, contentType: response.headers.get("content-type") ?? undefined, bytes: new Uint8Array(await response.arrayBuffer()) };
+			},
 			randomUUID: () => crypto.randomUUID(),
 			clock: { now: () => Date.now(), setTimer: (callback, ms) => clearTimeout.bind(undefined, setTimeout(callback, ms)) },
 			report: (error) => {
 				throw error;
-			},
-			keepFile: async (thread, bytes, name) => {
-				const response = await fetch(`http://127.0.0.1:${this.port}/threads/${thread}/files?name=${encodeURIComponent(name)}`, {
-					method: "POST",
-					headers: { authorization: `Bearer ${token}`, "content-type": bytes.type || "application/octet-stream" },
-					body: bytes,
-				});
-				if (!response.ok) throw new Error(await response.text());
-				return (await response.json()) as FileRef;
 			},
 			...options,
 		});

@@ -1,17 +1,17 @@
-//! Octoii's own topics, as a subscription tells them: a thread's entries from where the client stood, its status and
-//! what streams of its requests; the threads of the list; the settings — each what it holds first, then each change
-//! as it comes, till the subscription is let go, or it falls behind: then the topic to subscribe to again from where it
-//! stood.
+//! Octoii's topics send a committed view first, then changes and live events while the subscription is held.
 
 use std::collections::{BTreeSet, HashMap};
 
-use crate::protocol::siphon::{Settings, SiphonEvent, SiphonTopic};
-use crate::threads::{Listed, Status, log};
+use crate::protocol::octoii::{OctoiiEvent, OctoiiTopic, Settings};
+use crate::threads::{self, Listed, Status, log};
 use bytes::Bytes;
-use octoii_siphon_lib::{CommitEvent, Snapshot, StreamEvent};
+use octoii_siphon_lib::{CommitEvent, StreamEvent};
 use serde_json::json;
 
-use super::journal::{Followed, Since};
+use super::{
+    calls::history,
+    journal::{Followed, Since},
+};
 use crate::Octoii;
 use crate::extension::{Full, Lagged, Subscription};
 
@@ -19,26 +19,22 @@ use crate::extension::{Full, Lagged, Subscription};
 const ENTRIES_BYTES: u64 = 256 << 10;
 
 /// Tells `topic` to `subscription`'s client till it is let go.
-pub(crate) async fn told(subscription: Subscription, topic: SiphonTopic) -> Result<(), Lagged> {
+pub(crate) async fn told(subscription: Subscription, topic: OctoiiTopic) -> Result<(), Lagged> {
     match topic {
-        SiphonTopic::Thread { thread, from } => {
-            let mut cursor = from;
-            let told = thread_told(&subscription, &thread, &mut cursor).await;
-            told.map_err(|Full| Lagged(json!({ "type": "thread", "thread": thread, "from": cursor })))
-        }
-        SiphonTopic::Threads => threads_told(&subscription)
+        OctoiiTopic::Thread { thread, limit } => thread_told(&subscription, &thread, limit)
+            .await
+            .map_err(|Full| Lagged(json!({ "type": "thread", "thread": thread, "limit": limit }))),
+        OctoiiTopic::Threads => threads_told(&subscription)
             .await
             .map_err(|Full| Lagged(json!({ "type": "threads" }))),
-        SiphonTopic::Settings => settings_told(&subscription)
+        OctoiiTopic::Settings => settings_told(&subscription)
             .await
             .map_err(|Full| Lagged(json!({ "type": "settings" }))),
     }
 }
 
-/// The thread `thread`: its entries past `cursor`, kept where the client stands, and its status as it changes, after
-/// each commit that changed anything of it; what streams of its requests as it comes. A thread gone, or Octoii
-/// closing, ends it.
-async fn thread_told(subscription: &Subscription, thread: &str, cursor: &mut Option<log::Cursor>) -> Result<(), Full> {
+/// Reads each durable update from a single snapshot. A bounded replacement view covers large backlogs.
+async fn thread_told(subscription: &Subscription, thread: &str, limit: u32) -> Result<(), Full> {
     let (siphon, sink) = (&subscription.caller.siphon, &subscription.sink);
     let Ok(mut committed) = siphon.runtime.commits() else {
         return Ok(());
@@ -47,30 +43,59 @@ async fn thread_told(subscription: &Subscription, thread: &str, cursor: &mut Opt
         return Ok(());
     };
     let mut told: Option<Status> = None;
+    let mut cursor = None;
     loop {
         let Ok(snapshot) = siphon.runtime.snapshot() else { return Ok(()) };
-        let Ok(listed) = siphon.threads.listed_at(&snapshot, thread) else {
-            return sink.offer(&SiphonEvent::ThreadGone {
-                subscription: sink.id().to_owned(),
-                thread: thread.to_owned(),
-            });
+        let listed = match siphon.threads.listed_at(&snapshot, thread) {
+            Ok(listed) => listed,
+            Err(threads::Error::NoSuchThread) => {
+                return sink.offer(&OctoiiEvent::ThreadGone {
+                    subscription: sink.id().to_owned(),
+                    thread: thread.to_owned(),
+                });
+            }
+            Err(_) => return Ok(()),
         };
-        let Some(mut more) = entries_told(sink, &snapshot, thread, cursor)? else {
+        let (Ok(sequence), Ok(end)) = (snapshot.sequence(), log::end(&snapshot, thread)) else {
             return Ok(());
         };
-        if told.as_ref() != Some(&listed.status) {
-            sink.offer(&SiphonEvent::Status {
-                subscription: sink.id().to_owned(),
-                status: Box::new(listed.status.clone()),
-            })?;
-            told = Some(listed.status);
-        }
-        while more {
-            let Some(next) = entries_told(sink, &snapshot, thread, cursor)? else {
+        let read = if told.is_some() && cursor != end {
+            let Ok(read) = log::read_after(&snapshot, thread, cursor.as_ref(), ENTRIES_BYTES) else {
                 return Ok(());
             };
-            more = next;
+            Some(read)
+        } else {
+            None
+        };
+        if told.is_none() || read.as_ref().is_some_and(|read| read.more || read.cursor != end) {
+            let Ok(history) = history(&snapshot, thread, None, limit) else {
+                return Ok(());
+            };
+            sink.offer(&OctoiiEvent::ThreadSnapshot {
+                subscription: sink.id().to_owned(),
+                sequence: sequence.to_string(),
+                history,
+                status: Box::new(listed.status.clone()),
+            })?;
+        } else if read.is_some() || told.as_ref() != Some(&listed.status) {
+            let entries = match read {
+                Some(read) => {
+                    let Ok(entries) = read.lines.iter().map(|line| log::entry_of(line)).collect::<Result<_, _>>() else {
+                        return Ok(());
+                    };
+                    entries
+                }
+                None => Vec::new(),
+            };
+            sink.offer(&OctoiiEvent::ThreadUpdate {
+                subscription: sink.id().to_owned(),
+                sequence: sequence.to_string(),
+                entries,
+                status: Box::new(listed.status.clone()),
+            })?;
         }
+        cursor = end;
+        told = Some(listed.status);
         drop(snapshot);
         loop {
             tokio::select! {
@@ -83,11 +108,11 @@ async fn thread_told(subscription: &Subscription, thread: &str, cursor: &mut Opt
                     let Ok(Some(event)) = event else { return Ok(()) };
                     let subscription = sink.id().to_owned();
                     let event = match event {
-                        StreamEvent::Reset => SiphonEvent::StreamsReset { subscription },
-                        StreamEvent::Closed(id) => SiphonEvent::StreamClosed { subscription, request: id.to_token() },
+                        StreamEvent::Reset => OctoiiEvent::StreamsReset { subscription },
+                        StreamEvent::Closed(id) => OctoiiEvent::StreamClosed { subscription, request: id.to_token() },
                         StreamEvent::Data(part) => {
                             let Ok(data) = serde_json::from_slice::<Box<serde_json::value::RawValue>>(&part.data) else { continue };
-                            SiphonEvent::Stream {
+                            OctoiiEvent::Stream {
                                 subscription,
                                 request: part.id.to_token(),
                                 key: String::from_utf8_lossy(part.id.key()).into_owned(),
@@ -113,31 +138,6 @@ fn touched(siphon: &Octoii, followed: &mut Followed, of: impl Fn(&[u8]) -> bool)
     }
 }
 
-/// The entries of the thread `thread` past `cursor`, told, `cursor` moved past them once they are: whether more are
-/// left; none where the volume cannot be read.
-fn entries_told(
-    sink: &crate::extension::Sink,
-    snapshot: &Snapshot,
-    thread: &str,
-    cursor: &mut Option<log::Cursor>,
-) -> Result<Option<bool>, Full> {
-    let Ok(read) = log::read_after(snapshot, thread, cursor.as_ref(), ENTRIES_BYTES) else {
-        return Ok(None);
-    };
-    let entries: Vec<_> = read.lines.iter().filter_map(|line| log::entry_of(line).ok()).collect();
-    if let (false, Some(after)) = (entries.is_empty(), &read.cursor) {
-        sink.offer(&SiphonEvent::Entries {
-            subscription: sink.id().to_owned(),
-            entries,
-            cursor: after.clone(),
-        })?;
-    }
-    if read.cursor.is_some() {
-        *cursor = read.cursor;
-    }
-    Ok(Some(read.more))
-}
-
 /// The threads as they stand first, then the entries that changed on each visible head.
 async fn threads_told(subscription: &Subscription) -> Result<(), Full> {
     let (siphon, sink) = (&subscription.caller.siphon, &subscription.sink);
@@ -146,7 +146,7 @@ async fn threads_told(subscription: &Subscription) -> Result<(), Full> {
     };
     let Ok(all) = siphon.threads.list() else { return Ok(()) };
     let mut shown: HashMap<String, Listed> = all.iter().map(|listed| (listed.id.clone(), listed.clone())).collect();
-    sink.offer(&SiphonEvent::Threads {
+    sink.offer(&OctoiiEvent::Threads {
         subscription: sink.id().to_owned(),
         threads: all,
     })?;
@@ -160,11 +160,11 @@ async fn threads_told(subscription: &Subscription) -> Result<(), Full> {
         let current: HashMap<_, _> = all.into_iter().map(|listed| (listed.id.clone(), listed)).collect();
         for id in shown.keys().chain(current.keys()).collect::<BTreeSet<_>>() {
             match current.get(id) {
-                Some(listed) if shown.get(id) != Some(listed) => sink.offer(&SiphonEvent::Thread {
+                Some(listed) if shown.get(id) != Some(listed) => sink.offer(&OctoiiEvent::Thread {
                     subscription: sink.id().to_owned(),
                     thread: Box::new(listed.clone()),
                 })?,
-                None => sink.offer(&SiphonEvent::ThreadGone {
+                None => sink.offer(&OctoiiEvent::ThreadGone {
                     subscription: sink.id().to_owned(),
                     thread: id.clone(),
                 })?,
@@ -202,7 +202,7 @@ async fn settings_told(subscription: &Subscription) -> Result<(), Full> {
         };
         let settings = Settings { environment, device };
         if told.as_ref() != Some(&settings) {
-            sink.offer(&SiphonEvent::Settings {
+            sink.offer(&OctoiiEvent::Settings {
                 subscription: sink.id().to_owned(),
                 settings: settings.clone(),
             })?;

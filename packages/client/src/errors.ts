@@ -8,8 +8,8 @@ export type ClientCode =
 	| "not-connected"
 	/** The client was closed. */
 	| "closed"
-	/** The app gave the client no way to do it, as one that sends no files. */
-	| "unsupported"
+	/** The node ended the device session. */
+	| "unauthorized"
 	/** The node sent what the protocol does not hold. */
 	| "invalid-answer";
 
@@ -29,10 +29,10 @@ export function clientError(code: ClientCode, message: string, options?: ErrorOp
 	return new ClientError(code, message, options);
 }
 
-/** The codes that say the connection, not the method, failed: what is asked again on the next connection. */
+/** Transport errors, which callers may handle separately from a method's response. */
 const CONNECTION_CODES: ReadonlySet<string> = new Set<ClientCode>(["connection-lost", "not-connected"]);
 
-/** Whether an error is the connection's, so what failed is asked again. */
+/** Whether the request failed at its transport. */
 export function isConnectionError(error: unknown): boolean {
 	return error instanceof ClientError && CONNECTION_CODES.has(error.code);
 }

@@ -5,7 +5,8 @@ import { fileAddress } from "../../core/attachments.ts";
 import type { Draft } from "../../core/drafts.ts";
 import { elementEvidence } from "../../core/element-feedback.ts";
 import { matches } from "../../core/schema.ts";
-import { jsonOf, succeeded, wordsOf, type SendRequest } from "../../components/state/reach.ts";
+import type { SendRequest } from "@octoii-works/octoii-client";
+import { jsonOf, succeeded, wordsOf } from "../../components/state/reach.ts";
 
 export type ThreadWorkspace = { readonly kind: "current" } | { readonly kind: "isolated"; readonly path: string; readonly base?: string };
 export type ThreadRequest = { readonly contentType: string; readonly body: Blob };

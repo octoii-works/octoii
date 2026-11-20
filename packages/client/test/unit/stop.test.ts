@@ -1,18 +1,26 @@
 import { expect, it } from "bun:test";
-import { createClient, type StopTarget } from "../../src/index.ts";
+import { CALL_PATH, createClient, type Command, type StopTarget } from "../../src/index.ts";
 
 it("sends the exact stop target and reports a stale target without a second request", async () => {
-	const sent: { id: string; method: string; params: unknown }[] = [];
-	let receive = (_answer: unknown): void => undefined;
+	const sent: Command[] = [];
 	const client = createClient({
 		open: () => ({
 			binaryType: "arraybuffer",
-			send: (data) => sent.push(JSON.parse(data)),
-			close: () => undefined,
-			addEventListener: (type, listener) => {
-				if (type === "message") receive = (answer) => listener({ data: JSON.stringify(answer) });
+			send: () => {
+				throw new Error("Stops use HTTP");
 			},
+			close: () => undefined,
+			addEventListener: () => undefined,
 		}),
+		send: async (request) => {
+			expect(request.path).toBe(CALL_PATH);
+			expect(request.method).toBe("POST");
+			const command: Command = JSON.parse(String(request.body));
+			sent.push(command);
+			const stale = command.method === "threads.stop" && command.params.target.kind === "turn" && command.params.target.id === "older-turn";
+			const reply = stale ? { error: { code: "stale_stop", message: "This turn already ended." } } : { result: {} };
+			return { status: stale ? 422 : 200, contentType: "application/json", bytes: new TextEncoder().encode(JSON.stringify(reply)) };
+		},
 		randomUUID: () => "unused",
 		clock: { now: () => 0, setTimer: () => () => undefined },
 		report: (error) => {
@@ -20,25 +28,16 @@ it("sends the exact stop target and reports a stale target without a second requ
 		},
 	});
 	try {
-		receive({ event: "welcome", session: "session", scopes: ["threads.operate"], machine: { name: "fixture", workspace: "/work" }, extensions: [] });
 		const targets: readonly StopTarget[] = [
 			{ kind: "turn", id: "turn-A" },
 			{ kind: "preparation", token: "attempt-A" },
 			{ kind: "queued", deliveries: ["delivery-A", "delivery-B"] },
 		];
 		for (const target of targets) {
-			const stopped = client.stop("thread-A", target);
-			const request = sent.at(-1);
-			if (request === undefined) throw new Error("Missing stop request");
-			expect(request).toEqual({ id: request.id, method: "threads.stop", params: { thread: "thread-A", target } });
-			receive({ id: request.id, result: {} });
-			await stopped;
+			await client.stop("thread-A", target);
+			expect(sent.at(-1)).toEqual({ method: "threads.stop", params: { thread: "thread-A", target } });
 		}
-		const stopped = client.stop("thread-A", { kind: "turn", id: "older-turn" });
-		const request = sent.at(-1);
-		if (request === undefined) throw new Error("Missing stop request");
-		receive({ id: request.id, error: { code: "stale_stop", message: "This turn already ended." } });
-		await expect(stopped).rejects.toMatchObject({ code: "stale_stop" });
+		await expect(client.stop("thread-A", { kind: "turn", id: "older-turn" })).rejects.toMatchObject({ code: "stale_stop" });
 		expect(sent).toHaveLength(4);
 	} finally {
 		client.close();

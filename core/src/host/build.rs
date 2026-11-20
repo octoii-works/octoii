@@ -81,8 +81,8 @@ impl Octoii {
         own(&mut builder.registrar(CORE));
         builder.methods(
             CORE,
-            crate::protocol::siphon::set(),
-            crate::protocol::siphon::Method::read,
+            crate::protocol::octoii::set(),
+            crate::protocol::octoii::Method::read,
             connection::answered,
         );
         builder.topics(CORE, Scope::ThreadsRead, connection::told);

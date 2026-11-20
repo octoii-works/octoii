@@ -34,7 +34,7 @@ async function watching<View>(followable: Followable<View>, body: (view: () => V
 }
 
 describe("a client of the node's", () => {
-	test("is welcomed as the session its token holds, and its calls are answered by their ids", async () => {
+	test("is welcomed as the session its token holds and uses HTTP for commands and queries", async () => {
 		const client = node.client({ report });
 		await until(() => client.status.value.status === "open", "the welcome");
 		const open = client.status.value;
@@ -85,12 +85,13 @@ describe("a client of the node's", () => {
 		client.close();
 	});
 
-	test("follows a thread from its latest entries, and on from where its reader stood after the node starts again", async () => {
+	test("reseeds a thread from its committed view after the node starts again", async () => {
 		const client = node.client({ report });
 		await until(() => client.status.value.status === "open", "the welcome");
 		const thread = await client.create({ title: "followed" });
 		await watching(client.follow(thread), async (view) => {
 			await until(() => view().read, "its entries read");
+			expect(view().status?.turn).toBe("created");
 			const first = view().entries.length;
 			await client.configure(thread, { title: "one" });
 			await until(() => view().entries.length === first + 1, "the change");
@@ -164,7 +165,8 @@ describe("a client of the node's", () => {
 			},
 		);
 		await until(() => screens > 0, "the screen");
-		view.write("echo hi-$((40+2))\n");
+		view.write("echo hi-$((40");
+		view.write("+2))\n");
 		await until(() => written.includes("hi-42"), "what it wrote");
 		view.stop();
 		await client.closeTerminal(terminal);

@@ -3,7 +3,7 @@
 	"name": "@octoii-works/octoii-web",
 	"version": "0.0.1",
 	"private": true,
-	"description": "Octoii's interface: a web app the node serves, speaking to it over one WebSocket",
+	"description": "Octoii's web interface for local nodes and tunnel connections",
 	"license": "MIT",
 	"author": "Elian Yang (https://elianyang.com)",
 	"type": "module",

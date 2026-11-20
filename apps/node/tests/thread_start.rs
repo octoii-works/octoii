@@ -257,8 +257,7 @@ async fn a_removed_temporary_checkout_leaves_its_thread_and_files_readable() {
 
     let mut client = Client::connect(&node.siphon, vec![Scope::ThreadsRead], 16);
     client.message().await;
-    let reply = client.call("threads.list", json!({})).await;
-    let listed = client.answer(&reply).await;
+    let listed = client.command("threads.list", json!({})).await;
     let listed: Vec<Listed> = serde_json::from_value(listed["result"]["threads"].clone()).unwrap();
     let unavailable = listed
         .iter()
@@ -445,10 +444,12 @@ async fn permissions_origin_and_size_limits_precede_acceptance() {
     );
     let mut client = octoii::testing::Client::connect(&node.siphon, vec![Scope::ThreadsOperate], 16);
     client.message().await;
-    let id = client
-        .call("settings.set", json!({"environment":{"disabled_extensions":["git"]}}))
-        .await;
-    assert!(client.answer(&id).await["error"].is_null());
+    assert!(
+        client
+            .command("settings.set", json!({"environment":{"disabled_extensions":["git"]}}))
+            .await["error"]
+            .is_null()
+    );
     assert_eq!(
         node.post(
             &node.writer,

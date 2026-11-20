@@ -135,8 +135,9 @@ async fn an_extension_switched_off_tells_the_model_nothing() {
     };
     let mut client = octoii::testing::Client::connect(&siphon, vec![octoii::protocol::Scope::ThreadsOperate], 8);
     client.message().await;
-    let call = client.call("settings.set", serde_json::to_value(change).expect("settings")).await;
-    let answer = client.answer(&call).await;
+    let answer = client
+        .command("settings.set", serde_json::to_value(change).expect("settings"))
+        .await;
     assert!(answer.get("result").is_some(), "{answer}");
     let told = siphon.told(&id).await.expect("told");
     let environment = told

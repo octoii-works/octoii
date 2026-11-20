@@ -1,8 +1,5 @@
-//! A client's connection, as Octoii serves it whatever carries it: the welcome first; then each call the client makes,
-//! read, checked against what its session may do, and answered in a task of its own, so a slow call holds no other
-//! back; and its subscriptions, each a task of its own that sends what its topic tells as it changes. What goes out
-//! waits in one bounded queue: an answer waits for room, a subscription's event does not — a subscription the client
-//! does not keep up with is let go, told it lagged and where it stood, for the client to make again from there.
+//! Dispatches authenticated commands and queries, and serves subscriptions over the watch connection. Each
+//! subscription can fall behind independently and tell the client how to subscribe again.
 
 mod calls;
 mod journal;
@@ -12,7 +9,7 @@ mod subscriptions;
 
 use std::collections::HashMap;
 
-use crate::protocol::{Answer, Call, ConnectionEvent, Error, Machine, Scope, Subscribed, Unsubscribe};
+use crate::protocol::{Answer, Command, ConnectionEvent, Error, Machine, Scope, Subscribed, Unsubscribe};
 use serde::Deserialize;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -42,6 +39,32 @@ pub enum Outgoing {
     Binary(bytes::Bytes),
 }
 
+/// Dispatches an authenticated HTTP command or query through the product's method registry.
+///
+/// # Errors
+/// Refuses unknown methods, disabled extensions, insufficient scopes, and errors from the handler.
+pub async fn call(octoii: Octoii, access: Access, command: Command) -> Result<serde_json::Value, Error> {
+    let caller = Caller {
+        siphon: octoii,
+        session: access.session,
+        scopes: access.scopes,
+    };
+    let Command { method, params } = command;
+    let owned = caller
+        .siphon
+        .registry
+        .methods
+        .get(method.as_str())
+        .ok_or_else(|| refusal("no_such_method", &format!("there is no method {method}")))?;
+    if let Some(scope) = owned.item.0 {
+        caller.require_scope(scope)?;
+    }
+    if let Some(off) = switched_off(&caller.siphon, &owned.extension) {
+        return Err(off);
+    }
+    (owned.item.1)(caller.clone(), &method, params).await
+}
+
 /// Serves a client of `access`, which reached `machine`: each message of `incoming` taken as a call, what is sent it
 /// put on `outgoing` — the queue its carrier writes from, `OUTGOING_AHEAD` long — till `incoming` ends, when every
 /// subscription of its ends with it.
@@ -68,40 +91,24 @@ pub async fn serve(
     };
     let mut subscriptions = Subscriptions::default();
     while let Some(message) = incoming.recv().await {
-        let call = match serde_json::from_str::<Call>(&message) {
+        let call = match serde_json::from_str::<WatchCall>(&message) {
             Ok(call) => call,
             Err(error) => {
                 let refused = Answer::Error {
                     id: id_of(&message),
                     error: refusal("bad_call", &error.to_string()),
                 };
-                let _ = outgoing.send(text(&refused)).await;
+                if outgoing.send(text(&refused)).await.is_err() {
+                    break;
+                }
                 continue;
             }
         };
-        let answered = match call.method.as_str() {
-            "subscribe" => subscriptions.subscribe(&caller, call.params, &outgoing),
-            "unsubscribe" => subscriptions.unsubscribe(call.params),
-            name => {
-                let Some(owned) = caller.siphon.registry.methods.get(name) else {
-                    let refused = refusal("no_such_method", &format!("there is no method {name}"));
-                    let _ = outgoing.send(text(&answer(call.id, Err(refused)))).await;
-                    continue;
-                };
-                if let Some(off) = switched_off(&caller.siphon, &owned.extension) {
-                    let _ = outgoing.send(text(&answer(call.id, Err(off)))).await;
-                    continue;
-                }
-                let (scope, handle) = &owned.item;
-                if let Err(error) = scope.map_or(Ok(()), |scope| caller.require_scope(scope)) {
-                    let _ = outgoing.send(text(&answer(call.id, Err(error)))).await;
-                    continue;
-                }
-                let (doing, outgoing) = (handle(caller.clone(), name, call.params), outgoing.clone());
-                tokio::spawn(async move {
-                    let _ = outgoing.send(text(&answer(call.id, doing.await))).await;
-                });
-                continue;
+        let answered = match &call.method {
+            WatchMethod::Subscribe { topic } => subscriptions.subscribe(&caller, topic, &outgoing),
+            WatchMethod::Unsubscribe(unsubscribe) => {
+                subscriptions.unsubscribe(&unsubscribe.subscription);
+                Ok((serde_json::json!({}), None))
             }
         };
         // A subscription's answer goes out before any of its events, which wait for it.
@@ -121,10 +128,18 @@ pub async fn serve(
 /// What subscribing or letting go answers: its result, and the subscription to start once the answer is sent.
 type Subscribing = Result<(serde_json::Value, Option<crate::extension::Boxed<()>>), Error>;
 
-/// The params of `subscribe`.
 #[derive(Deserialize)]
-struct Subscribe {
-    topic: serde_json::Value,
+struct WatchCall {
+    id: String,
+    #[serde(flatten)]
+    method: WatchMethod,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "method", content = "params", rename_all = "snake_case")]
+enum WatchMethod {
+    Subscribe { topic: serde_json::Value },
+    Unsubscribe(Unsubscribe),
 }
 
 /// The subscriptions a connection holds, each by its id, with what ends it; all of them ended as the connection is.
@@ -136,23 +151,21 @@ struct Subscriptions {
 }
 
 impl Subscriptions {
-    /// A subscription to the topic `params` names, for `caller`: its id, and the task that tells it,
-    /// held till it is let go.
-    fn subscribe(&mut self, caller: &Caller, params: serde_json::Value, outgoing: &mpsc::Sender<Outgoing>) -> Subscribing {
-        let subscribe: Subscribe = serde_json::from_value(params).map_err(|error| refusal("bad_params", &error.to_string()))?;
+    fn subscribe(&mut self, caller: &Caller, topic: &serde_json::Value, outgoing: &mpsc::Sender<Outgoing>) -> Subscribing {
         let Some((scope, telling, extension)) = caller
             .siphon
             .registry
             .topics
             .iter()
-            .find_map(|owned| (owned.item.1)(&subscribe.topic).map(|telling| (owned.item.0, telling, owned.extension.clone())))
+            .find_map(|owned| (owned.item.1)(topic).map(|telling| (owned.item.0, telling, &owned.extension)))
         else {
-            return Err(refusal("no_such_topic", &format!("there is no topic {}", subscribe.topic)));
+            return Err(refusal("no_such_topic", &format!("there is no topic {topic}")));
         };
-        if let Some(off) = switched_off(&caller.siphon, &extension) {
+        caller.require_scope(scope)?;
+        if let Some(off) = switched_off(&caller.siphon, extension) {
             return Err(off);
         }
-        caller.require_scope(scope)?;
+        self.held.retain(|_, stop| !stop.is_cancelled());
         self.made += 1;
         let id = format!("s{}", self.made);
         let stop = self.ended.child_token();
@@ -164,7 +177,7 @@ impl Subscriptions {
         let subscription = Subscription {
             caller: caller.clone(),
             sink: sink.clone(),
-            stop,
+            stop: stop.clone(),
         };
         let started: crate::extension::Boxed<()> = Box::pin(async move {
             if let Err(Lagged(topic)) = telling(subscription).await {
@@ -172,20 +185,21 @@ impl Subscriptions {
                     subscription: sink.id.clone(),
                     topic,
                 };
-                let _ = sink.outgoing.send(text(&lagged)).await;
+                tokio::select! {
+                    () = stop.cancelled() => {},
+                    _ = sink.outgoing.send(text(&lagged)) => {},
+                }
             }
+            stop.cancel();
         });
         let result = serde_json::to_value(Subscribed { subscription: id }).unwrap_or_default();
         Ok((result, Some(started)))
     }
 
-    /// Lets go of the subscription `params` names, where it is held.
-    fn unsubscribe(&mut self, params: serde_json::Value) -> Subscribing {
-        let unsubscribe: Unsubscribe = serde_json::from_value(params).map_err(|error| refusal("bad_params", &error.to_string()))?;
-        if let Some(stop) = self.held.remove(&unsubscribe.subscription) {
+    fn unsubscribe(&mut self, id: &str) {
+        if let Some(stop) = self.held.remove(id) {
             stop.cancel();
         }
-        Ok((serde_json::json!({}), None))
     }
 }
 

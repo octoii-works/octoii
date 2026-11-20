@@ -1,10 +1,10 @@
 /** File delivery remains explicit in persisted results, and downloads read their original bytes through the node client. */
 import { describe, expect, it } from "bun:test";
-import { conversationOf, type Entry, type FileRef, type InputContent, type ThreadView } from "@octoii-works/octoii-client";
+import { conversationOf, type Entry, type FileRef, type InputContent, type NodeRequest, type ThreadView } from "@octoii-works/octoii-client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { htmlPreviewListener } from "../src/components/effects/html-preview.ts";
 import { readDownload } from "../src/components/files/file-download.ts";
-import { type NodeRequest, type Reach, ReachContext } from "../src/components/state/reach.ts";
+import { type Reach, ReachContext } from "../src/components/state/reach.ts";
 import { MessageThreadContext } from "../src/components/thread/message-thread.ts";
 import { HtmlPreview } from "../src/components/thread/html-preview.tsx";
 import { PresentedFiles } from "../src/components/thread/presented-files.tsx";

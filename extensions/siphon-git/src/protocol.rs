@@ -2,7 +2,7 @@
 //! and its two versions, a branch's commits, and linked worktrees prepared for new tasks.
 
 use octoii::protocol::Scope;
-use octoii::protocol::siphon::InFolder;
+use octoii::protocol::octoii::InFolder;
 use octoii::threads::Start;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;

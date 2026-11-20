@@ -1,5 +1,5 @@
 //! The node's HTTP, as each way a client reaches it carries it — HTTP/1.1 and HTTP/2 on the loopback, HTTP/3 in a
-//! device's tunnel session — one router for both: the protocol's WebSocket at `/ws`, its version agreed by the
+//! device's tunnel session — one router for both. Commands and queries use HTTP. Watches use a WebSocket, its version agreed by the
 //! subprotocol — opened by an upgrade on the loopback, by extended CONNECT (RFC 9220) in a tunnel session —
 //! its client known by the session it holds: a browser's in its cookie, a program's as a bearer token, a device's by
 //! the key its tunnel session shows; the one request a client pairs by, `/pair`, which redeems a link's credential for
@@ -7,10 +7,12 @@
 //! files, every path of no file its page. On the loopback a request of a page of another origin is refused, as a
 //! browser lets any page send one to any address; in a tunnel session the key that dialled is who asks.
 
+mod commands;
 mod files;
 mod thread_start;
 
 use std::path::PathBuf;
+use std::time::Duration;
 
 use axum::Router;
 use axum::extract::ws::{self, WebSocket, WebSocketUpgrade};
@@ -21,7 +23,7 @@ use axum::routing::{MethodFilter, get, on, post};
 use futures_util::{Sink, SinkExt as _, Stream, StreamExt as _};
 use octoii::Octoii;
 use octoii::connection::{Access as Client, OUTGOING_AHEAD, Outgoing, serve};
-use octoii::protocol::{Machine, SUBPROTOCOL};
+use octoii::protocol::{CALL_PATH, ConnectionEvent, Machine, SUBPROTOCOL, WATCH_PATH};
 use octoii_tunnel::{OnConnect, Remote};
 use serde::Deserialize;
 use tokio::sync::mpsc;
@@ -62,7 +64,8 @@ pub fn router(node: Node) -> Router {
         None => post(pair),
     };
     let mut router = Router::new()
-        .route("/ws", get(socket).merge(on(MethodFilter::CONNECT, tunnel_socket)))
+        .route(CALL_PATH, post(commands::called))
+        .route(WATCH_PATH, get(socket).merge(on(MethodFilter::CONNECT, tunnel_socket)))
         .route("/pair", pairing)
         .route(
             "/threads/{thread}/files",
@@ -241,31 +244,45 @@ where
     let (calls, incoming) = mpsc::channel(OUTGOING_AHEAD);
     let (outgoing, mut sent) = mpsc::channel(OUTGOING_AHEAD);
     let client = Client {
-        session: session.id,
-        scopes: session.scopes,
+        session: session.id.clone(),
+        scopes: session.scopes.clone(),
     };
-    let serving = tokio::spawn(serve(node.siphon.clone(), client, node.machine.clone(), incoming, outgoing));
-    let writer = tokio::spawn(async move {
-        while let Some(message) = sent.recv().await {
-            if writing.send(F::of(message)).await.is_err() {
-                return;
+    let revocation = {
+        let forward_controls = async {
+            while let Some(Ok(message)) = reading.next().await {
+                match message.read() {
+                    Read::Text(text) => {
+                        if calls.send(text).await.is_err() {
+                            break;
+                        }
+                    }
+                    Read::Closed => break,
+                    Read::Nothing => {}
+                }
             }
-        }
-    });
-    while let Some(Ok(message)) = reading.next().await {
-        match message.read() {
-            Read::Text(text) => {
-                if calls.send(text).await.is_err() {
+        };
+        let forward_events = async {
+            while let Some(message) = sent.recv().await {
+                if writing.send(F::of(message)).await.is_err() {
                     break;
                 }
             }
-            Read::Closed => break,
-            Read::Nothing => {}
+        };
+        tokio::select! {
+            biased;
+            result = node.access.until_revoked(&session) => result.is_ok(),
+            () = serve(node.siphon, client, node.machine, incoming, outgoing) => false,
+            () = forward_controls => false,
+            () = forward_events => false,
         }
+    };
+    if revocation && let Ok(event) = serde_json::to_string(&ConnectionEvent::Revoked) {
+        let _ = tokio::time::timeout(Duration::from_secs(1), async {
+            writing.send(F::of(Outgoing::Text(event))).await?;
+            writing.close().await
+        })
+        .await;
     }
-    drop(calls);
-    let _ = serving.await;
-    writer.abort();
 }
 
 /// A provider's sign-in come back: finished from the address the person's browser was sent back to — the attempt's own

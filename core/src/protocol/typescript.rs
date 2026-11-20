@@ -9,22 +9,30 @@ use std::fmt::Write as _;
 
 use ts_rs::{Config, TS, TypeVisitor};
 
-use crate::protocol::{ConnectionEvent, Error, Machine, Scope, Set, Subscribed, Unsubscribe};
+use crate::protocol::{CALL_PATH, ConnectionEvent, Error, Machine, SUBPROTOCOL, Scope, Set, Subscribed, Unsubscribe, WATCH_PATH};
 
 /// What leads the module.
-const HEAD: &str = "// Siphon's protocol, generated from its Rust types — not to be edited by hand.\n";
+const HEAD: &str = "// Octoii's protocol, generated from its Rust types — not to be edited by hand.\n";
 
 /// What closes it: the messages either side sends.
 const MESSAGES: &str = r"
-/** A call: its id, by which its answer comes, its method and the method's params. */
-export type Call = { [M in keyof Methods]: { id: string; method: M; params: Methods[M]['params'] } }[keyof Methods];
+/** An HTTP command or query. */
+export type Command = { [M in keyof Methods]: { method: M; params: Methods[M]['params'] } }[keyof Methods];
 
-/** An answer: the call's id and its method's result, or the error it was refused with. */
-export type Answer<M extends keyof Methods = keyof Methods> =
-  | { id: string; result: Methods[M]['result'] }
+export type CommandReply<M extends keyof Methods = keyof Methods> = { result: Methods[M]['result'] } | { error: Error };
+
+/** The methods carried on the watch connection. */
+export type WatchMethods = {
+  subscribe: { params: { topic: Topic }; result: Subscribed };
+  unsubscribe: { params: Unsubscribe; result: Nothing };
+};
+
+/** A response to a subscription control frame. */
+export type Answer =
+  | { id: string; result: WatchMethods[keyof WatchMethods]['result'] }
   | { id: string | null; error: Error };
 
-/** What Siphon sends: an answer, or an event. */
+/** A message from the watch connection. */
 export type Received = Answer | Event;
 ";
 
@@ -89,11 +97,9 @@ pub fn typescript(sets: &[Set]) -> String {
             events.push((subscriptions.event)(&cfg));
         }
     }
-    let _ = writeln!(methods, "  'subscribe': {{ params: {{ topic: Topic }}; result: Subscribed }};");
-    let _ = writeln!(methods, "  'unsubscribe': {{ params: Unsubscribe; result: Nothing }};");
     let declared: Vec<String> = declarations.out.into_values().map(|(_, declared)| declared).collect();
     format!(
-        "{HEAD}\n{}\n\n/** What a client subscribes to. */\nexport type Topic = {};\n\n/** An event: the connection's, or a subscription's. */\nexport type Event = {};\n\n/** The methods, each by its name: the params it takes and the result it answers with. */\nexport type Methods = {{\n{methods}}};\n{MESSAGES}",
+        "{HEAD}\nexport const CALL_PATH = {CALL_PATH:?};\nexport const WATCH_PATH = {WATCH_PATH:?};\nexport const PROTOCOL = {SUBPROTOCOL:?};\n\n{}\n\n/** What a client subscribes to. */\nexport type Topic = {};\n\n/** An event: the connection's, or a subscription's. */\nexport type Event = {};\n\n/** HTTP methods and their parameters and results. */\nexport type Methods = {{\n{methods}}};\n{MESSAGES}",
         declared.join("\n\n"),
         topics.join(" | "),
         events.join(" | "),

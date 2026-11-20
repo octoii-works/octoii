@@ -3,12 +3,14 @@
 //! WebSocket the version names, welcomed with what its session may do; a page of another origin is refused; and a
 //! session revoked holds nothing.
 
+use std::path::Path;
 use std::time::Duration;
 
 use bytes::Bytes;
 use futures_util::{SinkExt as _, StreamExt as _};
 use http_body_util::{BodyExt as _, Full};
 use hyper::Method;
+use octoii::protocol::{CALL_PATH, SUBPROTOCOL, WATCH_PATH};
 use octoii_node::control;
 use octoii_node::home::Home;
 use octoii_node::serve::{Served, serve_until};
@@ -33,18 +35,40 @@ async fn request(address: &str, method: Method, path: &str, headers: &[(&str, &s
     (parts.status.as_u16(), parts.headers, body.collect().await.expect("read").to_bytes())
 }
 
-/// The protocol's WebSocket at `address`, with `headers`: the first message it is sent.
-async fn welcomed(address: &str, headers: &[(&str, &str)]) -> Result<Value, SocketError> {
-    let mut request = format!("ws://{address}/ws").into_client_request().expect("a request");
+type Watch = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+
+async fn opened(address: &str, headers: &[(&str, &str)]) -> Result<Watch, SocketError> {
+    let mut request = format!("ws://{address}{WATCH_PATH}").into_client_request().expect("a request");
     for (name, value) in headers {
         let name = tokio_tungstenite::tungstenite::http::HeaderName::try_from(*name).expect("a name");
         request.headers_mut().insert(name, value.parse().expect("a header"));
     }
-    let (mut socket, _) = tokio_tungstenite::connect_async(request).await?;
-    let Some(Ok(Message::Text(text))) = futures_util::StreamExt::next(&mut socket).await else {
-        panic!("a welcome")
+    tokio_tungstenite::connect_async(request).await.map(|(socket, _)| socket)
+}
+
+async fn event(socket: &mut Watch) -> Value {
+    let Some(Ok(Message::Text(text))) = tokio::time::timeout(Duration::from_secs(3), socket.next())
+        .await
+        .expect("a timely frame")
+    else {
+        panic!("a text frame")
     };
-    Ok(serde_json::from_str(&text).expect("JSON"))
+    serde_json::from_str(&text).expect("JSON")
+}
+
+async fn called(address: &str, headers: &[(&str, &str)], method: &str, params: Value) -> (u16, Value) {
+    let mut headers = headers.to_vec();
+    headers.push(("content-type", "application/json"));
+    let (status, response, body) = request(
+        address,
+        Method::POST,
+        CALL_PATH,
+        &headers,
+        json!({ "method": method, "params": params }),
+    )
+    .await;
+    assert_eq!(response["cache-control"], "no-store");
+    (status, serde_json::from_slice(&body).expect("JSON"))
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -73,41 +97,14 @@ async fn a_browser_and_a_program_reach_the_node_by_the_sessions_its_commands_mak
     let loopback = status["loopback"].as_str().expect("its loopback").to_owned();
     let address = loopback.trim_start_matches("http://").to_owned();
 
-    let made = control::ask(&socket, Method::POST, "/links", Some(json!({ "label": "Chrome" })))
-        .await
-        .expect("a link");
-    let credential = made["url"]
-        .as_str()
-        .expect("its url")
-        .split_once('#')
-        .expect("a fragment")
-        .1
-        .to_owned();
-    let (opened, _, page) = request(&address, Method::GET, "/pair", &[], Value::Null).await;
-    assert_eq!((opened, &page[..]), (200, &b"the app"[..]), "a link opens the app");
-    let own = [("origin", loopback.as_str()), ("content-type", "application/json")];
-    let foreign = [("origin", "https://elsewhere.example"), ("content-type", "application/json")];
-    let (refused, _, _) = request(&address, Method::POST, "/pair", &foreign, json!({ "credential": credential })).await;
-    assert_eq!(refused, 403, "a page of another origin pairs nothing");
-    let (paired, headers, _) = request(&address, Method::POST, "/pair", &own, json!({ "credential": credential })).await;
-    assert_eq!(paired, 200);
-    let cookie = headers["set-cookie"].to_str().expect("a cookie").to_owned();
-    assert!(cookie.contains("HttpOnly") && cookie.contains("SameSite=Strict"), "{cookie}");
-    let port: u16 = address.rsplit(':').next().and_then(|port| port.parse().ok()).expect("its port");
-    assert!(
-        cookie.starts_with(&format!("{}=", octoii_node::http::cookie_of(port))),
-        "named by its own port, as another node's on the machine is by its: {cookie}"
-    );
-    let (again, _, _) = request(&address, Method::POST, "/pair", &own, json!({ "credential": credential })).await;
-    assert_eq!(again, 403, "a link pairs once");
-
-    let session = cookie.split(';').next().expect("its value").to_owned();
+    let session = paired_cookie(&address, &loopback, &socket).await;
     let browser = [
         ("cookie", session.as_str()),
         ("origin", loopback.as_str()),
-        ("sec-websocket-protocol", octoii::protocol::SUBPROTOCOL),
+        ("sec-websocket-protocol", SUBPROTOCOL),
     ];
-    let welcome = welcomed(&address, &browser).await.expect("welcomed");
+    let mut watch = opened(&address, &browser).await.expect("opened");
+    let welcome = event(&mut watch).await;
     assert_eq!(welcome["event"], "welcome");
     assert_eq!(
         welcome["scopes"],
@@ -119,28 +116,30 @@ async fn a_browser_and_a_program_reach_the_node_by_the_sessions_its_commands_mak
 
     let unsupported = [browser[0], browser[1], ("sec-websocket-protocol", "unsupported")];
     for headers in [&browser[..2], &unsupported] {
-        assert!(welcomed(&address, headers).await.is_err());
+        assert!(opened(&address, headers).await.is_err());
     }
     let elsewhere = [
         ("cookie", session.as_str()),
         ("origin", "https://elsewhere.example"),
-        ("sec-websocket-protocol", octoii::protocol::SUBPROTOCOL),
+        ("sec-websocket-protocol", SUBPROTOCOL),
     ];
     assert!(
-        welcomed(&address, &elsewhere).await.is_err(),
+        opened(&address, &elsewhere).await.is_err(),
         "a page of another origin is refused its socket"
     );
+    assert_eq!(called(&address, &elsewhere, "threads.list", json!({})).await.0, 403);
 
     let asked = json!({ "label": "script", "scopes": ["threads.read"] });
     let token = control::ask(&socket, Method::POST, "/tokens", Some(asked)).await.expect("a token");
     let bearer = format!("Bearer {}", token["token"].as_str().expect("a token"));
-    let program = [
-        ("authorization", bearer.as_str()),
-        ("sec-websocket-protocol", octoii::protocol::SUBPROTOCOL),
-    ];
-    let welcome = welcomed(&address, &program).await.expect("welcomed");
+    let program = [("authorization", bearer.as_str()), ("sec-websocket-protocol", SUBPROTOCOL)];
+    let mut independent = opened(&address, &program).await.expect("opened");
+    let welcome = event(&mut independent).await;
     assert_eq!(welcome["scopes"], json!(["threads.read"]));
 
+    let download = verify_thread(&address, &browser, &program, &mut watch).await;
+    let mut second_watch = opened(&address, &browser).await.expect("opened");
+    assert_eq!(event(&mut second_watch).await["event"], "welcome");
     let listed = control::ask(&socket, Method::GET, "/access", None).await.expect("listed");
     let sessions = listed["sessions"].as_array().expect("sessions");
     assert_eq!(sessions.len(), 2);
@@ -150,37 +149,109 @@ async fn a_browser_and_a_program_reach_the_node_by_the_sessions_its_commands_mak
     control::ask(&socket, Method::DELETE, &format!("/access/{id}"), None)
         .await
         .expect("revoked");
-    assert!(welcomed(&address, &browser).await.is_err(), "a revoked session holds nothing");
+    assert_eq!(event(&mut watch).await["event"], "revoked");
+    assert_eq!(event(&mut second_watch).await["event"], "revoked");
+    let closed = tokio::time::timeout(Duration::from_secs(3), watch.next())
+        .await
+        .expect("the watch closes");
+    assert!(matches!(closed, Some(Ok(Message::Close(_))) | None));
+    assert!(opened(&address, &browser).await.is_err(), "a revoked session holds nothing");
+    assert_eq!(called(&address, &browser, "threads.list", json!({})).await.0, 401);
+    assert_eq!(request(&address, Method::GET, &download, &browser, Value::Null).await.0, 401);
+    assert_eq!(request(&address, Method::GET, &download, &program, Value::Null).await.0, 200);
+    drop(independent);
 
     stop.cancel();
     node.await.expect("joined").expect("served and stopped");
     assert!(!socket.exists(), "its control socket gone with it");
 }
 
-/// The node owns the callback URL and accepts each matching sign-in state only once.
-async fn verify_sign_in(address: &str, loopback: &str, browser: &[(&str, &str)]) {
-    let mut client_request = format!("ws://{address}/ws").into_client_request().expect("a request");
-    for &(name, value) in browser {
-        let name = tokio_tungstenite::tungstenite::http::HeaderName::try_from(name).expect("a name");
-        client_request.headers_mut().insert(name, value.parse().expect("a header"));
-    }
-    let (mut client, _) = tokio_tungstenite::connect_async(client_request).await.expect("a client");
-    client.next().await.expect("welcomed").expect("a message");
-    client
+async fn paired_cookie(address: &str, loopback: &str, socket: &Path) -> String {
+    let made = control::ask(socket, Method::POST, "/links", Some(json!({ "label": "Chrome" })))
+        .await
+        .expect("a link");
+    let credential = made["url"]
+        .as_str()
+        .expect("its url")
+        .split_once('#')
+        .expect("a fragment")
+        .1
+        .to_owned();
+    let (paired_page, _, page) = request(address, Method::GET, "/pair", &[], Value::Null).await;
+    assert_eq!((paired_page, &page[..]), (200, &b"the app"[..]), "a link opens the app");
+    let own = [("origin", loopback), ("content-type", "application/json")];
+    let foreign = [("origin", "https://elsewhere.example"), ("content-type", "application/json")];
+    let (refused, _, _) = request(address, Method::POST, "/pair", &foreign, json!({ "credential": credential })).await;
+    assert_eq!(refused, 403, "a page of another origin pairs nothing");
+    let (paired, headers, _) = request(address, Method::POST, "/pair", &own, json!({ "credential": credential })).await;
+    assert_eq!(paired, 200);
+    let cookie = headers["set-cookie"].to_str().expect("a cookie").to_owned();
+    assert!(cookie.contains("HttpOnly") && cookie.contains("SameSite=Strict"), "{cookie}");
+    let port: u16 = address.rsplit(':').next().and_then(|port| port.parse().ok()).expect("its port");
+    assert!(
+        cookie.starts_with(&format!("{}=", octoii_node::http::cookie_of(port))),
+        "named by its own port, as another node's on the machine is by its: {cookie}"
+    );
+    let (again, _, _) = request(address, Method::POST, "/pair", &own, json!({ "credential": credential })).await;
+    assert_eq!(again, 403, "a link pairs once");
+
+    cookie.split(';').next().expect("its value").to_owned()
+}
+
+async fn verify_thread(address: &str, browser: &[(&str, &str)], program: &[(&str, &str)], watch: &mut Watch) -> String {
+    let params = json!({ "config": { "title": "Wire test" }, "key": "node-commands" });
+    watch
         .send(Message::Text(
-            json!({ "id": "sign-in", "method": "providers.sign-in", "params": { "provider": "chatgpt" } })
+            json!({ "id": "write", "method": "threads.create", "params": params })
                 .to_string()
                 .into(),
         ))
         .await
-        .expect("a sign-in asked for");
-    let begun = loop {
-        let message = client.next().await.expect("an answer").expect("a message");
-        let answer: Value = serde_json::from_str(message.to_text().expect("text")).expect("an answer");
-        if answer["id"] == "sign-in" {
-            break answer;
-        }
-    };
+        .unwrap();
+    let refused = event(watch).await;
+    assert_eq!(refused["id"], "write");
+    assert_eq!(refused["error"]["code"], "bad_call");
+    assert_eq!(called(address, program, "threads.create", params.clone()).await.0, 403);
+    assert_eq!(
+        called(address, program, "threads.list", json!({})).await,
+        (200, json!({ "result": { "threads": [] } }))
+    );
+    let (created, reply) = called(address, browser, "threads.create", params).await;
+    assert_eq!(created, 200);
+    let thread = reply["result"]["thread"].as_str().unwrap();
+    let upload = format!("/threads/{thread}/files?name=words.txt");
+    let mut file_session = browser.to_vec();
+    file_session.push(("content-type", "text/plain"));
+    let (kept, _, bytes) = request(address, Method::POST, &upload, &file_session, json!("words")).await;
+    assert_eq!(kept, 200);
+    let file: Value = serde_json::from_slice(&bytes).unwrap();
+    let hash = file["ref"].as_str().unwrap().strip_prefix("sha256:").unwrap();
+    let download = format!("/threads/{thread}/files/{hash}");
+    assert_eq!(request(address, Method::GET, &download, program, Value::Null).await.0, 200);
+    assert_eq!(request(address, Method::POST, &upload, program, json!("other")).await.0, 403);
+
+    watch
+        .send(Message::Text(
+            json!({ "id": "watch", "method": "subscribe", "params": { "topic": { "type": "thread", "thread": thread, "limit": 10 } } })
+                .to_string()
+                .into(),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(event(watch).await["id"], "watch");
+    let view = event(watch).await;
+    assert_eq!(view["event"], "thread_snapshot");
+    assert_eq!(view["history"]["entries"][0]["type"], "config");
+    assert_eq!(view["status"]["asks"], json!([]));
+    assert_eq!(event(watch).await["event"], "streams_reset");
+
+    download
+}
+
+/// The node owns the callback URL and accepts each matching sign-in state only once.
+async fn verify_sign_in(address: &str, loopback: &str, browser: &[(&str, &str)]) {
+    let (status, begun) = called(address, browser, "providers.sign-in", json!({ "provider": "chatgpt" })).await;
+    assert_eq!(status, 200);
     let authorize = reqwest::Url::parse(begun["result"]["url"].as_str().expect("a sign-in begun")).expect("an address");
     let asked = |name: &str| {
         authorize
@@ -217,5 +288,4 @@ async fn verify_sign_in(address: &str, loopback: &str, browser: &[(&str, &str)])
         String::from_utf8_lossy(&repeated).contains("no sign-in waits"),
         "an attempt is consumed once"
     );
-    client.close(None).await.expect("closed");
 }

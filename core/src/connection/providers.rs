@@ -2,7 +2,7 @@
 //! set or forgotten, an account added, renamed or removed — the models' providers made again after — and the models
 //! listed or fetched anew.
 
-use crate::protocol::siphon::{AccountAdded, Method, ModelsListed, ProviderStatus, ProvidersListed, SignInBegun};
+use crate::protocol::octoii::{AccountAdded, Method, ModelsListed, ProviderStatus, ProvidersListed, SignInBegun};
 use crate::protocol::{Error, Nothing};
 use octoii_ai::host::Credential;
 use serde::Serialize;

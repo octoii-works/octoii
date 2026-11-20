@@ -6,20 +6,10 @@
  * message — which subscribes again to what it follows on each connection that opens.
  */
 import { RECONNECT_MAX_MS, RECONNECT_MIN_MS } from "./constants.ts";
-import { ClientError, clientError, isConnectionError } from "./errors.ts";
+import { ClientError, clientError } from "./errors.ts";
 import { Value } from "./followed.ts";
 import type { ClientOptions, WebSocketLike } from "./options.ts";
-import {
-	type Event,
-	type ExtensionListed,
-	type Machine,
-	type MethodName,
-	type ParamsOf,
-	PROTOCOL,
-	type Received,
-	type ResultOf,
-	type Scope,
-} from "./protocol.ts";
+import { type Event, type ExtensionListed, type Machine, PROTOCOL, type Received, type Scope, type WatchMethods } from "./protocol.ts";
 
 /** Where the connection stands. */
 export type ConnectionStatus =
@@ -67,30 +57,14 @@ export class Connection {
 	}
 
 	/** Calls a method on the open connection: its result; rejects with `not-connected` where none is open. */
-	call<Name extends MethodName>(method: Name, params: ParamsOf<Name>): Promise<ResultOf<Name>> {
+	call<Name extends keyof WatchMethods>(method: Name, params: WatchMethods[Name]["params"]): Promise<WatchMethods[Name]["result"]> {
 		if (!this.open) return Promise.reject(clientError("not-connected", "No connection to the node is open."));
 		return new Promise((resolve, reject) => {
 			const id = String(++this.#counter);
 			// SAFETY: the node answers a call by its id with its method's result, as the protocol its types are made from says.
-			this.#pending.set(id, (answer) => ("error" in answer ? reject(answer.error) : resolve(answer.result as ResultOf<Name>)));
+			this.#pending.set(id, (answer) => ("error" in answer ? reject(answer.error) : resolve(answer.result as WatchMethods[Name]["result"])));
 			this.#socket?.send(JSON.stringify({ id, method, params }));
 		});
-	}
-
-	/**
-	 * Calls a method once a connection is open, and again on the next where it drops before the answer: for a method done
-	 * once however often it is asked, as an operation's key makes it. Rejects where the client stopped, or with the node's
-	 * error.
-	 */
-	async callOpen<Name extends MethodName>(method: Name, params: ParamsOf<Name>): Promise<ResultOf<Name>> {
-		for (;;) {
-			await this.#ready();
-			try {
-				return await this.call(method, params);
-			} catch (error) {
-				if (!isConnectionError(error)) throw error;
-			}
-		}
 	}
 
 	/** Stops connecting for good: the client is closed. */
@@ -98,20 +72,8 @@ export class Connection {
 		this.#stop(clientError("closed", "The client was closed."));
 	}
 
-	#ready(): Promise<void> {
-		return new Promise((resolve, reject) => {
-			const settled = (): boolean => {
-				const now = this.status.value;
-				if (now.status === "open") resolve();
-				else if (now.status === "stopped") reject(now.error);
-				else return false;
-				return true;
-			};
-			if (settled()) return;
-			const stop = this.status.subscribe(() => {
-				if (settled()) stop();
-			});
-		});
+	revoke(): void {
+		this.#stop(clientError("unauthorized", "The node ended this session."));
 	}
 
 	#connect(): void {
@@ -137,6 +99,7 @@ export class Connection {
 		}
 		if ("event" in received) {
 			if (received.event === "welcome") return this.#welcomed(received);
+			if (received.event === "revoked") return this.revoke();
 			return this.#handlers.event(received, bytes);
 		}
 		const refused = "error" in received ? new ClientError(received.error.code, received.error.message) : undefined;

@@ -9,8 +9,7 @@ use octoii_node::pairing::{Links, with_access};
 use serde_json::{Value, json};
 
 async fn asked(client: &mut Client, method: &str, params: Value) -> Value {
-    let id = client.call(method, params).await;
-    client.answer(&id).await
+    client.command(method, params).await
 }
 
 #[tokio::test(flavor = "multi_thread")]

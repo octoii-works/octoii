@@ -31,18 +31,19 @@ async fn a_terminal_is_opened_drawn_and_told_as_it_writes_each_piece_once() {
     let workspace = folder.path().canonicalize().expect("its real path");
     let mut client = Client::connect(&siphon, vec![Scope::ThreadsOperate, Scope::TerminalsOperate], 64);
     client.message().await;
-    let id = client
-        .call("threads.create", json!({ "config": { "workspace": workspace }, "key": "k1" }))
-        .await;
-    let thread = client.answer(&id).await["result"]["thread"].as_str().expect("a thread").to_owned();
+    let thread = client
+        .command("threads.create", json!({ "config": { "workspace": workspace }, "key": "k1" }))
+        .await["result"]["thread"]
+        .as_str()
+        .expect("a thread")
+        .to_owned();
     let listed = client.subscribe(json!({ "type": "terminals", "thread": thread })).await;
     let (none, _) = client.event(&listed, |event| event["event"] == "terminals").await;
     assert_eq!(none["terminals"], json!([]));
 
-    let id = client
-        .call("terminals.open", json!({ "thread": thread, "size": { "rows": 24, "cols": 80 } }))
-        .await;
-    let terminal = client.answer(&id).await["result"]["terminal"]
+    let terminal = client
+        .command("terminals.open", json!({ "thread": thread, "size": { "rows": 24, "cols": 80 } }))
+        .await["result"]["terminal"]
         .as_str()
         .expect("a terminal")
         .to_owned();
@@ -57,13 +58,12 @@ async fn a_terminal_is_opened_drawn_and_told_as_it_writes_each_piece_once() {
     let watched = client.subscribe(json!({ "type": "terminal", "terminal": terminal })).await;
     let (screen, _) = client.event(&watched, |event| event["event"] == "screen").await;
     let mut at = screen["through"].as_u64().expect("an offset");
-    let id = client
-        .call(
+    client
+        .command(
             "terminals.write",
             json!({ "terminal": terminal, "data": "pwd; echo one-$((40+2))\r" }),
         )
         .await;
-    client.answer(&id).await;
     let mut pieces = Vec::new();
     while !text(&pieces).contains("one-42") {
         let (piece, bytes) = client.event(&watched, |event| event["event"] == "output").await;
@@ -88,8 +88,7 @@ async fn a_terminal_is_opened_drawn_and_told_as_it_writes_each_piece_once() {
         text(&replayed).starts_with(&text(&pieces)),
         "a client that stood at an offset told the same from there"
     );
-    let id = client.call("threads.delete", json!({ "thread": thread })).await;
-    client.answer(&id).await;
+    client.command("threads.delete", json!({ "thread": thread })).await;
     client
         .event(&listed, |event| event["event"] == "terminals" && event["terminals"] == json!([]))
         .await;

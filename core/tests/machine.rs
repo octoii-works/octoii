@@ -29,8 +29,7 @@ async fn the_person_browses_the_machine_s_files_as_git_sees_them() {
     let mut client = Client::connect(&siphon, vec![Scope::FilesRead], 64);
     client.message().await;
 
-    let id = client.call("files.list", json!({ "path": root, "limit": 10 })).await;
-    let listed = client.answer(&id).await["result"].clone();
+    let listed = client.command("files.list", json!({ "path": root, "limit": 10 })).await["result"].clone();
     let entries = listed["entries"].as_array().expect("entries");
     let target = entries.iter().find(|entry| entry["name"] == "target").expect("listed");
     assert_eq!(
@@ -39,44 +38,48 @@ async fn the_person_browses_the_machine_s_files_as_git_sees_them() {
     );
     let src = entries.iter().find(|entry| entry["name"] == "src").expect("listed");
     assert_eq!(src["ignored"], false);
-    let id = client
-        .call("files.list", json!({ "path": root, "limit": 1, "after": "notes.txt" }))
-        .await;
-    let page = client.answer(&id).await["result"].clone();
+    let page = client
+        .command("files.list", json!({ "path": root, "limit": 1, "after": "notes.txt" }))
+        .await["result"]
+        .clone();
     assert_eq!(
         (page["entries"][0]["name"].as_str(), page["more"].as_bool()),
         (Some("src"), Some(true))
     );
 
-    let id = client
-        .call(
+    let text = client
+        .command(
             "files.read",
             json!({ "path": format!("{root}/notes.txt"), "offset": 2, "limit": 1 }),
         )
-        .await;
-    let text = client.answer(&id).await["result"].clone();
+        .await["result"]
+        .clone();
     assert_eq!(
         text,
         json!({ "type": "text", "path": format!("{root}/notes.txt"), "size": 14, "from": 2, "lines": ["two"], "more": true })
     );
-    let id = client.call("files.read", json!({ "path": format!("{root}/dot.png") })).await;
-    assert_eq!(client.answer(&id).await["result"]["media_type"], "image/png");
-    let id = client.call("files.read", json!({ "path": root })).await;
-    assert_eq!(client.answer(&id).await["error"]["code"], "a_folder");
+    assert_eq!(
+        client.command("files.read", json!({ "path": format!("{root}/dot.png") })).await["result"]["media_type"],
+        "image/png"
+    );
+    assert_eq!(
+        client.command("files.read", json!({ "path": root })).await["error"]["code"],
+        "a_folder"
+    );
 
-    let id = client
-        .call("files.search", json!({ "path": root, "query": "main", "limit": 1 }))
-        .await;
-    let found = client.answer(&id).await["result"].clone();
+    let found = client
+        .command("files.search", json!({ "path": root, "query": "main", "limit": 1 }))
+        .await["result"]
+        .clone();
     assert_eq!(
         (found["found"].clone(), found["truncated"].as_bool()),
         (json!([{ "path": "src/main.rs", "kind": "file" }]), Some(true)),
         "the best first"
     );
-    let id = client
-        .call("files.search", json!({ "path": root, "query": "src", "limit": 5 }))
-        .await;
-    let found = client.answer(&id).await["result"]["found"].clone();
+    let found = client
+        .command("files.search", json!({ "path": root, "query": "src", "limit": 5 }))
+        .await["result"]["found"]
+        .clone();
     assert!(
         found
             .as_array()
@@ -86,8 +89,10 @@ async fn the_person_browses_the_machine_s_files_as_git_sees_them() {
 
     let mut reader = Client::connect(&siphon, vec![Scope::ThreadsRead], 64);
     reader.message().await;
-    let id = reader.call("files.list", json!({ "path": root, "limit": 10 })).await;
-    assert_eq!(reader.answer(&id).await["error"]["code"], "forbidden");
+    assert_eq!(
+        reader.command("files.list", json!({ "path": root, "limit": 10 })).await["error"]["code"],
+        "forbidden"
+    );
     siphon.close().await;
 }
 

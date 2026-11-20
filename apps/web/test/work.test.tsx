@@ -87,6 +87,7 @@ async function withView(run: (view: View) => Promise<void>): Promise<void> {
 	const root = createRoot(element);
 	const client = createClient({
 		open: () => ({ binaryType: "arraybuffer", send: () => undefined, close: () => undefined, addEventListener: () => undefined }),
+		send: reach.send,
 		randomUUID: () => "fixture",
 		clock: { now: () => 0, setTimer: () => () => undefined },
 		report: (error) => {

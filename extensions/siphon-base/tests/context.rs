@@ -75,8 +75,7 @@ async fn base_reads_late_registered_folders_and_tracks_extension_settings() {
     };
     let mut client = testing::Client::connect(&siphon, vec![Scope::ThreadsOperate], 8);
     client.message().await;
-    let call = client.call("settings.set", serde_json::to_value(change).unwrap()).await;
-    let answer = client.answer(&call).await;
+    let answer = client.command("settings.set", serde_json::to_value(change).unwrap()).await;
     assert!(answer.get("result").is_some(), "{answer}");
     let told = siphon.told(&id).await.unwrap();
     assert!(!told.sections[2].1.contains("notes folder:"));

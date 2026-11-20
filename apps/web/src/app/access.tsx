@@ -12,7 +12,7 @@ import { Field } from "../components/ui/input.tsx";
 
 /** Whether the node knows the page's browser by no session: the page has no access until it is paired. */
 export function unpaired(connection: ConnectionStatus): boolean {
-	return connection.status === "waiting" && connection.error?.code === "not-admitted";
+	return connection.status === "stopped" && connection.error.code === "unauthorized";
 }
 
 /** The pairing page: how to pair this browser, a field for a link, and why a pairing failed. */

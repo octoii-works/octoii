@@ -1,15 +1,8 @@
-//! Siphon's protocol, as a client speaks it over its WebSocket — the version agreed as the socket opens, by its
-//! subprotocol `octoii.1`: the welcome first; then each call the client makes, by its id, its method and the method's
-//! params, answered once by that id with its result or the error it was refused with; and the events of each
-//! subscription the client holds, as what it follows changes. A subscription that falls behind what its client reads
-//! is let go and told it lagged, with the topic to subscribe to again from where it stood.
-//!
-//! The methods come in sets — Siphon's own, `siphon`, and each extension's, declared by `methods!` — which a host
-//! assembles; `typescript` describes the protocol the sets make together, its types each set's own, so what is sent is
-//! what Siphon and its extensions keep.
+//! Octoii's HTTP commands and queries, and its WebSocket subscriptions. The method sets declared by `methods!`
+//! supply their types and handlers. `typescript` generates the client declarations from the assembled sets.
 
+pub mod octoii;
 mod set;
-pub mod siphon;
 mod typescript;
 
 use serde::{Deserialize, Serialize};
@@ -20,16 +13,25 @@ pub use typescript::{Declarations, typescript};
 #[doc(hidden)]
 pub use {serde, serde_json, ts_rs};
 
-/// The subprotocol a client's WebSocket asks for, which names the protocol's version.
-pub const SUBPROTOCOL: &str = "octoii.1";
+pub const CALL_PATH: &str = "/api/v1/call";
+pub const WATCH_PATH: &str = "/api/v1/watch";
+pub const SUBPROTOCOL: &str = "octoii.watch.1";
 
-/// A call a client makes: its id, by which its answer comes, its method's name and the method's params.
+/// A command or query sent over HTTP.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct Call {
-    pub id: String,
+#[serde(deny_unknown_fields)]
+pub struct Command {
     pub method: String,
     #[serde(default)]
     pub params: serde_json::Value,
+}
+
+/// Its HTTP response, with the status set by the carrier.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum CommandReply {
+    Result { result: serde_json::Value },
+    Error { error: Error },
 }
 
 /// Why a call was refused, or what it asked could not be done: a code a client may act on, and words for the person.
@@ -39,8 +41,7 @@ pub struct Error {
     pub message: String,
 }
 
-/// An answer to a call: its id and its method's result, or the error it was refused with — a null id where the call's
-/// id could not be read.
+/// The response to a subscription control frame, correlated by its id.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum Answer {
@@ -123,9 +124,7 @@ pub struct Unsubscribe {
     pub subscription: String,
 }
 
-/// An event of the connection's own: the welcome a client is sent first — its session, what it may do, the machine
-/// it reached and its extensions — or that a subscription fell behind and was let go, with the topic to subscribe to again from where it
-/// stood.
+/// The welcome, a request to resubscribe after lag, or the end of the session's access.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum ConnectionEvent {
@@ -140,4 +139,5 @@ pub enum ConnectionEvent {
         #[ts(type = "Topic")]
         topic: serde_json::Value,
     },
+    Revoked,
 }

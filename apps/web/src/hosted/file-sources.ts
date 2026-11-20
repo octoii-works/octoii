@@ -2,7 +2,7 @@
  * Kept files read through the tunnel for elements to draw: each read once into an address of this page, and the ones
  * read longest ago let go, as a page may show a long thread's every picture.
  */
-import type { NodeAnswer } from "../components/state/reach.ts";
+import type { NodeAnswer } from "@octoii-works/octoii-client";
 import { succeeded } from "../components/state/reach.ts";
 
 /** How many files are kept read. */

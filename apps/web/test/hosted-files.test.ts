@@ -1,8 +1,7 @@
 /** Kept files read through a tunnel, and the requests that send and pair, whichever way the page reaches its node. */
 import { describe, expect, it } from "bun:test";
-import { keepFile } from "../src/app/files.ts";
+import type { NodeAnswer, NodeRequest } from "@octoii-works/octoii-client";
 import { pairBrowser } from "../src/app/pairing.ts";
-import type { NodeAnswer, NodeRequest } from "../src/components/state/reach.ts";
 import { createFileSources } from "../src/hosted/file-sources.ts";
 
 function answer(status: number, text: string, contentType?: string): NodeAnswer {
@@ -47,17 +46,14 @@ describe("the requests beside the socket", () => {
 	it("tell the node's words where it refuses, and its status where it gives none", async () => {
 		await expect(pairBrowser(refusing, "c")).rejects.toThrow("That link was spent.");
 		await expect(pairBrowser(async () => answer(502, ""), "c")).rejects.toThrow("(502)");
-		await expect(keepFile(refusing, "t1", new Blob(["x"]), "x.txt")).rejects.toThrow("That link was spent.");
 	});
 
-	it("send a credential as JSON, and give back what was kept", async () => {
+	it("send a pairing credential as JSON", async () => {
 		const sent: NodeRequest[] = [];
 		await pairBrowser(async (request) => {
 			sent.push(request);
 			return answer(200, "{}");
 		}, "c");
 		expect(sent).toEqual([{ method: "POST", path: "/pair", contentType: "application/json", body: '{"credential":"c"}' }]);
-		const kept = { ref: "sha256:a", media_type: "text/plain", filename: "x.txt" };
-		expect(await keepFile(async () => answer(200, JSON.stringify(kept)), "t1", new Blob(["x"]), "x.txt")).toEqual(kept);
 	});
 });

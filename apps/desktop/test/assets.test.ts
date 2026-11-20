@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { CALL_PATH, WATCH_PATH } from "@octoii-works/octoii-client";
 import { desktopResponse } from "../src/assets.ts";
 import { connectingPage, failedPage } from "../src/startup.ts";
 
@@ -61,7 +62,20 @@ describe("bundled desktop assets", () => {
 		});
 		expect(result).toBe(response);
 	});
-	test.each(["/auth/callback?code=code&state=state", "/machine", "/threads/thread/files/hash", "/ws", "/missing.js"])(
+	test("forwards typed HTTP commands with their credentials", async () => {
+		const request = new Request(`${origin}${CALL_PATH}`, {
+			method: "POST",
+			headers: { "content-type": "application/json", cookie: "octoii_session_7600=test-session" },
+			body: JSON.stringify({ method: "threads.list", params: {} }),
+		});
+		const response = Response.json({ result: { threads: [] } });
+		const result = await desktopResponse(request, directory, origin, async (forwarded) => {
+			expect(forwarded).toBe(request);
+			return response;
+		});
+		expect(result).toBe(response);
+	});
+	test.each(["/auth/callback?code=code&state=state", "/machine", "/threads/thread/files/hash", WATCH_PATH, "/missing.js"])(
 		"forwards GET %s to the node",
 		async (path) => {
 			const request = new Request(`${origin}${path}`);

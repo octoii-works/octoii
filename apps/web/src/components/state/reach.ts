@@ -4,22 +4,8 @@
  * requests beside it, pairing and the files it shows all go by this.
  */
 import { createContext, useContext } from "react";
-import type { WebSocketLike } from "@octoii-works/octoii-client";
+import type { NodeAnswer, SendRequest, WebSocketLike } from "@octoii-works/octoii-client";
 import type { Json } from "../../core/asks.ts";
-
-/** A request of the node's beside its socket. */
-export type NodeRequest = {
-	readonly method: "GET" | "POST";
-	readonly path: string;
-	readonly contentType?: string;
-	readonly body?: string | Blob;
-};
-
-/** What the node answered a request with. */
-export type NodeAnswer = { readonly status: number; readonly contentType: string | undefined; readonly bytes: Uint8Array };
-
-/** Sends a request to the node. */
-export type SendRequest = (request: NodeRequest) => Promise<NodeAnswer>;
 
 /** How a page reaches its node. */
 export type Reach = {

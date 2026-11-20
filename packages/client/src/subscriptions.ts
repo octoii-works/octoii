@@ -61,7 +61,9 @@ export class Subscriptions {
 
 	#subscribe(held: Held): void {
 		held.id = undefined;
+		const opened = this.#connection.status.value;
 		this.#connection.call("subscribe", { topic: held.topic }).then(({ subscription }) => {
+			if (this.#connection.status.value !== opened) return;
 			if (held.stopped) return void this.#connection.call("unsubscribe", { subscription }).catch(this.#told);
 			held.id = subscription;
 			this.#byId.set(subscription, held);

@@ -9,8 +9,7 @@ use serde_json::{Value, json};
 use siphon_mcp::McpExtension;
 
 async fn asked(client: &mut Client, method: &str, params: Value) -> Value {
-    let id = client.call(method, params).await;
-    let answer = client.answer(&id).await;
+    let answer = client.command(method, params).await;
     assert!(answer["error"].is_null(), "{method}: {answer}");
     answer["result"].clone()
 }

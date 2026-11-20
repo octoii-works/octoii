@@ -1,9 +1,9 @@
 //! The files a thread's messages give their model, and the pictures its calls show the person, as the node's HTTP
-//! carries them — a client's messages are JSON on its WebSocket, a file's bytes are not: a file sent in a POST to
+//! carries them: a file sent in a POST to
 //! `/threads/<thread>/files`, kept in the thread by its content — an image as every model reads one — and answered with
 //! what names it, its reference; a kept file's bytes given back at `/threads/<thread>/files/<sha256>` — or, where the
 //! query asks with `width_max` and `height_max`, an image fitted to that box, its shape kept and never enlarged, as a
-//! picture of it is drawn small — each kept by a browser for good, as what a reference names never changes. Beside
+//! picture of it is drawn small. Requests are authorized again even when the reference stays the same. Beside
 //! them, an image or a PDF of the machine's at `/machine?path=<path>`, as the person browses the machine's files, its
 //! bytes read anew each time.
 
@@ -73,7 +73,7 @@ pub(crate) async fn sent(
 }
 
 /// The bytes of the file the thread `thread` keeps by the hash `hash` — fitted to the box asked for, where it is an
-/// image and one is — kept by a browser for good.
+/// image and one is.
 pub(crate) async fn kept(
     State(node): State<Node>,
     Path((thread, hash)): Path<(String, String)>,
@@ -95,8 +95,7 @@ pub(crate) async fn kept(
         .ok_or_else(|| Denied(StatusCode::NOT_FOUND, "no such file".into()))?;
     let media_type = octoii::machine::media_type(&bytes).unwrap_or("application/octet-stream");
     let picture = asked.width_max.zip(asked.height_max);
-    // What a reference names never changes.
-    pictured(media_type, &bytes, picture, "private, max-age=31536000, immutable")
+    pictured(media_type, &bytes, picture)
 }
 
 impl From<files::Refused> for Denied {
@@ -111,8 +110,8 @@ impl From<files::Refused> for Denied {
 }
 
 /// `bytes` of `media_type` as a response — an image fitted to `picture`, its widest and its tallest, where one is
-/// asked for — kept by a browser as `caching` says.
-fn pictured(media_type: &'static str, bytes: &Bytes, picture: Option<(u32, u32)>, caching: &'static str) -> Result<Response, Denied> {
+/// asked for. A browser checks its access on every request.
+fn pictured(media_type: &'static str, bytes: &Bytes, picture: Option<(u32, u32)>) -> Result<Response, Denied> {
     let (mut media_type, mut body) = (media_type, bytes.clone());
     if let (Some((width_max, height_max)), true) = (picture, media_type.starts_with("image/")) {
         let bounds = siphon_image::Bounds {
@@ -126,7 +125,7 @@ fn pictured(media_type: &'static str, bytes: &Bytes, picture: Option<(u32, u32)>
         media_type = fitted.format.media_type();
         body = Bytes::from(fitted.bytes.into_owned());
     }
-    let headers = [(header::CONTENT_TYPE, media_type), (header::CACHE_CONTROL, caching)];
+    let headers = [(header::CONTENT_TYPE, media_type), (header::CACHE_CONTROL, "private, no-store")];
     Ok((headers, body).into_response())
 }
 
@@ -173,5 +172,5 @@ pub(crate) async fn machined(
         Err(octoii::machine::Error::NotFound) => return Err(Denied(StatusCode::NOT_FOUND, "no such file".into())),
         Err(error) => return Err(Denied(StatusCode::INTERNAL_SERVER_ERROR, error.to_string())),
     };
-    pictured(media_type, &bytes, asked.width_max.zip(asked.height_max), "private, no-cache")
+    pictured(media_type, &bytes, asked.width_max.zip(asked.height_max))
 }

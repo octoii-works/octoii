@@ -1,44 +1,34 @@
 /**
- * The threads the client follows: one following of each for all who read it — read first, its latest entries alone,
- * then subscribed to from where its log ended as it was read, the subscription made again from where its reader stands
- * as each connection opens; read back a page at a time as a reader asks; let go once its last reader does.
+ * One watch for each followed thread, with older history fetched on demand.
  */
-import type { Connection } from "./connection.ts";
 import { READ_BACK_PAGE } from "./constants.ts";
 import { type Followable, holding, type Reading } from "./followed.ts";
+import type { Requests } from "./requests.ts";
 import type { Subscription, Subscriptions } from "./subscriptions.ts";
 import { FollowedThread, type ThreadView } from "./thread.ts";
 
-type Following = Reading<FollowedThread> & { subscription: Subscription | undefined };
+type Following = Reading<FollowedThread> & { subscription: Subscription };
 
 export class Follows {
 	readonly #followed = new Map<string, Following>();
-	readonly #connection: Connection;
+	readonly #requests: Requests;
 	readonly #subscriptions: Subscriptions;
 	/** How many of a thread's latest entries are kept. */
 	readonly #kept: number;
-	/** Tells of a failure that is not the connection's own. */
-	readonly #told: (error: unknown) => void;
-
-	constructor(connection: Connection, subscriptions: Subscriptions, kept: number, told: (error: unknown) => void) {
-		this.#connection = connection;
+	constructor(requests: Requests, subscriptions: Subscriptions, kept: number) {
+		this.#requests = requests;
 		this.#subscriptions = subscriptions;
 		this.#kept = kept;
-		this.#told = told;
-	}
-
-	/** Reads each thread whose latest entries were not read yet, as a connection opens: the others' subscriptions are made again. */
-	again(): void {
-		for (const following of this.#followed.values()) if (following.subscription === undefined) this.#begin(following);
 	}
 
 	/** One more reader of the thread `id`: one following of it for all who read it, begun as the first comes. */
 	follow(id: string): Followable<ThreadView> {
 		let following = this.#followed.get(id);
 		if (following === undefined) {
-			following = { thing: new FollowedThread(id, this.#kept), holders: 0, subscription: undefined };
+			const thread = new FollowedThread(this.#kept);
+			const subscription = this.#subscriptions.hold({ type: "thread", thread: id, limit: this.#kept }, (event) => thread.take(event));
+			following = { thing: thread, holders: 0, subscription };
 			this.#followed.set(id, following);
-			if (this.#connection.open) this.#begin(following);
 		}
 		const held = following;
 		const thread = held.thing;
@@ -48,7 +38,7 @@ export class Follows {
 			() => thread.view,
 			() => {
 				this.#followed.delete(id);
-				held.subscription?.stop();
+				held.subscription.stop();
 			},
 		);
 	}
@@ -57,29 +47,8 @@ export class Follows {
 	async readOlder(id: string): Promise<void> {
 		const thread = this.#followed.get(id)?.thing;
 		const first = thread?.view.entries[0];
-		if (thread === undefined || thread.view.complete) return;
-		const page = await this.#connection.call(
-			"threads.read",
-			first === undefined ? { thread: id, limit: READ_BACK_PAGE } : { thread: id, before: first.id, limit: READ_BACK_PAGE },
-		);
-		thread.prepend(page.entries, page.complete);
-	}
-
-	/** A thread is read first, its latest entries alone, then subscribed to from where the log ended as it was read. */
-	#begin(following: Following): void {
-		const thread = following.thing;
-		this.#connection
-			.call("threads.read", { thread: thread.id, limit: this.#kept })
-			.then((page) => {
-				if (this.#followed.get(thread.id) !== following || following.subscription !== undefined) return;
-				thread.begin(page.entries, page.end, page.complete);
-				const topic = { type: "thread" as const, thread: thread.id, ...(page.end === undefined ? {} : { from: page.end }) };
-				const subscription = this.#subscriptions.hold(topic, (event) => {
-					thread.take(event);
-					if (event.event === "entries") subscription.topic = { type: "thread", thread: thread.id, from: event.cursor };
-				});
-				following.subscription = subscription;
-			})
-			.catch(this.#told);
+		if (thread === undefined || first === undefined || thread.view.complete || thread.view.gone) return;
+		const page = await this.#requests.call("threads.read", { thread: id, before: first.id, limit: READ_BACK_PAGE });
+		if (this.#followed.get(id)?.thing === thread && !thread.view.gone && first.id === thread.view.entries[0]?.id) thread.prepend(page.entries, page.complete);
 	}
 }

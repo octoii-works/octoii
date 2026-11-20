@@ -54,23 +54,27 @@ impl Fixture {
             .expect("started");
         let mut client = Client::connect(&siphon, vec![Scope::ThreadsOperate, Scope::BrowserOperate], 64);
         client.message().await;
-        let id = client
-            .call(
+        let thread = client
+            .command(
                 "threads.create",
                 json!({ "config": { "workspace": workspace }, "key": "pick-thread" }),
             )
-            .await;
-        let thread = client.answer(&id).await["result"]["thread"].as_str().expect("a thread").to_owned();
+            .await["result"]["thread"]
+            .as_str()
+            .expect("a thread")
+            .to_owned();
         let pages = client.subscribe(json!({ "type": "pages", "thread": thread })).await;
         client.event(&pages, |event| event["event"] == "pages").await;
         let url = serve(body).await;
-        let id = client
-            .call(
+        let page = client
+            .command(
                 "browser.open",
                 json!({ "thread": thread, "url": url, "view": { "width": WIDTH, "height": HEIGHT, "scale": 1 } }),
             )
-            .await;
-        let page = client.answer(&id).await["result"]["page"].as_str().expect("a page").to_owned();
+            .await["result"]["page"]
+            .as_str()
+            .expect("a page")
+            .to_owned();
         client
             .event(&pages, |event| {
                 event["pages"].as_array().is_some_and(|pages| {
@@ -106,8 +110,7 @@ impl Fixture {
     }
 
     async fn pick(&mut self, request: &PickElement) -> Value {
-        let id = self.client.call("browser.pick", json!(request)).await;
-        self.client.answer(&id).await
+        self.client.command("browser.pick", json!(request)).await
     }
 
     async fn close(self) {
@@ -174,14 +177,16 @@ async fn a_pick_dispatches_no_click_ignores_unrelated_dom_changes_and_keeps_its_
     assert!(password.element.text.is_none());
     assert!(!json!(password.element).to_string().contains("never-copy-this"));
 
-    let id = fixture
-        .client
-        .call(
-            "browser.resize",
-            json!({ "page": fixture.page, "view": { "width": WIDTH, "height": HEIGHT, "scale": 2 } }),
-        )
-        .await;
-    assert_eq!(fixture.client.answer(&id).await["result"], json!({}));
+    assert_eq!(
+        fixture
+            .client
+            .command(
+                "browser.resize",
+                json!({ "page": fixture.page, "view": { "width": WIDTH, "height": HEIGHT, "scale": 2 } }),
+            )
+            .await["result"],
+        json!({})
+    );
     let retina_request = PickElement {
         view: View {
             scale: Some(2.0),
@@ -199,8 +204,10 @@ async fn a_pick_dispatches_no_click_ignores_unrelated_dom_changes_and_keeps_its_
         .expect("the saved screenshot")
         .expect("its bytes");
     assert_eq!(&bytes[..3], [0xFF, 0xD8, 0xFF]);
-    let id = fixture.client.call("browser.close", json!({ "page": fixture.page })).await;
-    assert_eq!(fixture.client.answer(&id).await["result"], json!({}));
+    assert_eq!(
+        fixture.client.command("browser.close", json!({ "page": fixture.page })).await["result"],
+        json!({})
+    );
     let after_close = fixture.pick(&request).await;
     assert_eq!(after_close["error"]["code"], "no_such_page");
     assert_eq!(
@@ -241,14 +248,15 @@ async fn picking_requires_both_scopes_a_live_thread_and_the_pages_owning_thread(
     for scopes in [vec![Scope::BrowserOperate], vec![Scope::ThreadsOperate]] {
         let mut restricted = Client::connect(&fixture.siphon, scopes, 8);
         restricted.message().await;
-        let id = restricted.call("browser.pick", json!(&request)).await;
-        assert_eq!(restricted.answer(&id).await["error"]["code"], "forbidden");
+        assert_eq!(
+            restricted.command("browser.pick", json!(&request)).await["error"]["code"],
+            "forbidden"
+        );
     }
-    let id = fixture
+    let other = fixture
         .client
-        .call("threads.create", json!({ "config": {}, "key": "another-thread" }))
-        .await;
-    let other = fixture.client.answer(&id).await["result"]["thread"]
+        .command("threads.create", json!({ "config": {}, "key": "another-thread" }))
+        .await["result"]["thread"]
         .as_str()
         .expect("another thread")
         .to_owned();

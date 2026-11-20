@@ -1,6 +1,6 @@
 import { expect, it, mock, spyOn } from "bun:test";
 import type { Config } from "@octoii-works/octoii-client";
-import type { SendRequest } from "../../src/components/state/reach.ts";
+import type { SendRequest } from "@octoii-works/octoii-client";
 import { acceptThread, threadRequest, type ThreadWorkspace } from "../../src/screens/new-thread/request.ts";
 
 const unreachable: SendRequest = async () => {

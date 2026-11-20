@@ -1,15 +1,28 @@
 /** A scripted local model drives real node requests; two independent clients answer them. No external model calls. */
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createClient, type Ask, type Client } from "@octoii-works/octoii-client";
+import {
+	CALL_PATH,
+	createClient,
+	WATCH_PATH,
+	type Ask,
+	type Client,
+	type Command,
+	type NodeAnswer,
+	type NodeRequest,
+	type SendRequest,
+} from "@octoii-works/octoii-client";
 
 const program = process.argv[2] ?? fileURLToPath(new URL("../dist/runtime/bin/octoii", import.meta.url));
-const temporary = await mkdtemp("/private/tmp/octoii-answers-");
+const temporary = await mkdtemp(join(tmpdir(), "octoii-answers-"));
 const home = join(temporary, "node");
+const nodeTemporary = join(temporary, "node-tmp");
 const workspace = join(temporary, "workspace");
 const target = join(temporary, "outside.txt");
+const environment = { ...process.env, TMPDIR: nodeTemporary, TMP: nodeTemporary, TEMP: nodeTemporary };
 const completion = "Acceptance scenario completed.";
 const clients: Client[] = [];
 let node: ReturnType<typeof Bun.spawn> | undefined;
@@ -18,7 +31,7 @@ let finishStream: (() => void) | undefined;
 let origin = "";
 
 async function command(...args: string[]): Promise<string> {
-	const process = Bun.spawn([program, "--home", home, ...args], { stdout: "pipe", stderr: "ignore" });
+	const process = Bun.spawn([program, "--home", home, ...args], { env: environment, stdout: "pipe", stderr: "ignore" });
 	const output = await new Response(process.stdout).text();
 	if (await process.exited) throw new Error(`Test node command failed: ${args[0]}`);
 	return output;
@@ -34,7 +47,11 @@ async function until(ready: () => boolean | Promise<boolean>, description: strin
 }
 
 async function start(): Promise<void> {
-	node = Bun.spawn([program, "--home", home, "serve", "--port", origin ? new URL(origin).port : "0"], { stdout: "ignore", stderr: "ignore" });
+	node = Bun.spawn([program, "--home", home, "serve", "--port", origin ? new URL(origin).port : "0"], {
+		env: environment,
+		stdout: "ignore",
+		stderr: "ignore",
+	});
 	await until(async () => {
 		try {
 			const status: { loopback: string } = JSON.parse(await command("status", "--json"));
@@ -52,14 +69,28 @@ async function stop(): Promise<void> {
 	node = undefined;
 }
 
-async function connect(observe: (socket: WebSocket) => void = () => undefined): Promise<Client> {
+type TransportHooks = {
+	readonly watch?: (socket: WebSocket) => void;
+	readonly send?: (request: NodeRequest, forward: SendRequest) => Promise<NodeAnswer>;
+};
+
+async function connect(hooks: TransportHooks = {}): Promise<Client> {
 	const token = (await command("token", "--label", "answer acceptance")).trim();
+	const send: SendRequest = async ({ method, path, contentType, body }) => {
+		const answer = await fetch(`${origin}${path}`, {
+			method,
+			headers: { authorization: `Bearer ${token}`, ...(contentType === undefined ? {} : { "content-type": contentType }) },
+			...(body === undefined ? {} : { body }),
+		});
+		return { status: answer.status, contentType: answer.headers.get("content-type") ?? undefined, bytes: new Uint8Array(await answer.arrayBuffer()) };
+	};
 	const client = createClient({
 		open: (protocol) => {
-			const socket = new WebSocket(`${origin.replace("http:", "ws:")}/ws`, { protocols: [protocol], headers: { authorization: `Bearer ${token}` } });
-			observe(socket);
+			const socket = new WebSocket(`${origin.replace("http:", "ws:")}${WATCH_PATH}`, { protocols: [protocol], headers: { authorization: `Bearer ${token}` } });
+			hooks.watch?.(socket);
 			return socket;
 		},
+		send: (request) => (hooks.send === undefined ? send(request) : hooks.send(request, send)),
 		randomUUID: () => crypto.randomUUID(),
 		clock: {
 			now: () => Date.now(),
@@ -95,7 +126,7 @@ async function scenario(client: Client, kind: "question" | "approval" | "stream"
 type ModelRequest = { model: string; messages: { role: string; content: unknown }[]; tools?: unknown[] };
 
 try {
-	await mkdir(workspace);
+	await Promise.all([mkdir(workspace), mkdir(nodeTemporary)]);
 	// Ollama's existing adapter discovers this test model. An occupied port fails; no existing server is stopped.
 	model = Bun.serve({
 		hostname: "127.0.0.1",
@@ -180,29 +211,23 @@ try {
 	console.log("PASS: allowing the real tool writes only the intended temporary file");
 	let answerCalls = 0;
 	let dropped = false;
-	const uncertain = await connect((socket) => {
-		let answerId: string | undefined;
-		const send = socket.send.bind(socket);
-		socket.send = (data) => {
-			if (typeof data === "string") {
-				const call: { id: string; method: string } = JSON.parse(data);
-				if (call.method === "threads.answer") {
-					answerCalls++;
-					answerId = call.id;
-				}
-			}
-			return send(data);
-		};
-		// Freeze inbound state after submission, then close on the real commit acknowledgement.
-		socket.addEventListener("message", (event) => {
-			if (answerId === undefined) return;
-			event.stopImmediatePropagation();
-			if (dropped || typeof event.data !== "string") return;
-			const reply: { id?: string; result?: unknown } = JSON.parse(event.data);
-			if (reply.id !== answerId || !("result" in reply)) return;
+	let watch: WebSocket | undefined;
+	const uncertain = await connect({
+		watch: (socket) => {
+			watch = socket;
+		},
+		send: async (request, forward) => {
+			if (request.path !== CALL_PATH || typeof request.body !== "string") return forward(request);
+			// SAFETY: CALL_PATH receives the client's typed JSON commands.
+			const call = JSON.parse(request.body) as Command;
+			if (call.method !== "threads.answer") return forward(request);
+			answerCalls++;
+			watch?.close();
+			const answer = await forward(request);
+			assert.equal(answer.status, 200, "the exact answer was committed while the watch was down");
 			dropped = true;
-			socket.close();
-		});
+			throw new Error("simulated lost HTTP response after commit");
+		},
 	});
 	const committed = await scenario(uncertain, "question");
 	const question = await ask(uncertain, committed);
@@ -214,7 +239,6 @@ try {
 	);
 	await assert.rejects(uncertain.answer(committed, question.id, { answers: [{ chosen: ["SQLite"] }] }), { code: "connection-lost" });
 	assert.equal(dropped, true);
-	assert.equal(followed.view().status?.asks[0]?.id, question.id);
 	await until(() => uncertain.status.value.status === "open", "reconnected after lost acknowledgement");
 	await until(async () => (await uncertain.threads()).find((row) => row.id === committed)?.status.turn === "replied", "committed answer completed");
 	assert.equal((await uncertain.threads()).find((row) => row.id === committed)?.status.asks.length, 0);
@@ -231,8 +255,10 @@ try {
 	console.log("PASS: a lost acknowledgement reports uncertainty, reconnect recovers the committed answer, and no answer is resent");
 
 	let activeSocket: WebSocket | undefined;
-	const reader = await connect((socket) => {
-		activeSocket = socket;
+	const reader = await connect({
+		watch: (socket) => {
+			activeSocket = socket;
+		},
 	});
 	const streamedThread = await scenario(reader, "stream");
 	const reading = reader.follow(streamedThread);
@@ -245,6 +271,7 @@ try {
 		if (reading.view().streaming.size === 0) reset = true;
 	});
 	activeSocket.close();
+	assert.ok((await reader.threads()).some((row) => row.id === streamedThread));
 	await until(() => reset && completePart()?.[0] === initial[0], "the same request replayed after reset");
 	observeReset();
 	assert.ok(finishStream);

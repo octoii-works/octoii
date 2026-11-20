@@ -1,7 +1,7 @@
 //! Memory's methods, as its extension adds them to the protocol: the memory of the project a folder is in, listed; and a
 //! memory of it deleted.
 
-use octoii::protocol::siphon::InFolder;
+use octoii::protocol::octoii::InFolder;
 use octoii::protocol::{Nothing, Scope};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;

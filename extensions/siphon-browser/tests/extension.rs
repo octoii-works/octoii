@@ -45,13 +45,15 @@ async fn a_page_is_opened_listed_painted_and_worked_by_the_person() {
     client.message().await;
     let pages = client.subscribe(json!({ "type": "pages", "thread": "t1" })).await;
     client.event(&pages, |event| event["event"] == "pages").await;
-    let id = client
-        .call(
+    let page = client
+        .command(
             "browser.open",
             json!({ "thread": "t1", "url": PAGE, "view": { "width": 400, "height": 300 } }),
         )
-        .await;
-    let page = client.answer(&id).await["result"]["page"].as_str().expect("a page").to_owned();
+        .await["result"]["page"]
+        .as_str()
+        .expect("a page")
+        .to_owned();
     let (listed, _) = client.event(&pages, |event| event["pages"][0]["title"] == "Hello").await;
     assert_eq!(listed["pages"][0]["id"].as_str(), Some(page.as_str()));
 
@@ -60,15 +62,19 @@ async fn a_page_is_opened_listed_painted_and_worked_by_the_person() {
     assert!(frame["width"].as_u64().is_some_and(|width| width > 0));
     assert_eq!(&jpeg[..3], [0xFF, 0xD8, 0xFF], "the frame's bytes are JPEG");
 
-    let id = client.call("browser.text", json!({ "page": page, "text": "typed" })).await;
-    assert_eq!(client.answer(&id).await["result"], json!({}));
-    let id = client
-        .call(
-            "browser.navigate",
-            json!({ "page": page, "url": "data:text/html,<title>Moved</title>" }),
-        )
-        .await;
-    assert_eq!(client.answer(&id).await["result"], json!({}));
+    assert_eq!(
+        client.command("browser.text", json!({ "page": page, "text": "typed" })).await["result"],
+        json!({})
+    );
+    assert_eq!(
+        client
+            .command(
+                "browser.navigate",
+                json!({ "page": page, "url": "data:text/html,<title>Moved</title>" }),
+            )
+            .await["result"],
+        json!({})
+    );
     client.event(&pages, |event| event["pages"][0]["title"] == "Moved").await;
     // Its history goes back from where it went, and nowhere forward; and it is told loading no more once it loaded.
     client
@@ -77,8 +83,7 @@ async fn a_page_is_opened_listed_painted_and_worked_by_the_person() {
             listed["back"] == true && listed["forward"] == false && listed["loading"] == false
         })
         .await;
-    let id = client.call("browser.back", json!({ "page": page })).await;
-    client.answer(&id).await;
+    client.command("browser.back", json!({ "page": page })).await;
     client.event(&pages, |event| event["pages"][0]["title"] == "Hello").await;
     // Back where it began, its history goes forward again — and back still, to the blank page it was opened on.
     client
@@ -86,8 +91,7 @@ async fn a_page_is_opened_listed_painted_and_worked_by_the_person() {
             event["pages"][0]["back"] == true && event["pages"][0]["forward"] == true
         })
         .await;
-    let id = client.call("browser.close", json!({ "page": page })).await;
-    client.answer(&id).await;
+    client.command("browser.close", json!({ "page": page })).await;
     client.event(&pages, |event| event["pages"] == json!([])).await;
     siphon.close().await;
 }

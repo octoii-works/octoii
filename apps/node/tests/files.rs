@@ -95,7 +95,7 @@ async fn a_thread_s_files_are_sent_kept_and_given_back_to_a_session_that_may() {
     let at = format!("/threads/{thread}/files/{hash}");
     let (status, headers, kept) = request(&address, Method::GET, &at, &[("authorization", reader.as_str())], Vec::new()).await;
     assert_eq!(status, 200);
-    assert_eq!(headers["cache-control"], "private, max-age=31536000, immutable");
+    assert_eq!(headers["cache-control"], "private, no-store");
     let image = image::load_from_memory(&kept).expect("an image");
     assert_eq!(
         (image.width(), image.height()),

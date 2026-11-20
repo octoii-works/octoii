@@ -8,8 +8,7 @@ use octoii_node::home::Home;
 use serde_json::{Value, json};
 
 async fn asked(client: &mut Client, method: &str, params: Value) -> Value {
-    let id = client.call(method, params).await;
-    client.answer(&id).await
+    client.command(method, params).await
 }
 
 fn provider<'a>(listed: &'a Value, id: &str) -> Option<&'a Value> {

@@ -2,13 +2,14 @@
  * The page a node serves reaches it at the page's own address: the WebSocket and its requests go there with the session
  * cookie the browser holds for the node, and the browser fetches a kept file itself.
  */
+import { type SendRequest, WATCH_PATH } from "@octoii-works/octoii-client";
 import { pairingCredentialOf } from "../core/pairing.ts";
-import type { Reach, SendRequest } from "../components/state/reach.ts";
+import type { Reach } from "../components/state/reach.ts";
 import { pairBrowser } from "./pairing.ts";
 
 /** The node's WebSocket, at the page's own address. */
 function socketAddress(): string {
-	return `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/ws`;
+	return `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}${WATCH_PATH}`;
 }
 
 const send: SendRequest = async ({ method, path, contentType, body }) => {

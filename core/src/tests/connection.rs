@@ -118,117 +118,104 @@ async fn a_client_is_welcomed_its_calls_checked_and_answered() {
     let mut reader = Client::connect(&siphon, vec![Scope::ThreadsRead], 64);
     let welcome = reader.message().await;
     assert_eq!(welcome, welcome_of(&siphon, &["threads.read"]));
-    reader.calls.send("{ not json".into()).await.expect("sent");
+    reader.controls.send("{ not json".into()).await.expect("sent");
     let refused = reader.message().await;
     assert_eq!(
         (refused["id"].clone(), refused["error"]["code"].clone()),
         (Value::Null, json!("bad_call"))
     );
-    let id = reader.call("threads.create", json!({ "config": {}, "key": "k1" })).await;
-    assert_eq!(reader.answer(&id).await["error"]["code"], "forbidden", "a reader makes no thread");
-    let id = reader.call("threads.list", json!({})).await;
-    assert_eq!(reader.answer(&id).await["result"], json!({ "threads": [] }));
+    assert_eq!(
+        reader.command("threads.create", json!({ "config": {}, "key": "k1" })).await["error"]["code"],
+        "forbidden",
+        "a reader makes no thread"
+    );
+    assert_eq!(reader.command("threads.list", json!({})).await["result"], json!({ "threads": [] }));
 
     let mut client = Client::connect(&siphon, ALL.to_vec(), 64);
     client.message().await;
-    let id = client.call("subscribe", json!({ "topic": { "type": "threads" } })).await;
-    let listed = client.answer(&id).await["result"]["subscription"]
+    let listed = client.subscribe(json!({ "type": "threads" })).await;
+    let all = client.event(&listed, |event| event["event"] == "threads").await.0;
+    assert_eq!(all["threads"], json!([]), "the threads as they stand, first: none yet");
+    let thread = client
+        .command("threads.create", json!({ "config": { "title": "first" }, "key": "k1" }))
+        .await["result"]["thread"]
         .as_str()
         .expect("an id")
         .to_owned();
-    let all = client.event(&listed, |event| event["event"] == "threads").await.0;
-    assert_eq!(all["threads"], json!([]), "the threads as they stand, first: none yet");
-    let id = client
-        .call("threads.create", json!({ "config": { "title": "first" }, "key": "k1" }))
-        .await;
-    let thread = client.answer(&id).await["result"]["thread"].as_str().expect("an id").to_owned();
     let row = client.event(&listed, |event| event["event"] == "thread").await.0;
     assert_eq!(
         (row["thread"]["id"].as_str(), row["thread"]["config"]["title"].as_str()),
         (Some(thread.as_str()), Some("first"))
     );
 
-    let id = client
-        .call("subscribe", json!({ "topic": { "type": "thread", "thread": thread } }))
-        .await;
-    let followed = client.answer(&id).await["result"]["subscription"]
-        .as_str()
-        .expect("an id")
-        .to_owned();
-    let entries = client.event(&followed, |event| event["event"] == "entries").await.0;
-    assert_eq!(entries["entries"][0]["type"], "config", "the log begins with how it runs");
-    client.event(&followed, |event| event["event"] == "status").await;
-    let id = client
-        .call("threads.configure", json!({ "thread": thread, "change": { "title": "second" } }))
-        .await;
-    assert_eq!(client.answer(&id).await["result"], json!({}));
-    let changed = client.event(&followed, |event| event["event"] == "entries").await.0;
+    let followed = client.subscribe(json!({ "type": "thread", "thread": thread, "limit": 20 })).await;
+    let first = client.event(&followed, |_| true).await.0;
+    assert_eq!(first["event"], "thread_snapshot");
+    assert_eq!(first["history"]["entries"][0]["type"], "config");
+    assert_eq!(first["status"]["asks"], json!([]));
+    assert_eq!(
+        client
+            .command("threads.configure", json!({ "thread": thread, "change": { "title": "second" } }))
+            .await["result"],
+        json!({})
+    );
+    let changed = client
+        .event(&followed, |event| {
+            event["event"] == "thread_update" && !event["entries"][0].is_null()
+        })
+        .await
+        .0;
     assert_eq!(changed["entries"][0]["title"], json!({ "from": "first", "to": "second" }));
 
-    // A reader that takes the latest entries alone goes on from where the log ended as they were read.
-    let id = client.call("threads.read", json!({ "thread": thread, "limit": 1 })).await;
-    let read = client.answer(&id).await["result"].clone();
+    // A new watch sends a bounded view, with older history available by query.
+    let read = client.command("threads.read", json!({ "thread": thread, "limit": 1 })).await["result"].clone();
     assert_eq!(
         (read["entries"].as_array().map(Vec::len), read["complete"].as_bool()),
         (Some(1), Some(false))
     );
-    let id = client
-        .call(
-            "subscribe",
-            json!({ "topic": { "type": "thread", "thread": thread, "from": read["end"] } }),
-        )
+    let latest = client.subscribe(json!({ "type": "thread", "thread": thread, "limit": 1 })).await;
+    let latest_view = client.event(&latest, |_| true).await.0;
+    assert_eq!(latest_view["event"], "thread_snapshot");
+    assert_eq!(latest_view["history"], read);
+    client
+        .command("threads.configure", json!({ "thread": thread, "change": { "title": "third" } }))
         .await;
-    let latest = client.answer(&id).await["result"]["subscription"]
-        .as_str()
-        .expect("an id")
-        .to_owned();
-    let id = client
-        .call("threads.configure", json!({ "thread": thread, "change": { "title": "third" } }))
-        .await;
-    client.answer(&id).await;
-    let after = client.event(&latest, |event| event["event"] == "entries").await.0;
+    let after = client
+        .event(&latest, |event| event["event"] == "thread_update" && !event["entries"][0].is_null())
+        .await
+        .0;
     assert_eq!(after["entries"].as_array().map(Vec::len), Some(1), "what came after the read alone");
     assert_eq!(after["entries"][0]["title"], json!({ "from": "second", "to": "third" }));
 
-    let id = client.call("subscribe", json!({ "topic": { "type": "settings" } })).await;
-    let settings = client.answer(&id).await["result"]["subscription"]
-        .as_str()
-        .expect("an id")
-        .to_owned();
+    let settings = client.subscribe(json!({ "type": "settings" })).await;
     let told = client.event(&settings, |event| event["event"] == "settings").await.0;
     assert_eq!(told["settings"]["environment"]["thread_mode"], "default");
-    let id = client
-        .call("settings.set", json!({ "environment": { "thread_mode": "auto" } }))
+    client
+        .command("settings.set", json!({ "environment": { "thread_mode": "auto" } }))
         .await;
-    client.answer(&id).await;
     let changed = client.event(&settings, |event| event["event"] == "settings").await.0;
     assert_eq!(changed["settings"]["environment"]["thread_mode"], "auto");
 
-    let id = client.call("threads.delete", json!({ "thread": thread })).await;
-    client.answer(&id).await;
+    client.command("threads.delete", json!({ "thread": thread })).await;
     let gone = client.event(&listed, |event| event["event"] == "thread_gone").await.0;
     assert_eq!(gone["thread"].as_str(), Some(thread.as_str()));
     siphon.runtime.close().expect("closed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_subscription_its_client_does_not_keep_up_with_lags_and_is_made_again_from_where_it_stood() {
+async fn a_lagged_watch_reseeds_from_a_bounded_view() {
     let siphon = siphon();
     let mut client = Client::connect(&siphon, ALL.to_vec(), 4);
     client.message().await;
-    let id = client.call("threads.create", json!({ "config": {}, "key": "k1" })).await;
-    let thread = client.answer(&id).await["result"]["thread"].as_str().expect("an id").to_owned();
-    let id = client
-        .call("subscribe", json!({ "topic": { "type": "thread", "thread": thread } }))
-        .await;
-    let followed = client.answer(&id).await["result"]["subscription"]
+    let thread = client.command("threads.create", json!({ "config": {}, "key": "k1" })).await["result"]["thread"]
         .as_str()
         .expect("an id")
         .to_owned();
+    let followed = client.subscribe(json!({ "type": "thread", "thread": thread, "limit": 4 })).await;
     // Each change a commit of its own, an event of its own, while the client reads nothing and its queue fills.
     for round in 0..12 {
         client
-            .call(
+            .command(
                 "threads.configure",
                 json!({ "thread": thread, "change": { "title": format!("t{round}") } }),
             )
@@ -236,29 +223,20 @@ async fn a_subscription_its_client_does_not_keep_up_with_lags_and_is_made_again_
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
     tokio::time::sleep(Duration::from_millis(300)).await;
-    let mut seen: Vec<Value> = Vec::new();
-    let lagged = loop {
-        let event = client.event(&followed, |_| true).await.0;
-        match event["event"].as_str() {
-            Some("lagged") => break event,
-            Some("entries") => seen.extend(event["entries"].as_array().expect("entries").iter().cloned()),
-            _ => {}
-        }
-    };
-    assert!(seen.len() < 13, "it lagged before telling all");
-    assert_eq!(lagged["topic"]["from"].is_null(), seen.is_empty(), "it stands past what it told");
-    let id = client.call("subscribe", json!({ "topic": lagged["topic"] })).await;
-    let again = client.answer(&id).await["result"]["subscription"]
-        .as_str()
-        .expect("an id")
-        .to_owned();
-    while seen.len() < 13 {
-        let event = client.event(&again, |event| event["event"] == "entries").await.0;
-        seen.extend(event["entries"].as_array().expect("entries").iter().cloned());
-    }
-    let titles: Vec<&str> = seen.iter().filter_map(|entry| entry["title"]["to"].as_str()).collect();
-    let wanted: Vec<String> = (0..12).map(|round| format!("t{round}")).collect();
-    assert_eq!(titles, wanted, "each entry once, in order, across the lag");
+    let lagged = client.event(&followed, |event| event["event"] == "lagged").await.0;
+    assert_eq!(lagged["topic"], json!({ "type": "thread", "thread": thread, "limit": 4 }));
+    let again = client.subscribe(lagged["topic"].clone()).await;
+    let replacement = client.event(&again, |_| true).await.0;
+    assert_eq!(replacement["event"], "thread_snapshot");
+    assert_eq!(replacement["history"]["complete"], false);
+    let entries = replacement["history"]["entries"].as_array().unwrap();
+    let titles: Vec<_> = entries.iter().filter_map(|entry| entry["title"]["to"].as_str()).collect();
+    assert_eq!(titles, ["t8", "t9", "t10", "t11"]);
+    let older = client
+        .command("threads.read", json!({ "thread": thread, "before": entries[0]["id"], "limit": 20 }))
+        .await;
+    assert_eq!(older["result"]["entries"].as_array().map(Vec::len), Some(9));
+    assert_eq!(older["result"]["complete"], true);
     siphon.runtime.close().expect("closed");
 }
 
@@ -267,40 +245,35 @@ async fn a_extension_s_methods_and_topics_are_the_protocol_s_beside_siphon_s() {
     let siphon = siphon();
     let mut client = Client::connect(&siphon, ALL.to_vec(), 64);
     client.message().await;
-    let id = client.call("echo.say", json!({ "words": "hi" })).await;
-    assert_eq!(client.answer(&id).await["result"], json!({ "words": "hi" }));
-    let id = client.call("echo.say", json!({ "words": 3 })).await;
-    assert_eq!(client.answer(&id).await["error"]["code"], "bad_params");
-    let id = client.call("echo.shout", json!({})).await;
-    assert_eq!(client.answer(&id).await["error"]["code"], "no_such_method");
-    let id = client
-        .call("subscribe", json!({ "topic": { "type": "echo", "words": "hi" } }))
-        .await;
     assert_eq!(
-        client.answer(&id).await["error"]["code"],
-        "forbidden",
-        "its topic needs a scope the session lacks"
+        client.command("echo.say", json!({ "words": "hi" })).await["result"],
+        json!({ "words": "hi" })
     );
+    assert_eq!(
+        client.command("echo.say", json!({ "words": 3 })).await["error"]["code"],
+        "bad_params"
+    );
+    assert_eq!(client.command("echo.shout", json!({})).await["error"]["code"], "no_such_method");
+    let reply = client
+        .watch("subscribe", json!({ "topic": { "type": "echo", "words": "hi" } }))
+        .await;
+    assert_eq!(reply["error"]["code"], "forbidden", "its topic needs a scope the session lacks");
 
     let mut operator = Client::connect(&siphon, vec![Scope::ThreadsRead, Scope::TerminalsOperate], 64);
     operator.message().await;
-    let id = operator
-        .call("subscribe", json!({ "topic": { "type": "echo", "words": "hi" } }))
-        .await;
-    let subscription = operator.answer(&id).await["result"]["subscription"]
-        .as_str()
-        .expect("an id")
-        .to_owned();
+    let subscription = operator.subscribe(json!({ "type": "echo", "words": "hi" })).await;
     for _ in 0..3 {
         let echoed = operator.event(&subscription, |event| event["event"] == "echoed").await.0;
         assert_eq!(echoed["words"], "hi");
     }
-    let id = operator.call("subscribe", json!({ "topic": { "type": "nowhere" } })).await;
-    assert_eq!(operator.answer(&id).await["error"]["code"], "no_such_topic");
+    assert_eq!(
+        operator.watch("subscribe", json!({ "topic": { "type": "nowhere" } })).await["error"]["code"],
+        "no_such_topic"
+    );
 
-    let typescript = crate::protocol::typescript(&[crate::protocol::siphon::set(), echo::set()]);
-    assert!(typescript.contains("export type Topic = SiphonTopic | EchoTopic;"));
-    assert!(typescript.contains("export type Event = ConnectionEvent | SiphonEvent | EchoEvent;"));
+    let typescript = crate::protocol::typescript(&[crate::protocol::octoii::set(), echo::set()]);
+    assert!(typescript.contains("export type Topic = OctoiiTopic | EchoTopic;"));
+    assert!(typescript.contains("export type Event = ConnectionEvent | OctoiiEvent | EchoEvent;"));
     assert!(typescript.contains("'echo.say': { params: Said; result: Said };"));
     let said = echo::Method::Say(echo::Said { words: "hi".into() });
     assert_eq!(said.name(), "echo.say", "a method is named as its set declares it");
@@ -317,18 +290,22 @@ async fn an_extension_switched_off_answers_nothing_till_it_is_switched_on() {
     );
     client.message().await;
     let switch = |off: &[&str]| json!({ "environment": { "disabled_extensions": off } });
-    let id = client.call("settings.set", switch(&["echo"])).await;
-    assert_eq!(client.answer(&id).await["result"], json!({}));
-    let id = client.call("echo.say", json!({ "words": "hi" })).await;
-    assert_eq!(client.answer(&id).await["error"]["code"], "extension_off");
-    let id = client
-        .call("subscribe", json!({ "topic": { "type": "echo", "words": "hi" } }))
-        .await;
-    assert_eq!(client.answer(&id).await["error"]["code"], "extension_off");
-    let id = client.call("settings.set", switch(&[])).await;
-    client.answer(&id).await;
-    let id = client.call("echo.say", json!({ "words": "hi" })).await;
-    assert_eq!(client.answer(&id).await["result"], json!({ "words": "hi" }));
+    assert_eq!(client.command("settings.set", switch(&["echo"])).await["result"], json!({}));
+    assert_eq!(
+        client.command("echo.say", json!({ "words": "hi" })).await["error"]["code"],
+        "extension_off"
+    );
+    assert_eq!(
+        client
+            .watch("subscribe", json!({ "topic": { "type": "echo", "words": "hi" } }))
+            .await["error"]["code"],
+        "extension_off"
+    );
+    client.command("settings.set", switch(&[])).await;
+    assert_eq!(
+        client.command("echo.say", json!({ "words": "hi" })).await["result"],
+        json!({ "words": "hi" })
+    );
     siphon.runtime.close().expect("closed");
 }
 
@@ -345,15 +322,12 @@ async fn what_a_project_was_granted_is_listed_and_taken_back_in_part() {
     siphon.runtime.commit(changes).await.expect("committed");
     let mut client = Client::connect(&siphon, ALL.to_vec(), 64);
     client.message().await;
-    let id = client.call("grants.list", json!({})).await;
-    let listed = client.answer(&id).await["result"]["projects"].clone();
+    let listed = client.command("grants.list", json!({})).await["result"]["projects"].clone();
     assert_eq!(listed[0]["folder"], "/work/app");
     assert_eq!(listed[0]["grants"]["commands"], json!(["git push *", "cargo test *"]));
     let less = json!({ "folder": "/work/app", "grants": { "commands": ["git push *"], "paths": [], "tools": [] } });
-    let id = client.call("grants.revoke", less).await;
-    client.answer(&id).await;
-    let id = client.call("grants.list", json!({})).await;
-    let listed = client.answer(&id).await["result"]["projects"].clone();
+    client.command("grants.revoke", less).await;
+    let listed = client.command("grants.list", json!({})).await["result"]["projects"].clone();
     assert_eq!(listed[0]["grants"]["commands"], json!(["cargo test *"]), "taken back in part");
     siphon.runtime.close().expect("closed");
 }
@@ -363,31 +337,29 @@ async fn a_thread_goes_on_at_a_time_as_its_status_tells_and_its_window_is_told_p
     let siphon = siphon();
     let mut client = Client::connect(&siphon, ALL.to_vec(), 64);
     client.message().await;
-    let id = client.call("threads.create", json!({ "config": {}, "key": "k1" })).await;
-    let thread = client.answer(&id).await["result"]["thread"].as_str().expect("an id").to_owned();
+    let thread = client.command("threads.create", json!({ "config": {}, "key": "k1" })).await["result"]["thread"]
+        .as_str()
+        .expect("an id")
+        .to_owned();
     let mut list_client = Client::connect(&siphon, ALL.to_vec(), 64);
     list_client.message().await;
     let list = list_client.subscribe(json!({ "type": "threads" })).await;
     list_client.event(&list, |event| event["event"] == "threads").await;
-    let id = client
-        .call("subscribe", json!({ "topic": { "type": "thread", "thread": thread } }))
-        .await;
-    let followed = client.answer(&id).await["result"]["subscription"]
-        .as_str()
-        .expect("an id")
-        .to_owned();
-    let first = client.event(&followed, |event| event["event"] == "status").await.0;
+    let followed = client.subscribe(json!({ "type": "thread", "thread": thread, "limit": 20 })).await;
+    let first = client.event(&followed, |event| event["event"] == "thread_snapshot").await.0;
     assert_eq!(
         (first["status"]["compacting"].as_bool(), first["status"].get("resuming_at")),
         (Some(false), None)
     );
 
     let at = 4_102_444_800_000_i64;
-    let id = client.call("threads.resume", json!({ "thread": thread, "at": at })).await;
-    assert_eq!(client.answer(&id).await["result"], json!({}));
+    assert_eq!(
+        client.command("threads.resume", json!({ "thread": thread, "at": at })).await["result"],
+        json!({})
+    );
     client
         .event(&followed, |event| {
-            event["event"] == "status" && event["status"]["resuming_at"] == at
+            event["event"] == "thread_update" && event["status"]["resuming_at"] == at
         })
         .await;
     list_client
@@ -396,39 +368,38 @@ async fn a_thread_goes_on_at_a_time_as_its_status_tells_and_its_window_is_told_p
         })
         .await;
     let later = at + 60_000;
-    let id = client.call("threads.resume", json!({ "thread": thread, "at": later })).await;
-    assert_eq!(client.answer(&id).await["result"], json!({}));
+    assert_eq!(
+        client.command("threads.resume", json!({ "thread": thread, "at": later })).await["result"],
+        json!({})
+    );
     client
         .event(&followed, |event| {
-            event["event"] == "status" && event["status"]["resuming_at"] == later
+            event["event"] == "thread_update" && event["status"]["resuming_at"] == later
         })
         .await;
 
-    let id = client.call("threads.resume", json!({ "thread": thread })).await;
-    client.answer(&id).await;
+    client.command("threads.resume", json!({ "thread": thread })).await;
     client
         .event(&followed, |event| {
-            event["event"] == "status" && event["status"].get("resuming_at").is_none()
+            event["event"] == "thread_update" && event["status"].get("resuming_at").is_none()
         })
         .await;
 
-    let id = client
-        .call(
+    client
+        .command(
             "threads.deliver",
             json!({ "thread": thread, "content": [{ "type": "input_text", "text": "hello" }], "key": "d1" }),
         )
         .await;
-    client.answer(&id).await;
     client
         .event(&followed, |event| {
-            event["event"] == "entries"
+            event["event"] == "thread_update"
                 && event["entries"]
                     .as_array()
                     .is_some_and(|entries| entries.iter().any(|entry| entry["type"] == "input"))
         })
         .await;
-    let id = client.call("threads.context", json!({ "thread": thread })).await;
-    let composition = client.answer(&id).await["result"].clone();
+    let composition = client.command("threads.context", json!({ "thread": thread })).await["result"].clone();
     let parts: Vec<&str> = composition["parts"]
         .as_array()
         .into_iter()
@@ -445,11 +416,15 @@ async fn a_resume_survives_a_rejected_replacement() {
     let siphon = siphon();
     let mut client = Client::connect(&siphon, ALL.to_vec(), 64);
     client.message().await;
-    let id = client.call("threads.create", json!({ "config": {}, "key": "k1" })).await;
-    let thread = client.answer(&id).await["result"]["thread"].as_str().expect("an id").to_owned();
+    let thread = client.command("threads.create", json!({ "config": {}, "key": "k1" })).await["result"]["thread"]
+        .as_str()
+        .expect("an id")
+        .to_owned();
     let at = 4_102_444_800_000_i64;
-    let id = client.call("threads.resume", json!({ "thread": thread, "at": at })).await;
-    assert_eq!(client.answer(&id).await["result"], json!({}));
+    assert_eq!(
+        client.command("threads.resume", json!({ "thread": thread, "at": at })).await["result"],
+        json!({})
+    );
 
     let path = octoii_siphon_lib::fiber_path(&crate::threads::thread::main(&thread), crate::agent::ResumeFiber::KEY.as_bytes());
     let resume = || siphon.runtime.snapshot().unwrap().fiber(&path).unwrap().expect("the armed resume");
@@ -464,8 +439,12 @@ async fn a_resume_survives_a_rejected_replacement() {
         .unwrap();
     siphon.runtime.commit(changes).await.unwrap();
 
-    let id = client.call("threads.resume", json!({ "thread": thread, "at": at + 60_000 })).await;
-    assert_eq!(client.answer(&id).await["error"]["code"], "failed");
+    assert_eq!(
+        client
+            .command("threads.resume", json!({ "thread": thread, "at": at + 60_000 }))
+            .await["error"]["code"],
+        "failed"
+    );
     assert_eq!(resume().id, original.id);
     siphon.runtime.close().expect("closed");
 }
@@ -476,21 +455,22 @@ async fn a_thread_keeps_its_starting_workspace_when_reconfigured() {
     let mut client = Client::connect(&siphon, ALL.to_vec(), 64);
     client.message().await;
     let workspace = siphon.machine.workspace_of(None);
-    let id = client
-        .call(
+    let created = client
+        .command(
             "threads.create",
             json!({ "config": { "workspace": workspace }, "key": "fixed-workspace" }),
         )
         .await;
-    let created = client.answer(&id).await;
     let thread = created["result"]["thread"].as_str().expect("a thread");
-    let id = client
-        .call(
-            "threads.configure",
-            json!({ "thread": thread, "change": { "workspace": "/other" } }),
-        )
-        .await;
-    assert_eq!(client.answer(&id).await["error"]["code"], "workspace_fixed");
+    assert_eq!(
+        client
+            .command(
+                "threads.configure",
+                json!({ "thread": thread, "change": { "workspace": "/other" } }),
+            )
+            .await["error"]["code"],
+        "workspace_fixed"
+    );
     let listed = siphon.threads.listed(thread).expect("listed");
     assert_eq!(listed.config.workspace.as_deref(), workspace.to_str());
     assert_eq!(listed.status.inbox, []);

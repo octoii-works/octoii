@@ -1,20 +1,17 @@
-//! Messages as they go over the socket: a call read as its set's method by its name and params, an answer and an
-//! event written as the client's TypeScript reads them.
+//! The HTTP method envelope and watch messages as the client reads them.
 
-use octoii::protocol::siphon::{Method, StopThread};
-use octoii::protocol::{Answer, Call, ConnectionEvent, Error};
+use octoii::protocol::octoii::{Method, StopThread};
+use octoii::protocol::{Answer, Command, CommandReply, ConnectionEvent, Error};
 use octoii::threads::StopTarget;
 use serde_json::json;
 
 #[test]
-fn a_call_is_read_as_its_set_s_method_by_its_name_and_params() {
-    let call: Call = serde_json::from_value(json!({
-        "id": "7",
+fn a_command_is_read_as_its_set_s_method_by_its_name_and_params() {
+    let call: Command = serde_json::from_value(json!({
         "method": "threads.stop",
         "params": { "thread": "t1", "target": { "kind": "turn", "id": "turn1" } }
     }))
     .expect("a call");
-    assert_eq!(call.id, "7");
     let method = Method::read(&call.method, call.params).expect("a method of Octoii's");
     assert_eq!(
         method,
@@ -33,6 +30,10 @@ fn a_call_is_read_as_its_set_s_method_by_its_name_and_params() {
 
 #[test]
 fn an_answer_and_an_event_are_written_as_the_client_reads_them() {
+    assert_eq!(
+        serde_json::to_value(CommandReply::Result { result: json!({}) }).unwrap(),
+        json!({ "result": {} })
+    );
     let answered = Answer::Result {
         id: "7".into(),
         result: json!({}),

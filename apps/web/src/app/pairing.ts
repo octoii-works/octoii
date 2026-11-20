@@ -2,7 +2,8 @@
  * Pairing this browser with the node: a link's credential sent once to the node, which keeps a session for the browser —
  * in a cookie the page cannot read, at the node's own address; through a tunnel, as a credential its answer gives.
  */
-import { type NodeAnswer, type SendRequest, succeeded, wordsOf } from "../components/state/reach.ts";
+import type { NodeAnswer, SendRequest } from "@octoii-works/octoii-client";
+import { succeeded, wordsOf } from "../components/state/reach.ts";
 
 /** Where the node redeems a link for a browser's session. */
 const PAIR_PATH = "/pair";

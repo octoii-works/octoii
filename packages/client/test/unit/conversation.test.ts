@@ -106,8 +106,8 @@ describe("a thread's conversation, by its ids", () => {
 	});
 });
 
-test("a followed thread replays live output by request and keeps its durable cursor", () => {
-	const followed = new FollowedThread("thread", 20);
+test("a followed thread replays live output by request and keeps its committed history", () => {
+	const followed = new FollowedThread(20);
 	const subscription = "topic";
 	const send = (request: string, offset: string, part: string) =>
 		followed.take({ event: "stream", subscription, request, key: "q1", offset, data: { type: "delta", index: 0, part: "text", text: part } });
@@ -116,14 +116,14 @@ test("a followed thread replays live output by request and keeps its durable cur
 	const parts = () => [...followed.view.streaming].map(([id, stream]) => [id, stream.parts]);
 	const delta = (part: string): Streamed => ({ type: "delta", index: 0, part: "text", text: part });
 
-	followed.begin([input("1", "start")], undefined, true);
+	const status: Status = { turn: "running", asks: [], inbox: [], compacting: false };
+	followed.take({ event: "thread_snapshot", subscription, sequence: "1", status, history: { entries: [input("1", "start")], complete: true } });
 	send("first", "0", "a");
 	send("second", "18446744073709551613", "b");
 	send("second", "18446744073709551615", "c");
 	send("second", "18446744073709551615", "duplicate");
 	send("second", "18446744073709551614", "older");
-	const cursor = { segment: "1", offset: 2 };
-	followed.take({ event: "entries", subscription, cursor, entries: [reply("2", "q1", [text("A")])] });
+	followed.take({ event: "thread_update", subscription, sequence: "2", status, entries: [reply("2", "q1", [text("A")])] });
 	expect(parts()).toEqual([
 		["first", [delta("a")]],
 		["second", [delta("b"), delta("c")]],
@@ -140,6 +140,21 @@ test("a followed thread replays live output by request and keeps its durable cur
 	send("third", "0", "d");
 	close("second");
 	expect(parts()).toEqual([["third", [delta("d")]]]);
-	expect(followed.cursor).toEqual(cursor);
 	expect(followed.view.entries.map(({ id }) => id)).toEqual(["1", "2"]);
+});
+
+test("a replacement view keeps older history at an overlapping boundary and discards history across a gap", () => {
+	const followed = new FollowedThread(2);
+	const subscription = "topic";
+	const status: Status = { turn: "running", asks: [], inbox: [], compacting: false };
+	const snapshot = (sequence: string, entries: Entry[]) =>
+		followed.take({ event: "thread_snapshot", subscription, sequence, status, history: { entries, complete: false } });
+	const ids = () => followed.view.entries.map(({ id }) => id);
+	snapshot("1", [input("2", "two"), input("3", "three")]);
+	followed.prepend([input("1", "one")], true);
+	snapshot("2", [input("3", "three"), input("4", "four")]);
+	expect(ids()).toEqual(["2", "3", "4"]);
+	expect(followed.view.complete).toBe(false);
+	snapshot("3", [input("7", "seven"), input("8", "eight")]);
+	expect(ids()).toEqual(["7", "8"]);
 });

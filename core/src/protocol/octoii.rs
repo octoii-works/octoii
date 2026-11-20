@@ -1,10 +1,9 @@
-//! Siphon's own methods, events and topics: the threads — each made, changed, delivered to, stopped, deleted, answered
+//! Octoii's methods, events and topics: the threads — each made, changed, delivered to, stopped, deleted, answered
 //! and read — and the settings; a subscription to a thread, to the list of threads, or to the settings.
 
 use crate::agent::Composition;
 use crate::settings::{Environment, SettingsChange};
 use crate::threads::inbox::Joins;
-use crate::threads::log::Cursor;
 use crate::threads::{Config, ConfigChange, Entry, Listed, MarksChange, Status, StopTarget};
 use octoii_ai::vocabulary::InputContent;
 use serde::{Deserialize, Serialize};
@@ -13,7 +12,7 @@ use ts_rs::TS;
 use crate::protocol::{Nothing, Scope};
 
 crate::methods! {
-    events: SiphonEvent, topics: SiphonTopic;
+    events: OctoiiEvent, topics: OctoiiTopic;
     /// The threads, each as a list shows it.
     "threads.list" ListThreads(Nothing) -> ThreadsListed, Some(Scope::ThreadsRead);
     /// A thread made as `config` says, once for its idempotency key `key`: the id it has.
@@ -185,15 +184,11 @@ pub struct ReadThread {
     pub limit: u32,
 }
 
-/// The entries read, oldest first; whether they reach the thread's first; and where its log ended as they were read —
-/// what a subscription to the thread goes on from, none for a log not begun.
+/// The entries read, oldest first, and whether they reach the thread's first entry.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 pub struct ThreadRead {
     pub entries: Vec<Entry>,
     pub complete: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub end: Option<Cursor>,
 }
 
 /// A page of a folder's entries: the folder, as the person names it, those after the entry `after` — from its first,
@@ -421,39 +416,34 @@ pub struct GrantsListed {
 /// status and what streams of its requests — the list of threads, or the settings.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub enum SiphonTopic {
-    Thread {
-        thread: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[ts(optional)]
-        from: Option<Cursor>,
-    },
+pub enum OctoiiTopic {
+    Thread { thread: String, limit: u32 },
     Threads,
     Settings,
 }
 
 /// The settings, as a client is told of them: the environment's, which every client shares, and its device's own,
-/// which Siphon keeps for it and reads none of.
+/// which Octoii keeps for it and reads none of.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 pub struct Settings {
     pub environment: Environment,
     pub device: serde_json::Value,
 }
 
-/// An event of a subscription to Siphon's, by the subscription's id: a thread's entries appended, with where its
-/// reader then stands; its status as it changed; what streams of a request as its model answers, by its offset in the
-/// request's stream; the threads as they stand, first, then a thread of the list as it changed, or gone; the settings
-/// as they changed.
+/// A durable view or update at one commit, or a live event of the subscription.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "event", rename_all = "snake_case")]
-pub enum SiphonEvent {
-    Entries {
+pub enum OctoiiEvent {
+    ThreadSnapshot {
         subscription: String,
-        entries: Vec<Entry>,
-        cursor: Cursor,
+        sequence: String,
+        history: ThreadRead,
+        status: Box<Status>,
     },
-    Status {
+    ThreadUpdate {
         subscription: String,
+        sequence: String,
+        entries: Vec<Entry>,
         status: Box<Status>,
     },
     Stream {

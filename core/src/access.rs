@@ -9,7 +9,7 @@ use std::time::Duration;
 use crate::protocol::Scope;
 use base64::Engine as _;
 use bytes::Bytes;
-use octoii_siphon_lib::{Batch, Changes, RuntimeHandle};
+use octoii_siphon_lib::{Batch, Changes, CommitEvent, RuntimeHandle};
 use octoii_siphon_lib::{Range, Snapshot};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -268,6 +268,30 @@ impl Access {
         };
         let live = same(&kept.digest, &digest(secret)) && kept.expires_at > self.runtime.now_ms()?;
         Ok(live.then(|| shown(id, &kept)))
+    }
+
+    /// Waits until an authenticated session is revoked or expires.
+    ///
+    /// # Errors
+    /// The runtime can no longer confirm that the session is live.
+    pub async fn until_revoked(&self, session: &AccessEntry) -> Result<(), Refused> {
+        let path = path(SESSION_KIND, &session.id);
+        let mut commits = self.runtime.commits()?;
+        loop {
+            let remaining = session.expires_at.saturating_sub(self.runtime.now_ms()?);
+            if remaining <= 0 || self.runtime.snapshot()?.stat(&path)?.is_none() {
+                return Ok(());
+            }
+            let remaining = Duration::from_millis(remaining.unsigned_abs());
+            tokio::select! {
+                () = tokio::time::sleep(remaining) => return Ok(()),
+                event = commits.next() => match event? {
+                    Some(CommitEvent::Head(_)) => {}
+                    Some(CommitEvent::Fault { error, .. }) => return Err(error.into()),
+                    Some(CommitEvent::Closed(_)) | None => return Err(Refused::Volume("the runtime closed".into())),
+                }
+            }
+        }
     }
 
     /// The sessions and the links, each in the order made.

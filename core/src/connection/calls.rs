@@ -3,10 +3,10 @@
 
 use std::path::Path;
 
-use crate::protocol::siphon::{Created, Delivered, Method, ThreadRead, ThreadsListed, Withdrawn};
+use crate::protocol::octoii::{Created, Delivered, Method, ThreadRead, ThreadsListed, Withdrawn};
 use crate::protocol::{Error, Nothing};
 use crate::threads::inbox::Joins;
-use crate::threads::{NewThread, PERSON, log};
+use crate::threads::{NewThread, PERSON};
 use crate::tools::projects::Place;
 use serde::Serialize;
 
@@ -35,7 +35,7 @@ pub(crate) async fn answered(caller: Caller, method: Method) -> Result<serde_jso
         Method::ListGrants(Nothing {}) => {
             let snapshot = siphon.runtime.snapshot().map_err(|error| refusal("failed", &error.to_string()))?;
             let projects = crate::tools::projects::all_grants(&snapshot).map_err(|error| refusal("failed", &error.to_string()))?;
-            json(&crate::protocol::siphon::GrantsListed { projects })
+            json(&crate::protocol::octoii::GrantsListed { projects })
         }
         Method::RevokeGrants(less) => {
             let snapshot = siphon.runtime.snapshot().map_err(|error| refusal("failed", &error.to_string()))?;
@@ -161,15 +161,20 @@ async fn threads_answered(siphon: &Octoii, method: Method) -> Result<serde_json:
     }
 }
 
-/// A page of the thread `thread`'s entries, the latest `limit` before the entry `before`, and where its log ends.
 fn read_thread(siphon: &Octoii, thread: &str, before: Option<&str>, limit: u32) -> Result<ThreadRead, Error> {
     let snapshot = siphon.runtime.snapshot().map_err(|error| refusal("failed", &error.to_string()))?;
     siphon.threads.listed_at(&snapshot, thread).map_err(|error| failed(&error))?;
-    let limit = usize::try_from(limit).unwrap_or(usize::MAX);
-    let (entries, complete) =
-        crate::threads::entries_before(&snapshot, thread, before, limit).map_err(|error| refusal("failed", &error.to_string()))?;
-    let end = log::end(&snapshot, thread).map_err(|error| refusal("failed", &error.to_string()))?;
-    Ok(ThreadRead { entries, complete, end })
+    history(&snapshot, thread, before, limit).map_err(|error| refusal("failed", &error.to_string()))
+}
+
+pub(super) fn history(
+    snapshot: &octoii_siphon_lib::Snapshot,
+    thread: &str,
+    before: Option<&str>,
+    limit: u32,
+) -> Result<ThreadRead, crate::threads::log::Error> {
+    let (entries, complete) = crate::threads::entries_before(snapshot, thread, before, limit.clamp(1, 500) as usize)?;
+    Ok(ThreadRead { entries, complete })
 }
 
 /// Why an operation on threads was not done, as a client is told.

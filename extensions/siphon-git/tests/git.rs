@@ -32,8 +32,7 @@ fn git(root: &Path, arguments: &[&str]) {
 }
 
 async fn asked(client: &mut Client, method: &str, params: Value) -> Value {
-    let id = client.call(method, params).await;
-    let answer = client.answer(&id).await;
+    let answer = client.command(method, params).await;
     assert!(answer["error"].is_null(), "{method}: {answer}");
     answer["result"].clone()
 }
@@ -135,13 +134,15 @@ async fn git_tells_a_repository_s_changes_patches_versions_and_commits() {
     );
 
     let elsewhere = tempfile::tempdir().expect("a folder");
-    let id = client
-        .call(
-            "git.changes",
-            json!({ "path": elsewhere.path(), "scope": { "type": "uncommitted" } }),
-        )
-        .await;
-    assert_eq!(client.answer(&id).await["error"]["code"], "no_repository");
+    assert_eq!(
+        client
+            .command(
+                "git.changes",
+                json!({ "path": elsewhere.path(), "scope": { "type": "uncommitted" } }),
+            )
+            .await["error"]["code"],
+        "no_repository"
+    );
     siphon.close().await;
 }
 
@@ -179,8 +180,10 @@ async fn worktree_rpc_requires_git_permission_and_checks_out_the_requested_base(
     assert_eq!(listed["worktrees"].as_array().unwrap().len(), 1);
     let destination = root.join("task");
     let params = json!({"path": source, "destination": destination, "branch": "task", "base": base});
-    let id = reader.call("git.create-worktree", params.clone()).await;
-    assert_eq!(reader.answer(&id).await["error"]["code"], "forbidden");
+    assert_eq!(
+        reader.command("git.create-worktree", params.clone()).await["error"]["code"],
+        "forbidden"
+    );
     assert!(!destination.exists());
     let branch = Command::new("git")
         .args(["show-ref", "--verify", "refs/heads/task"])
@@ -206,8 +209,7 @@ async fn worktree_rpc_requires_git_permission_and_checks_out_the_requested_base(
             .any(|entry| entry["path"] == destination.to_string_lossy().as_ref())
     );
     std::fs::write(destination.join("keep.txt"), "keep me\n").unwrap();
-    let id = writer.call("git.create-worktree", params).await;
-    assert!(!writer.answer(&id).await["error"].is_null());
+    assert!(!writer.command("git.create-worktree", params).await["error"].is_null());
     assert_eq!(std::fs::read_to_string(destination.join("keep.txt")).unwrap(), "keep me\n");
     siphon.close().await;
 }
@@ -249,7 +251,9 @@ async fn branches_include_local_and_remote_bases_and_describe_detached_head() {
     assert_eq!(detached["branches"], bases["branches"]);
     let mut denied = Client::connect(&node, vec![Scope::ThreadsRead], 64);
     denied.message().await;
-    let id = denied.call("git.branches", json!({"path":root})).await;
-    assert_eq!(denied.answer(&id).await["error"]["code"], "forbidden");
+    assert_eq!(
+        denied.command("git.branches", json!({"path":root})).await["error"]["code"],
+        "forbidden"
+    );
     node.close().await;
 }

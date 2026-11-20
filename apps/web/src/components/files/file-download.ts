@@ -1,7 +1,8 @@
 /** Original thread files read through the page's authenticated node client, and saved with their own filenames. */
 import type { FileRef } from "@octoii-works/octoii-client";
 import { fileAddress } from "../../core/attachments.ts";
-import { type SendRequest, succeeded, wordsOf } from "../state/reach.ts";
+import type { SendRequest } from "@octoii-works/octoii-client";
+import { succeeded, wordsOf } from "../state/reach.ts";
 
 /** Reads the saved original, never the current machine path or an image fitted for display. */
 export async function readDownload(send: SendRequest, thread: string, file: FileRef): Promise<File> {

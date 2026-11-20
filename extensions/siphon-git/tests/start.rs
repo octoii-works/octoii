@@ -69,8 +69,7 @@ async fn client(node: &Octoii, scopes: Vec<Scope>) -> Client {
 }
 
 async fn reply(client: &mut Client, method: &str, params: Value) -> Value {
-    let id = client.call(method, params).await;
-    client.answer(&id).await
+    client.command(method, params).await
 }
 
 async fn call(client: &mut Client, method: &str, params: Value) -> Value {

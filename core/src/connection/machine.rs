@@ -5,7 +5,7 @@
 
 use crate::machine::{Is, Machine, Read, ReadOptions};
 use crate::protocol::Error;
-use crate::protocol::siphon::{FileKind, FilePage, FolderEntry, FolderPage, FoundPath, FoundPaths, ListFolder, ReadFile, SearchFiles};
+use crate::protocol::octoii::{FileKind, FilePage, FolderEntry, FolderPage, FoundPath, FoundPaths, ListFolder, ReadFile, SearchFiles};
 use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher};
 

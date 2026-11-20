@@ -36,6 +36,22 @@ registration live in `tools/{tool,context,registry}.rs`, with the same call runn
 `apps/node/src/http/` contains handlers used by the loopback and tunnel HTTP router. The local control socket uses
 its own state for node status and access management.
 
+## Node protocol
+
+- `POST /api/v1/call` accepts a JSON object with `method` and `params`. The HTTP status accompanies either `result` or
+  `error` with a code and message. The app sends the same session with each request. Initial task submission still
+  uses `POST /threads` so it can carry attachments in the same request. File reads and uploads have their own HTTP routes.
+- `/api/v1/watch` uses the `octoii.watch.1` WebSocket subprotocol. Clients send `subscribe` and `unsubscribe` controls.
+  The node sends live events and binary frames for terminals and browser pages. Loopback and tunnel clients use the
+  same routes and scopes.
+- A Thread watch starts with `thread_snapshot`. It contains up to 500 requested history entries and the status,
+  including pending approvals, from the same commit. `thread_update` carries appended entries and status with their
+  commit sequence. Reconnecting or falling behind starts from a fresh view. Older entries are available via
+  `threads.read`. Live model output follows its request identity and may reset.
+- Device revocation ends active watches. Each new HTTP request, including an attachment read, checks the session.
+  Approval and stop commands carry the exact identity shown to the user. The client retries only commands that
+  carry a key the node deduplicates.
+
 ## Frontend boundary
 
 UI packages stay separate from Rust extensions. Product UI packages consume the client and shared UI contracts, never

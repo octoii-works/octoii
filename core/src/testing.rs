@@ -5,14 +5,14 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::protocol::{Machine, Scope};
+use crate::protocol::{Command, CommandReply, Machine, Scope};
 use bytes::Bytes;
 use octoii_ai::host::{Credential, Credentials, Unavailable};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
 
-use crate::connection::{Access, Outgoing, serve};
+use crate::connection::{Access, Outgoing, call, serve};
 use crate::{Octoii, Setup};
 
 /// The runtime used by in-memory machine fixtures.
@@ -78,11 +78,12 @@ pub fn setup(machine: crate::machine::Host) -> Setup {
     }
 }
 
-/// A test's client of a connection: what it sends, what it is sent, and what it was sent and passed over while it
-/// waited for an answer, kept for what it waits for next.
+/// A test's in-process client for command dispatch and the watch connection.
 #[derive(Debug)]
 pub struct Client {
-    pub calls: mpsc::Sender<String>,
+    octoii: Octoii,
+    access: Access,
+    pub controls: mpsc::Sender<String>,
     sent: mpsc::Receiver<Outgoing>,
     passed: std::collections::VecDeque<(Value, Bytes)>,
     next: u64,
@@ -92,16 +93,18 @@ impl Client {
     /// A client of `siphon` whose session holds `scopes`, its queue `ahead` long.
     #[must_use]
     pub fn connect(siphon: &Octoii, scopes: Vec<Scope>, ahead: usize) -> Self {
-        let (calls, incoming) = mpsc::channel(16);
+        let (controls, incoming) = mpsc::channel(16);
         let (outgoing, sent) = mpsc::channel(ahead);
         let access = Access {
             session: "session-1".into(),
             scopes,
         };
         let machine = Machine::of("here".into(), &siphon.machine);
-        tokio::spawn(serve(siphon.clone(), access, machine, incoming, outgoing));
+        tokio::spawn(serve(siphon.clone(), access.clone(), machine, incoming, outgoing));
         Self {
-            calls,
+            octoii: siphon.clone(),
+            access,
+            controls,
             sent,
             passed: std::collections::VecDeque::new(),
             next: 0,
@@ -132,20 +135,33 @@ impl Client {
         self.received().await.0
     }
 
-    /// Calls `method` with `params`: its id.
+    /// Dispatches an HTTP command or query with the fixture's scopes.
+    pub async fn command(&self, method: &str, params: Value) -> Value {
+        let reply = match call(
+            self.octoii.clone(),
+            self.access.clone(),
+            Command {
+                method: method.to_owned(),
+                params,
+            },
+        )
+        .await
+        {
+            Ok(result) => CommandReply::Result { result },
+            Err(error) => CommandReply::Error { error },
+        };
+        serde_json::to_value(reply).unwrap_or_default()
+    }
+
+    /// Controls a watch and returns its response, keeping events that arrive while it waits.
     ///
     /// # Panics
     /// Where the connection is gone.
-    pub async fn call(&mut self, method: &str, params: Value) -> String {
+    pub async fn watch(&mut self, method: &str, params: Value) -> Value {
         self.next += 1;
         let id = self.next.to_string();
         let call = json!({ "id": id, "method": method, "params": params });
-        self.calls.send(call.to_string()).await.expect("sent");
-        id
-    }
-
-    /// The answer to the call `id`, what came before it kept for later.
-    pub async fn answer(&mut self, id: &str) -> Value {
+        self.controls.send(call.to_string()).await.expect("sent");
         loop {
             let (message, payload) = self.received().await;
             if message["id"] == id {
@@ -160,8 +176,7 @@ impl Client {
     /// # Panics
     /// Where it is refused.
     pub async fn subscribe(&mut self, topic: Value) -> String {
-        let id = self.call("subscribe", json!({ "topic": topic })).await;
-        let answer = self.answer(&id).await;
+        let answer = self.watch("subscribe", json!({ "topic": topic })).await;
         answer["result"]["subscription"].as_str().expect("subscribed").to_owned()
     }
 

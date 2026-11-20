@@ -1,5 +1,5 @@
 import { expect, it, mock } from "bun:test";
-import type { NodeAnswer, NodeRequest, SendRequest } from "../../src/components/state/reach.ts";
+import type { NodeAnswer, NodeRequest, SendRequest } from "@octoii-works/octoii-client";
 import { EMPTY_DRAFT } from "../../src/core/drafts.ts";
 import type { DraftWorktree } from "../../src/extensions/git/new-worktree.tsx";
 import type { ThreadWorkspace } from "../../src/screens/new-thread/request.ts";

@@ -1,9 +1,5 @@
-/**
- * The page's client of the node: one WebSocket to the node, by the page's reach of it, opened again as it drops.
- * Everything the page shows and does goes over it, but the bytes of the files a message gives, posted to the node.
- */
+/** The page's HTTP and watch client, using the same platform session for both. */
 import { type Client, type Clock, createClient } from "@octoii-works/octoii-client";
-import { keepFile } from "./files.ts";
 import { failed } from "../components/state/notices.ts";
 import type { Reach } from "../components/state/reach.ts";
 
@@ -19,9 +15,9 @@ const clock: Clock = {
 export function connect(reach: Reach): Client {
 	return createClient({
 		open: reach.open,
+		send: reach.send,
 		randomUUID: () => crypto.randomUUID(),
 		clock,
 		report: (error) => failed("Something asked of the node failed", error),
-		keepFile: (thread, bytes, name) => keepFile(reach.send, thread, bytes, name),
 	});
 }

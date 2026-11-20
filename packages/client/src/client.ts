@@ -1,14 +1,8 @@
-/**
- * Octoii's client: one connection to a node, what it subscribes to — threads, the list of them, the settings, a
- * thread's terminals and pages, a terminal's output and a page's frames — and the protocol's methods. A thread followed
- * is read first, its latest entries alone, then subscribed to from where the log ended as it was read; older entries
- * are read back only as a reader asks. What it subscribes to is subscribed to again on each connection that opens, from
- * where its reader stands. A method that makes or adds to a thread is done once for a key the client mints, and asked
- * again on the next connection where one drops before its answer, so a person's message is neither lost nor taken twice.
- */
+/** Octoii's typed HTTP requests and live watches. */
 import { Connection, type ConnectionStatus } from "./connection.ts";
 import { ENTRIES_KEPT } from "./constants.ts";
-import { ClientError, clientError, isConnectionError } from "./errors.ts";
+import { Controls } from "./controls.ts";
+import { ClientError, isConnectionError } from "./errors.ts";
 import { type Followable, type Followed, Value } from "./followed.ts";
 import { Follows } from "./follows.ts";
 import type { Clock, ClientOptions } from "./options.ts";
@@ -41,6 +35,7 @@ import type {
 	Topic,
 	View,
 } from "./protocol.ts";
+import { Requests } from "./requests.ts";
 import { Subscriptions } from "./subscriptions.ts";
 import { followTerminal, type TerminalHandlers, type TerminalView } from "./terminals.ts";
 import type { ThreadView } from "./thread.ts";
@@ -51,7 +46,7 @@ import { Watches } from "./watch.ts";
 export type Client = {
 	readonly status: Followed<ConnectionStatus>;
 	readonly clock: Clock;
-	/** Calls a method as it is, on the open connection. */
+	/** Sends a command or query over HTTP. */
 	call<Name extends MethodName>(method: Name, params: ParamsOf<Name>): Promise<ResultOf<Name>>;
 	/** The threads, each as it stands. */
 	threads(): Promise<readonly Listed[]>;
@@ -133,7 +128,7 @@ export type Client = {
 	removeAccount(account: string): Promise<void>;
 	/** The models a thread may run with. */
 	models(): Promise<readonly Model[]>;
-	/** Has the thread keep a file its model is given, named `name`: the file as the thread keeps it; rejects where the app sends no files. */
+	/** Has the thread keep a file its model is given, named `name`: the file as the thread keeps it. */
 	keepFile(thread: string, bytes: Blob, name: string): Promise<FileRef>;
 	close(): void;
 };
@@ -142,19 +137,17 @@ export type Client = {
 export function createClient(options: ClientOptions): Client {
 	// What a lost or closed connection cuts off is subscribed to again as the next one opens: only another failure is told.
 	const told = (error: unknown): void => {
-		if (!isConnectionError(error) && !(error instanceof ClientError && error.code === "closed")) options.report(error);
+		if (!isConnectionError(error) && !(error instanceof ClientError && (error.code === "closed" || error.code === "unauthorized"))) options.report(error);
 	};
 	const connection: Connection = new Connection(options, {
-		opened: () => {
-			subscriptions.again();
-			follows.again();
-		},
+		opened: () => subscriptions.again(),
 		event: (event, bytes) => {
 			if ("subscription" in event) subscriptions.take(event, bytes);
 		},
 	});
 	const subscriptions = new Subscriptions(connection, told);
-	const follows = new Follows(connection, subscriptions, options.entriesKept ?? ENTRIES_KEPT, told);
+	const requests = new Requests(options, connection);
+	const follows = new Follows(requests, subscriptions, options.entriesKept ?? ENTRIES_KEPT);
 	const watches = new Watches(subscriptions);
 	connection.start();
 	const done = async (calling: Promise<unknown>): Promise<void> => {
@@ -163,21 +156,21 @@ export function createClient(options: ClientOptions): Client {
 	return {
 		status: connection.status,
 		clock: options.clock,
-		call: (method, params) => connection.call(method, params),
-		threads: async () => (await connection.call("threads.list", {})).threads,
-		create: async (config) => (await connection.callOpen("threads.create", { config, key: options.randomUUID() })).thread,
-		configure: (thread, change) => done(connection.call("threads.configure", { thread, change })),
-		mark: (thread, change) => done(connection.call("threads.mark", { thread, change })),
-		deliver: async (thread, content) => (await connection.callOpen("threads.deliver", { thread, content: [...content], key: options.randomUUID() })).delivery,
+		call: (method, params) => requests.call(method, params),
+		threads: async () => (await requests.call("threads.list", {})).threads,
+		create: async (config) => (await requests.keyed("threads.create", { config, key: options.randomUUID() })).thread,
+		configure: (thread, change) => done(requests.call("threads.configure", { thread, change })),
+		mark: (thread, change) => done(requests.call("threads.mark", { thread, change })),
+		deliver: async (thread, content) => (await requests.keyed("threads.deliver", { thread, content: [...content], key: options.randomUUID() })).delivery,
 		queue: async (thread, content) =>
-			(await connection.callOpen("threads.deliver", { thread, content: [...content], key: options.randomUUID(), joins: "turn" })).delivery,
-		withdraw: async (thread, delivery) => (await connection.call("threads.withdraw", { thread, delivery })).withdrawn,
-		delete: (thread) => done(connection.call("threads.delete", { thread })),
-		stop: (thread, target) => done(connection.call("threads.stop", { thread, target })),
-		answer: (thread, request, answer) => done(connection.call("threads.answer", { thread, request, answer })),
-		context: (thread) => connection.call("threads.context", { thread }),
-		compact: (thread) => done(connection.call("threads.compact", { thread })),
-		resume: (thread, at) => done(connection.call("threads.resume", at === undefined ? { thread } : { thread, at })),
+			(await requests.keyed("threads.deliver", { thread, content: [...content], key: options.randomUUID(), joins: "turn" })).delivery,
+		withdraw: async (thread, delivery) => (await requests.call("threads.withdraw", { thread, delivery })).withdrawn,
+		delete: (thread) => done(requests.call("threads.delete", { thread })),
+		stop: (thread, target) => done(requests.call("threads.stop", { thread, target })),
+		answer: (thread, request, answer) => done(requests.call("threads.answer", { thread, request, answer })),
+		context: (thread) => requests.call("threads.context", { thread }),
+		compact: (thread) => done(requests.call("threads.compact", { thread })),
+		resume: (thread, at) => done(requests.call("threads.resume", at === undefined ? { thread } : { thread, at })),
 		follow: (id) => follows.follow(id),
 		readOlder: (id) => follows.readOlder(id),
 		watchThreads: () =>
@@ -189,38 +182,35 @@ export function createClient(options: ClientOptions): Client {
 				take: (list, event) => list.take(event),
 			})),
 		watchSettings: () => watched<Settings>(watches, "settings", { type: "settings" }, (event) => (event.event === "settings" ? event.settings : undefined)),
-		setSettings: (change) => done(connection.call("settings.set", change)),
+		setSettings: (change) => done(requests.call("settings.set", change)),
 		watchTerminals: (thread) =>
 			watched<readonly TerminalListed[]>(watches, `terminals ${thread}`, { type: "terminals", thread }, (event) =>
 				event.event === "terminals" ? event.terminals : undefined,
 			),
-		openTerminal: async (thread, size) => (await connection.call("terminals.open", { thread, size })).terminal,
-		terminal: (id, size, handlers) => followTerminal(connection, subscriptions, told, id, size, handlers),
-		closeTerminal: (id) => done(connection.call("terminals.close", { terminal: id })),
+		openTerminal: async (thread, size) => (await requests.call("terminals.open", { thread, size })).terminal,
+		terminal: (id, size, handlers) => followTerminal(new Controls(connection, told), requests, subscriptions, id, size, handlers),
+		closeTerminal: (id) => done(requests.call("terminals.close", { terminal: id })),
 		watchPages: (thread) =>
 			watched<readonly PageListed[]>(watches, `pages ${thread}`, { type: "pages", thread }, (event) => (event.event === "pages" ? event.pages : undefined)),
-		openPage: async (thread, url, view) => (await connection.call("browser.open", { thread, view, ...(url === undefined ? {} : { url }) })).page,
-		page: (id, view, handlers) => followPage(connection, subscriptions, told, id, view, handlers),
-		pickElement: (pick) => connection.call("browser.pick", pick),
-		closePage: (id) => done(connection.call("browser.close", { page: id })),
-		grants: async () => (await connection.call("grants.list", {})).projects,
-		revokeGrant: (granted) => done(connection.call("grants.revoke", granted)),
-		deleteMemory: (path, file) => done(connection.call("memory.delete", { path, file })),
-		providers: async () => (await connection.call("providers.list", {})).providers,
-		providerStatus: (id) => connection.call("providers.status", { provider: id }),
-		signIn: async (id) => (await connection.call("providers.sign-in", { provider: id })).url,
-		finishSignIn: (id, redirect) => done(connection.call("providers.finish-sign-in", { provider: id, redirect })),
-		refreshModels: () => done(connection.call("models.refresh", {})),
-		setKey: (provider, key) => done(connection.call("credentials.set", { provider, api_key: key })),
-		removeKey: (provider) => done(connection.call("credentials.remove", { provider })),
-		addAccount: async (provider, name) => (await connection.callOpen("accounts.add", { provider, name, key: options.randomUUID() })).account,
-		renameAccount: (account, name) => done(connection.call("accounts.rename", { account, name })),
-		removeAccount: (account) => done(connection.call("accounts.remove", { account })),
-		models: async () => (await connection.call("models.list", {})).models,
-		keepFile: (thread, bytes, name) => {
-			if (options.keepFile === undefined) return Promise.reject(clientError("unsupported", "This client sends the node no files."));
-			return options.keepFile(thread, bytes, name);
-		},
+		openPage: async (thread, url, view) => (await requests.call("browser.open", { thread, view, ...(url === undefined ? {} : { url }) })).page,
+		page: (id, view, handlers) => followPage(new Controls(connection, told), requests, subscriptions, id, view, handlers),
+		pickElement: (pick) => requests.call("browser.pick", pick),
+		closePage: (id) => done(requests.call("browser.close", { page: id })),
+		grants: async () => (await requests.call("grants.list", {})).projects,
+		revokeGrant: (granted) => done(requests.call("grants.revoke", granted)),
+		deleteMemory: (path, file) => done(requests.call("memory.delete", { path, file })),
+		providers: async () => (await requests.call("providers.list", {})).providers,
+		providerStatus: (id) => requests.call("providers.status", { provider: id }),
+		signIn: async (id) => (await requests.call("providers.sign-in", { provider: id })).url,
+		finishSignIn: (id, redirect) => done(requests.call("providers.finish-sign-in", { provider: id, redirect })),
+		refreshModels: () => done(requests.call("models.refresh", {})),
+		setKey: (provider, key) => done(requests.call("credentials.set", { provider, api_key: key })),
+		removeKey: (provider) => done(requests.call("credentials.remove", { provider })),
+		addAccount: async (provider, name) => (await requests.keyed("accounts.add", { provider, name, key: options.randomUUID() })).account,
+		renameAccount: (account, name) => done(requests.call("accounts.rename", { account, name })),
+		removeAccount: (account) => done(requests.call("accounts.remove", { account })),
+		models: async () => (await requests.call("models.list", {})).models,
+		keepFile: (thread, bytes, name) => requests.keepFile(thread, bytes, name),
 		close: () => connection.close(),
 	};
 }

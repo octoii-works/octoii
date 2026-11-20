@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 
-use crate::protocol::siphon::{Connects, CredentialKind, ProviderShown};
+use crate::protocol::octoii::{Connects, CredentialKind, ProviderShown};
 use octoii_ai::driver::{Connection, SignInAttempt, SignInOptions};
 use octoii_ai::host::{Credential, Credentials};
 use octoii_ai::models::{Models, Provider};

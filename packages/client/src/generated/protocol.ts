@@ -1,4 +1,8 @@
-// Siphon's protocol, generated from its Rust types — not to be edited by hand.
+// Octoii's protocol, generated from its Rust types — not to be edited by hand.
+
+export const CALL_PATH = "/api/v1/call";
+export const WATCH_PATH = "/api/v1/watch";
+export const PROTOCOL = "octoii.watch.1";
 
 /**
  * A session or a link, as the access shows it: its id, what it grants, its label, how its client holds it — none for a
@@ -168,11 +172,9 @@ export type ConfigurationUpdate = { effort: ReasoningEffort, };
 export type ConfigureThread = { thread: string, change: ConfigChange, };
 
 /**
- * An event of the connection's own: the welcome a client is sent first — its session, what it may do, the machine
- * it reached and its extensions — or that a subscription fell behind and was let go, with the topic to subscribe to again from where it
- * stood.
+ * The welcome, a request to resubscribe after lag, or the end of the session's access.
  */
-export type ConnectionEvent = { "event": "welcome", session: string, scopes: Array<Scope>, machine: Machine, extensions: Array<ExtensionListed>, } | { "event": "lagged", subscription: string, topic: Topic, };
+export type ConnectionEvent = { "event": "welcome", session: string, scopes: Array<Scope>, machine: Machine, extensions: Array<ExtensionListed>, } | { "event": "lagged", subscription: string, topic: Topic, } | { "event": "revoked" };
 
 /**
  * How a provider is connected: by an API key the person gives; by a sign-in in a browser; through an agent on the
@@ -200,11 +202,6 @@ export type Created = { thread: string, };
  * The kind of credential kept for a provider.
  */
 export type CredentialKind = "api_key" | "oauth" | "none";
-
-/**
- * Where a reader of a log stands: the segment it read, and how far.
- */
-export type Cursor = { segment: string, offset: number, };
 
 /**
  * The person's decision on a project's configuration as it is, by its digest: whether what it names may run.
@@ -609,6 +606,17 @@ export type Navigate = { page: string, url: string, };
 export type Nothing = Record<symbol, never>;
 
 /**
+ * A durable view or update at one commit, or a live event of the subscription.
+ */
+export type OctoiiEvent = { "event": "thread_snapshot", subscription: string, sequence: string, history: ThreadRead, status: Status, } | { "event": "thread_update", subscription: string, sequence: string, entries: Array<Entry>, status: Status, } | { "event": "stream", subscription: string, request: string, key: string, offset: string, data: Streamed, } | { "event": "stream_closed", subscription: string, request: string, } | { "event": "streams_reset", subscription: string, } | { "event": "threads", subscription: string, threads: Array<Listed>, } | { "event": "thread", subscription: string, thread: Listed, } | { "event": "thread_gone", subscription: string, thread: string, } | { "event": "settings", subscription: string, settings: Settings, };
+
+/**
+ * What a client subscribes to of Siphon's: a thread — its entries from where the client stood, none for from the start, then its
+ * status and what streams of its requests — the list of threads, or the settings.
+ */
+export type OctoiiTopic = { "type": "thread", thread: string, limit: number, } | { "type": "threads" } | { "type": "settings" };
+
+/**
  * A session or a link, by its id.
  */
 export type OfAccessEntry = { id: string, };
@@ -882,7 +890,7 @@ export type SetCredential = { provider: string, api_key: string, };
 
 /**
  * The settings, as a client is told of them: the environment's, which every client shares, and its device's own,
- * which Siphon keeps for it and reads none of.
+ * which Octoii keeps for it and reads none of.
  */
 export type Settings = { environment: Environment, device: JsonValue, };
 
@@ -902,20 +910,6 @@ export type Share = { part: ContextPart, tokens: number, };
 export type ShownServer = { name: string, runs: string, };
 
 export type SignInBegun = { url: string, };
-
-/**
- * An event of a subscription to Siphon's, by the subscription's id: a thread's entries appended, with where its
- * reader then stands; its status as it changed; what streams of a request as its model answers, by its offset in the
- * request's stream; the threads as they stand, first, then a thread of the list as it changed, or gone; the settings
- * as they changed.
- */
-export type SiphonEvent = { "event": "entries", subscription: string, entries: Array<Entry>, cursor: Cursor, } | { "event": "status", subscription: string, status: Status, } | { "event": "stream", subscription: string, request: string, key: string, offset: string, data: Streamed, } | { "event": "stream_closed", subscription: string, request: string, } | { "event": "streams_reset", subscription: string, } | { "event": "threads", subscription: string, threads: Array<Listed>, } | { "event": "thread", subscription: string, thread: Listed, } | { "event": "thread_gone", subscription: string, thread: string, } | { "event": "settings", subscription: string, settings: Settings, };
-
-/**
- * What a client subscribes to of Siphon's: a thread — its entries from where the client stood, none for from the start, then its
- * status and what streams of its requests — the list of threads, or the settings.
- */
-export type SiphonTopic = { "type": "thread", thread: string, from?: Cursor, } | { "type": "threads" } | { "type": "settings" };
 
 /**
  * How a provider's account stands, as its driver tells it: who it is signed in as and their plan, how much of each of
@@ -1028,10 +1022,9 @@ export type TerminalsEvent = { "event": "terminals", subscription: string, termi
 export type TerminalsTopic = { "type": "terminals", thread: string, } | { "type": "terminal", terminal: string, from?: number, };
 
 /**
- * The entries read, oldest first; whether they reach the thread's first; and where its log ended as they were read —
- * what a subscription to the thread goes on from, none for a log not begun.
+ * The entries read, oldest first, and whether they reach the thread's first entry.
  */
-export type ThreadRead = { entries: Array<Entry>, complete: boolean, end?: Cursor, };
+export type ThreadRead = { entries: Array<Entry>, complete: boolean, };
 
 /**
  * What a thread's model requests used, as Beak counts it on its main process for every process under it, as cgroup v2
@@ -1146,12 +1139,12 @@ export type Worktrees = { worktrees: Array<WorktreeEntry>, };
 export type WriteTerminal = { terminal: string, data: string, };
 
 /** What a client subscribes to. */
-export type Topic = SiphonTopic | BrowserTopic | TerminalsTopic;
+export type Topic = OctoiiTopic | BrowserTopic | TerminalsTopic;
 
 /** An event: the connection's, or a subscription's. */
-export type Event = ConnectionEvent | SiphonEvent | BrowserEvent | TerminalsEvent;
+export type Event = ConnectionEvent | OctoiiEvent | BrowserEvent | TerminalsEvent;
 
-/** The methods, each by its name: the params it takes and the result it answers with. */
+/** HTTP methods and their parameters and results. */
 export type Methods = {
   'threads.list': { params: Nothing; result: ThreadsListed };
   'threads.create': { params: CreateThread; result: Created };
@@ -1216,17 +1209,23 @@ export type Methods = {
   'access.list': { params: Nothing; result: AccessListed };
   'access.pair': { params: PairWith; result: LinkMade };
   'access.revoke': { params: OfAccessEntry; result: Revoked };
-  'subscribe': { params: { topic: Topic }; result: Subscribed };
-  'unsubscribe': { params: Unsubscribe; result: Nothing };
 };
 
-/** A call: its id, by which its answer comes, its method and the method's params. */
-export type Call = { [M in keyof Methods]: { id: string; method: M; params: Methods[M]['params'] } }[keyof Methods];
+/** An HTTP command or query. */
+export type Command = { [M in keyof Methods]: { method: M; params: Methods[M]['params'] } }[keyof Methods];
 
-/** An answer: the call's id and its method's result, or the error it was refused with. */
-export type Answer<M extends keyof Methods = keyof Methods> =
-  | { id: string; result: Methods[M]['result'] }
+export type CommandReply<M extends keyof Methods = keyof Methods> = { result: Methods[M]['result'] } | { error: Error };
+
+/** The methods carried on the watch connection. */
+export type WatchMethods = {
+  subscribe: { params: { topic: Topic }; result: Subscribed };
+  unsubscribe: { params: Unsubscribe; result: Nothing };
+};
+
+/** A response to a subscription control frame. */
+export type Answer =
+  | { id: string; result: WatchMethods[keyof WatchMethods]['result'] }
   | { id: string | null; error: Error };
 
-/** What Siphon sends: an answer, or an event. */
+/** A message from the watch connection. */
 export type Received = Answer | Event;

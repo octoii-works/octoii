@@ -1,10 +1,7 @@
 /**
- * A thread as a client follows it: its log's latest entries — as many as it keeps, read first, then each as it is
- * appended, the oldest let go past the bound, as a terminal keeps its latest lines — and older ones only as a reader
- * reads further back. The subscription resumes log entries from its cursor. Live output is held by request identity
- * and offset until that request closes. A stream reset rebuilds live output from retained parts and leaves the log intact.
+ * A thread's committed view and live output, held independently. A new snapshot reseeds the committed view.
  */
-import type { Cursor, Entry, EventOf, Status, Streamed, SubscriptionEvent } from "./protocol.ts";
+import type { Entry, Status, Streamed, SubscriptionEvent } from "./protocol.ts";
 
 type LiveStream = { readonly key: string; readonly offset: bigint; readonly parts: readonly Streamed[] };
 
@@ -26,27 +23,13 @@ export type ThreadView = {
 
 /** A thread the client follows, and those who read it. */
 export class FollowedThread {
-	readonly id: string;
-	#cursor: Cursor | undefined;
 	/** How many entries it keeps: as many as the client keeps, and the pages read further back. */
 	#bound: number;
 	#view: ThreadView = { entries: [], read: false, complete: false, status: undefined, streaming: new Map(), gone: false };
 	readonly #listeners = new Set<() => void>();
 
-	constructor(id: string, kept: number) {
-		this.id = id;
+	constructor(kept: number) {
 		this.#bound = kept;
-	}
-
-	/** Whether its latest entries were read, so it is followed on from where its reader stands. */
-	get begun(): boolean {
-		return this.#view.read;
-	}
-
-	/** Takes its latest entries as a read of them gave them: where the log then ended, it is followed on from. */
-	begin(entries: readonly Entry[], end: Cursor | undefined, complete: boolean): void {
-		this.#cursor = end;
-		this.#publish({ ...this.#view, entries, read: true, complete });
 	}
 
 	/** Takes entries read further back, before those it holds: it keeps them too. */
@@ -60,11 +43,6 @@ export class FollowedThread {
 		return this.#view;
 	}
 
-	/** Where its reader stands; none before the first entry came. */
-	get cursor(): Cursor | undefined {
-		return this.#cursor;
-	}
-
 	subscribe(listener: () => void): () => void {
 		this.#listeners.add(listener);
 		return () => this.#listeners.delete(listener);
@@ -74,11 +52,18 @@ export class FollowedThread {
 	take(event: SubscriptionEvent): void {
 		const view = this.#view;
 		switch (event.event) {
-			case "entries":
-				this.#cursor = event.cursor;
-				return this.#publish(appended(view, event, this.#bound));
-			case "status":
-				return this.#publish({ ...view, status: event.status });
+			case "thread_snapshot": {
+				const { history, status } = event;
+				const first = history.entries[0]?.id;
+				const shared = history.complete ? -1 : view.entries.findIndex((entry) => entry.id === first);
+				const entries = shared > 0 ? [...view.entries.slice(0, shared), ...history.entries] : history.entries;
+				const complete = shared > 0 ? view.complete : history.complete;
+				return this.#publish(this.#bounded({ ...view, entries, status, read: true, complete, gone: false }));
+			}
+			case "thread_update": {
+				const entries = event.entries.length === 0 ? view.entries : [...view.entries, ...event.entries];
+				return this.#publish(this.#bounded({ ...view, entries, status: event.status }));
+			}
 			case "stream": {
 				const offset = BigInt(event.offset);
 				const held = view.streaming.get(event.request);
@@ -97,21 +82,18 @@ export class FollowedThread {
 				if (view.streaming.size === 0) return;
 				return this.#publish({ ...view, streaming: new Map() });
 			case "thread_gone":
-				return this.#publish({ ...view, gone: true });
+				return this.#publish({ ...view, read: true, gone: true, streaming: new Map() });
 			default:
 		}
+	}
+
+	#bounded(view: ThreadView): ThreadView {
+		if (view.entries.length <= this.#bound) return view;
+		return { ...view, entries: view.entries.slice(-this.#bound), complete: false };
 	}
 
 	#publish(view: ThreadView): void {
 		this.#view = view;
 		for (const listener of [...this.#listeners]) listener();
 	}
-}
-
-/** `view` with the durable entries appended, the oldest past `bound` let go. */
-function appended(view: ThreadView, event: EventOf<"entries">, bound: number): ThreadView {
-	const all = [...view.entries, ...event.entries];
-	// Past its bound, the oldest entries are let go: the log keeps them, to read back.
-	const entries = all.length > bound ? all.slice(all.length - bound) : all;
-	return { ...view, entries, complete: view.complete && entries.length === all.length };
 }

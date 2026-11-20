@@ -1,5 +1,5 @@
 import type { Config } from "@octoii-works/octoii-client";
-import type { SendRequest } from "../../components/state/reach.ts";
+import type { SendRequest } from "@octoii-works/octoii-client";
 import type { Draft } from "../../core/drafts.ts";
 import type { DraftWorktree } from "../../extensions/git/new-worktree.tsx";
 import { acceptThread, threadRequest, type ThreadRequest, type ThreadWorkspace } from "./request.ts";
