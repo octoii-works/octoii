@@ -11,12 +11,14 @@ const desktop = fileURLToPath(new URL("../", import.meta.url));
 const repository = fileURLToPath(new URL("../../../", import.meta.url));
 const web = Bun.spawn(["bun", "scripts/build.ts"], { cwd: desktop, stdout: "inherit", stderr: "inherit" });
 if ((await web.exited) !== 0) throw new Error("Desktop build failed");
-const nativeLibrary = process.env["SIPHON_LIB_DIR"] ?? await (async () => {
-	const install = Bun.spawn(["python3", "tools/install-siphon.py"], { cwd: repository, stdout: "pipe", stderr: "inherit" });
-	const path = (await new Response(install.stdout).text()).trim();
-	if ((await install.exited) !== 0 || !path) throw new Error("Could not install the Octoii runtime binary");
-	return path;
-})();
+const nativeLibrary =
+	process.env["SIPHON_LIB_DIR"] ??
+	(await (async () => {
+		const install = Bun.spawn(["python3", "tools/install-siphon.py"], { cwd: repository, stdout: "pipe", stderr: "inherit" });
+		const path = (await new Response(install.stdout).text()).trim();
+		if ((await install.exited) !== 0 || !path) throw new Error("Could not install the Octoii runtime binary");
+		return path;
+	})());
 const cargo = Bun.spawn(["cargo", "build", "--locked", "-p", "octoii-node", "--bin", "octoii", "--message-format=json-render-diagnostics"], {
 	cwd: repository,
 	env: { ...process.env, SIPHON_LIB_DIR: nativeLibrary },

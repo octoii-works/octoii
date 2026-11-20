@@ -9,8 +9,9 @@ let directory: string;
 const origin = "http://127.0.0.1:7600";
 beforeAll(async () => {
 	directory = await mkdtemp(join(tmpdir(), "octoii-desktop-assets-"));
-	await writeFile(join(directory, "index.html"), "bundled interface");
+	await writeFile(join(directory, "index.html"), "<html>bundled interface</html>");
 	await writeFile(join(directory, "chunk.js"), "export {};");
+	await writeFile(join(directory, ".private.html"), "private file");
 });
 afterAll(async () => {
 	await rm(directory, { recursive: true, force: true });
@@ -21,38 +22,64 @@ const noNetwork = async (): Promise<Response> => {
 
 describe("bundled desktop assets", () => {
 	test("serves the interface without a running HTTP server, including pairing routes", async () => {
-		expect(await (await desktopResponse(new Request(origin), directory, origin, noNetwork)).text()).toBe("bundled interface");
-		expect(await (await desktopResponse(new Request(`${origin}/pair`), directory, origin, noNetwork)).text()).toBe("bundled interface");
+		const html = process.platform === "darwin" ? '<html data-desktop="mac">bundled interface</html>' : "<html>bundled interface</html>";
+		expect(await (await desktopResponse(new Request(origin), directory, origin, noNetwork)).text()).toBe(html);
+		expect(await (await desktopResponse(new Request(`${origin}/pair#credential`), directory, origin, noNetwork)).text()).toBe(html);
 	});
 	test("returns script MIME types and supports HEAD without a body", async () => {
-		const result = await desktopResponse(new Request(`${origin}/chunk.js`, { method: "HEAD" }), directory, origin, noNetwork);
+		const script = `${origin}/chunk.js?v=1`;
+		expect(await (await desktopResponse(new Request(script), directory, origin, noNetwork)).text()).toBe("export {};");
+		const result = await desktopResponse(new Request(script, { method: "HEAD" }), directory, origin, noNetwork);
 		expect(result.headers.get("Content-Type")).toBe("text/javascript; charset=utf-8");
 		expect(await result.text()).toBe("");
 	});
-	test("forwards pairing bodies and file requests unchanged", async () => {
-		const request = new Request(`${origin}/pair`, { method: "POST", body: "credential" });
-		await desktopResponse(request, directory, origin, async (forwarded) => {
+	test("forwards a pairing submission and returns the session cookie", async () => {
+		const body = '{"credential":"credential"}';
+		const request = new Request(`${origin}/pair`, { method: "POST", headers: { "Content-Type": "application/json" }, body });
+		const cookie = "octoii_session_7600=test-session; HttpOnly";
+		const response = await desktopResponse(request, directory, origin, async (forwarded) => {
 			expect(forwarded).toBe(request);
-			expect(await forwarded.text()).toBe("credential");
-			return new Response(null, { status: 200 });
+			expect(await forwarded.text()).toBe(body);
+			return new Response(null, { headers: { "Set-Cookie": cookie } });
 		});
-		const file = new Request(`${origin}/threads/thread/files/hash`);
-		await desktopResponse(file, directory, origin, async (forwarded) => {
-			expect(forwarded).toBe(file);
-			return new Response("attachment");
-		});
+		expect(response.headers.get("Set-Cookie")).toBe(cookie);
 	});
-	test("never resolves encoded separators or hidden files outside the bundle", async () => {
-		expect((await desktopResponse(new Request(`${origin}/..%2Fsecret.js`), directory, origin, noNetwork)).status).toBe(404);
-		expect((await desktopResponse(new Request(`${origin}/..%5Csecret.js`), directory, origin, noNetwork)).status).toBe(404);
-		expect((await desktopResponse(new Request(`${origin}/.private.html`), directory, origin, noNetwork)).status).toBe(404);
+	test("forwards a multipart Git thread submission intact", async () => {
+		const form = new FormData();
+		form.append("manifest", "{}");
+		form.append("file-0", new Blob(["attachment"]), "input.txt");
+		const request = new Request(`${origin}/git/threads`, { method: "POST", body: form });
+		const response = Response.json({ thread: "accepted" });
+		const result = await desktopResponse(request, directory, origin, async (forwarded) => {
+			expect(forwarded).toBe(request);
+			const received = await forwarded.formData();
+			expect(received.get("manifest")).toBe("{}");
+			const attachment = received.get("file-0");
+			expect(attachment).toBeInstanceOf(Blob);
+			if (attachment instanceof Blob) expect(await attachment.text()).toBe("attachment");
+			return response;
+		});
+		expect(result).toBe(response);
+	});
+	test.each(["/auth/callback?code=code&state=state", "/machine", "/threads/thread/files/hash", "/ws", "/missing.js"])(
+		"forwards GET %s to the node",
+		async (path) => {
+			const request = new Request(`${origin}${path}`);
+			const response = new Response("node response");
+			const result = await desktopResponse(request, directory, origin, async (forwarded) => {
+				expect(forwarded).toBe(request);
+				return response;
+			});
+			expect(result).toBe(response);
+		},
+	);
+	test.each(["/..%2Fsecret.js", "/..%5Csecret.js", "/.private.html"])("does not resolve %s as a bundle asset", async (path) => {
+		const absent = new Response(null, { status: 404 });
+		expect(await desktopResponse(new Request(`${origin}${path}`), directory, origin, async () => absent)).toBe(absent);
 	});
 	test("does not replace another origin's page with the desktop interface", async () => {
 		const remote = new Request("http://example.com/");
 		expect(await (await desktopResponse(remote, directory, origin, async () => new Response("remote"))).text()).toBe("remote");
-	});
-	test("missing assets return 404 instead of falling back to backend scripts", async () => {
-		expect((await desktopResponse(new Request(`${origin}/missing.js`), directory, origin, noNetwork)).status).toBe(404);
 	});
 });
 
