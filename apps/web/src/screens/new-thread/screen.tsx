@@ -21,7 +21,7 @@ import { ChatHeader } from "../../components/thread/header.tsx";
 import { DraftProject } from "./draft-project.tsx";
 import { DetailsToggle, DetailsFloat, DetailRow } from "../../components/thread/details.tsx";
 import { useNewThreadOptions } from "./options.ts";
-import { planWorktree, prepareWorktree } from "../../extensions/git/prepare.ts";
+import { planWorktree } from "../../extensions/git/worktree-plan.ts";
 import { SeparateDirectory } from "../../extensions/git/new-worktree.tsx";
 import { ServersMenu } from "../../extensions/mcp/servers-menu.tsx";
 import type { Draft } from "../../core/drafts.ts";
@@ -312,10 +312,7 @@ function useDraftSubmit(
 			if (selected !== undefined && selected.path !== folder) throw new Error("Choose the work directory for this project.");
 			const workspace: ThreadWorkspace = selected === undefined ? { kind: "current" } : { kind: "isolated", worktree: await planWorktree(client, selected) };
 			const { key, thread } = await starting.send(config, workspace, draft);
-			const open = (): void => go({ place: "thread", thread });
-			if (workspace.kind === "isolated") {
-				await prepareWorktree(client, thread, open).catch((error: unknown) => failed("The separate directory could not be prepared", error));
-			} else open();
+			go({ place: "thread", thread });
 			await starting.clear(key).catch((error: unknown) => failed("The saved copy could not be cleared", error));
 		} catch (error) {
 			saved.retry();

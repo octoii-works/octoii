@@ -9,6 +9,7 @@
 
 use crate::threads::inbox::{self, Ended, Inbound};
 use crate::threads::log::Writer;
+use crate::threads::start::{self, Gate};
 use crate::threads::{CallStatus, Config, Entry, MainInput, Outcome as TurnOutcome, ThreadUsage, Turn, Window, thread};
 use octoii_ai::vocabulary::{Failure, FailureKind, FunctionCallOutput, InputContent};
 use octoii_siphon_lib::{Answer, Ending, Fiber, FiberRecord, Outcome, Retries, Run, Wait, fiber_path};
@@ -19,12 +20,12 @@ use crate::agent::title::{TitleFiber, TitleInput};
 use crate::agent::told::{self, Told};
 use crate::agent::turn::{TurnFiber, TurnInput};
 
-/// Where a thread's main process stands: at rest; gathering what its model is told, by the request of `key`; or its
-/// turn running, the process keyed `turn`.
+/// Where a thread's main process stands: at rest, awaiting a workspace or model context request, or running its turn.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "state", rename_all = "kebab-case")]
 pub enum MainState {
     Rest,
+    Starting { key: String },
     Gathering { key: String },
     Running { turn: String },
 }
@@ -50,21 +51,26 @@ impl Fiber for ThreadFiber {
     fn run(&self, run: &mut Run<'_>, input: MainInput, state: Option<MainState>) -> anyhow::Result<Ending<MainState, ()>> {
         let id = &input.thread;
         let state = state.unwrap_or(MainState::Rest);
-        match crate::threads::start::advance(run, id)? {
-            crate::threads::start::Gate::Changed | crate::threads::start::Gate::Blocked => {
-                // Consuming controls changes this directory in our commit. Waiting on its snapshot version
-                // resumes from the committed gate without going Next to an unchanged checkpoint.
-                return Ok(Ending::Wait(state, Wait::new().change(crate::threads::start::commands(id))));
+        let startup_key = match &state {
+            MainState::Starting { key } => Some(key.as_str()),
+            _ => None,
+        };
+        match start::advance(run, id, startup_key)? {
+            Gate::Open => {}
+            Gate::Released => return Ok(Ending::Next(MainState::Rest)),
+            Gate::Blocked => return Ok(Ending::Wait(MainState::Rest, Wait::new().change(start::commands(id)))),
+            Gate::Active(key) => {
+                let wait = Wait::new().mail(key.clone()).change(start::commands(id));
+                return Ok(Ending::Wait(MainState::Starting { key }, wait));
             }
-            crate::threads::start::Gate::Open => {}
         }
         let ending = match state {
-            MainState::Rest => rest(run, id),
+            MainState::Rest | MainState::Starting { .. } => rest(run, id),
             MainState::Gathering { key } => gathered(run, id, &key),
             MainState::Running { turn } => running(run, id, &turn),
         }?;
         Ok(match ending {
-            Ending::Wait(state, wait) => Ending::Wait(state, wait.change(crate::threads::start::commands(id))),
+            Ending::Wait(state, wait) => Ending::Wait(state, wait.change(start::commands(id))),
             other => other,
         })
     }

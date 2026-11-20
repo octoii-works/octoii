@@ -5,7 +5,7 @@ use std::path::Path;
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use bytes::Bytes;
-use octoii_siphon_lib::{Batch, Changes, CommitEvent, Fiber, Run};
+use octoii_siphon_lib::{Answer, Batch, Changes, CommitEvent, Fiber, Run};
 use octoii_siphon_lib::{Directory, Range, Snapshot};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -19,6 +19,7 @@ use super::{
     inbox::{self, Inbound, Joins},
     input,
     log::{Entry, Writer},
+    preparation::{InspectWorkspace, PrepareWorkspace},
     thread,
 };
 
@@ -61,7 +62,10 @@ pub enum StartDirectory {
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum StartState {
     Pending,
+    Preparing,
+    Checking,
     Failed { reason: String },
+    Interrupted { reason: String },
     Cancelled,
     Ready { directory: StartWorkspace },
 }
@@ -89,7 +93,7 @@ impl Start {
     }
 
     fn can_cancel(&self) -> bool {
-        matches!(self.state, StartState::Pending | StartState::Failed { .. })
+        self.blocks_execution() && !matches!(self.state, StartState::Cancelled)
     }
 }
 
@@ -257,7 +261,7 @@ pub(super) fn stage_cancel(snapshot: &Snapshot, changes: &mut Batch<'_>, id: &st
         && let Some(start) = Start::of(&directory)?
         && start.can_cancel()
     {
-        // Sort before UUID-keyed completions so a queued stop wins before preparation is released.
+        // Sort before UUID-keyed controls so a queued stop targets the attempt the plan observed.
         let command = Command {
             token: start.token,
             action: Action::Cancel,
@@ -308,8 +312,6 @@ struct Command {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) enum Action {
-    Ready(StartWorkspace),
-    Fail(String),
     Retry { next: String },
     Cancel,
 }
@@ -318,7 +320,7 @@ impl Action {
     fn refused(&self, reason: String) -> Error {
         match self {
             Self::Cancel => Error::StaleStop,
-            _ => Error::Start(reason),
+            Self::Retry { .. } => Error::Start(reason),
         }
     }
 }
@@ -326,14 +328,96 @@ impl Action {
 pub(crate) enum Gate {
     Open,
     Blocked,
-    Changed,
+    Active(String),
+    Released,
 }
 
-/// Only this thread's main process consumes these commands. Every decision and its reply share its commit.
-pub(crate) fn advance(run: &mut Run<'_>, id: &str) -> anyhow::Result<Gate> {
+/// Advances the startup gate on the main process. Controls take precedence over the active request's answer.
+pub(crate) fn advance(run: &mut Run<'_>, id: &str, key: Option<&str>) -> anyhow::Result<Gate> {
     let Some(mut start) = read(run.snapshot(), id)? else {
         return Ok(Gate::Open);
     };
+    if apply_commands(run, id, key, &mut start)? {
+        // Deleting the controls wakes the fiber with their committed decisions before it reads an answer.
+        return Ok(match start.state {
+            StartState::Ready { .. } => Gate::Open,
+            StartState::Preparing | StartState::Checking => key.map_or(Gate::Blocked, |key| Gate::Active(key.to_owned())),
+            _ => Gate::Blocked,
+        });
+    }
+
+    let state = match start.state {
+        StartState::Ready { .. } => return Ok(Gate::Open),
+        StartState::Pending => return prepare(run, id, &mut start),
+        StartState::Preparing => {
+            let Some(key) = key else {
+                return inspect(run, id, &mut start);
+            };
+            match run.take_answer::<PrepareWorkspace>(key)? {
+                None => return Ok(Gate::Active(key.to_owned())),
+                Some(Answer::Interrupted) => return inspect(run, id, &mut start),
+                Some(Answer::Failed(reason)) => StartState::Failed { reason },
+                Some(Answer::Given(directory)) => match directory.validate() {
+                    Ok(()) => StartState::Ready { directory },
+                    Err(reason) => StartState::Failed { reason: reason.into() },
+                },
+            }
+        }
+        StartState::Checking => {
+            let answer = if let Some(key) = key {
+                let Some(answer) = run.take_answer::<InspectWorkspace>(key)? else {
+                    return Ok(Gate::Active(key.to_owned()));
+                };
+                answer
+            } else {
+                Answer::Interrupted
+            };
+            interrupted(answer)
+        }
+        StartState::Failed { .. } | StartState::Interrupted { .. } | StartState::Cancelled => return Ok(Gate::Blocked),
+    };
+    start.state = state;
+    save(run, id, &start)?;
+    if let StartState::Ready { directory } = &start.state {
+        bind(run, id, directory)?;
+        return Ok(Gate::Released);
+    }
+    Ok(Gate::Blocked)
+}
+
+fn prepare(run: &mut Run<'_>, id: &str, start: &mut Start) -> anyhow::Result<Gate> {
+    let key = run.new_id()?;
+    run.request(&key, &PrepareWorkspace(start.request.clone()))?;
+    start.state = StartState::Preparing;
+    save(run, id, start)?;
+    Ok(Gate::Active(key))
+}
+
+fn inspect(run: &mut Run<'_>, id: &str, start: &mut Start) -> anyhow::Result<Gate> {
+    let key = run.new_id()?;
+    run.request(&key, &InspectWorkspace(start.request.clone()))?;
+    start.state = StartState::Checking;
+    save(run, id, start)?;
+    Ok(Gate::Active(key))
+}
+
+fn interrupted(answer: Answer<String>) -> StartState {
+    let reason = match answer {
+        Answer::Given(observation) => format!("workspace preparation was interrupted. {observation}"),
+        Answer::Failed(reason) => format!("workspace preparation was interrupted, and inspection failed: {reason}"),
+        Answer::Interrupted => "workspace preparation and its inspection were interrupted".into(),
+    };
+    StartState::Interrupted { reason }
+}
+
+fn save(run: &mut Run<'_>, id: &str, start: &Start) -> octoii_siphon_lib::Result<()> {
+    // Recheck the gate if control arrived after this phase read the command directory.
+    run.changes.expect(run.snapshot())?;
+    keep(&mut run.changes, id, start)
+}
+
+/// Only this thread's main process consumes controls. Every decision and its reply share one commit.
+fn apply_commands(run: &mut Run<'_>, id: &str, active: Option<&str>, start: &mut Start) -> anyhow::Result<bool> {
     let entries = run
         .snapshot()
         .list(
@@ -345,8 +429,10 @@ pub(crate) fn advance(run: &mut Run<'_>, id: &str) -> anyhow::Result<Gate> {
         )?
         .unwrap_or_default();
     if entries.is_empty() {
-        return Ok(if start.blocks_execution() { Gate::Blocked } else { Gate::Open });
+        return Ok(false);
     }
+    run.changes.expect(run.snapshot())?;
+    let mut changed = false;
     for entry in entries {
         let key = std::str::from_utf8(&entry.name)?;
         let path = command_path(id, key);
@@ -354,43 +440,41 @@ pub(crate) fn advance(run: &mut Run<'_>, id: &str) -> anyhow::Result<Gate> {
             .snapshot()
             .read_range(&path, 0, u64::MAX)?
             .ok_or_else(|| anyhow::anyhow!("missing startup command"))?;
-        let command: Command = serde_json::from_slice(&bytes)?;
-        let result = transitioned(&start, command);
+        let result = serde_json::from_slice::<Command>(&bytes)
+            .map_err(|error| format!("invalid startup command: {error}"))
+            .and_then(|command| transitioned(start, command));
         if let Ok(next) = &result
-            && next != &start
+            && next != start
         {
-            if let StartState::Ready { directory } = &next.state {
-                bind(run, id, directory)?;
+            // Discard committed mail and cancel pending deliveries within the phase that closes the gate.
+            if matches!(next.state, StartState::Cancelled)
+                && let Some(key) = active
+            {
+                run.cancel_request(key)?;
+                run.take_mail(key.as_bytes())?;
             }
-            start = next.clone();
+            *start = next.clone();
+            changed = true;
         }
         run.changes
             .write(result_path(id, key), serde_json::to_vec(&result)?)?
             .delete(path)?;
     }
-    keep(&mut run.changes, id, &start)?;
-    Ok(Gate::Changed)
+    if changed {
+        keep(&mut run.changes, id, start)?;
+    }
+    Ok(true)
 }
 
 fn transitioned(start: &Start, command: Command) -> Result<Start, String> {
     if command.token != start.token {
-        if matches!(command.action, Action::Retry { .. })
-            && start.previous.as_deref() == Some(&command.token)
-            && matches!(start.state, StartState::Pending)
-        {
+        if matches!(command.action, Action::Retry { .. }) && start.previous.as_deref() == Some(&command.token) {
             return Ok(start.clone());
         }
         return Err("stale startup attempt".into());
     }
     let mut next = start.clone();
     next.state = match (&start.state, command.action) {
-        (StartState::Pending, Action::Ready(directory)) => {
-            directory.validate()?;
-            StartState::Ready { directory }
-        }
-        (StartState::Ready { directory: before }, Action::Ready(after)) if before == &after => return Ok(next),
-        (StartState::Pending, Action::Fail(reason)) => StartState::Failed { reason },
-        (StartState::Failed { reason: before }, Action::Fail(after)) if before == &after => return Ok(next),
         (StartState::Failed { .. }, Action::Retry { next: token }) => {
             next.previous = Some(start.token.clone());
             next.token = token;

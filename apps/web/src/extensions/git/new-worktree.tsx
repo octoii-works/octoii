@@ -6,7 +6,7 @@ import { useOutcome } from "../../components/effects/read.ts";
 import { Button } from "../../components/ui/button.tsx";
 import { Popover, PopoverTrigger, PopoverPopup } from "../../components/ui/popover.tsx";
 import { Command, CommandSearch, CommandList, CommandGroup, CommandItem } from "../../components/ui/command.tsx";
-import type { DraftWorktree, WorktreeBase } from "./prepare.ts";
+import type { DraftWorktree, WorktreeBase } from "./worktree-plan.ts";
 
 export function SeparateDirectory(props: {
 	readonly worktree: DraftWorktree;

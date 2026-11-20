@@ -307,7 +307,7 @@ function StatusSlot(props: { readonly row: Listed; readonly standing: ThreadStan
 		case "preparing":
 			return (
 				<Standing mark={<StatusMark status={status} />} className="text-muted-foreground">
-					Awaiting preparation
+					Preparing workspace
 				</Standing>
 			);
 		case "asks":

@@ -7,7 +7,7 @@
  * atop, then the active, those that work, those snoozed and the settled kept apart, those archived in none, a
  * sub-thread in none — and the times one is snoozed till.
  */
-import type { Ask, Listed, Status, StopTarget } from "@octoii-works/octoii-client";
+import type { Ask, Listed, StartState, Status, StopTarget } from "@octoii-works/octoii-client";
 import { queuedInputsOf } from "./inbox.ts";
 import { namesAsWords } from "./links.ts";
 import { type Hue, huesApart, monogramHue } from "./monogram.ts";
@@ -19,11 +19,16 @@ export type Project = { readonly folder: string; readonly name: string };
 /** How a thread stands, as its row's icon says: asking the person, working, failed, or at rest. */
 export type ThreadStatus = "asks" | "working" | "failed" | "ready" | "preparing";
 
+/** Whether a workspace is waiting for or undergoing preparation. */
+export function isPreparingStart(state: StartState | undefined): boolean {
+	return state?.state === "pending" || state?.state === "preparing" || state?.state === "checking";
+}
+
 /** How a thread stands: what waits on the person first, then a turn that runs or inputs that wait, then how the last ended. */
 export function statusOf(row: Listed): ThreadStatus {
 	const start = row.status.start?.state;
-	if (start?.state === "pending") return "preparing";
-	if (start?.state === "failed") return "failed";
+	if (isPreparingStart(start)) return "preparing";
+	if (start?.state === "failed" || start?.state === "interrupted") return "failed";
 	if (start?.state === "cancelled") return "ready";
 	if (asksOf(row).length > 0) return "asks";
 	if (row.status.turn === "running" || row.status.inbox.length > 0) return "working";

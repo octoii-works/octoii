@@ -3,6 +3,7 @@
 
 use octoii::protocol::Scope;
 use octoii::protocol::siphon::InFolder;
+use octoii::threads::Start;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -13,8 +14,8 @@ octoii::methods! {
     "git.branches" GitBranches(InFolder) -> Branches, Some(Scope::FilesRead);
     /// Resolve stable task parameters on this node without creating a branch or directory.
     "git.worktree-plan" GitWorktreePlan(WorktreePlan) -> CreateWorktree, Some(Scope::FilesRead);
-    /// Explicitly prepare, retry or inspect a worktree-backed Thread; also requires threads.operate.
-    "git.start" GitStart(crate::start::StartAction) -> crate::start::ThreadStart, Some(Scope::GitOperate);
+    /// Retry a failed worktree preparation; also requires threads.operate.
+    "git.retry-start" GitRetryStart(RetryStart) -> Start, Some(Scope::GitOperate);
     /// List the repository's registered worktrees.
     "git.worktrees" GitWorktrees(InFolder) -> Worktrees, Some(Scope::FilesRead);
     /// Create a linked worktree on a new branch from an explicit base; does not start or move a thread.
@@ -113,6 +114,14 @@ pub struct CreateWorktree {
     pub destination: String,
     pub branch: String,
     pub base: String,
+}
+
+/// Request a new attempt using the observed token and the original preparation request.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct RetryStart {
+    pub thread: String,
+    pub token: String,
 }
 
 /// The available bases and current checkout; branch commit IDs are fixed at query time.

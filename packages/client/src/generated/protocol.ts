@@ -832,6 +832,11 @@ export type ResponseStatus = "in_progress" | "completed" | "incomplete" | "faile
 export type ResumeThread = { thread: string, at?: number, };
 
 /**
+ * Request a new attempt using the observed token and the original preparation request.
+ */
+export type RetryStart = { thread: string, token: string, };
+
+/**
  * What was revoked: a session, or a link.
  */
 export type Revoked = { revoked: string, };
@@ -924,11 +929,6 @@ export type Standing = { account?: string, plan?: string, limits: Array<Limit>, 
 export type Start = { request: StartRequest, token: string, previous: string | null, state: StartState, };
 
 /**
- * Prepare or inspect a worktree for an accepted Thread. Prepare and retry are explicit writes.
- */
-export type StartAction = { "action": "prepare", thread: string, token: string, } | { "action": "retry", thread: string, token: string, } | { "action": "inspect", thread: string, };
-
-/**
  * An extension's accepted preparation request. Octoii does not interpret its payload.
  */
 export type StartRequest = { owner: string, payload: JsonValue, };
@@ -936,7 +936,7 @@ export type StartRequest = { owner: string, payload: JsonValue, };
 /**
  * Preparation never runs the agent until it becomes ready.
  */
-export type StartState = { "state": "pending" } | { "state": "failed", reason: string, } | { "state": "cancelled" } | { "state": "ready", directory: StartWorkspace, };
+export type StartState = { "state": "pending" } | { "state": "preparing" } | { "state": "checking" } | { "state": "failed", reason: string, } | { "state": "interrupted", reason: string, } | { "state": "cancelled" } | { "state": "ready", directory: StartWorkspace, };
 
 /**
  * The resolved directory and project identity in which a thread runs.
@@ -1032,8 +1032,6 @@ export type TerminalsTopic = { "type": "terminals", thread: string, } | { "type"
  * what a subscription to the thread goes on from, none for a log not begun.
  */
 export type ThreadRead = { entries: Array<Entry>, complete: boolean, end?: Cursor, };
-
-export type ThreadStart = { thread: string, start: Start, worktrees?: Array<WorktreeEntry>, };
 
 /**
  * What a thread's model requests used, as Beak counts it on its main process for every process under it, as cgroup v2
@@ -1212,7 +1210,7 @@ export type Methods = {
   'memory.delete': { params: DeleteMemory; result: Nothing };
   'git.branches': { params: InFolder; result: Branches };
   'git.worktree-plan': { params: WorktreePlan; result: CreateWorktree };
-  'git.start': { params: StartAction; result: ThreadStart };
+  'git.retry-start': { params: RetryStart; result: Start };
   'git.worktrees': { params: InFolder; result: Worktrees };
   'git.create-worktree': { params: CreateWorktree; result: Worktree };
   'git.repository': { params: InFolder; result: InRepository };

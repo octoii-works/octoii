@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 use octoii::connection::refusal;
 use octoii::machine::{Base, Writes};
-use octoii::protocol::Error;
+use octoii::protocol::{Error, Scope};
 use octoii::{Caller, Extension, Registrar};
 use serde::Serialize;
 use tokio_util::sync::CancellationToken;
@@ -29,7 +29,7 @@ pub struct GitExtension {
 
 impl Extension for GitExtension {
     fn name(&self) -> &'static str {
-        "git"
+        start::OWNER
     }
 
     fn title(&self) -> &'static str {
@@ -44,19 +44,11 @@ impl Extension for GitExtension {
         registrar.tool(tool::GitTool);
         registrar.teller(octoii::agent::Shared::Machine, std::sync::Arc::new(context::GitContext));
         registrar.teller(octoii::agent::Shared::Project, std::sync::Arc::new(context::RepositoryContext));
+        registrar.workspace_preparer(start::WorktreePreparation);
         let worktrees = std::sync::Arc::new(self.worktrees);
-        let preparations = std::sync::Arc::new(tokio::sync::Mutex::new(()));
         registrar.methods(protocol::set(), Method::read, move |caller: Caller, method| {
-            let preparations = preparations.clone();
             let worktrees = worktrees.clone();
-            async move {
-                if let Method::GitStart(action) = method {
-                    start::authorize(&caller)?;
-                    let _preparing = preparations.lock().await;
-                    return json(&start::answer(&caller, action).await.map_err(failed)?);
-                }
-                answered(&caller, method, &worktrees).await
-            }
+            async move { answered(&caller, method, &worktrees).await }
         });
     }
 }
@@ -74,10 +66,15 @@ fn told(error: &GitError) -> Error {
 
 /// Does the git method `method` for the client of `caller`.
 async fn answered(caller: &Caller, method: Method, worktrees: &Path) -> Result<serde_json::Value, Error> {
-    let commands = caller.volume().commands();
+    let volume = caller.volume();
+    if let Method::GitRetryStart(asked) = &method {
+        caller.require_scope(Scope::ThreadsOperate)?;
+        return json(&start::retry(&volume, asked).await.map_err(failed)?);
+    }
+    let commands = volume.commands();
     let machine = match &method {
         Method::GitCreateWorktree(_) => {
-            caller.require_scope(octoii::protocol::Scope::GitOperate)?;
+            caller.require_scope(Scope::GitOperate)?;
             commands.open(
                 caller.host(),
                 Base {
@@ -117,7 +114,7 @@ async fn told_by(git: &Git<'_>, method: Method, worktrees: &Path) -> Result<serd
             })
         }
         Method::GitWorktreePlan(asked) => json(&worktree::plan(git, worktrees, asked).await.map_err(failed)?),
-        Method::GitStart(_) => unreachable!("startup methods are handled before ordinary Git queries"),
+        Method::GitRetryStart(_) => unreachable!("startup retry is handled before ordinary Git queries"),
         Method::GitWorktrees(asked) => json(&Worktrees {
             worktrees: git.worktrees(Path::new(&asked.path)).await.map_err(|error| told(&error))?,
         }),

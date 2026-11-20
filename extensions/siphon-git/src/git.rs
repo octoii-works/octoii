@@ -5,7 +5,7 @@
 //! and the commits of a branch since it parted from its base. Its output is read as git writes it with `-z`: names
 //! whole, whatever they hold.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use bytes::Bytes;
 use schemars::JsonSchema;
@@ -324,16 +324,14 @@ impl Git<'_> {
         if branch.starts_with('-') || branch == "HEAD" {
             return Err(refused("the branch must be a new literal branch name"));
         }
-        let repository = self.holding(folder).await?;
-        let root = Path::new(&repository.root);
-        // Checking the complete ref rejects @{...} rather than expanding the previous-checkout syntax of --branch.
-        let reference = format!("refs/heads/{branch}");
-        self.output(root, &["check-ref-format", &reference]).await?;
-        if self
-            .line(root, &["rev-parse", "-q", "--verify", "--end-of-options", &reference])
+        let root = self
+            .repository_root(folder)
             .await?
-            .is_some()
-        {
+            .ok_or_else(|| GitError::NoRepository(folder.display().to_string()))?;
+        let root = Path::new(&root);
+        // Checking the complete ref rejects @{...} rather than expanding the previous-checkout syntax of --branch.
+        self.output(root, &["check-ref-format", &format!("refs/heads/{branch}")]).await?;
+        if self.branch_tip(root, branch).await?.is_some() {
             return Err(refused("the branch already exists"));
         }
         self.output(root, &["rev-parse", "--verify", "--end-of-options", &format!("{base}^{{commit}}")])
@@ -380,17 +378,39 @@ impl Git<'_> {
         Ok((!line.is_empty()).then_some(line))
     }
 
+    pub(crate) async fn branch_tip(&self, folder: &Path, branch: &str) -> Result<Option<String>, GitError> {
+        self.line(
+            folder,
+            &["rev-parse", "-q", "--verify", "--end-of-options", &format!("refs/heads/{branch}")],
+        )
+        .await
+    }
+
+    pub(crate) async fn common_directory(&self, folder: &Path) -> Result<PathBuf, GitError> {
+        let directory = text(
+            &self
+                .output(folder, &["rev-parse", "--path-format=absolute", "--git-common-dir"])
+                .await?,
+        );
+        Ok(directory.trim_suffix('\n').into())
+    }
+
+    pub(crate) async fn repository_root(&self, folder: &Path) -> Result<Option<String>, GitError> {
+        match self.output(folder, &["rev-parse", "--show-toplevel"]).await {
+            Ok(top) => Ok(Some(text(&top).trim_suffix('\n').to_owned())),
+            Err(GitError::Refused { .. }) => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+
     /// The repository the folder `folder` — a machine's absolute path — is in; none where it is in none.
     ///
     /// # Errors
     /// Where git could not tell.
     pub async fn repository(&self, folder: &Path) -> Result<Option<Repository>, GitError> {
-        let top = match self.output(folder, &["rev-parse", "--show-toplevel"]).await {
-            Ok(top) => top,
-            Err(GitError::Refused { .. }) => return Ok(None),
-            Err(error) => return Err(error),
+        let Some(root) = self.repository_root(folder).await? else {
+            return Ok(None);
         };
-        let root = text(&top).trim().to_owned();
         let status = self
             .output(
                 Path::new(&root),

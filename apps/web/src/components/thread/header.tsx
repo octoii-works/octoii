@@ -48,7 +48,7 @@ function StatusPill(props: { readonly status: ThreadStatus }): ReactNode {
 		case "preparing":
 			return (
 				<Pill tone="waiting" icon={<StatusMark status="preparing" />}>
-					Awaiting preparation
+					Preparing workspace
 				</Pill>
 			);
 		case "asks":

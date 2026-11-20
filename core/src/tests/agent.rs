@@ -12,6 +12,7 @@ use crate::agent::{
     DelegatedFiber, Gather, ModelRequest, Sources, ThreadFiber, TitleFiber, TurnFiber, answer_gather, answer_model, answer_review,
 };
 use crate::machine::Host as Machine;
+use crate::tests::{StartupRequests, startup_until};
 use crate::threads::{CallStatus, Config, Entry, Mode, NewThread, Outcome, StartDirectory, StartWorkspace, StopTarget, Threads, Turn};
 use crate::tools::{Asks, Exec, ExecuteTool, Permission, ReadTool, Review, ScriptFiber, ShellTool, Tools, WriteTool, answer_exec};
 use bytes::Bytes;
@@ -191,6 +192,10 @@ fn models(script: &Arc<Script>) -> Arc<Models> {
 }
 
 fn runtime(script: &Arc<Script>) -> Runtime {
+    runtime_with(script, |_| Ok(()))
+}
+
+fn runtime_with(script: &Arc<Script>, register: impl FnOnce(&mut octoii_siphon_lib::Builder) -> crate::volume::Result<()>) -> Runtime {
     let inner = Tools::new().with(ReadTool).with(WriteTool).with(ShellTool);
     let tools = inner.clone().with(ExecuteTool).with(DelegateTool).with(ThreadTool);
     let models = models(script);
@@ -258,7 +263,7 @@ fn runtime(script: &Arc<Script>) -> Runtime {
             })?
             .ask_person::<Permission>()?
             .ask_person::<Asks>()?;
-        Ok(())
+        register(builder)
     })
     .expect("started")
 }
@@ -1470,11 +1475,15 @@ async fn a_bound_start_gives_the_first_turn_its_workspace_and_attachment() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn startup_gate_holds_all_input_until_the_final_workspace_is_bound() {
-    use crate::threads::StartRequest;
+    use crate::threads::{StartRequest, StartState};
 
-    let script = Arc::new(Script::default());
-    script.replies.lock().unwrap().push_back(Ok(vec![says("done")]));
-    let runtime = runtime(&script);
+    let script = script(vec![Ok(vec![says("done")])]);
+    let mut requests = None;
+    let runtime = runtime_with(&script, |builder| {
+        requests = Some(StartupRequests::register(builder)?);
+        Ok(())
+    });
+    let mut requests = requests.unwrap();
     let volume = crate::volume::Volume {
         runtime: runtime.runtime_handle(),
     };
@@ -1490,6 +1499,7 @@ async fn startup_gate_holds_all_input_until_the_final_workspace_is_bound() {
         },
         ..NewThread::default()
     };
+    let attachment = Bytes::from_static(b"attached context");
     let id = volume
         .start_thread(
             "test-session",
@@ -1498,7 +1508,7 @@ async fn startup_gate_holds_all_input_until_the_final_workspace_is_bound() {
             vec![
                 InputContent::text("first").into(),
                 crate::threads::InputPart::Attachment {
-                    bytes: bytes::Bytes::from_static(b"attached context"),
+                    bytes: attachment.clone(),
                     media_type: "text/plain".into(),
                     filename: Some("context.txt".into()),
                 },
@@ -1510,7 +1520,7 @@ async fn startup_gate_holds_all_input_until_the_final_workspace_is_bound() {
         )
         .await
         .unwrap();
-    let start = volume.thread_start(&id).unwrap().unwrap();
+    let preparing = requests.prepare().await;
     threads
         .deliver(&id, "person", vec![InputContent::text("second")], "extra-input")
         .await
@@ -1519,21 +1529,17 @@ async fn startup_gate_holds_all_input_until_the_final_workspace_is_bound() {
         .queue(&id, "person", vec![InputContent::text("third")], "queued-input")
         .await
         .unwrap();
-    assert!(
-        threads
-            .configure(
-                &id,
-                "person",
-                crate::threads::ConfigChange {
-                    workspace: Some(Some("/wrong".into())),
-                    ..Default::default()
-                }
-            )
-            .await
-            .is_err()
-    );
+    let wrong_directory = crate::threads::ConfigChange {
+        workspace: Some(Some("/wrong".into())),
+        ..Default::default()
+    };
+    assert!(threads.configure(&id, "person", wrong_directory).await.is_err());
     // A committed failure and retry are barriers proving the main process has run without gathering or calling a model.
-    volume.fail_thread_start(&id, &start.token, "not ready".into()).await.unwrap();
+    preparing
+        .answer
+        .send(Err(octoii_siphon_lib::Unanswered::Failed("not ready".into())))
+        .unwrap();
+    let failed = startup_until(&volume, &id, |state| matches!(state, StartState::Failed { .. })).await;
     assert!(script.asked.lock().unwrap().is_empty());
     assert_eq!(threads.listed(&id).unwrap().status.inbox.len(), 3);
     assert!(
@@ -1541,36 +1547,26 @@ async fn startup_gate_holds_all_input_until_the_final_workspace_is_bound() {
             .iter()
             .any(|entry| matches!(entry, Entry::System { .. } | Entry::Input { .. }))
     );
-    let retried = volume.retry_thread_start(&id, &start.token).await.unwrap();
+    volume.retry_thread_start(&id, &failed.token).await.unwrap();
+    let retry = requests.prepare().await;
     assert!(script.asked.lock().unwrap().is_empty());
     let directory = StartWorkspace {
         workspace: workspace.clone(),
         project: Some(workspace.clone()),
     };
-    volume.finish_thread_start(&id, &retried.token, directory.clone()).await.unwrap();
+    retry.answer.send(Ok(directory)).unwrap();
     until(&threads, &id, Turn::Replied).await;
     assert_eq!(threads.listed(&id).unwrap().config.workspace.as_deref(), Some(workspace.as_str()));
     assert_eq!(threads.listed(&id).unwrap().project.as_deref(), Some(workspace.as_str()));
-    let logged = entries(&threads, &id);
-    let file = logged
-        .iter()
-        .filter_map(|entry| match entry {
-            Entry::Input { content, .. } => Some(content),
-            _ => None,
-        })
-        .flatten()
-        .find_map(|part| match part {
-            InputContent::InputFile { file } => Some(file),
-            _ => None,
-        })
-        .expect("attached input");
-    assert_eq!(
-        crate::threads::files::read(&volume.snapshot().unwrap(), &id, &file.reference).unwrap(),
-        Some(bytes::Bytes::from_static(b"attached context"))
-    );
+    let reference = crate::threads::files::reference_of(&attachment);
+    assert!(entries(&threads, &id).iter().any(|entry| {
+        matches!(entry, Entry::Input { content, .. } if content.iter().any(
+            |part| matches!(part, InputContent::InputFile { file } if file.reference == reference)
+        ))
+    }));
+    assert_eq!(volume.read_file(&id, &reference).unwrap(), Some(attachment));
     assert_eq!(script.asked.lock().unwrap().len(), 1);
-    volume.finish_thread_start(&id, &retried.token, directory).await.unwrap();
-    assert_eq!(script.asked.lock().unwrap().len(), 1);
+    assert!(requests.preparing.try_recv().is_err());
     runtime.close().expect("closed");
 }
 

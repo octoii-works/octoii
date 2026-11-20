@@ -34,7 +34,7 @@ function ThreadChip(props: { readonly thread: string }): ReactNode {
 
 /** The words of how a thread stands, on its card. */
 const STATUS_WORDS: Readonly<Record<ReturnType<typeof statusOf>, string>> = {
-	preparing: "Awaiting preparation",
+	preparing: "Preparing workspace",
 	asks: "Waiting for you",
 	working: "Working",
 	failed: "Failed",

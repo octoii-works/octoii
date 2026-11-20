@@ -92,10 +92,13 @@ fn manifest(key: &str, workspace: &Value) -> Value {
             {"type":"content","content":{"type":"input_text","text":"after"}}]})
 }
 
-fn isolated_manifest(key: &str) -> Value {
+fn isolated_manifest(node: &TestNode, key: &str) -> Value {
+    let home = Home::at(node.home.path());
+    let source = home.root().join("missing-repository");
+    let destination = home.temporary().unwrap().join("worktrees").join(key);
     manifest(
         key,
-        &json!({"kind":"isolated", "worktree":{"path":"/repo", "destination":"/repo-task", "branch":"task", "base":"0".repeat(40)}}),
+        &json!({"kind":"isolated", "worktree":{"path":source, "destination":destination, "branch":format!("octoii/{key}"), "base":"0".repeat(40)}}),
     )
 }
 
@@ -111,7 +114,7 @@ fn multipart(manifest: &Value, files: &[(&str, &[u8])]) -> Vec<u8> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn worktree_plans_use_the_nodes_temporary_directory() {
+async fn a_worktree_is_prepared_in_the_nodes_temporary_directory_without_a_client() {
     let node = TestNode::start().await;
     let repo = tempfile::tempdir().unwrap();
     let git = |args: &[&str]| {
@@ -152,21 +155,50 @@ async fn worktree_plans_use_the_nodes_temporary_directory() {
     let root = Home::at(node.home.path()).temporary().unwrap().join("worktrees");
     let expected = std::path::absolute(root.join(key)).unwrap();
     assert_eq!(reply["result"]["destination"], json!(expected), "{reply}");
-    assert!(!root.exists(), "planning a task does not create a checkout");
+    assert!(!expected.exists(), "planning a task does not create a checkout");
+    drop(client);
+
+    let manifest = manifest("automatic-preparation", &json!({"kind":"isolated","worktree":reply["result"]}));
+    let (status, receipt) = node.post(&node.writer, multipart(&manifest, &[("file-0", b"attached")])).await;
+    assert_eq!(status, StatusCode::OK, "{receipt}");
+    let accepted: Value = serde_json::from_str(&receipt).unwrap();
+    let thread = accepted["thread"].as_str().unwrap();
+    let directory = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+        loop {
+            let start = node.siphon.volume().thread_start(thread).unwrap().expect("a preparation");
+            match start.state {
+                StartState::Ready { directory } => break directory,
+                StartState::Failed { reason } | StartState::Interrupted { reason } => panic!("{reason}"),
+                _ => tokio::time::sleep(std::time::Duration::from_millis(10)).await,
+            }
+        }
+    })
+    .await
+    .expect("the node prepares the checkout without a connected client");
+    assert_eq!(
+        std::path::Path::new(&directory.workspace).canonicalize().unwrap(),
+        expected.canonicalize().unwrap()
+    );
+    assert_eq!(git(&["-C", &directory.workspace, "rev-parse", "HEAD"]).trim(), head.trim());
+    let listing = node.siphon.threads.listed(thread).unwrap();
+    assert_eq!(listing.config.workspace.as_deref(), Some(directory.workspace.as_str()));
+    let reference = format!("sha256:{}", octoii::tools::sha256_hex(b"attached"));
+    let bytes = node.siphon.volume().read_file(thread, &reference).unwrap().unwrap();
+    assert_eq!(bytes.as_ref(), b"attached");
     node.close().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn multipart_keeps_order_files_and_idempotency_without_starting_the_agent() {
     let node = TestNode::start().await;
-    let request = isolated_manifest("accepted");
+    let request = isolated_manifest(&node, "accepted");
     let (status, body) = node.post(&node.writer, multipart(&request, &[("file-0", b"attached")])).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let accepted: Value = serde_json::from_str(&body).unwrap();
     let thread = accepted["thread"].as_str().unwrap();
     assert_eq!(accepted, json!({"thread":thread}));
     let listed = node.siphon.threads.listed(thread).unwrap();
-    assert_eq!(listed.status.start.as_ref().map(|start| &start.state), Some(&StartState::Pending));
+    assert!(listed.status.start.as_ref().is_some_and(octoii::threads::Start::blocks_execution));
     let content = serde_json::to_value(&listed.status.inbox).unwrap();
     assert_eq!(content[0][1]["content"][0]["text"], "before");
     assert_eq!(content[0][1]["content"][2]["text"], "after");
@@ -199,7 +231,7 @@ async fn multipart_keeps_order_files_and_idempotency_without_starting_the_agent(
 #[tokio::test(flavor = "multi_thread")]
 async fn malformed_attachments_and_failed_images_never_leave_a_thread() {
     let node = TestNode::start().await;
-    let request = isolated_manifest("bad");
+    let request = isolated_manifest(&node, "bad");
     for files in [
         vec![],
         vec![("file-0", b"x".as_slice()), ("file-0", b"x".as_slice())],
@@ -232,7 +264,7 @@ async fn malformed_attachments_and_failed_images_never_leave_a_thread() {
 async fn permissions_origin_and_size_limits_precede_acceptance() {
     let node = TestNode::start().await;
     assert_eq!(
-        node.post(&node.thread_only, multipart(&isolated_manifest("forbidden"), &[]))
+        node.post(&node.thread_only, multipart(&isolated_manifest(&node, "forbidden"), &[]))
             .await
             .0,
         StatusCode::FORBIDDEN
@@ -248,7 +280,7 @@ async fn permissions_origin_and_size_limits_precede_acceptance() {
         .await
         .unwrap();
     assert_eq!(foreign.status(), StatusCode::FORBIDDEN);
-    let mut large = isolated_manifest("large");
+    let mut large = isolated_manifest(&node, "large");
     large["parts"][0]["content"]["text"] = json!("x".repeat((1 << 20) + 1));
     assert_eq!(
         node.post(&node.writer, multipart(&large, &[])).await.0,
@@ -256,12 +288,15 @@ async fn permissions_origin_and_size_limits_precede_acceptance() {
     );
     let oversized = vec![0; (32 << 20) + 1];
     assert_eq!(
-        node.post(&node.writer, multipart(&isolated_manifest("large-file"), &[("file-0", &oversized)]))
-            .await
-            .0,
+        node.post(
+            &node.writer,
+            multipart(&isolated_manifest(&node, "large-file"), &[("file-0", &oversized)])
+        )
+        .await
+        .0,
         StatusCode::PAYLOAD_TOO_LARGE
     );
-    let mut total = isolated_manifest("total-limit");
+    let mut total = isolated_manifest(&node, "total-limit");
     total["parts"] = json!(
         (0..3)
             .map(|index| json!({"type":"attachment", "index":index, "media_type":"text/plain", "filename":"part.txt"}))
@@ -284,7 +319,7 @@ async fn permissions_origin_and_size_limits_precede_acceptance() {
         .await;
     assert!(client.answer(&id).await["error"].is_null());
     assert_eq!(
-        node.post(&node.writer, multipart(&isolated_manifest("disabled"), &[("file-0", b"x")]))
+        node.post(&node.writer, multipart(&isolated_manifest(&node, "disabled"), &[("file-0", b"x")]))
             .await
             .0,
         StatusCode::FORBIDDEN
@@ -430,7 +465,7 @@ async fn image_only_submission_keeps_the_fitted_reference_in_its_initial_input()
     image::RgbImage::from_pixel(2048, 2048, image::Rgb([20, 40, 80]))
         .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
         .unwrap();
-    let mut request = isolated_manifest("image-only");
+    let mut request = isolated_manifest(&node, "image-only");
     request["parts"] = json!([{"type":"attachment", "index":0, "media_type":"image/png", "filename":"image.png"}]);
     let (status, body) = node.post(&node.writer, multipart(&request, &[("file-0", &png)])).await;
     assert_eq!(status, StatusCode::OK, "{body}");

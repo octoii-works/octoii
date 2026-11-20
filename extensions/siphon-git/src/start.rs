@@ -1,121 +1,181 @@
-//! Explicit worktree preparation for an accepted Thread. Inspection never adopts an existing directory.
-use std::path::Path;
+//! Durable preparation of a Thread's worktree using the start request's command capability.
 
-use octoii::Caller;
-use octoii::machine::{Base, Writes};
-use octoii::protocol::Scope;
-use octoii::threads::{Config, InputPart, NewThread, Start, StartDirectory, StartRequest, StartState, StartWorkspace};
+use std::future::Future;
+use std::path::{Path, PathBuf};
+use std::pin::Pin;
+
+use anyhow::Context as _;
+use octoii::machine::{Base, Exit, Machine, Program, Writes, inside};
+use octoii::threads::{
+    Config, InputPart, NewThread, PreparationContext, Start, StartDirectory, StartRequest, StartWorkspace, WorkspacePreparer,
+};
 use octoii::volume::Volume;
-use serde::{Deserialize, Serialize};
-use ts_rs::TS;
 
-use crate::git::{Git, WorktreeEntry};
-use crate::protocol::CreateWorktree;
+use crate::git::Git;
+use crate::protocol::{CreateWorktree, RetryStart};
 
-const OWNER: &str = "git.worktree";
+pub(crate) const OWNER: &str = "git";
 
-/// Prepare or inspect a worktree for an accepted Thread. Prepare and retry are explicit writes.
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, TS)]
-#[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
-pub enum StartAction {
-    Prepare { thread: String, token: String },
-    Retry { thread: String, token: String },
-    Inspect { thread: String },
+pub(crate) struct WorktreePreparation;
+
+impl WorkspacePreparer for WorktreePreparation {
+    fn prepare<'a>(
+        &'a self,
+        context: &'a PreparationContext,
+        request: &'a StartRequest,
+    ) -> Pin<Box<dyn Future<Output = anyhow::Result<StartWorkspace>> + Send + 'a>> {
+        Box::pin(prepare(context, request))
+    }
+
+    fn inspect<'a>(
+        &'a self,
+        context: &'a PreparationContext,
+        request: &'a StartRequest,
+    ) -> Pin<Box<dyn Future<Output = anyhow::Result<String>> + Send + 'a>> {
+        Box::pin(inspect(context, request))
+    }
 }
 
-#[derive(Debug, Serialize, Deserialize, TS)]
-pub struct ThreadStart {
-    pub thread: String,
-    pub start: Start,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub worktrees: Option<Vec<WorktreeEntry>>,
+fn base(context: &PreparationContext) -> Base {
+    Base {
+        workspace: "/".into(),
+        home: context.host().home.clone(),
+    }
 }
 
-/// Called under the extension's preparation lock, shared by every connection to this node.
-pub(crate) async fn answer(caller: &Caller, action: StartAction) -> anyhow::Result<ThreadStart> {
-    let volume = caller.volume();
-    let thread = match &action {
-        StartAction::Prepare { thread, .. } | StartAction::Retry { thread, .. } | StartAction::Inspect { thread } => thread.clone(),
-    };
-    let mut start = volume
-        .thread_start(&thread)?
-        .ok_or_else(|| anyhow::anyhow!("thread has no preparation"))?;
-    anyhow::ensure!(start.request.owner == OWNER, "thread preparation belongs to another extension");
-    let request: CreateWorktree = serde_json::from_value(start.request.payload.clone())?;
-    match &action {
-        StartAction::Prepare { token, .. } => {
-            anyhow::ensure!(start.token == *token, "stale preparation attempt");
-            if !matches!(start.state, StartState::Pending) {
-                return Ok(ThreadStart {
-                    thread,
-                    start,
-                    worktrees: None,
-                });
-            }
-        }
-        StartAction::Retry { token, .. } => start = volume.retry_thread_start(&thread, token).await?,
-        StartAction::Inspect { .. } => {}
+fn git<'a>(context: &'a PreparationContext, machine: &'a Machine) -> Git<'a> {
+    Git {
+        machine,
+        commands: context.commands(),
+        cancelled: context.cancelled().clone(),
     }
-    let commands = volume.commands();
-    let machine = if matches!(action, StartAction::Inspect { .. }) {
-        caller.person_machine()?
-    } else {
-        commands.open(
-            caller.host(),
-            Base {
-                workspace: "/".into(),
-                home: caller.host().home.clone(),
-            },
-            &Writes::Anywhere,
-        )?
-    };
-    let git = Git {
-        machine: &machine,
-        commands: &commands,
-        cancelled: tokio_util::sync::CancellationToken::new(),
-    };
-    if matches!(action, StartAction::Inspect { .. }) {
-        let worktrees = git.worktrees(Path::new(&request.path)).await?;
-        return Ok(ThreadStart {
-            thread,
-            start,
-            worktrees: Some(worktrees),
-        });
-    }
-    let made = async {
-        let source = git
-            .repository(Path::new(&request.path))
+}
+
+/// Resolve the parent's physical path in the request's read-only view before using it as a write scope.
+async fn physical_directory(git: &Git<'_>, directory: &Path) -> anyhow::Result<PathBuf> {
+    let ran = git
+        .machine
+        .run(
+            git.commands,
+            &Program::new(vec!["pwd".into(), "-P".into()], directory),
+            &git.cancelled,
+        )
+        .await
+        .with_context(|| format!("cannot open directory {}", directory.display()))?;
+    anyhow::ensure!(ran.exit == Exit::Code(0), "cannot resolve directory {}", directory.display());
+    let output = std::str::from_utf8(&ran.output).context("directory path must be UTF-8")?;
+    Ok(output.trim_suffix('\n').into())
+}
+
+async fn prepare(context: &PreparationContext, request: &StartRequest) -> anyhow::Result<StartWorkspace> {
+    let worktree: CreateWorktree = serde_json::from_value(request.payload.clone())?;
+    let source = Path::new(&worktree.path);
+    let destination = Path::new(&worktree.destination);
+
+    let base = base(context);
+    let reader = context.open(base.clone(), &Writes::Within(Vec::new()))?;
+    let probe = git(context, &reader);
+    let root = probe.repository_root(source).await?.context("source is not a repository")?;
+    let root_path = Path::new(&root);
+    let commit = probe.verify_commit(root_path, &worktree.base).await?;
+    let common = probe.common_directory(root_path).await?;
+    anyhow::ensure!(
+        common.is_absolute() && common.parent().is_some(),
+        "invalid Git common directory {}",
+        common.display()
+    );
+
+    let (parent, name) = destination
+        .parent()
+        .zip(destination.file_name())
+        .context("destination must name a worktree directory")?;
+    let parent = physical_directory(&probe, parent).await?;
+    anyhow::ensure!(
+        parent.is_absolute() && parent.parent().is_some(),
+        "invalid worktree parent {}",
+        parent.display()
+    );
+    let target = parent.join(name);
+    anyhow::ensure!(
+        reader.namespace().stat(&inside(&target))?.is_none(),
+        "destination {} already exists",
+        target.display()
+    );
+    anyhow::ensure!(
+        !probe
+            .worktrees(root_path)
             .await?
-            .ok_or_else(|| anyhow::anyhow!("source is not a repository"))?;
-        let worktree = git
-            .create_worktree(
-                Path::new(&request.path),
-                Path::new(&request.destination),
-                &request.branch,
-                &request.base,
-            )
-            .await?;
-        Ok::<_, anyhow::Error>(StartWorkspace {
-            workspace: worktree.path,
-            project: Some(source.root),
-        })
-    }
-    .await;
-    let start = match made {
-        Ok(directory) => volume.finish_thread_start(&thread, &start.token, directory).await?,
-        Err(error) => volume.fail_thread_start(&thread, &start.token, error.to_string()).await?,
-    };
-    Ok(ThreadStart {
-        thread,
-        start,
-        worktrees: None,
+            .iter()
+            .any(|entry| Path::new(&entry.path) == target.as_path()),
+        "destination {} is already registered with Git",
+        target.display()
+    );
+
+    let writer = context.open(base, &Writes::Within(vec![common, parent]))?;
+    let made = git(context, &writer)
+        .create_worktree(root_path, &target, &worktree.branch, &commit)
+        .await?;
+    anyhow::ensure!(
+        made.base_commit == commit,
+        "Git checked out {} instead of {commit}",
+        made.base_commit
+    );
+    Ok(StartWorkspace {
+        workspace: made.path,
+        project: Some(root),
     })
 }
 
-pub(crate) fn authorize(caller: &Caller) -> Result<(), octoii::protocol::Error> {
-    caller.require_scope(Scope::GitOperate)?;
-    caller.require_scope(Scope::ThreadsOperate)
+async fn inspect(context: &PreparationContext, request: &StartRequest) -> anyhow::Result<String> {
+    let worktree: CreateWorktree = serde_json::from_value(request.payload.clone())?;
+    let source = Path::new(&worktree.path);
+    let destination = Path::new(&worktree.destination);
+    let reader = context.open(base(context), &Writes::Within(Vec::new()))?;
+    let git = git(context, &reader);
+    let presence = match reader.namespace().stat(&inside(destination)) {
+        Ok(Some(_)) => "exists".to_owned(),
+        Ok(None) => "was not found".to_owned(),
+        Err(error) => format!("could not be read ({error})"),
+    };
+    let destination_state = format!("Destination {} {presence}.", destination.display());
+    let worktrees = match git.worktrees(source).await {
+        Ok(worktrees) => worktrees,
+        Err(error) => return Ok(format!("{destination_state} Git could not read worktree registrations ({error}).")),
+    };
+    let physical_target = match destination.parent().zip(destination.file_name()) {
+        Some((parent, name)) => physical_directory(&git, parent).await.ok().map(|parent| parent.join(name)),
+        None => None,
+    };
+    let relevant: Vec<_> = worktrees
+        .iter()
+        .filter(|entry| {
+            let path = Path::new(&entry.path);
+            path == destination || physical_target.as_deref() == Some(path) || entry.branch.as_deref() == Some(worktree.branch.as_str())
+        })
+        .map(|entry| {
+            let branch = entry.branch.as_deref().unwrap_or("none");
+            let head = entry.head.as_deref().unwrap_or("unknown");
+            format!("{:?} (branch {branch:?}, HEAD {head})", entry.path)
+        })
+        .collect();
+    let registration = if relevant.is_empty() {
+        "Git has no worktree registration for this destination or branch.".into()
+    } else {
+        format!("Git registers {}.", relevant.join(", "))
+    };
+    let branch = &worktree.branch;
+    let branch_state = match git.branch_tip(source, branch).await {
+        Ok(Some(commit)) => format!("Branch {branch:?} points to {commit}."),
+        Ok(None) => format!("Branch {branch:?} was not found."),
+        Err(error) => format!("Git could not read branch {branch:?} ({error})."),
+    };
+    Ok(format!("{destination_state} {registration} {branch_state}"))
+}
+
+pub(crate) async fn retry(volume: &Volume, asked: &RetryStart) -> anyhow::Result<Start> {
+    let start = volume.thread_start(&asked.thread)?.context("thread has no preparation")?;
+    anyhow::ensure!(start.request.owner == OWNER, "thread preparation belongs to another extension");
+    volume.retry_thread_start(&asked.thread, &asked.token).await
 }
 
 /// Accept a worktree task and its input behind the Thread's startup gate.

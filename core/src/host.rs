@@ -76,6 +76,15 @@ impl Octoii {
         &self.registry.sets
     }
 
+    /// Whether the owner of a startup request has an enabled workspace preparer.
+    ///
+    /// # Errors
+    /// The volume could not read the current environment settings.
+    pub fn can_prepare_workspace(&self, owner: &str) -> crate::volume::Result<bool> {
+        let snapshot = self.runtime.snapshot()?;
+        Ok(self.registry.workspace_preparer(&snapshot, owner)?.is_some())
+    }
+
     /// What the model of the thread `id` is told now, as it would be gathered before its next turn: its sections, its
     /// tools, and the names its scripts may call.
     ///
@@ -170,34 +179,7 @@ impl crate::volume::Volume {
         Ok(self.starting_threads().start_state(id)?)
     }
 
-    /// Binds the final directory and releases the accepted input, once for this attempt.
-    ///
-    /// # Errors
-    /// Stale token, invalid transition/directory, missing thread or storage failure.
-    pub async fn finish_thread_start(
-        &self,
-        id: &str,
-        token: &str,
-        directory: crate::threads::StartWorkspace,
-    ) -> anyhow::Result<crate::threads::Start> {
-        Ok(self
-            .starting_threads()
-            .start_command(id, token, crate::threads::start::Action::Ready(directory))
-            .await?)
-    }
-
-    /// Records a failed preparation without dropping its input or opening its gate.
-    ///
-    /// # Errors
-    /// Stale token, invalid transition, missing thread or storage failure.
-    pub async fn fail_thread_start(&self, id: &str, token: &str, reason: String) -> anyhow::Result<crate::threads::Start> {
-        Ok(self
-            .starting_threads()
-            .start_command(id, token, crate::threads::start::Action::Fail(reason))
-            .await?)
-    }
-
-    /// Starts another preparation attempt from a failure; a replay returns the same pending token.
+    /// Starts another preparation attempt from a failure; a replay returns the same attempt.
     ///
     /// # Errors
     /// Stale token, invalid transition, missing thread or storage failure.

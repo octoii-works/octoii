@@ -192,18 +192,11 @@ fn authorize_isolated(node: &Node, session: &AccessEntry) -> Result<(), Denied> 
             "Git operation permission is required for an isolated workspace".into(),
         ));
     }
-    let volume = node.siphon.volume();
-    let internal = |error: String| Denied(StatusCode::INTERNAL_SERVER_ERROR, error);
-    let settings = octoii::settings::environment(&*volume.snapshot().map_err(|error| internal(error.to_string()))?)
-        .map_err(|error| internal(error.to_string()))?;
-    if settings.disabled_extensions.iter().any(|name| name == "git")
-        || !node
-            .siphon
-            .sets()
-            .iter()
-            .flat_map(|set| &set.methods)
-            .any(|(name, _)| *name == "git.start")
-    {
+    let available = node
+        .siphon
+        .can_prepare_workspace("git")
+        .map_err(|error| Denied(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
+    if !available {
         return Err(Denied(StatusCode::FORBIDDEN, "Git extension is unavailable".into()));
     }
     Ok(())

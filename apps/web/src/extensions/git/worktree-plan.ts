@@ -1,6 +1,5 @@
-/** Planning and preparation on the explicit first send. */
+/** The worktree plan frozen into a new thread's first submission. */
 import type { Client, CreateWorktree } from "@octoii-works/octoii-client";
-import { preparingWorktree } from "./worktree-preparation.ts";
 
 export type WorktreeBase = { readonly commit: string; readonly label: string };
 export type DraftWorktree = { readonly path: string; readonly base?: WorktreeBase | undefined };
@@ -14,15 +13,4 @@ export async function planWorktree(client: Pick<Client, "call">, draft: DraftWor
 		base = repository.head;
 	}
 	return client.call("git.worktree-plan", { path: draft.path, base, key: crypto.randomUUID() });
-}
-
-export async function prepareWorktree(client: Client, thread: string, open: () => void): Promise<void> {
-	const finished = preparingWorktree(client, thread);
-	try {
-		open();
-		const inspected = await client.call("git.start", { action: "inspect", thread });
-		if (inspected.start.state.state === "pending") await client.call("git.start", { action: "prepare", thread, token: inspected.start.token });
-	} finally {
-		finished();
-	}
 }

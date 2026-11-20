@@ -17,7 +17,7 @@ use crate::agent::{
 use crate::extension::{Caller, Extension, Registrar};
 use crate::machine::Host;
 use crate::protocol::Scope;
-use crate::threads::Threads;
+use crate::threads::{Threads, preparation};
 use crate::tools::{
     Asks, EditTool, Exec, ExecuteTool, GlobTool, GrepTool, Permission, ReadTool, Review, ScriptFiber, ShellTool, Tools, WriteTool,
     answer_exec,
@@ -198,13 +198,14 @@ impl Building {
         let hosts = Arc::new(providers);
         let models = Arc::new(Models::new(network, hosts.to_vec(), catalogue));
         let sources = Sources {
-            tools: tools.clone(),
+            tools,
             owners,
             tellers: Sources::ordered(tellers),
             natives,
             models: Arc::clone(&models),
         };
-        let execution = register_fibers_and_handlers(execution, handle, &machine, sources.clone(), tools, writables, prompts)?;
+        let registry = Arc::new(registry);
+        let execution = register_fibers_and_handlers(execution, handle, &machine, sources.clone(), writables, prompts, &registry)?;
         let siphon = Octoii {
             machine,
             threads: Threads::new(runtime.runtime_handle()),
@@ -214,7 +215,7 @@ impl Building {
             providers: hosts,
             sign_in: Arc::new(sign_in),
             sign_ins: providers::SignIns::start(),
-            registry: Arc::new(registry),
+            registry,
             sources,
         };
         // The accounts the person added are providers beside the host's; an extension switched off brings none.
@@ -244,13 +245,15 @@ fn register_fibers_and_handlers(
     state: RuntimeHandle,
     machine: &Host,
     sources: Sources,
-    tools: Tools,
     writables: Vec<crate::agent::Writable>,
     prompts: crate::agent::Prompts,
+    registry: &Arc<extension::Registry>,
 ) -> octoii_siphon_lib::Result<octoii_siphon_lib::Builder> {
     let executor =
         tokio::runtime::Handle::try_current().map_err(|error| octoii_siphon_lib::Error::new(Status::Invalid, error.to_string()))?;
+    preparation::register(&mut runtime, &executor, &state, machine, registry)?;
     let models = Arc::clone(&sources.models);
+    let tools = sources.tools.clone();
     let (gathering, asking, reviewing) = (sources, Arc::clone(&models), Arc::clone(&models));
     let (execs, host) = (tools.clone(), machine.clone());
     let (gathering_state, asking_state, reviewing_state) = (state.clone(), state.clone(), state.clone());

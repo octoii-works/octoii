@@ -12,9 +12,10 @@ use std::sync::Arc;
 
 use crate::machine::Host;
 use crate::protocol::{Error, ExtensionListed, Scope, Set};
+use crate::threads::WorkspacePreparer;
 use crate::tools::Tools;
 use octoii_ai::models::Provider;
-use octoii_siphon_lib::RuntimeHandle;
+use octoii_siphon_lib::{RuntimeHandle, Snapshot, Status};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use tokio::sync::mpsc::{self, error::TrySendError};
@@ -115,6 +116,20 @@ pub(crate) struct Registry {
     pub(crate) topics: Vec<Owned<(Scope, Teller)>>,
     /// The extension each provider came from, by the provider's id.
     pub(crate) providers: HashMap<String, String>,
+    workspace_preparers: HashMap<&'static str, Box<dyn WorkspacePreparer>>,
+}
+
+impl Registry {
+    pub(crate) fn workspace_preparer(&self, snapshot: &Snapshot, owner: &str) -> crate::volume::Result<Option<&dyn WorkspacePreparer>> {
+        let Some(preparer) = self.workspace_preparers.get(owner) else {
+            return Ok(None);
+        };
+        let settings = crate::settings::environment(snapshot).map_err(|error| match error {
+            crate::settings::Error::Beak(error) => error,
+            other => crate::volume::Error::new(Status::Invalid, other.to_string()),
+        })?;
+        Ok((!settings.disabled_extensions.iter().any(|name| name == owner)).then_some(preparer.as_ref()))
+    }
 }
 
 impl std::fmt::Debug for Registry {
@@ -315,6 +330,11 @@ impl Registrar<'_> {
     #[must_use]
     pub fn writable_folders(&self) -> crate::agent::WritableFolders {
         self.builder.writable_folders.clone()
+    }
+
+    /// Prepares workspaces for accepted startup requests whose owner is this extension's name.
+    pub fn workspace_preparer(&mut self, preparer: impl WorkspacePreparer + 'static) {
+        self.builder.registry.workspace_preparers.insert(self.extension, Box::new(preparer));
     }
 
     /// The tool `tool`, which a thread's model and its scripts call.

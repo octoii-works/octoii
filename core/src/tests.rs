@@ -24,7 +24,11 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use crate::machine::{Base, Host};
+use crate::threads::preparation::{InspectWorkspace, PrepareWorkspace};
+use crate::threads::{Start, StartRequest, StartState, StartWorkspace};
 use crate::tools::{Context, permissions::Writes};
+use crate::volume::Volume;
+use tokio::sync::{mpsc, oneshot};
 
 struct WithRuntime<T> {
     owner: Runtime,
@@ -116,4 +120,68 @@ pub(crate) async fn tool_context(directory: Option<&Path>, workspace: PathBuf, w
         .unwrap()
         .unwrap();
     (runtime, context)
+}
+
+struct WorkspaceDelivery<A> {
+    request: StartRequest,
+    answer: oneshot::Sender<Result<A, octoii_siphon_lib::Unanswered>>,
+}
+
+struct StartupRequests {
+    preparing: mpsc::UnboundedReceiver<WorkspaceDelivery<StartWorkspace>>,
+    inspecting: mpsc::UnboundedReceiver<WorkspaceDelivery<String>>,
+}
+
+impl StartupRequests {
+    fn register(builder: &mut octoii_siphon_lib::Builder) -> crate::volume::Result<Self> {
+        let executor = tokio::runtime::Handle::current();
+        let (prepare, preparing) = mpsc::unbounded_channel();
+        let (inspect, inspecting) = mpsc::unbounded_channel();
+        builder
+            .handle(&executor, move |asked: Asked<PrepareWorkspace>| {
+                deliver_workspace(&prepare, asked.payload.0)
+            })?
+            .handle(&executor, move |asked: Asked<InspectWorkspace>| {
+                deliver_workspace(&inspect, asked.payload.0)
+            })?;
+        Ok(Self { preparing, inspecting })
+    }
+
+    async fn prepare(&mut self) -> WorkspaceDelivery<StartWorkspace> {
+        tokio::time::timeout(Duration::from_secs(10), self.preparing.recv())
+            .await
+            .expect("a preparation request in time")
+            .expect("a preparation request")
+    }
+
+    async fn inspect(&mut self) -> WorkspaceDelivery<String> {
+        tokio::time::timeout(Duration::from_secs(10), self.inspecting.recv())
+            .await
+            .expect("an inspection request in time")
+            .expect("an inspection request")
+    }
+}
+
+fn deliver_workspace<A>(
+    deliveries: &mpsc::UnboundedSender<WorkspaceDelivery<A>>,
+    request: StartRequest,
+) -> impl Future<Output = Result<A, octoii_siphon_lib::Unanswered>> + use<A> {
+    let (answer, receive) = oneshot::channel();
+    deliveries.send(WorkspaceDelivery { request, answer }).expect("a delivery observer");
+    async move { receive.await.expect("a scripted answer") }
+}
+
+async fn startup_until(volume: &Volume, id: &str, expected: impl Fn(&StartState) -> bool) -> Start {
+    let mut commits = volume.runtime.commits().expect("a commit watch");
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let start = volume.thread_start(id).expect("a thread").expect("a startup gate");
+            if expected(&start.state) {
+                return start;
+            }
+            commits.next().await.unwrap().expect("the runtime runs");
+        }
+    })
+    .await
+    .expect("the startup state changed")
 }

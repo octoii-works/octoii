@@ -145,6 +145,13 @@ impl Home {
         Ok(temporary)
     }
 
+    /// Opens the private directory in which the node allocates managed checkouts.
+    pub(crate) fn worktrees_in(temporary: &Path) -> std::io::Result<PathBuf> {
+        let directory = std::path::absolute(temporary.join("worktrees"))?;
+        private_folder(&directory)?;
+        Ok(directory)
+    }
+
     /// The Home's name among the person's Homes: of its path, however spelled, whether or not it is there yet.
     fn name(&self) -> String {
         let digest = sha2::Sha256::digest(real_path(&self.root).as_os_str().as_encoded_bytes());

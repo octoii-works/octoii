@@ -12,6 +12,7 @@ mod input;
 pub(crate) mod log;
 pub(crate) mod marks;
 pub(crate) mod operations;
+pub(crate) mod preparation;
 pub(crate) mod start;
 pub(crate) mod status;
 pub(crate) mod thread;
@@ -32,6 +33,6 @@ pub use input::InputPart;
 pub use log::{CallStatus, Entry, Outcome, time_of};
 pub use marks::{Marks, MarksChange};
 pub use operations::{NewThread, StopTarget, list};
-pub use status::{Ask, Listed, Parent, Status, SubThreadKind, ThreadUsage, Turn, parent_of};
-
+pub use preparation::{PreparationContext, WorkspacePreparer};
 pub use start::{Start, StartDirectory, StartRequest, StartState, StartWorkspace};
+pub use status::{Ask, Listed, Parent, Status, SubThreadKind, ThreadUsage, Turn, parent_of};

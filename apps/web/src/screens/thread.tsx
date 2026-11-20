@@ -117,7 +117,7 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 					<div className="flex min-h-0 min-w-0 flex-1 flex-col">
 						<div className="relative flex min-h-0 flex-1 flex-col">
 							<MessageThreadContext value={{ thread, workspace, pages, terminals }}>
-								<ThreadConversation thread={thread} row={row}>
+								<ThreadConversation thread={thread} row={row} conversation={conversation}>
 									<Timeline
 										ref={timeline}
 										thread={thread}
@@ -186,7 +186,7 @@ function Dock(props: {
 	const stop = stopTargetOf(conversation.status);
 	// A call's permission, the oldest of what waits, is answered in the composer; anything else waits docked in its place.
 	const approval = useApproval(thread, conversation.asks.toSorted((a, b) => (a.key < b.key ? -1 : 1))[0]);
-	if (conversation.gone || awaitingWorkspace(row?.status) || awaitingWorkspace(conversation.status)) return null;
+	if (conversation.gone || awaitingWorkspace(conversation.status ?? row?.status)) return null;
 
 	return (
 		<div className="relative shrink-0 bg-background pb-[max(--spacing(4),env(safe-area-inset-bottom))]">
@@ -233,18 +233,22 @@ function Dock(props: {
 	);
 }
 
-function ThreadConversation({ thread, row, children }: { readonly thread: string; readonly row: Listed | undefined; readonly children: ReactNode }): ReactNode {
+function ThreadConversation({
+	thread,
+	row,
+	conversation,
+	children,
+}: {
+	readonly thread: string;
+	readonly row: Listed | undefined;
+	readonly conversation: Conversation;
+	readonly children: ReactNode;
+}): ReactNode {
+	const status = conversation.gone ? undefined : (conversation.status ?? row?.status);
 	return (
 		<>
-			{row?.status.start?.request.owner === "git.worktree" ? (
-				<WorktreeStart
-					key={`${thread}:${row.status.start.token}:${row.status.start.state.state}`}
-					thread={thread}
-					start={row.status.start}
-					inbox={row.status.inbox}
-				/>
-			) : null}
-			<div className={awaitingWorkspace(row?.status) ? "hidden" : "contents"}>{children}</div>
+			{status?.start?.request.owner === "git.worktree" ? <WorktreeStart thread={thread} start={status.start} inbox={status.inbox} /> : null}
+			<div className={awaitingWorkspace(status) ? "hidden" : "contents"}>{children}</div>
 		</>
 	);
 }

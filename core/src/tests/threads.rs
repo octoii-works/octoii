@@ -2,7 +2,7 @@
 //! them from the inbox — from what each was to what it is — inputs taken in the order they came, how the person keeps
 //! them marked on their directory, stopped, deleted with what they delegated, and their log read on a page at a time.
 
-use crate::tests::WithRuntime;
+use crate::tests::{StartupRequests, WithRuntime, startup_until};
 use std::path::Path;
 use std::time::Duration;
 
@@ -13,7 +13,7 @@ use crate::threads::{
 };
 use bytes::Bytes;
 use octoii_ai::vocabulary::{InputContent, ReasoningEffort};
-use octoii_siphon_lib::{Changes, Ending, Fiber, Outcome, Run, Runtime, Wait, fiber_path};
+use octoii_siphon_lib::{Asked, Changes, Ending, Fiber, Outcome, Run, Runtime, Unanswered, Wait, fiber_path};
 
 /// A main process that takes its inbox into its log as it changes, and does nothing more.
 struct Taker;
@@ -1083,14 +1083,21 @@ fn startup_request() -> crate::threads::StartRequest {
     }
 }
 
-fn startup_volume(directory: Option<&Path>) -> WithRuntime<crate::volume::Volume> {
-    WithRuntime::new(
-        crate::testing::start_runtime(directory, |builder, _| {
-            builder.fiber(crate::agent::ThreadFiber)?;
-            Ok(())
-        })
-        .unwrap(),
-        |runtime| crate::volume::Volume { runtime },
+fn startup_volume(directory: Option<&Path>) -> (WithRuntime<crate::volume::Volume>, StartupRequests) {
+    let mut requests = None;
+    let runtime = crate::testing::start_runtime(directory, |builder, _| {
+        builder
+            .fiber(crate::agent::ThreadFiber)?
+            .handle(&tokio::runtime::Handle::current(), |_: Asked<crate::agent::Gather>| {
+                std::future::pending()
+            })?;
+        requests = Some(StartupRequests::register(builder)?);
+        Ok(())
+    })
+    .unwrap();
+    (
+        WithRuntime::new(runtime, |runtime| crate::volume::Volume { runtime }),
+        requests.unwrap(),
     )
 }
 
@@ -1099,7 +1106,7 @@ async fn startup_refuses_a_claim_without_input_part_discriminants() {
     use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
     use sha2::{Digest, Sha256};
 
-    let volume = startup_volume(None);
+    let (volume, _requests) = startup_volume(None);
     let new = person(Config::default());
     let request = startup_request();
     let content = [InputContent::text("prepare")];
@@ -1141,7 +1148,7 @@ async fn startup_refuses_a_claim_without_input_part_discriminants() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_start_key_belongs_to_its_caller_and_binds_the_workspace_intent() {
-    let volume = startup_volume(None);
+    let (volume, _requests) = startup_volume(None);
     let new = person(Config::default());
     let workspace = tempfile::tempdir().unwrap();
     let bound = StartDirectory::Current(StartWorkspace {
@@ -1172,7 +1179,7 @@ async fn a_start_key_belongs_to_its_caller_and_binds_the_workspace_intent() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_start_replay_keeps_the_first_binding_for_the_same_requested_directory() {
-    let volume = startup_volume(None);
+    let (volume, _requests) = startup_volume(None);
     let first = tempfile::tempdir().unwrap();
     let later = tempfile::tempdir().unwrap();
     let workspace = first.path().to_string_lossy().into_owned();
@@ -1223,7 +1230,7 @@ async fn startup_claim_is_atomic_fenced_and_survives_reopening() {
 
     let storage = tempfile::tempdir().unwrap();
     let directory = Some(storage.path());
-    let volume = startup_volume(directory);
+    let (volume, mut requests) = startup_volume(directory);
     let new = person(Config::default());
     let inputs = vec![InputContent::text("keep this")];
     let (a, b) = tokio::join!(
@@ -1244,7 +1251,10 @@ async fn startup_claim_is_atomic_fenced_and_survives_reopening() {
     );
     let id = a.unwrap();
     assert_eq!(b.unwrap(), id);
+    let first = requests.prepare().await;
+    assert_eq!(first.request, startup_request());
     let start = volume.thread_start(&id).unwrap().unwrap();
+    assert_eq!(start.state, StartState::Preparing);
     assert_eq!(crate::threads::list(&volume).unwrap().len(), 1);
     assert!(
         volume
@@ -1258,25 +1268,23 @@ async fn startup_claim_is_atomic_fenced_and_survives_reopening() {
             .await
             .is_err()
     );
-    assert!(
-        volume
-            .finish_thread_start(
-                &id,
-                &start.token,
-                StartWorkspace {
-                    workspace: "relative/path".into(),
-                    project: None,
-                }
-            )
-            .await
-            .is_err()
+    first
+        .answer
+        .send(Ok(StartWorkspace {
+            workspace: "relative/path".into(),
+            project: None,
+        }))
+        .unwrap();
+    let failed = startup_until(&volume, &id, |state| matches!(state, StartState::Failed { .. })).await;
+    assert_eq!(
+        failed.state,
+        StartState::Failed {
+            reason: "startup paths must be absolute".into()
+        }
     );
-    assert_eq!(volume.thread_start(&id).unwrap(), Some(start.clone()));
-    let failed = volume.fail_thread_start(&id, &start.token, "checkout failed".into()).await.unwrap();
-    assert!(matches!(failed.state, StartState::Failed { .. }));
     volume.runtime().close().expect("closed");
     drop(volume);
-    let volume = startup_volume(directory);
+    let (volume, mut requests) = startup_volume(directory);
     assert_eq!(volume.thread_start(&id).unwrap(), Some(failed));
     let listed = crate::threads::list(&volume).unwrap().pop().unwrap();
     assert_eq!(listed.status.inbox.len(), 1);
@@ -1286,19 +1294,26 @@ async fn startup_claim_is_atomic_fenced_and_survives_reopening() {
         volume.retry_thread_start(&id, &start.token)
     );
     let retried = a.unwrap();
-    assert_eq!(b.unwrap(), retried);
+    assert_eq!(b.unwrap().token, retried.token);
     assert_ne!(retried.token, start.token);
     let directory = StartWorkspace {
         workspace: storage.path().to_string_lossy().into_owned(),
         project: None,
     };
-    assert!(volume.finish_thread_start(&id, &start.token, directory.clone()).await.is_err());
-    let (a, b) = tokio::join!(
-        volume.finish_thread_start(&id, &retried.token, directory.clone()),
-        volume.finish_thread_start(&id, &retried.token, directory.clone())
+    let retry = requests.prepare().await;
+    assert_eq!(retry.request, startup_request());
+    assert!(volume.cancel_thread_start(&id, &start.token).await.is_err());
+    retry.answer.send(Ok(directory.clone())).unwrap();
+    let ready = startup_until(&volume, &id, |state| matches!(state, StartState::Ready { .. })).await;
+    assert_eq!(ready.token, retried.token);
+    assert_eq!(
+        ready.state,
+        StartState::Ready {
+            directory: directory.clone()
+        }
     );
-    assert_eq!(a.unwrap(), b.unwrap());
     assert_eq!(volume.thread_config(&id).unwrap().unwrap().workspace, Some(directory.workspace));
+    assert!(requests.preparing.try_recv().is_err());
     assert!(volume.retry_thread_start(&id, &retried.token).await.is_err());
     volume.runtime().close().expect("closed");
 }
@@ -1307,7 +1322,7 @@ async fn startup_claim_is_atomic_fenced_and_survives_reopening() {
 async fn stopping_or_deleting_preparation_cannot_be_undone_by_a_late_result() {
     use crate::threads::StartState;
 
-    let volume = startup_volume(None);
+    let (volume, mut requests) = startup_volume(None);
     let threads = Threads::<crate::agent::ThreadFiber>::new(volume.runtime.clone());
     let new = person(Config::default());
     let id = volume
@@ -1320,15 +1335,23 @@ async fn stopping_or_deleting_preparation_cannot_be_undone_by_a_late_result() {
         )
         .await
         .unwrap();
-    let start = volume.thread_start(&id).unwrap().unwrap();
-    volume.fail_thread_start(&id, &start.token, "checkout failed".into()).await.unwrap();
+    requests
+        .prepare()
+        .await
+        .answer
+        .send(Err(Unanswered::Failed("checkout failed".into())))
+        .unwrap();
+    let start = startup_until(&volume, &id, |state| matches!(state, StartState::Failed { .. })).await;
     let retried = volume.retry_thread_start(&id, &start.token).await.unwrap();
+    let retry = requests.prepare().await;
     let old = StopTarget::Preparation { token: start.token };
     assert!(matches!(
         threads.stop(&id, "person", &old).await,
         Err(crate::threads::Error::StaleStop)
     ));
-    assert_eq!(volume.thread_start(&id).unwrap(), Some(retried.clone()));
+    let current = volume.thread_start(&id).unwrap().unwrap();
+    assert_eq!(current.token, retried.token);
+    assert_eq!(current.state, StartState::Preparing);
     threads
         .stop(
             &id,
@@ -1348,7 +1371,8 @@ async fn stopping_or_deleting_preparation_cannot_be_undone_by_a_late_result() {
         workspace: std::env::temp_dir().to_string_lossy().into_owned(),
         project: None,
     };
-    assert!(volume.finish_thread_start(&id, &retried.token, directory.clone()).await.is_err());
+    let _ = retry.answer.send(Ok(directory.clone()));
+    assert_eq!(volume.thread_config(&id).unwrap().unwrap().workspace, None);
     assert!(volume.retry_thread_start(&id, &retried.token).await.is_err());
     let tool_stopped = volume
         .start_thread(
@@ -1360,20 +1384,13 @@ async fn stopping_or_deleting_preparation_cannot_be_undone_by_a_late_result() {
         )
         .await
         .unwrap();
-    let start = volume.thread_start(&tool_stopped).unwrap().unwrap();
+    let active = requests.prepare().await;
     let mut changes = Changes::new().unwrap();
     crate::threads::stop_turn(&volume.runtime.snapshot().unwrap(), &mut changes, &tool_stopped).unwrap();
     volume.runtime.commit(changes).await.unwrap();
-    assert!(
-        volume
-            .finish_thread_start(&tool_stopped, &start.token, directory.clone())
-            .await
-            .is_err()
-    );
-    assert!(matches!(
-        volume.thread_start(&tool_stopped).unwrap().unwrap().state,
-        StartState::Cancelled
-    ));
+    startup_until(&volume, &tool_stopped, |state| *state == StartState::Cancelled).await;
+    let _ = active.answer.send(Ok(directory.clone()));
+    assert_eq!(volume.thread_config(&tool_stopped).unwrap().unwrap().workspace, None);
     let deleted = volume
         .start_thread(
             START_CALLER,
@@ -1384,9 +1401,10 @@ async fn stopping_or_deleting_preparation_cannot_be_undone_by_a_late_result() {
         )
         .await
         .unwrap();
-    let start = volume.thread_start(&deleted).unwrap().unwrap();
+    let active = requests.prepare().await;
     threads.delete(&deleted).await.unwrap();
-    assert!(volume.finish_thread_start(&deleted, &start.token, directory).await.is_err());
+    let _ = active.answer.send(Ok(directory));
+    assert!(volume.thread_start(&deleted).is_err());
     assert!(
         volume
             .start_thread(
@@ -1403,12 +1421,93 @@ async fn stopping_or_deleting_preparation_cannot_be_undone_by_a_late_result() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn reopening_an_unanswered_preparation_only_dispatches_an_inspection() {
+    use crate::threads::StartState;
+
+    let storage = tempfile::tempdir().unwrap();
+    let directory = Some(storage.path());
+    let (volume, mut requests) = startup_volume(directory);
+    let id = volume
+        .start_thread(
+            START_CALLER,
+            "startup-check",
+            &person(Config::default()),
+            vec![InputContent::text("keep this").into()],
+            StartDirectory::Prepare(startup_request()),
+        )
+        .await
+        .unwrap();
+    let preparing = requests.prepare().await;
+    let start = volume.thread_start(&id).unwrap().unwrap();
+    assert_eq!(start.state, StartState::Preparing);
+    volume.runtime().close().unwrap();
+    drop(volume);
+
+    let (volume, mut requests) = startup_volume(directory);
+    let inspection = requests.inspect().await;
+    let checking = volume.thread_start(&id).unwrap().unwrap();
+    assert_eq!(checking.state, StartState::Checking);
+    assert_eq!(checking.token, start.token);
+    assert_eq!(inspection.request, preparing.request);
+    let _ = preparing.answer.send(Ok(StartWorkspace {
+        workspace: storage.path().display().to_string(),
+        project: None,
+    }));
+    let observation = "The target is already registered.";
+    inspection.answer.send(Ok(observation.into())).unwrap();
+    let interrupted = startup_until(&volume, &id, |state| matches!(state, StartState::Interrupted { .. })).await;
+    assert!(matches!(interrupted.state, StartState::Interrupted { reason } if reason.contains(observation)));
+    assert_eq!(interrupted.token, start.token);
+    assert_eq!(volume.thread_config(&id).unwrap().unwrap().workspace, None);
+    assert!(volume.retry_thread_start(&id, &start.token).await.is_err());
+    assert!(requests.preparing.try_recv().is_err());
+    assert!(requests.inspecting.try_recv().is_err());
+    let listed = crate::threads::list(&volume).unwrap().pop().unwrap();
+    assert!(matches!(
+        &listed.status.inbox[..],
+        [(_, inbox::Inbound::Input { content, .. })] if content == &[InputContent::text("keep this")]
+    ));
+    volume.runtime().close().unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn reopening_an_unanswered_inspection_leaves_preparation_interrupted() {
+    use crate::threads::StartState;
+
+    let storage = tempfile::tempdir().unwrap();
+    let directory = Some(storage.path());
+    let (volume, mut requests) = startup_volume(directory);
+    let id = volume
+        .start_thread(
+            START_CALLER,
+            "startup-check-interrupted",
+            &person(Config::default()),
+            vec![InputContent::text("keep this").into()],
+            StartDirectory::Prepare(startup_request()),
+        )
+        .await
+        .unwrap();
+    requests.prepare().await.answer.send(Err(Unanswered::Interrupted)).unwrap();
+    let _inspection = requests.inspect().await;
+    assert_eq!(volume.thread_start(&id).unwrap().unwrap().state, StartState::Checking);
+    volume.runtime().close().unwrap();
+    drop(volume);
+
+    let (volume, mut requests) = startup_volume(directory);
+    let interrupted = startup_until(&volume, &id, |state| matches!(state, StartState::Interrupted { .. })).await;
+    assert!(matches!(interrupted.state, StartState::Interrupted { reason } if reason.contains("its inspection")));
+    assert!(requests.preparing.try_recv().is_err());
+    assert!(requests.inspecting.try_recv().is_err());
+    volume.runtime().close().unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_bound_start_commits_ordered_attachments_and_survives_reopening() {
     use crate::threads::{InputPart, files};
 
     let storage = tempfile::tempdir().unwrap();
     let directory = Some(storage.path());
-    let volume = startup_volume(directory);
+    let (volume, _requests) = startup_volume(directory);
     let mut png = Vec::new();
     image::RgbImage::from_pixel(2048, 2048, image::Rgb([40, 100, 200]))
         .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
@@ -1453,7 +1552,7 @@ async fn a_bound_start_commits_ordered_attachments_and_survives_reopening() {
     let reference = file.reference.clone();
     volume.runtime().close().expect("closed");
     drop(volume);
-    let volume = startup_volume(directory);
+    let (volume, _requests) = startup_volume(directory);
     assert_eq!(files::read(&volume.snapshot().unwrap(), &id, &reference).unwrap(), Some(kept));
     assert_eq!(
         volume
@@ -1479,7 +1578,7 @@ async fn a_bound_start_commits_ordered_attachments_and_survives_reopening() {
 async fn invalid_attachment_rolls_back_every_part_and_pure_attachments_are_accepted() {
     use crate::threads::{InputPart, files};
 
-    let volume = startup_volume(None);
+    let (volume, _requests) = startup_volume(None);
     let new = person(Config::default());
     let file = InputPart::Attachment {
         bytes: Bytes::from_static(b"saved"),
