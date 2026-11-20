@@ -2,7 +2,7 @@
 //! reading, a person's input, dialogs, scripts in pages and frames, waits, the console, downloads and raw CDP — and the
 //! person seeing its pages painted. Where the machine has no browser, each test says so and passes.
 
-use std::time::Duration;
+use std::{io::Cursor, time::Duration};
 
 use octoii::machine::{Base, Host, Machine, Writes};
 use octoii::testing::{Runtime, memory_runtime};
@@ -338,18 +338,12 @@ async fn resizing_a_page_tells_its_thread_the_view_that_matches_the_new_frame() 
         .expect("opened");
     let page = opened.page.expect("its page");
     let mut events = browser.events();
-    for size in [
-        Size {
+    for (scale, pixels) in [(2.0, (1826, 1142)), (1.5, (1370, 857)), (1.0, (913, 571))] {
+        let size = Size {
             width: 913,
             height: 571,
-            scale: 2.0,
-        },
-        Size {
-            width: 640,
-            height: 480,
-            scale: 1.0,
-        },
-    ] {
+            scale,
+        };
         let before = browser.frame(&page.id).await.expect("a frame before resizing").number;
         browser.resize(&page.id, size).await.expect("resized");
         let synchronized = async {
@@ -365,10 +359,13 @@ async fn resizing_a_page_tells_its_thread_the_view_that_matches_the_new_frame() 
                             .find(|view| view.id == page.id && view.size == size);
                     }
                     Change::Painted { page: id, .. } if id == page.id => {
-                        painted = browser
-                            .frame(&id)
-                            .await
-                            .filter(|frame| frame.number > before && (frame.width, frame.height) == (size.width, size.height));
+                        painted = browser.frame(&id).await.filter(|frame| {
+                            frame.number > before
+                                && (frame.width, frame.height) == (size.width, size.height)
+                                && image::ImageReader::with_format(Cursor::new(frame.jpeg.as_ref()), image::ImageFormat::Jpeg)
+                                    .into_dimensions()
+                                    .is_ok_and(|dimensions| dimensions == pixels)
+                        });
                     }
                     _ => {}
                 }
@@ -379,7 +376,7 @@ async fn resizing_a_page_tells_its_thread_the_view_that_matches_the_new_frame() 
         };
         let (listed, frame) = tokio::time::timeout(Duration::from_secs(5), synchronized)
             .await
-            .expect("the page list and painted frame agree after a resize");
+            .expect("the JPEG reaches the requested raster size while the viewport stays in CSS pixels");
         assert_eq!(listed.size, size);
         assert_eq!((frame.width, frame.height), (size.width, size.height));
         assert!(frame.jpeg.starts_with(b"\xff\xd8"), "a JPEG");
@@ -806,12 +803,12 @@ async fn a_local_html_preview_is_isolated_painted_clicked_and_its_console_is_rea
         .expect("looked again")
         .image
         .expect("a picture");
-    assert_ne!(before, after, "the click changes the painted page");
     let console = act(&browser, &machine, json!({ "action": "console" }))
         .await
         .expect("its logs")
         .text;
     assert!(console.contains("preview clicked"), "{console}");
+    assert!(before != after, "the click changes the painted page");
 }
 
 #[test]

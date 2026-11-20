@@ -1,5 +1,6 @@
 /** Browser evidence chosen by the person: bounded text and the saved screenshot, using normal message parts. */
 import type { ElementFeedback, InputContent } from "@octoii-works/octoii-client";
+import { directiveOf } from "./things.ts";
 
 /** A short label for a saved selection, independent of the page's current contents. */
 export function elementSummary(feedback: ElementFeedback): string {
@@ -12,7 +13,8 @@ export function elementSummary(feedback: ElementFeedback): string {
 /** Captured facts describe a past document; they never act as a locator on a live page. */
 export function elementEvidence(feedback: ElementFeedback): string {
 	const element = feedback.element;
-	return `Historical browser context captured from the element the user selected; its saved screenshot follows. Re-read the live page before using any selector or coordinates.\n\n\`\`\`json\n${JSON.stringify(
+	const page = /^[\w-]{1,128}$/.test(feedback.page) ? ` in ${directiveOf({ kind: "page", id: feedback.page })}` : "";
+	return `Historical browser context captured from the element the user selected${page}. Its saved screenshot follows. Re-read the live page before using any selector or coordinates.\n\n\`\`\`json\n${JSON.stringify(
 		{
 			thread: bounded(feedback.thread, 128),
 			page: bounded(feedback.page, 128),

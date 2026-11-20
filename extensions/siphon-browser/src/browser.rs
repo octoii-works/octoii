@@ -12,17 +12,19 @@ use std::time::Instant;
 
 use base64::Engine as _;
 use bytes::Bytes;
+use chromiumoxide_cdp::cdp::browser_protocol::page::EventScreencastFrame;
 use chromiumoxide_cdp::cdp::{CdpEvent, CdpEventMessage};
 use octoii::machine::Base;
 use octoii::machine::{Commands, Host, Machine, Writes};
 use octoii::machine::{Exec, Spec, Stdio};
 use serde_json::{Value, json};
 use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio::task::JoinSet;
 
 use crate::cdp::{Cdp, CdpError, connect};
 
 /// The JPEG quality pages are painted at.
-const FRAME_QUALITY: u32 = 70;
+const FRAME_QUALITY: u32 = 92;
 /// How many messages of its console a page keeps, and how many characters of each.
 const MESSAGES_MAX: usize = 50;
 const MESSAGE_CHARS_MAX: usize = 2000;
@@ -94,7 +96,7 @@ pub struct PageView {
     pub forward: bool,
 }
 
-/// A frame of a page as the browser painted it: JPEG, its size in device pixels, and its number among the page's.
+/// A frame's JPEG, the viewport in CSS pixels, and the frame number. The JPEG carries its own raster dimensions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Frame {
     pub jpeg: Bytes,
@@ -399,6 +401,7 @@ struct Page {
     back: bool,
     forward: bool,
     frame: Option<Frame>,
+    paint: Paint,
     messages: VecDeque<Message>,
     heard: u64,
     /// The requests in flight, by the browser's id, with when each began; and when one last began or ended.
@@ -419,6 +422,20 @@ struct FrameTarget {
     target: String,
     session: String,
     url: String,
+}
+
+/// Coalesces invalidations while a high-DPI screenshot is in flight.
+#[derive(Debug, Clone, Copy, Default)]
+struct Paint {
+    capturing: bool,
+    dirty: bool,
+}
+
+struct Captured {
+    page: String,
+    session: String,
+    size: Size,
+    jpeg: Option<Bytes>,
 }
 
 impl Page {
@@ -442,6 +459,7 @@ struct Owner {
     /// The page each thread's agent works, by the thread.
     current: HashMap<String, String>,
     events: broadcast::Sender<Change>,
+    captures: JoinSet<Captured>,
 }
 
 impl Owner {
@@ -452,6 +470,7 @@ impl Owner {
             pages: Vec::new(),
             current: HashMap::new(),
             events,
+            captures: JoinSet::new(),
         }
     }
 
@@ -467,6 +486,11 @@ impl Owner {
             // asker saw of the page.
             tokio::select! {
                 biased;
+                capture = self.captures.join_next(), if !self.captures.is_empty() => {
+                    if let Some(Ok(capture)) = capture {
+                        self.finished_capture(capture);
+                    }
+                }
                 event = event => match event {
                     Some(event) => self.heard(event).await,
                     None => self.ended(),
@@ -640,6 +664,7 @@ impl Owner {
             back: false,
             forward: false,
             frame: None,
+            paint: Paint::default(),
             messages: VecDeque::new(),
             heard: 0,
             in_flight: HashMap::new(),
@@ -723,11 +748,13 @@ impl Owner {
     /// The browser ended: every page is left without its target, made again as it is next reached.
     fn ended(&mut self) {
         self.running = None;
+        self.captures.abort_all();
         for page in &mut self.pages {
             page.target = None;
             page.session = None;
             page.dialog = None;
             page.in_flight.clear();
+            page.paint = Paint::default();
         }
     }
 
@@ -851,21 +878,14 @@ impl Owner {
 
     /// Hears an event of a page's target: a frame painted, a dialog opened or closed, a message of its console.
     async fn heard_of_page(&mut self, session: &str, event: CdpEvent) {
+        if let CdpEvent::PageScreencastFrame(frame) = &event {
+            self.heard_frame(session, frame).await;
+            return;
+        }
         let Some(page) = self.pages.iter_mut().find(|page| page.owns_session(session)) else {
             return;
         };
         match event {
-            CdpEvent::PageScreencastFrame(frame) => {
-                let number = painted(page, &frame);
-                let id = page.id.clone();
-                if let Some(running) = &self.running {
-                    let _ = running
-                        .cdp
-                        .call(Some(session), "Page.screencastFrameAck", json!({ "sessionId": frame.session_id }))
-                        .await;
-                }
-                let _ = self.events.send(Change::Painted { page: id, number });
-            }
             CdpEvent::PageJavascriptDialogOpening(dialog) => {
                 page.dialog = Some(Dialog {
                     kind: serde_json::to_value(&dialog.r#type)
@@ -946,6 +966,27 @@ impl Owner {
         }
     }
 
+    async fn heard_frame(&mut self, session: &str, frame: &EventScreencastFrame) {
+        let Some(running) = &self.running else { return };
+        let _ = running
+            .cdp
+            .call(Some(session), "Page.screencastFrameAck", json!({ "sessionId": frame.session_id }))
+            .await;
+        let Some(page) = self.pages.iter_mut().find(|page| page.session.as_deref() == Some(session)) else {
+            return;
+        };
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let (width, height) = (frame.metadata.device_width as u32, frame.metadata.device_height as u32);
+        if (width, height) != (page.size.width, page.size.height) {
+            return;
+        }
+        if page.size.scale > 1.0 {
+            queue_capture(page, &running.cdp, &mut self.captures);
+        } else if let Ok(jpeg) = base64::engine::general_purpose::STANDARD.decode(AsRef::<str>::as_ref(&frame.data)) {
+            painted(page, jpeg.into(), &self.events);
+        }
+    }
+
     /// Sets up a target the browser attached to, held at its start: the page that asked for it, or one a page of a
     /// thread's opened, made a page of that thread; any other let run and let be.
     /// Sets up a frame of another site's process a page's target attached to, held at its start: its scripts heard,
@@ -1003,6 +1044,7 @@ impl Owner {
                 back: false,
                 forward: false,
                 frame: None,
+                paint: Paint::default(),
                 messages: VecDeque::new(),
                 heard: 0,
                 in_flight: HashMap::new(),
@@ -1029,6 +1071,29 @@ impl Owner {
             let _ = cdp.call(Some(&session), "Runtime.runIfWaitingForDebugger", json!({})).await;
         }
     }
+
+    fn finished_capture(&mut self, capture: Captured) {
+        let Some(page) = self
+            .pages
+            .iter_mut()
+            .find(|page| page.id == capture.page && page.session.as_deref() == Some(&capture.session))
+        else {
+            return;
+        };
+        let dirty = page.paint.dirty;
+        page.paint = Paint::default();
+        if page.size == capture.size
+            && let Some(jpeg) = capture.jpeg
+        {
+            painted(page, jpeg, &self.events);
+        }
+        if dirty
+            && page.size.scale > 1.0
+            && let Some(running) = &self.running
+        {
+            queue_capture(page, &running.cdp, &mut self.captures);
+        }
+    }
 }
 
 fn keep(page: &mut Page, level: String, text: &str) {
@@ -1043,21 +1108,33 @@ fn keep(page: &mut Page, level: String, text: &str) {
     }
 }
 
-/// Keeps `frame` as the page's newest, as the browser painted it: its number among the page's.
-fn painted(page: &mut Page, frame: &chromiumoxide_cdp::cdp::browser_protocol::page::EventScreencastFrame) -> u64 {
-    let jpeg = base64::engine::general_purpose::STANDARD
-        .decode(AsRef::<str>::as_ref(&frame.data))
-        .unwrap_or_default();
+/// A screencast invalidates the view. A screenshot samples Chromium's emulated DPR without changing input coordinates.
+fn queue_capture(page: &mut Page, cdp: &Cdp, captures: &mut JoinSet<Captured>) {
+    if page.paint.capturing {
+        page.paint.dirty = true;
+        return;
+    }
+    let Some(session) = page.session.clone() else { return };
+    page.paint.capturing = true;
+    let (page, size, cdp) = (page.id.clone(), page.size, cdp.clone());
+    captures.spawn(async move {
+        let jpeg = cdp.screenshot(&session, FRAME_QUALITY).await.ok();
+        Captured { page, session, size, jpeg }
+    });
+}
+
+fn painted(page: &mut Page, jpeg: Bytes, events: &broadcast::Sender<Change>) {
     let number = page.frame.as_ref().map_or(1, |frame| frame.number + 1);
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    let (width, height) = (frame.metadata.device_width as u32, frame.metadata.device_height as u32);
     page.frame = Some(Frame {
-        jpeg: jpeg.into(),
-        width,
-        height,
+        jpeg,
+        width: page.size.width,
+        height: page.size.height,
         number,
     });
-    number
+    let _ = events.send(Change::Painted {
+        page: page.id.clone(),
+        number,
+    });
 }
 
 fn view(page: &Page) -> PageView {

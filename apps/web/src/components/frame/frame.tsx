@@ -139,7 +139,13 @@ export function PanelFrame(props: { readonly children: ReactNode }): ReactNode {
 	if (place === "hidden") return null;
 	const fills = place === "full";
 	return (
-		<aside aria-label="Panel" data-fills={fills ? "" : undefined} style={{ "--panel-width": `${String(width)}px` }} className={fills ? FILLS : BESIDE}>
+		<aside
+			aria-label="Panel"
+			data-workspace-panel=""
+			data-fills={fills ? "" : undefined}
+			style={{ "--panel-width": `${String(width)}px` }}
+			className={fills ? FILLS : BESIDE}
+		>
 			{fills ? null : edge}
 			{props.children}
 		</aside>

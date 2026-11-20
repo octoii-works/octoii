@@ -4,7 +4,6 @@
 
 use std::time::{Duration, Instant};
 
-use base64::Engine as _;
 use bytes::Bytes;
 use serde_json::{Value, json};
 
@@ -257,16 +256,7 @@ impl Page {
     /// The browser's refusal.
     pub async fn screenshot(&self) -> Result<Bytes, BrowserError> {
         let attached = self.attached().await?;
-        let shot = attached
-            .cdp
-            .call(
-                Some(&attached.session),
-                "Page.captureScreenshot",
-                json!({ "format": "jpeg", "quality": 80 }),
-            )
-            .await?;
-        let data = shot["data"].as_str().unwrap_or_default();
-        Ok(base64::engine::general_purpose::STANDARD.decode(data).unwrap_or_default().into())
+        Ok(attached.cdp.screenshot(&attached.session, 80).await?)
     }
 
     /// Waits till the page shows what `wanted` asks — each part given, case counting — `timeout` at most: whether it

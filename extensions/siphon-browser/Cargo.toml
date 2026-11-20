@@ -28,6 +28,7 @@ tokio = { version = "1.54.1", features = ["rt", "sync", "macros", "time", "io-ut
 
 [dev-dependencies]
 siphon-base.workspace = true
+image = { version = "0.25.10", default-features = false, features = ["jpeg"] }
 jsonschema = { version = "0.61.1", default-features = false }
 schemars = "1.2.3"
 tempfile = "3.27.0"

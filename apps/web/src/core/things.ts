@@ -21,7 +21,7 @@ export function isKind(name: string): name is Kind {
 export type Thing = { readonly kind: Kind; readonly id: string; readonly name: string };
 
 /** The directive that names `thing` within a line. */
-export function directiveOf(thing: Thing): string {
+export function directiveOf(thing: Pick<Thing, "kind" | "id">): string {
 	return `:${thing.kind}{id=${thing.id}}`;
 }
 

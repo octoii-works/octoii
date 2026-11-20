@@ -3,11 +3,14 @@ import { describe, expect, it } from "bun:test";
 import { addressOf, editingOf, modifiersOf, PageInputGate, pageName, pickViewOf, shownAddress, typedBy } from "../src/core/browser.ts";
 
 describe("the local element picker", () => {
-	it("uses the drawn frame's CSS size and the node's scale, waiting until frame and view agree", () => {
-		expect(pickViewOf({ width: 800, height: 600 }, { width: 800, height: 600, scale: 2 })).toEqual({ width: 800, height: 600, scale: 2 });
-		expect(pickViewOf({ width: 800, height: 600 }, { width: 900, height: 600, scale: 2 })).toBeUndefined();
+	it("waits for the drawn frame to match the node's CSS viewport and density", () => {
+		const high = { width: 800, height: 600, pixelWidth: 1600, pixelHeight: 1200 };
+		expect(pickViewOf(high, { width: 800, height: 600, scale: 2 })).toEqual({ width: 800, height: 600, scale: 2 });
+		expect(pickViewOf(high, { width: 900, height: 600, scale: 2 })).toBeUndefined();
+		expect(pickViewOf(high, { width: 800, height: 600, scale: 1 })).toBeUndefined();
+		expect(pickViewOf({ ...high, pixelWidth: 800, pixelHeight: 600 }, { width: 800, height: 600, scale: 2 })).toBeUndefined();
 		expect(pickViewOf(undefined, { width: 800, height: 600 })).toBeUndefined();
-		expect(pickViewOf({ width: 0, height: 0 }, { width: 0, height: 0 })).toBeUndefined();
+		expect(pickViewOf({ width: 0, height: 0, pixelWidth: 0, pixelHeight: 0 }, { width: 0, height: 0 })).toBeUndefined();
 	});
 
 	it("swallows the entire selection gesture and selects only on its release", () => {

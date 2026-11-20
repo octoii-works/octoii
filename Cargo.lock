@@ -5552,6 +5552,7 @@ dependencies = [
  "bytes",
  "chromiumoxide_cdp",
  "chromiumoxide_types",
+ "image",
  "jsonschema",
  "octoii",
  "octoii-ai",

@@ -8,9 +8,13 @@ import type { PageFrame, PageListed, View } from "@octoii-works/octoii-client";
 /** Selecting is local; capture keeps input blocked until its result or a cancellation. */
 export type PageMode = "browse" | "pick" | "capturing";
 
-/** A capture uses the frame actually drawn, only once it matches the node's latest CSS viewport. */
-export function pickViewOf(shown: Pick<PageFrame, "width" | "height"> | undefined, view: View): View | undefined {
+/** The viewport and the decoded dimensions of the frame on the canvas. */
+export type DrawnPage = Pick<PageFrame, "width" | "height"> & { readonly pixelWidth: number; readonly pixelHeight: number };
+
+/** Selects only from a frame at the node's current viewport and density. */
+export function pickViewOf(shown: DrawnPage | undefined, view: View): View | undefined {
 	const scale = view.scale ?? 1;
+	const raster = Math.max(scale, 1);
 	if (
 		shown === undefined ||
 		shown.width <= 0 ||
@@ -18,7 +22,9 @@ export function pickViewOf(shown: Pick<PageFrame, "width" | "height"> | undefine
 		shown.width !== view.width ||
 		shown.height !== view.height ||
 		!Number.isFinite(scale) ||
-		scale <= 0
+		scale <= 0 ||
+		Math.abs(shown.pixelWidth - shown.width * raster) > 1 ||
+		Math.abs(shown.pixelHeight - shown.height * raster) > 1
 	)
 		return undefined;
 	return { width: shown.width, height: shown.height, scale };

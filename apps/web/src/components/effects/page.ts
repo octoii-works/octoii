@@ -11,7 +11,7 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import type { PageFrame, PageListed, PageMouse, PageView, PickElement, View as PageSize } from "@octoii-works/octoii-client";
 import { useClient } from "@octoii-works/octoii-client/react";
-import { editingOf, modifiersOf, PageInputGate, type PageMode, pickViewOf, typedBy } from "../../core/browser.ts";
+import { type DrawnPage, editingOf, modifiersOf, PageInputGate, type PageMode, pickViewOf, typedBy } from "../../core/browser.ts";
 import { isTypedIn } from "./shortcut.ts";
 
 /** How long the room stands at a size before the page is laid out at it. */
@@ -23,7 +23,6 @@ const LINE_PIXELS = 16;
 /** A local selection, with the viewport actually drawn rather than the container's size. */
 export type ElementSelection = Pick<PickElement, "x" | "y" | "expected_url" | "view">;
 export type PageInteraction = { readonly mode: PageMode; readonly select: (selection: ElementSelection) => void; readonly cancel: () => void };
-type FrameSize = Pick<PageFrame, "width" | "height">;
 type Options = { readonly page: PageListed; readonly interaction: PageInteraction };
 type Input = { readonly update: () => void; readonly stop: () => void };
 
@@ -39,7 +38,7 @@ export function usePageView(
 	const id = page.id;
 	const latest = useRef<Options>({ page, interaction });
 	const input = useRef<Input | undefined>(undefined);
-	const [shown, setShown] = useState<FrameSize | undefined>(undefined);
+	const [shown, setShown] = useState<DrawnPage | undefined>(undefined);
 	useLayoutEffect(() => {
 		latest.current = { page, interaction };
 		input.current?.update();
@@ -48,7 +47,7 @@ export function usePageView(
 		(element: HTMLDivElement | null) => {
 			if (element === null) return undefined;
 			setShown(undefined);
-			const surface = mountSurface(element, (size) => setShown((before) => (before?.width === size.width && before.height === size.height ? before : size)));
+			const surface = mountSurface(element, setShown);
 			let view: PageView | undefined;
 			let settling: ReturnType<typeof setTimeout> | undefined;
 			const settled = (): void => {
@@ -57,11 +56,12 @@ export function usePageView(
 				if (view === undefined) view = client.page(id, size, { frame: surface.draw });
 				else view.resize(size);
 			};
-			const observer = new ResizeObserver(() => {
+			const schedule = (): void => {
 				clearTimeout(settling);
 				settling = setTimeout(settled, view === undefined ? 0 : SETTLE_MS);
-			});
-			observer.observe(element);
+			};
+			const observer = new ResizeObserver(schedule);
+			observer.observe(element, { box: "device-pixel-content-box" });
 			const routing = takeInput(
 				element,
 				surface,
@@ -98,7 +98,7 @@ function sizeOf(element: HTMLElement): PageSize | undefined {
 type Surface = {
 	readonly canvas: HTMLCanvasElement;
 	readonly field: HTMLTextAreaElement;
-	readonly shown: FrameSize | undefined;
+	readonly shown: DrawnPage | undefined;
 	/** Where a point of the page's CSS pixels is, from a point of the window's. */
 	pointOf(clientX: number, clientY: number): { readonly x: number; readonly y: number };
 	draw(frame: PageFrame): void;
@@ -107,7 +107,7 @@ type Surface = {
 
 /** A canvas and a field put in `element`: the canvas blank over all of it till a frame comes, then each frame drawn on it, the
  * newest where they come faster than they are decoded. */
-function mountSurface(element: HTMLElement, onShown: (size: FrameSize) => void): Surface {
+function mountSurface(element: HTMLElement, onShown: (size: DrawnPage) => void): Surface {
 	const canvas = document.createElement("canvas");
 	// The room filled, as a blank page fills it, till the first frame gives the page's own size.
 	canvas.className = "absolute top-0 left-0 size-full bg-white";
@@ -121,7 +121,7 @@ function mountSurface(element: HTMLElement, onShown: (size: FrameSize) => void):
 	let next: PageFrame | undefined;
 	let drawing = false;
 	let disposed = false;
-	let shown = { width: 0, height: 0 };
+	let shown: DrawnPage | undefined;
 	const drawNext = async (): Promise<void> => {
 		drawing = true;
 		for (let frame = next; frame !== undefined; frame = next) {
@@ -132,14 +132,18 @@ function mountSurface(element: HTMLElement, onShown: (size: FrameSize) => void):
 				image.close();
 				return;
 			}
-			if (canvas.width !== image.width || canvas.height !== image.height) Object.assign(canvas, { width: image.width, height: image.height });
-			if (shown.width !== frame.width || shown.height !== frame.height) {
-				shown = { width: frame.width, height: frame.height };
+			const rasterChanged = canvas.width !== image.width || canvas.height !== image.height;
+			if (rasterChanged) Object.assign(canvas, { width: image.width, height: image.height });
+			const resized = rasterChanged || shown?.width !== frame.width || shown.height !== frame.height;
+			if (resized) {
 				Object.assign(canvas.style, { width: `${String(frame.width)}px`, height: `${String(frame.height)}px` });
 			}
 			context?.drawImage(image, 0, 0);
+			if (resized) {
+				shown = { width: frame.width, height: frame.height, pixelWidth: image.width, pixelHeight: image.height };
+				onShown(shown);
+			}
 			image.close();
-			onShown(shown);
 		}
 		drawing = false;
 	};
@@ -147,12 +151,12 @@ function mountSurface(element: HTMLElement, onShown: (size: FrameSize) => void):
 		canvas,
 		field,
 		get shown() {
-			return shown.width === 0 ? undefined : shown;
+			return shown;
 		},
 		pointOf: (clientX, clientY) => {
 			const box = canvas.getBoundingClientRect();
-			const across = box.width === 0 ? 1 : shown.width / box.width;
-			const down = box.height === 0 ? 1 : shown.height / box.height;
+			const across = box.width === 0 ? 1 : (shown?.width ?? 0) / box.width;
+			const down = box.height === 0 ? 1 : (shown?.height ?? 0) / box.height;
 			return { x: (clientX - box.left) * across, y: (clientY - box.top) * down };
 		},
 		draw: (frame) => {

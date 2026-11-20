@@ -5,6 +5,7 @@ import { useClient } from "@octoii-works/octoii-client/react";
 import type { PageMode } from "../../core/browser.ts";
 import { attachElementFeedback } from "../state/draft.ts";
 import { failed } from "../state/notices.ts";
+import { focusThreadMessage } from "./focus-message.ts";
 import type { ElementSelection, PageInteraction } from "./page.ts";
 
 export function useElementPicker(thread: string, page: PageListed): PageInteraction & { readonly start: () => void } {
@@ -39,7 +40,7 @@ export function useElementPicker(thread: string, page: PageListed): PageInteract
 				}
 				attachElementFeedback(feedback);
 				setState({ identity, mode: "browse" });
-				document.querySelector<HTMLTextAreaElement>(`textarea[data-thread="${CSS.escape(feedback.thread)}"]`)?.focus({ preventScroll: true });
+				focusThreadMessage(feedback.thread);
 			},
 			(error: unknown) => {
 				if (pending.current !== capture) return;

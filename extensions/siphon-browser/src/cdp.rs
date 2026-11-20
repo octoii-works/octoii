@@ -5,10 +5,11 @@
 
 use std::collections::HashMap;
 
-use bytes::BytesMut;
+use base64::Engine as _;
+use bytes::{Bytes, BytesMut};
 use chromiumoxide_types::Command as CdpCommand;
 use octoii::machine::{Command, CommandEvent, CommandEvents, Stdin};
-use serde_json::Value;
+use serde_json::{Value, json};
 use tokio::io::AsyncWriteExt as _;
 use tokio::sync::{mpsc, oneshot};
 
@@ -49,6 +50,23 @@ pub struct Cdp {
 pub const CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
 impl Cdp {
+    pub(crate) async fn screenshot(&self, session: &str, quality: u32) -> Result<Bytes, CdpError> {
+        let shot = self
+            .call(
+                Some(session),
+                "Page.captureScreenshot",
+                json!({ "format": "jpeg", "quality": quality }),
+            )
+            .await?;
+        let data = shot["data"]
+            .as_str()
+            .ok_or_else(|| CdpError::Unread("screenshot data is missing".into()))?;
+        base64::engine::general_purpose::STANDARD
+            .decode(data)
+            .map(Bytes::from)
+            .map_err(|error| CdpError::Unread(error.to_string()))
+    }
+
     /// Calls `method` with `params`, of the browser's own or of the target of `session`: what it gave.
     ///
     /// # Errors

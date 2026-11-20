@@ -16,6 +16,7 @@ describe("browser element feedback", () => {
 			{ type: "input_image", file: capture.screenshot, detail: "auto" },
 		]);
 		expect(elementEvidence(capture)).toContain("Historical browser context");
+		expect(elementEvidence(capture)).toContain(`:page{id=${capture.page}}`);
 		expect(elementEvidence(capture)).toContain("Re-read the live page before using any selector or coordinates");
 		expect(elementSummary(capture)).toBe("button: Submit");
 	});

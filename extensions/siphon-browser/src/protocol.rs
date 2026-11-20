@@ -269,7 +269,7 @@ pub enum BrowserTopic {
 }
 
 /// An event of a subscription to the browser's: a thread's pages as they changed; or a frame of a page, the newest the
-/// browser painted — its number among the page's, its size in device pixels — sent as a binary frame whose bytes after
+/// browser painted — its number among the page's and the viewport in CSS pixels — sent as a binary frame whose bytes after
 /// this event are the frame's JPEG.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "event", rename_all = "snake_case")]
