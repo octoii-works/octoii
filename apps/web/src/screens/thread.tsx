@@ -7,10 +7,10 @@
  */
 import { WorktreeStart } from "../extensions/git/thread-start.tsx";
 import { type ReactNode, useRef, useState } from "react";
-import type { Conversation, Listed } from "@octoii-works/octoii-client";
+import type { Conversation, Listed, Status } from "@octoii-works/octoii-client";
 import { useClient, useConversation, usePages, useTerminals, useThreads } from "@octoii-works/octoii-client/react";
 import type { Device } from "../core/device.ts";
-import { projectOf, statusOf, titleOf } from "../core/threads.ts";
+import { projectOf, statusOf, stopTargetOf, titleOf } from "../core/threads.ts";
 import { contentOf } from "../core/attachments.ts";
 import { limitedOf } from "../core/limits.ts";
 import { inBackground, waitingOn } from "../core/sub-threads.ts";
@@ -183,9 +183,10 @@ function Dock(props: {
 	const client = useClient();
 	const workspace = useFolder(row);
 	const working = conversation.status?.turn === "running" || conversation.inbox.length > 0;
+	const stop = stopTargetOf(conversation.status);
 	// A call's permission, the oldest of what waits, is answered in the composer; anything else waits docked in its place.
 	const approval = useApproval(thread, conversation.asks.toSorted((a, b) => (a.key < b.key ? -1 : 1))[0]);
-	if (awaitingWorkspace(row)) return null;
+	if (conversation.gone || awaitingWorkspace(row?.status) || awaitingWorkspace(conversation.status)) return null;
 
 	return (
 		<div className="relative shrink-0 bg-background pb-[max(--spacing(4),env(safe-area-inset-bottom))]">
@@ -194,7 +195,7 @@ function Dock(props: {
 			<div className="overflow-hidden scrollbar-even">
 				<div className="chat-column">
 					{/* What waits steers a turn that works, docked till its next step; sent to a thread at rest, it begins the next turn, shown in the timeline as it does. */}
-					<Queued thread={thread} inbox={conversation.status?.turn === "running" ? conversation.inbox : []} />
+					<Queued thread={thread} inbox={conversation.inbox} />
 					{conversation.asks.length > 0 && approval === undefined ? (
 						<AskDock thread={thread} asks={conversation.asks} />
 					) : (
@@ -217,7 +218,11 @@ function Dock(props: {
 							onQueue={async ({ text, attachments, feedback }) => {
 								props.onSent(await client.queue(thread, contentOf(text, attachments, feedback)));
 							}}
-							onStop={() => void client.stop(thread).catch((error: unknown) => failed("The thread could not be stopped", error))}
+							onStop={
+								stop === undefined
+									? undefined
+									: () => void client.stop(thread, stop).catch((error: unknown) => failed("The thread could not be stopped", error))
+							}
 							approval={approval}
 							sent={props.sent}
 						/>
@@ -239,11 +244,11 @@ function ThreadConversation({ thread, row, children }: { readonly thread: string
 					inbox={row.status.inbox}
 				/>
 			) : null}
-			<div className={awaitingWorkspace(row) ? "hidden" : "contents"}>{children}</div>
+			<div className={awaitingWorkspace(row?.status) ? "hidden" : "contents"}>{children}</div>
 		</>
 	);
 }
 
-function awaitingWorkspace(row: Listed | undefined): boolean {
-	return row?.status.start?.request.owner === "git.worktree" && row.status.start.state.state !== "ready";
+function awaitingWorkspace(status: Status | undefined): boolean {
+	return status?.start?.request.owner === "git.worktree" && status.start.state.state !== "ready";
 }

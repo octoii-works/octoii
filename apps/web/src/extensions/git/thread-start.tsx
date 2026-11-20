@@ -15,6 +15,11 @@ export function WorktreeStart(props: { readonly thread: string; readonly start: 
 	const [error, setError] = useState<string | undefined>(undefined);
 	const start = result?.start ?? props.start;
 	const allowed = connection.status === "open" && connection.scopes.includes("git.operate") && connection.scopes.includes("threads.operate");
+	const cancel = (): void => {
+		if (!allowed) return;
+		setError(undefined);
+		void client.stop(props.thread, { kind: "preparation", token: start.token }).catch((failure: unknown) => setError(failureOf(failure)));
+	};
 	const run = async (action: "inspect" | "prepare" | "retry"): Promise<void> => {
 		if (busy || !allowed) return;
 		setBusy(true);
@@ -44,7 +49,7 @@ export function WorktreeStart(props: { readonly thread: string; readonly start: 
 				<div className="flex items-center gap-2 text-ui text-muted-foreground">
 					<LoaderCircle className="size-4 animate-spin" />
 					<span className="flex-1">Preparing worktree…</span>
-					<button type="button" disabled={!allowed} onClick={() => void client.stop(props.thread).catch((failure: unknown) => setError(failureOf(failure)))}>
+					<button type="button" disabled={!allowed} onClick={cancel}>
 						Cancel task
 					</button>
 				</div>
@@ -65,10 +70,7 @@ export function WorktreeStart(props: { readonly thread: string; readonly start: 
 			error={error}
 			onInspect={() => void run("inspect")}
 			onContinue={() => void run(start.state.state === "failed" ? "retry" : "prepare")}
-			onCancel={() => {
-				if (!allowed) return;
-				void client.stop(props.thread).catch((failure: unknown) => setError(failureOf(failure)));
-			}}
+			onCancel={cancel}
 		/>
 	);
 }

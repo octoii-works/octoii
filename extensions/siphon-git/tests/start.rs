@@ -151,7 +151,12 @@ async fn existing_worktree_is_inspected_but_never_adopted_or_cleaned_up() {
     assert_eq!(std::fs::read_to_string(destination.join("keep")).unwrap(), "other work");
     let listed = call(&mut client, "threads.list", json!({})).await;
     assert_eq!(listed["threads"][0]["status"]["inbox"].as_array().unwrap().len(), 1);
-    call(&mut client, "threads.stop", json!({"thread":thread})).await;
+    call(
+        &mut client,
+        "threads.stop",
+        json!({"thread":thread, "target":{"kind":"preparation", "token":retried["start"]["token"]}}),
+    )
+    .await;
     let stopped = call(
         &mut client,
         "git.start",
@@ -159,6 +164,42 @@ async fn existing_worktree_is_inspected_but_never_adopted_or_cleaned_up() {
     )
     .await;
     assert_eq!(stopped["start"]["state"]["state"], "cancelled");
+    node.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stop_for_a_previous_preparation_leaves_the_retry_and_its_input() {
+    let folder = tempfile::tempdir().unwrap();
+    let root = folder.path().canonicalize().unwrap();
+    repository(&root);
+    let destination = root.join("task");
+    let node = node();
+    let thread = accept(&node, &worktree(&root, &destination, "task")).await.unwrap();
+    let volume = node.volume();
+    let first = volume.thread_start(&thread).unwrap().unwrap();
+    let input = node.threads.listed(&thread).unwrap().status.inbox;
+    assert_eq!(input.len(), 1);
+    volume
+        .fail_thread_start(&thread, &first.token, "retry fixture".into())
+        .await
+        .unwrap();
+    let retry = volume.retry_thread_start(&thread, &first.token).await.unwrap();
+    assert_ne!(retry.token, first.token);
+    assert_eq!(retry.state, StartState::Pending);
+
+    let mut client = client(&node, vec![Scope::ThreadsOperate]).await;
+    let stop = client
+        .call(
+            "threads.stop",
+            json!({"thread":thread, "target":{"kind":"preparation", "token":first.token}}),
+        )
+        .await;
+    let refused = client.answer(&stop).await;
+    assert_eq!(refused["error"]["code"], "stale_stop", "{refused}");
+    let status = node.threads.listed(&thread).unwrap().status;
+    assert_eq!(status.start, Some(retry));
+    assert_eq!(status.inbox, input);
+    assert!(!destination.exists());
     node.close().await;
 }
 

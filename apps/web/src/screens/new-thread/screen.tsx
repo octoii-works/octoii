@@ -113,7 +113,6 @@ export function NewThreadScreen(props: NewThreadScreenProps): ReactNode {
 									folder={folder}
 									things={thingsOf(reachesThreads ? rows : [], [], [], undefined)}
 									onSend={submit}
-									onStop={() => undefined}
 								/>
 								{worktree !== undefined || mode !== undefined ? (
 									<fieldset disabled={sending} className="mt-1 flex min-w-0 flex-wrap items-center gap-1 border-0 p-0">

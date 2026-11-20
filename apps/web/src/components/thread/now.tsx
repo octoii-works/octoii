@@ -11,6 +11,7 @@ import { useClient } from "@octoii-works/octoii-client/react";
 import { Bot, MessageCircle, ShieldQuestion, SquareTerminal } from "lucide-react";
 import { askTitle, formOf } from "../../core/asks.ts";
 import { workedOf } from "../../core/sub-threads.ts";
+import { stopTargetOf } from "../../core/threads.ts";
 import type { Now } from "../../core/timeline.ts";
 import { OldestAsk } from "../asks/asks.tsx";
 import { go } from "../state/navigation.ts";
@@ -188,6 +189,7 @@ function TerminalActions(props: { readonly thread: string; readonly terminal: Te
 function SubThreadActions(props: { readonly row: Listed }): ReactNode {
 	const client = useClient();
 	const worked = workedOf([props.row]);
+	const stop = stopTargetOf(props.row.status);
 	return (
 		<>
 			{worked === undefined ? null : (
@@ -200,8 +202,14 @@ function SubThreadActions(props: { readonly row: Listed }): ReactNode {
 			</button>
 			<button
 				type="button"
-				className={ACTION}
-				onClick={() => void client.stop(props.row.id).catch((error: unknown) => failed("The sub-thread could not be stopped", error))}
+				className={cn(ACTION, "disabled:cursor-default disabled:opacity-50")}
+				disabled={stop === undefined}
+				title={stop === undefined ? "Waiting for the sub-thread to update" : undefined}
+				onClick={
+					stop === undefined
+						? undefined
+						: () => void client.stop(props.row.id, stop).catch((error: unknown) => failed("The sub-thread could not be stopped", error))
+				}
 			>
 				Stop
 			</button>

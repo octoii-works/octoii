@@ -5,7 +5,7 @@ use crate::agent::Composition;
 use crate::settings::{Environment, SettingsChange};
 use crate::threads::inbox::Joins;
 use crate::threads::log::Cursor;
-use crate::threads::{Config, ConfigChange, Entry, Listed, MarksChange, Status};
+use crate::threads::{Config, ConfigChange, Entry, Listed, MarksChange, Status, StopTarget};
 use octoii_ai::vocabulary::InputContent;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -27,8 +27,8 @@ crate::methods! {
     "threads.deliver" Deliver(Deliver) -> Delivered, Some(Scope::ThreadsOperate);
     /// A delivery taken back, where its thread has not taken it yet: whether it was.
     "threads.withdraw" Withdraw(Withdraw) -> Withdrawn, Some(Scope::ThreadsOperate);
-    /// A thread's turn stopped.
-    "threads.stop" StopThread(OfThread) -> Nothing, Some(Scope::ThreadsOperate);
+    /// The observed turn, preparation, or queued deliveries of a thread stopped.
+    "threads.stop" StopThread(StopThread) -> Nothing, Some(Scope::ThreadsOperate);
     /// A thread deleted, and its sub-threads with it.
     "threads.delete" DeleteThread(OfThread) -> Nothing, Some(Scope::ThreadsOperate);
     /// What a thread asks the person answered.
@@ -93,6 +93,13 @@ pub struct DecideTrust {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct OfThread {
     pub thread: String,
+}
+
+/// A stop of the specified work, as its thread showed it to the caller.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct StopThread {
+    pub thread: String,
+    pub target: StopTarget,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
@@ -447,7 +454,7 @@ pub enum SiphonEvent {
     },
     Status {
         subscription: String,
-        status: Status,
+        status: Box<Status>,
     },
     Stream {
         subscription: String,

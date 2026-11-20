@@ -19,6 +19,7 @@ import {
 	snoozeTimes,
 	standingsOf,
 	statusOf,
+	stopTargetOf,
 	subThreadOf,
 	subThreadsBy,
 	subThreadsOf,
@@ -56,6 +57,34 @@ const asking = (at: number): Standing => ({
 	turn: "running",
 	began_at: at - 10,
 	asks: [{ id: "request-1", key: idAt(at), name: "siphon.permission", payload: {}, answer_schema: {} }],
+});
+
+describe("stopping a thread from its visible status", () => {
+	const inbox: Standing["inbox"] = [
+		["first-delivery", { type: "input", actor: "person", content: [{ type: "input_text", text: "First" }] }],
+		["delegated", { type: "input", actor: "thread-A", content: [{ type: "input_text", text: "Delegated input" }] }],
+		["config", { type: "config", actor: "person", title: "Title" }],
+		["second-delivery", { type: "input", actor: "person", joins: "turn", content: [{ type: "input_text", text: "Second" }] }],
+	];
+
+	it("uses only the current Turn ID while a turn runs", () => {
+		expect(stopTargetOf({ ...idle, turn: "running", turn_id: "turn-A", inbox })).toEqual({ kind: "turn", id: "turn-A" });
+		expect(stopTargetOf({ ...idle, turn: "running", inbox })).toBeUndefined();
+		expect(stopTargetOf(undefined)).toBeUndefined();
+	});
+
+	it("names only the person's visible queued deliveries where no turn is running", () => {
+		expect(stopTargetOf({ ...idle, inbox })).toEqual({ kind: "queued", deliveries: ["first-delivery", "second-delivery"] });
+		expect(stopTargetOf({ ...idle, inbox: inbox.slice(1, 3) })).toBeUndefined();
+		expect(stopTargetOf(idle)).toBeUndefined();
+	});
+
+	it("leaves the saved message to the workspace preparation's cancel action", () => {
+		const request = { owner: "git.worktree", payload: {} };
+		const start = { request, token: "attempt", previous: null };
+		expect(stopTargetOf({ ...idle, inbox, start: { ...start, state: { state: "pending" } } })).toBeUndefined();
+		expect(stopTargetOf({ ...idle, inbox, start: { ...start, state: { state: "cancelled" } } })).toBeUndefined();
+	});
 });
 
 describe("the threads", () => {

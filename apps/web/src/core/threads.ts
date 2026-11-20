@@ -7,7 +7,8 @@
  * atop, then the active, those that work, those snoozed and the settled kept apart, those archived in none, a
  * sub-thread in none — and the times one is snoozed till.
  */
-import type { Ask, Listed } from "@octoii-works/octoii-client";
+import type { Ask, Listed, Status, StopTarget } from "@octoii-works/octoii-client";
+import { queuedInputsOf } from "./inbox.ts";
 import { namesAsWords } from "./links.ts";
 import { type Hue, huesApart, monogramHue } from "./monogram.ts";
 import { mintedAt } from "./time.ts";
@@ -27,6 +28,17 @@ export function statusOf(row: Listed): ThreadStatus {
 	if (asksOf(row).length > 0) return "asks";
 	if (row.status.turn === "running" || row.status.inbox.length > 0) return "working";
 	return row.status.turn === "failed" ? "failed" : "ready";
+}
+
+/** The current turn or the person's visible deliveries where no turn is running. */
+export function stopTargetOf(status: Status | undefined): StopTarget | undefined {
+	if (status === undefined || (status.start !== undefined && status.start.state.state !== "ready")) return undefined;
+	if (status.turn === "running") {
+		const id = status.turn_id;
+		return id ? { kind: "turn", id } : undefined;
+	}
+	const deliveries = queuedInputsOf(status.inbox).map(({ id }) => id);
+	return deliveries.length === 0 ? undefined : { kind: "queued", deliveries };
 }
 
 /** What a thread waits on the person for. */

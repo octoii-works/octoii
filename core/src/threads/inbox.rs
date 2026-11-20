@@ -157,6 +157,24 @@ pub fn put(changes: &mut Batch<'_>, id: &str, delivery: &str, inbound: &Inbound)
     Ok(())
 }
 
+/// Withdraws an observed delivery and tells the process that was waiting for it.
+pub(super) fn withdraw(
+    snapshot: &Snapshot,
+    changes: &mut Batch<'_>,
+    id: &str,
+    delivery: &str,
+    inbound: &Inbound,
+) -> octoii_siphon_lib::Result<()> {
+    if let Inbound::Input {
+        reply_to: Some(reply_to), ..
+    } = inbound
+    {
+        tell(snapshot, changes, reply_to, &Ended::Withdrawn)?;
+    }
+    changes.delete(file(id, delivery))?;
+    Ok(())
+}
+
 /// What waits in the inbox of the thread `id`, in the order it came.
 ///
 /// # Errors

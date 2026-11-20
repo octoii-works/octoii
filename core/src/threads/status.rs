@@ -25,9 +25,9 @@ pub enum Turn {
     Stopped,
 }
 
-/// The annotations of how a thread's turns stand: its latest turn's status, and when it began and ended — set by its
-/// main process in the commits that begin and end a turn.
+/// How a thread's turns stand, set by its main process in the commits that begin and end a turn.
 pub const TURN_ANNOTATION: &str = "siphon.turn";
+const TURN_ID_ANNOTATION: &str = "siphon.turn_id";
 pub const BEGAN_AT_ANNOTATION: &str = "siphon.began_at";
 pub const ENDED_AT_ANNOTATION: &str = "siphon.ended_at";
 
@@ -35,9 +35,10 @@ pub const ENDED_AT_ANNOTATION: &str = "siphon.ended_at";
 ///
 /// # Errors
 /// The volume's failure.
-pub fn began(changes: &mut Batch<'_>, id: &str, at: i64) -> octoii_siphon_lib::Result<()> {
+pub fn began(changes: &mut Batch<'_>, id: &str, turn: &str, at: i64) -> octoii_siphon_lib::Result<()> {
     let annotations = vec![
         named(TURN_ANNOTATION, Some(serde_json::to_vec(&Turn::Running)?)),
+        named(TURN_ID_ANNOTATION, Some(turn.as_bytes().to_vec())),
         named(BEGAN_AT_ANNOTATION, Some(at.to_string().into_bytes())),
         named(ENDED_AT_ANNOTATION, None),
     ];
@@ -52,6 +53,7 @@ pub fn began(changes: &mut Batch<'_>, id: &str, at: i64) -> octoii_siphon_lib::R
 pub fn ended(changes: &mut Batch<'_>, id: &str, turn: Turn, at: i64) -> octoii_siphon_lib::Result<()> {
     let annotations = vec![
         named(TURN_ANNOTATION, Some(serde_json::to_vec(&turn)?)),
+        named(TURN_ID_ANNOTATION, None),
         named(ENDED_AT_ANNOTATION, Some(at.to_string().into_bytes())),
     ];
     changes.meta(thread::path(id), Vec::new(), annotations)?;
@@ -60,6 +62,12 @@ pub fn ended(changes: &mut Batch<'_>, id: &str, turn: Turn, at: i64) -> octoii_s
 
 fn named(name: &'static str, value: Option<Vec<u8>>) -> Named {
     (Bytes::from_static(name.as_bytes()), value.map(Bytes::from))
+}
+
+pub(super) fn turn_id(directory: &Directory) -> Option<&str> {
+    directory
+        .annotation(TURN_ID_ANNOTATION.as_bytes())
+        .and_then(|id| std::str::from_utf8(id).ok())
 }
 
 /// What a thread's model requests used, as Beak counts it on its main process for every process under it, as cgroup v2
@@ -133,7 +141,7 @@ pub struct Ask {
     pub answer_schema: serde_json::Value,
 }
 
-/// How a thread stands.
+/// How a thread stands. The active turn's identity is recorded when the main process starts the turn.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
 pub struct Status {
     /// Preparation state, absent for a normally created thread.
@@ -155,6 +163,9 @@ pub struct Status {
     /// When it goes on, where the person asked it to at a time and it has not gone on since.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resuming_at: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub turn_id: Option<String>,
 }
 
 /// Where a sub-thread came from: the thread that delegated it, and its call that did, by Octoii's key of it.
@@ -261,6 +272,7 @@ fn status(runtime: &RuntimeHandle, snapshot: &Snapshot, id: &str, directory: &Di
     Ok(Status {
         start: super::Start::of(directory)?,
         turn,
+        turn_id: turn_id(directory).map(str::to_owned),
         began_at: time(directory, BEGAN_AT_ANNOTATION),
         ended_at: time(directory, ENDED_AT_ANNOTATION),
         usage,

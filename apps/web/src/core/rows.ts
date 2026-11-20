@@ -6,6 +6,7 @@
  * the list draws again only the rows that changed.
  */
 import type { Ask, Listed } from "@octoii-works/octoii-client";
+import { queuedInputsOf } from "./inbox.ts";
 import type { Limited } from "./limits.ts";
 import {
 	type Now,
@@ -173,7 +174,19 @@ function sameNow(a: Now, b: Now): boolean {
 	return (
 		sameItems(a.waiting, b.waiting, (x, y) => sameThread(x, y) && sameItems(x.status.asks, y.status.asks, (p, q) => p.id === q.id)) &&
 		sameItems(a.terminals, b.terminals, (x, y) => x.id === y.id && x.line === y.line) &&
-		sameItems(a.threads, b.threads, sameThread)
+		sameItems(a.threads, b.threads, (x, y) => sameThread(x, y) && sameBackgroundWork(x.status, y.status))
+	);
+}
+
+/** The background row also holds the state used by its stop action. */
+function sameBackgroundWork(a: Listed["status"], b: Listed["status"]): boolean {
+	return (
+		a.turn === b.turn &&
+		a.turn_id === b.turn_id &&
+		a.ended_at === b.ended_at &&
+		a.start?.state.state === b.start?.state.state &&
+		a.start?.token === b.start?.token &&
+		(a.turn === "running" || sameItems(queuedInputsOf(a.inbox), queuedInputsOf(b.inbox), (x, y) => x.id === y.id))
 	);
 }
 

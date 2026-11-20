@@ -186,7 +186,7 @@ fn begin(run: &mut Run<'_>, id: &str, told: Told) -> anyhow::Result<Ending<MainS
         },
     )?;
     let now = run.time_ms();
-    crate::threads::began(&mut run.changes, id, now)?;
+    crate::threads::began(&mut run.changes, id, &turn, now)?;
     Ok(Ending::Wait(MainState::Running { turn: turn.clone() }, Wait::new().child(turn)))
 }
 

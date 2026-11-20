@@ -120,8 +120,11 @@ async fn threads_answered(siphon: &Octoii, method: Method) -> Result<serde_json:
                 .await
                 .map_err(|error| failed(&error))?,
         }),
-        Method::StopThread(of) => {
-            threads.stop(&of.thread, PERSON).await.map_err(|error| failed(&error))?;
+        Method::StopThread(stop) => {
+            threads
+                .stop(&stop.thread, PERSON, &stop.target)
+                .await
+                .map_err(|error| failed(&error))?;
             json(&Nothing {})
         }
         Method::DeleteThread(of) => {
@@ -175,6 +178,7 @@ fn failed(error: &crate::threads::Error) -> Error {
         crate::threads::Error::NoSuchThread => "no_such_thread",
         crate::threads::Error::NotGiven(_) => "not_given",
         crate::threads::Error::WorkspaceFixed => "workspace_fixed",
+        crate::threads::Error::StaleStop => "stale_stop",
         _ => "failed",
     };
     refusal(code, &error.to_string())

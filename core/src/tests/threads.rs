@@ -9,7 +9,7 @@ use std::time::Duration;
 use crate::threads::config::{Changed, ConfigChange, ConfigChanged};
 use crate::threads::log::{self, Entry, Writer};
 use crate::threads::{
-    Config, MainInput, MarksChange, Mode, NewThread, Parent, StartDirectory, StartWorkspace, Threads, Turn, inbox, thread,
+    Config, MainInput, MarksChange, Mode, NewThread, Parent, StartDirectory, StartWorkspace, StopTarget, Threads, Turn, inbox, thread,
 };
 use bytes::Bytes;
 use octoii_ai::vocabulary::{InputContent, ReasoningEffort};
@@ -654,20 +654,31 @@ async fn what_waits_in_the_inbox_is_withdrawn_or_stopped_and_how_the_person_keep
             .expect("delivered"),
         first
     );
-    threads
+    let other = threads
         .deliver(&id, "thread.other", vec![InputContent::text("two")], "d2")
         .await
         .expect("delivered");
-    threads
+    let third = threads
         .deliver(&id, "person", vec![InputContent::text("three")], "d3")
         .await
         .expect("delivered");
     assert_eq!(threads.listed(&id).expect("listed").status.inbox.len(), 3);
     assert!(threads.withdraw(&id, &first).await.expect("withdrawn"));
     assert!(!threads.withdraw(&id, &first).await.expect("withdrawn"), "gone already");
-    threads.stop(&id, "person").await.expect("stopped");
+    let target = StopTarget::Queued {
+        deliveries: vec![first, other.clone(), third],
+    };
+    let later = threads
+        .queue(&id, "person", vec![InputContent::text("later")], "d4")
+        .await
+        .expect("queued");
+    threads.stop(&id, "person", &target).await.expect("stopped");
     let inbox = threads.listed(&id).expect("listed").status.inbox;
-    assert_eq!(inbox.len(), 1, "the person's withdrawn, another's kept");
+    assert_eq!(inbox.into_iter().map(|(delivery, _)| delivery).collect::<Vec<_>>(), [other, later]);
+    assert!(matches!(
+        threads.stop(&id, "person", &target).await,
+        Err(crate::threads::Error::StaleStop)
+    ));
     let now = threads.runtime().now_ms().expect("time");
     let marks = MarksChange {
         pinned: Some(true),
@@ -1310,14 +1321,35 @@ async fn stopping_or_deleting_preparation_cannot_be_undone_by_a_late_result() {
         .await
         .unwrap();
     let start = volume.thread_start(&id).unwrap().unwrap();
-    threads.stop(&id, "person").await.unwrap();
+    volume.fail_thread_start(&id, &start.token, "checkout failed".into()).await.unwrap();
+    let retried = volume.retry_thread_start(&id, &start.token).await.unwrap();
+    let old = StopTarget::Preparation { token: start.token };
+    assert!(matches!(
+        threads.stop(&id, "person", &old).await,
+        Err(crate::threads::Error::StaleStop)
+    ));
+    assert_eq!(volume.thread_start(&id).unwrap(), Some(retried.clone()));
+    threads
+        .stop(
+            &id,
+            "person",
+            &StopTarget::Preparation {
+                token: retried.token.clone(),
+            },
+        )
+        .await
+        .unwrap();
     assert!(matches!(volume.thread_start(&id).unwrap().unwrap().state, StartState::Cancelled));
+    assert!(matches!(
+        &threads.listed(&id).unwrap().status.inbox[..],
+        [(_, inbox::Inbound::Input { content, .. })] if content == &[InputContent::text("wait")]
+    ));
     let directory = StartWorkspace {
         workspace: std::env::temp_dir().to_string_lossy().into_owned(),
         project: None,
     };
-    assert!(volume.finish_thread_start(&id, &start.token, directory.clone()).await.is_err());
-    assert!(volume.retry_thread_start(&id, &start.token).await.is_err());
+    assert!(volume.finish_thread_start(&id, &retried.token, directory.clone()).await.is_err());
+    assert!(volume.retry_thread_start(&id, &retried.token).await.is_err());
     let tool_stopped = volume
         .start_thread(
             START_CALLER,

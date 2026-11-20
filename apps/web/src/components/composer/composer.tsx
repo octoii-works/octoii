@@ -9,7 +9,7 @@
  */
 import { type ReactNode, useId, useRef, useState, useTransition } from "react";
 import type { ElementFeedback, ReasoningEffort as Effort, Mode } from "@octoii-works/octoii-client";
-import { ArrowUp, Square } from "lucide-react";
+import { ArrowUp, LoaderCircle, Square } from "lucide-react";
 import type { Device } from "../../core/device.ts";
 import type { DraftPlace } from "../../core/drafts.ts";
 import { type Choice, withMention } from "../../core/mentions.ts";
@@ -56,7 +56,8 @@ export type ComposerProps = {
 	readonly onSend: (message: Outgoing) => Promise<void>;
 	/** Sends them to wait for the turn that works to end and begin the next, as the other send shortcut asks while it works; none where nothing is queued. */
 	readonly onQueue?: (message: Outgoing) => Promise<void>;
-	readonly onStop: () => void;
+	/** Stops the work identified by the visible thread status. */
+	readonly onStop?: (() => void) | undefined;
 	/** The call's permission that waits on the person, answered here; none while none waits. */
 	readonly approval?: Approval | undefined;
 	/** What the person sent in the thread before, oldest first, which ↑ calls back. */
@@ -243,17 +244,21 @@ function SendButton(props: {
 	readonly empty: boolean;
 	readonly unready: boolean;
 	readonly onSend: () => void;
-	readonly onStop: () => void;
+	readonly onStop: (() => void) | undefined;
 }): ReactNode {
 	if (props.working && props.empty) {
+		const waiting = props.onStop === undefined;
+		const label = waiting ? "Waiting for the thread to update" : "Stop";
 		return (
 			<button
 				type="button"
-				aria-label="Stop"
+				aria-label={label}
+				title={label}
+				disabled={waiting}
 				onClick={props.onStop}
-				className="ml-1 flex size-control items-center justify-center rounded-full bg-foreground text-background hover:opacity-90"
+				className="ml-1 flex size-control items-center justify-center rounded-full bg-foreground text-background not-disabled:hover:opacity-90 disabled:bg-accent disabled:text-muted-foreground"
 			>
-				<Square className="size-3 fill-current" />
+				{waiting ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" /> : <Square className="size-3 fill-current" />}
 			</button>
 		);
 	}

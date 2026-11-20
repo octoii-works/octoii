@@ -31,6 +31,7 @@ import { type Attachment, attachmentsOf } from "./attachments.ts";
 import { type PresentedFile, presentedFilesOf } from "./presented-files.ts";
 import { type CallState, structuredOf, titleOf } from "./calls.ts";
 import { executedCallsOf } from "./execution.ts";
+import { threadOfActor } from "./inbox.ts";
 import { duration, mintedAt } from "./time.ts";
 import type { Limited } from "./limits.ts";
 import { type Aside, givenOf, summaryOf, toolOf, verbOf, type WorkKind } from "./tools.ts";
@@ -716,7 +717,6 @@ export function inputText(content: readonly InputContent[]): string {
 }
 
 /** Who gives the person's words, as the threads' logs name them. */
-const PERSON = "person";
 /** Whose the input is that tells a command line the model ran in a terminal ended. */
 export const TERMINAL = "terminal";
 /** Whose Siphon's own inputs are, as a reply cut off at its limit told to go on. */
@@ -734,11 +734,6 @@ export type NoticeWords = { readonly event: string; readonly detail: string | un
 export function siphonWords(text: string): NoticeWords {
 	if (text.startsWith("[the reply was cut off")) return { event: "Reply cut off", detail: "Octoii asked the model to go on" };
 	return { event: "Octoii told the model", detail: undefined };
-}
-
-/** The thread whose an input is, by its actor — a thread's id; none for the person's. */
-export function threadOfActor(actor: string): string | undefined {
-	return actor === PERSON ? undefined : actor;
 }
 
 /**

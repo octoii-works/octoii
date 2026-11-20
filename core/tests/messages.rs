@@ -1,21 +1,33 @@
 //! Messages as they go over the socket: a call read as its set's method by its name and params, an answer and an
 //! event written as the client's TypeScript reads them.
 
-use octoii::protocol::siphon::{Method, OfThread};
+use octoii::protocol::siphon::{Method, StopThread};
 use octoii::protocol::{Answer, Call, ConnectionEvent, Error};
+use octoii::threads::StopTarget;
 use serde_json::json;
 
 #[test]
 fn a_call_is_read_as_its_set_s_method_by_its_name_and_params() {
-    let call: Call = serde_json::from_value(json!({ "id": "7", "method": "threads.stop", "params": { "thread": "t1" } })).expect("a call");
+    let call: Call = serde_json::from_value(json!({
+        "id": "7",
+        "method": "threads.stop",
+        "params": { "thread": "t1", "target": { "kind": "turn", "id": "turn1" } }
+    }))
+    .expect("a call");
     assert_eq!(call.id, "7");
     let method = Method::read(&call.method, call.params).expect("a method of Octoii's");
-    assert_eq!(method, Method::StopThread(OfThread { thread: "t1".into() }));
+    assert_eq!(
+        method,
+        Method::StopThread(StopThread {
+            thread: "t1".into(),
+            target: StopTarget::Turn { id: "turn1".into() },
+        })
+    );
     assert_eq!(method.name(), "threads.stop");
     assert!(Method::read("threads.fly", json!({})).is_err(), "no such method");
     assert!(
-        Method::read("threads.stop", json!({ "thread": 3 })).is_err(),
-        "params not the method's"
+        Method::read("threads.stop", json!({ "thread": "t1" })).is_err(),
+        "a stop requires an observed target"
     );
 }
 

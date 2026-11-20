@@ -31,7 +31,7 @@ pub use inbox::{Ended, Joins};
 pub use input::InputPart;
 pub use log::{CallStatus, Entry, Outcome, time_of};
 pub use marks::{Marks, MarksChange};
-pub use operations::{NewThread, list};
+pub use operations::{NewThread, StopTarget, list};
 pub use status::{Ask, Listed, Parent, Status, SubThreadKind, ThreadUsage, Turn, parent_of};
 
 pub use start::{Start, StartDirectory, StartRequest, StartState, StartWorkspace};

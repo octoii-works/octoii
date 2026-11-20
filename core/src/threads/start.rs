@@ -87,6 +87,10 @@ impl Start {
     pub fn blocks_execution(&self) -> bool {
         !matches!(self.state, StartState::Ready { .. })
     }
+
+    fn can_cancel(&self) -> bool {
+        matches!(self.state, StartState::Pending | StartState::Failed { .. })
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -191,7 +195,10 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
         };
         let mut commits = runtime.commits()?;
         let key = commit_checked(runtime, |snapshot, changes| -> Result<_, Error> {
-            read(snapshot, id)?.ok_or_else(|| Error::Start("thread has no startup gate".into()))?;
+            let start = read(snapshot, id)?.ok_or_else(|| command.action.refused("thread has no startup gate".into()))?;
+            if matches!(command.action, Action::Cancel) && (start.token != token || !start.can_cancel()) {
+                return Err(Error::StaleStop);
+            }
             let key = runtime.new_id()?;
             changes.write(command_path(id, &key), serde_json::to_vec(&command)?)?;
             Self::revive(snapshot, changes, id)?;
@@ -202,7 +209,7 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
             let snapshot = runtime.snapshot()?;
             if let Some(bytes) = snapshot.read_range(&result_path(id, &key), 0, u64::MAX)? {
                 let result: Result<Start, String> = serde_json::from_slice(&bytes)?;
-                return result.map_err(Error::Start);
+                return result.map_err(|reason| command.action.refused(reason));
             }
             thread::directory(&snapshot, id)?.ok_or(Error::NoSuchThread)?;
             if snapshot.fiber(&thread::main(id))?.is_some_and(|record| record.outcome.is_some()) {
@@ -216,18 +223,6 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
                 }
             }
         }
-    }
-
-    /// Before stopping an existing thread, wait for the startup gate to acknowledge cancellation.
-    pub(super) async fn cancel_start(&self, id: &str) -> Result<(), Error> {
-        if let Some(start) = self.start_state(id)?
-            && start.blocks_execution()
-            && let Err(error) = self.start_command(id, &start.token, Action::Cancel).await
-            && self.start_state(id)?.is_some_and(|current| current.blocks_execution())
-        {
-            return Err(error);
-        }
-        Ok(())
     }
 }
 
@@ -260,7 +255,7 @@ fn claimed(snapshot: &Snapshot, path: &[u8], fingerprint: &[u8; 32]) -> Result<O
 pub(super) fn stage_cancel(snapshot: &Snapshot, changes: &mut Batch<'_>, id: &str) -> Result<(), Error> {
     if let Some(directory) = thread::directory(snapshot, id)?
         && let Some(start) = Start::of(&directory)?
-        && matches!(start.state, StartState::Pending | StartState::Failed { .. })
+        && start.can_cancel()
     {
         // Sort before UUID-keyed completions so a queued stop wins before preparation is released.
         let command = Command {
@@ -317,6 +312,15 @@ pub(crate) enum Action {
     Fail(String),
     Retry { next: String },
     Cancel,
+}
+
+impl Action {
+    fn refused(&self, reason: String) -> Error {
+        match self {
+            Self::Cancel => Error::StaleStop,
+            _ => Error::Start(reason),
+        }
+    }
 }
 
 pub(crate) enum Gate {
@@ -392,7 +396,7 @@ fn transitioned(start: &Start, command: Command) -> Result<Start, String> {
             next.token = token;
             StartState::Pending
         }
-        (StartState::Pending | StartState::Failed { .. } | StartState::Cancelled, Action::Cancel) => StartState::Cancelled,
+        (_, Action::Cancel) if start.can_cancel() => StartState::Cancelled,
         _ => return Err("startup transition is not allowed".into()),
     };
     Ok(next)

@@ -12,7 +12,7 @@ use crate::agent::{
     DelegatedFiber, Gather, ModelRequest, Sources, ThreadFiber, TitleFiber, TurnFiber, answer_gather, answer_model, answer_review,
 };
 use crate::machine::Host as Machine;
-use crate::threads::{CallStatus, Config, Entry, Mode, NewThread, Outcome, StartDirectory, StartWorkspace, Threads, Turn};
+use crate::threads::{CallStatus, Config, Entry, Mode, NewThread, Outcome, StartDirectory, StartWorkspace, StopTarget, Threads, Turn};
 use crate::tools::{Asks, Exec, ExecuteTool, Permission, ReadTool, Review, ScriptFiber, ShellTool, Tools, WriteTool, answer_exec};
 use bytes::Bytes;
 use futures::future::BoxFuture;
@@ -738,8 +738,10 @@ async fn a_stop_ends_the_turn_with_every_call_it_made_answered() {
     .await
     .expect("replied in time");
     tokio::time::sleep(Duration::from_millis(200)).await;
-    threads.stop(&id, "person").await.expect("stopped");
+    let turn = threads.listed(&id).unwrap().status.turn_id.expect("an active turn");
+    threads.stop(&id, "person", &StopTarget::Turn { id: turn }).await.expect("stopped");
     until(&threads, &id, Turn::Stopped).await;
+    assert!(threads.listed(&id).unwrap().status.turn_id.is_none());
     let all = entries(&threads, &id);
     let end = all
         .iter()
@@ -1001,6 +1003,61 @@ async fn a_task_delegated_in_the_background_is_answered_at_once_and_its_end_deli
         _ => None,
     });
     assert!(first.expect("a result").contains("is working on it in the background"));
+    runtime.close().expect("closed");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_delayed_stop_cannot_reach_a_later_turn_or_its_queue() {
+    let script = script(vec![Ok(vec![says("first reply")])]);
+    let runtime = runtime(&script);
+    let threads = Threads::<ThreadFiber>::new(runtime.runtime_handle());
+    let (_folder, workspace) = folder();
+    let id = thread(&threads, &workspace).await;
+    let first_delivery = threads
+        .deliver(&id, "person", vec![InputContent::text("first input")], "first")
+        .await
+        .unwrap();
+    until(&threads, &id, Turn::Replied).await;
+    let committed = entries(&threads, &id);
+    let old_turn = committed
+        .iter()
+        .find_map(|entry| match entry {
+            Entry::TurnEnd {
+                turn: Some(turn),
+                outcome: Outcome::Replied,
+                ..
+            } => Some(turn.clone()),
+            _ => None,
+        })
+        .expect("the first turn completed");
+
+    threads
+        .deliver(&id, "person", vec![InputContent::text("second input")], "second")
+        .await
+        .unwrap();
+    until(&threads, &id, Turn::Running).await;
+    let active = threads.listed(&id).unwrap().status.turn_id.unwrap();
+    assert_ne!(active, old_turn);
+    let later = threads
+        .queue(&id, "person", vec![InputContent::text("future input")], "later")
+        .await
+        .unwrap();
+
+    for target in [
+        StopTarget::Turn { id: old_turn },
+        StopTarget::Queued {
+            deliveries: vec![first_delivery],
+        },
+    ] {
+        assert!(matches!(
+            threads.stop(&id, "person", &target).await,
+            Err(crate::threads::Error::StaleStop)
+        ));
+    }
+    let status = threads.listed(&id).unwrap().status;
+    assert_eq!(status.turn_id.as_deref(), Some(active.as_str()));
+    assert_eq!(status.inbox.into_iter().map(|(delivery, _)| delivery).collect::<Vec<_>>(), [later]);
+    assert!(entries(&threads, &id).starts_with(&committed));
     runtime.close().expect("closed");
 }
 

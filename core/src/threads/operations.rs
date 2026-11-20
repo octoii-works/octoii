@@ -1,11 +1,11 @@
 //! The operations on threads, each checked against the volume as it stands and committed as one.
 //! A request that makes or adds to a thread is done once for its idempotency key.
 
-use std::marker::PhantomData;
+use std::{collections::HashSet, marker::PhantomData};
 
 use bytes::Bytes;
 use octoii_ai::vocabulary::InputContent;
-use octoii_siphon_lib::{Batch, Fiber, RequestId, RuntimeHandle, Signal};
+use octoii_siphon_lib::{Batch, Fiber, FiberId, RequestId, RuntimeHandle, Signal, fiber_path};
 use octoii_siphon_lib::{Query, Range, Snapshot, Status};
 use serde::{Deserialize, Serialize};
 
@@ -38,6 +38,15 @@ pub struct NewThread {
     pub parent: Option<Parent>,
 }
 
+/// The work a stop command was issued for, as it appeared to the caller.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum StopTarget {
+    Turn { id: String },
+    Preparation { token: String },
+    Queued { deliveries: Vec<String> },
+}
+
 /// Why an operation on a thread was not done.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -47,6 +56,8 @@ pub enum Error {
     MissingSubThreadKind,
     #[error("a thread's workspace is fixed at startup")]
     WorkspaceFixed,
+    #[error("the targeted work is no longer waiting or running")]
+    StaleStop,
     #[error("{0}")]
     Start(String),
     #[error(transparent)]
@@ -273,36 +284,30 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
             let Some(bytes) = snapshot.read(&file)? else {
                 return Ok(false);
             };
-            if let Inbound::Input {
-                reply_to: Some(reply_to), ..
-            } = serde_json::from_slice(&bytes)?
-            {
-                inbox::tell(snapshot, changes, &reply_to, &inbox::Ended::Withdrawn)?;
-            }
-            changes.delete(&file)?;
+            inbox::withdraw(snapshot, changes, id, delivery, &serde_json::from_slice(&bytes)?)?;
             Ok(true)
         })
         .await
     }
 
-    /// Stops the thread `id` for `actor`: the inputs of theirs that wait withdrawn, and its turn asked to stop — none of
-    /// what runs beside it, as an interrupt reaches the foreground alone — in one commit. Pending preparation is
-    /// cancelled and acknowledged first, so a delayed preparation result cannot release its input.
+    /// Stops the specified work of thread `id`. A queued stop withdraws only the listed deliveries from `actor`.
     ///
     /// # Errors
-    /// `NoSuchThread`; the commit's failure.
-    pub async fn stop(&self, id: &str, actor: &str) -> Result<(), Error> {
-        self.cancel_start(id).await?;
-        commit_checked(&self.runtime, |snapshot, changes| {
-            thread::directory(snapshot, id)?.ok_or(Error::NoSuchThread)?;
-            for waiting in inbox::waiting(snapshot, id)? {
-                if matches!(&waiting.inbound, Inbound::Input { actor: theirs, .. } if theirs == actor) {
-                    changes.delete(inbox::file(id, &waiting.id))?;
-                }
+    /// `NoSuchThread`, `StaleStop`, or the volume's failure.
+    pub async fn stop(&self, id: &str, actor: &str, target: &StopTarget) -> Result<(), Error> {
+        match target {
+            StopTarget::Turn { id: turn } => {
+                commit_checked(&self.runtime, |snapshot, changes| stop_active_turn(snapshot, changes, id, turn)).await
             }
-            stop_turn(snapshot, changes, id)
-        })
-        .await
+            StopTarget::Preparation { token } => self.start_command(id, token, start::Action::Cancel).await.map(|_| ()),
+            StopTarget::Queued { deliveries } => {
+                let deliveries = deliveries.iter().map(String::as_str).collect();
+                commit_checked(&self.runtime, |snapshot, changes| {
+                    stop_queued(snapshot, changes, id, actor, &deliveries)
+                })
+                .await
+            }
+        }
     }
 
     /// Deletes the thread `id` and every thread under it, in one commit, as `rm -rf` takes a tree: each gone with its
@@ -393,11 +398,42 @@ impl<M: Fiber<Input = MainInput>> Threads<M> {
     }
 }
 
+fn stop_active_turn(snapshot: &Snapshot, changes: &mut Batch<'_>, id: &str, turn: &str) -> Result<(), Error> {
+    let directory = thread::directory(snapshot, id)?.ok_or(Error::NoSuchThread)?;
+    if status::turn_id(&directory) != Some(turn) {
+        return Err(Error::StaleStop);
+    }
+    let path = fiber_path(&thread::main(id), turn.as_bytes());
+    let record = snapshot
+        .fiber(&path)?
+        .filter(|record| record.kind == thread::TURN_KIND.as_bytes() && record.outcome.is_none())
+        .ok_or(Error::StaleStop)?;
+    signal_stop(changes, &record.id)?;
+    Ok(())
+}
+
+fn stop_queued(snapshot: &Snapshot, changes: &mut Batch<'_>, id: &str, actor: &str, deliveries: &HashSet<&str>) -> Result<(), Error> {
+    thread::directory(snapshot, id)?.ok_or(Error::NoSuchThread)?;
+    let mut withdrawn = false;
+    for waiting in inbox::waiting(snapshot, id)? {
+        if deliveries.contains(waiting.id.as_str()) && matches!(&waiting.inbound, Inbound::Input { actor: from, .. } if from == actor) {
+            inbox::withdraw(snapshot, changes, id, &waiting.id, &waiting.inbound)?;
+            withdrawn = true;
+        }
+    }
+    if withdrawn { Ok(()) } else { Err(Error::StaleStop) }
+}
+
+fn signal_stop(changes: &mut Batch<'_>, fiber: &FiberId) -> octoii_siphon_lib::Result<()> {
+    changes.signal(fiber, Signal::Terminate, Some(Bytes::from_static(b"stopped")))?;
+    Ok(())
+}
+
 /// Stages a cancellation of pending preparation and asks the turn of `id` to stop, where one runs.
 pub(crate) fn stop_turn(snapshot: &Snapshot, changes: &mut Batch<'_>, id: &str) -> Result<(), Error> {
     start::stage_cancel(snapshot, changes, id)?;
     for fiber in snapshot.fibers(&thread::main(id), thread::TURN_KIND.as_bytes())? {
-        changes.signal(&fiber, Signal::Terminate, Some(Bytes::from_static(b"stopped")))?;
+        signal_stop(changes, &fiber)?;
     }
     Ok(())
 }

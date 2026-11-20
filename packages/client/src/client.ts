@@ -35,6 +35,7 @@ import type {
 	ResultOf,
 	Settings,
 	SettingsChange,
+	StopTarget,
 	SubscriptionEvent,
 	TerminalListed,
 	Topic,
@@ -68,8 +69,8 @@ export type Client = {
 	withdraw(thread: string, delivery: string): Promise<boolean>;
 	/** Deletes the thread, whatever it was doing: its log, its processes, its terminals and its pages gone for good. */
 	delete(thread: string): Promise<void>;
-	/** Stops the thread for the person: what waits in its inbox withdrawn, its turn asked to stop. */
-	stop(thread: string): Promise<void>;
+	/** Stops the named turn or preparation, or withdraws the named waiting inputs. */
+	stop(thread: string, target: StopTarget): Promise<void>;
 	/** Gives the person's answer to the exact request they were shown. */
 	answer(thread: string, request: string, answer: JsonValue): Promise<void>;
 	/** What fills the thread's window: the tokens its next request takes, and each part's share of them. */
@@ -172,7 +173,7 @@ export function createClient(options: ClientOptions): Client {
 			(await connection.callOpen("threads.deliver", { thread, content: [...content], key: options.randomUUID(), joins: "turn" })).delivery,
 		withdraw: async (thread, delivery) => (await connection.call("threads.withdraw", { thread, delivery })).withdrawn,
 		delete: (thread) => done(connection.call("threads.delete", { thread })),
-		stop: (thread) => done(connection.call("threads.stop", { thread })),
+		stop: (thread, target) => done(connection.call("threads.stop", { thread, target })),
 		answer: (thread, request, answer) => done(connection.call("threads.answer", { thread, request, answer })),
 		context: (thread) => connection.call("threads.context", { thread }),
 		compact: (thread) => done(connection.call("threads.compact", { thread })),

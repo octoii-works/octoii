@@ -6,6 +6,7 @@
 import { describe, expect, it } from "bun:test";
 import type { Listed } from "@octoii-works/octoii-client";
 import { rowsOf, steadyRows, type TimelineRow } from "../src/core/rows.ts";
+import { stopTargetOf } from "../src/core/threads.ts";
 import type { CallLine, Said, TimelineItem, TimelineTurn } from "../src/core/timeline.ts";
 
 const said = (key: string, text: string): Said => ({ key, delivery: `d-${key}`, at: 0, from: undefined, text, attachments: [] });
@@ -151,6 +152,33 @@ describe("the timeline's rows", () => {
 		expect(steadyRows(waitingRows("request-1"), held.byKey).rows[0]).toBe(held.rows[0]);
 		const [updated] = steadyRows(waitingRows("request-2"), held.byKey).rows;
 		expect(updated?.kind === "now" ? updated.now.waiting[0]?.status.asks[0]?.id : undefined).toBe("request-2");
+	});
+
+	it("refreshes the background sub-thread when the stop target changes at the same start time", () => {
+		const backgroundRows = (status: Listed["status"]): readonly TimelineRow[] => {
+			const thread: Listed = { id: "sub-thread", config: { title: "Check the files" }, marks: { pinned: false, archived: false }, status };
+			return rowsOf([{ kind: "now", key: "now", now: { waiting: [], terminals: [], threads: [thread] } }]);
+		};
+		const current: Listed["status"] = { turn: "running", turn_id: "old-turn", began_at: 1_000, inbox: [], asks: [], compacting: false };
+		const original = steadyRows(backgroundRows(current), new Map());
+		expect(steadyRows(backgroundRows({ ...current }), original.byKey).rows[0]).toBe(original.rows[0]);
+		const next = steadyRows(backgroundRows({ ...current, turn_id: "new-turn" }), original.byKey);
+		const [changed] = next.rows;
+		expect(stopTargetOf(changed?.kind === "now" ? changed.now.threads[0]?.status : undefined)).toEqual({ kind: "turn", id: "new-turn" });
+
+		const queued = (id: string): Listed["status"] => ({
+			turn: "created",
+			began_at: 1_000,
+			inbox: [[id, { type: "input", actor: "person", content: [] }]],
+			asks: [],
+			compacting: false,
+		});
+		const waiting = steadyRows(backgroundRows(queued("first-delivery")), next.byKey);
+		const [updated] = steadyRows(backgroundRows(queued("second-delivery")), waiting.byKey).rows;
+		expect(stopTargetOf(updated?.kind === "now" ? updated.now.threads[0]?.status : undefined)).toEqual({
+			kind: "queued",
+			deliveries: ["second-delivery"],
+		});
 	});
 
 	it("uses a useful label without timestamps and keeps failure details outside completed work", () => {

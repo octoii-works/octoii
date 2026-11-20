@@ -54,4 +54,5 @@ test("failed and cancelled states expose neither automatic adoption nor restart"
 	const cancelled = renderToStaticMarkup(<PreparationCard {...card} start={{ ...start, state: { state: "cancelled" } }} />);
 	expect(cancelled).not.toContain("<button");
 	expect(cancelled).toContain("This task will not run");
+	expect(cancelled).toContain("Saved task");
 });

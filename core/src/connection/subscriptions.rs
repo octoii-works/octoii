@@ -61,7 +61,7 @@ async fn thread_told(subscription: &Subscription, thread: &str, cursor: &mut Opt
         if told.as_ref() != Some(&listed.status) {
             sink.offer(&SiphonEvent::Status {
                 subscription: sink.id().to_owned(),
-                status: listed.status.clone(),
+                status: Box::new(listed.status.clone()),
             })?;
             told = Some(listed.status);
         }

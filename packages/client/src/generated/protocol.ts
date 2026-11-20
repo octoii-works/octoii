@@ -944,7 +944,7 @@ export type StartState = { "state": "pending" } | { "state": "failed", reason: s
 export type StartWorkspace = { workspace: string, project: string | null, };
 
 /**
- * How a thread stands.
+ * How a thread stands. The active turn's identity is recorded when the main process starts the turn.
  */
 export type Status = { 
 /**
@@ -962,7 +962,17 @@ compacting: boolean,
 /**
  * When it goes on, where the person asked it to at a time and it has not gone on since.
  */
-resuming_at?: number | null, };
+resuming_at?: number | null, turn_id?: string, };
+
+/**
+ * The work a stop command was issued for, as it appeared to the caller.
+ */
+export type StopTarget = { "kind": "turn", id: string, } | { "kind": "preparation", token: string, } | { "kind": "queued", deliveries: Array<string>, };
+
+/**
+ * A stop of the specified work, as its thread showed it to the caller.
+ */
+export type StopThread = { thread: string, target: StopTarget, };
 
 /**
  * What streams of a reply as it is written, as the thread's followers are told it: an item begun at its place in the
@@ -1156,7 +1166,7 @@ export type Methods = {
   'threads.mark': { params: MarkThread; result: Nothing };
   'threads.deliver': { params: Deliver; result: Delivered };
   'threads.withdraw': { params: Withdraw; result: Withdrawn };
-  'threads.stop': { params: OfThread; result: Nothing };
+  'threads.stop': { params: StopThread; result: Nothing };
   'threads.delete': { params: OfThread; result: Nothing };
   'threads.answer': { params: AnswerThread; result: Nothing };
   'threads.read': { params: ReadThread; result: ThreadRead };

@@ -6,24 +6,23 @@
  * and a cross that takes it back while it waits.
  */
 import type { ReactNode } from "react";
-import type { Inbound, InputContent } from "@octoii-works/octoii-client";
+import type { Conversation, InputContent } from "@octoii-works/octoii-client";
 import { useClient } from "@octoii-works/octoii-client/react";
 import { CornerDownRight, Pencil, X } from "lucide-react";
 import { namesAsWords } from "../../core/links.ts";
-import { inputText, threadOfActor } from "../../core/timeline.ts";
+import { queuedInputsOf } from "../../core/inbox.ts";
+import { inputText } from "../../core/timeline.ts";
 import { useDraft } from "../state/draft.ts";
 import { failed } from "../state/notices.ts";
 
 /** The person's messages waiting in `thread`'s inbox — not what a thread delivered, which is not theirs to take back; nothing where none waits. */
-export function Queued(props: { readonly thread: string; readonly inbox: readonly (readonly [string, Inbound])[] }): ReactNode {
-	const queued = props.inbox.flatMap(([id, inbound]) =>
-		inbound.type === "input" && threadOfActor(inbound.actor) === undefined ? [{ id, content: inbound.content, nextTurn: inbound.joins === "turn" }] : [],
-	);
+export function Queued(props: { readonly thread: string; readonly inbox: Conversation["inbox"] }): ReactNode {
+	const queued = queuedInputsOf(props.inbox);
 	if (queued.length === 0) return null;
 	return (
 		<div className="mx-3 mb-[-1px] flex flex-col gap-0.5 rounded-t-lg border border-b-0 border-border bg-card px-2 py-1.5">
-			{queued.map((input) => (
-				<QueuedRow key={input.id} thread={props.thread} id={input.id} content={input.content} nextTurn={input.nextTurn} />
+			{queued.map(({ id, input }) => (
+				<QueuedRow key={id} thread={props.thread} id={id} content={input.content} nextTurn={input.joins === "turn"} />
 			))}
 		</div>
 	);
