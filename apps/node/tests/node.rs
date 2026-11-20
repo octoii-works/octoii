@@ -10,7 +10,7 @@ use bytes::Bytes;
 use futures_util::{SinkExt as _, StreamExt as _};
 use http_body_util::{BodyExt as _, Full};
 use hyper::Method;
-use octoii::protocol::{CALL_PATH, SUBPROTOCOL, WATCH_PATH};
+use octoii::protocol::{CALL_PATH, SESSION_PATH, SUBPROTOCOL, WATCH_PATH};
 use octoii_node::control;
 use octoii_node::home::Home;
 use octoii_node::serve::{Served, serve_until};
@@ -128,6 +128,7 @@ async fn a_browser_and_a_program_reach_the_node_by_the_sessions_its_commands_mak
         "a page of another origin is refused its socket"
     );
     assert_eq!(called(&address, &elsewhere, "threads.list", json!({})).await.0, 403);
+    assert_eq!(request(&address, Method::GET, SESSION_PATH, &elsewhere, Value::Null).await.0, 403);
 
     let asked = json!({ "label": "script", "scopes": ["threads.read"] });
     let token = control::ask(&socket, Method::POST, "/tokens", Some(asked)).await.expect("a token");
@@ -136,6 +137,10 @@ async fn a_browser_and_a_program_reach_the_node_by_the_sessions_its_commands_mak
     let mut independent = opened(&address, &program).await.expect("opened");
     let welcome = event(&mut independent).await;
     assert_eq!(welcome["scopes"], json!(["threads.read"]));
+    let (checked, headers, body) = request(&address, Method::GET, SESSION_PATH, &program, Value::Null).await;
+    assert_eq!(checked, 204);
+    assert_eq!(headers["cache-control"], "no-store");
+    assert!(body.is_empty());
 
     let download = verify_thread(&address, &browser, &program, &mut watch).await;
     let mut second_watch = opened(&address, &browser).await.expect("opened");
@@ -156,6 +161,7 @@ async fn a_browser_and_a_program_reach_the_node_by_the_sessions_its_commands_mak
         .expect("the watch closes");
     assert!(matches!(closed, Some(Ok(Message::Close(_))) | None));
     assert!(opened(&address, &browser).await.is_err(), "a revoked session holds nothing");
+    assert_eq!(request(&address, Method::GET, SESSION_PATH, &browser, Value::Null).await.0, 401);
     assert_eq!(called(&address, &browser, "threads.list", json!({})).await.0, 401);
     assert_eq!(request(&address, Method::GET, &download, &browser, Value::Null).await.0, 401);
     assert_eq!(request(&address, Method::GET, &download, &program, Value::Null).await.0, 200);

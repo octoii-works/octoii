@@ -9,7 +9,7 @@ import { RECONNECT_MAX_MS, RECONNECT_MIN_MS } from "./constants.ts";
 import { ClientError, clientError } from "./errors.ts";
 import { Value } from "./followed.ts";
 import type { ClientOptions, WebSocketLike } from "./options.ts";
-import { type Event, type ExtensionListed, type Machine, PROTOCOL, type Received, type Scope, type WatchMethods } from "./protocol.ts";
+import { type Event, type ExtensionListed, type Machine, PROTOCOL, type Received, type Scope, SESSION_PATH, type WatchMethods } from "./protocol.ts";
 
 /** Where the connection stands. */
 export type ConnectionStatus =
@@ -38,6 +38,7 @@ export class Connection {
 	readonly #pending = new Map<string, Settle>();
 	#socket: WebSocketLike | undefined;
 	#cancelWait: (() => void) | undefined;
+	#checkingSession = false;
 	/** The drops since a connection last opened: the next wait doubles with each. */
 	#drops = 0;
 	#counter = 0;
@@ -122,7 +123,8 @@ export class Connection {
 		if (this.#socket !== socket) return;
 		this.#socket = undefined;
 		this.#failPending(clientError("connection-lost", "The connection to the node dropped before the answer came."));
-		if (this.status.value.status === "stopped") return;
+		const previous = this.status.value.status;
+		if (previous === "stopped") return;
 		const wait = Math.min(RECONNECT_MAX_MS, RECONNECT_MIN_MS * 2 ** this.#drops);
 		this.#drops += 1;
 		this.status.set({ status: "waiting", until: this.#options.clock.now() + wait });
@@ -130,6 +132,20 @@ export class Connection {
 			this.#cancelWait = undefined;
 			this.#connect();
 		}, wait);
+		if (previous === "connecting" && !this.#checkingSession) void this.#checkSession();
+	}
+
+	/** A browser may report a refused WebSocket handshake as an ordinary close. */
+	async #checkSession(): Promise<void> {
+		this.#checkingSession = true;
+		try {
+			const answer = await this.#options.send({ method: "GET", path: SESSION_PATH });
+			if (answer.status === 401) this.revoke();
+		} catch {
+			// The reconnect timer handles an unreachable node.
+		} finally {
+			this.#checkingSession = false;
+		}
 	}
 
 	#stop(error: ClientError): void {

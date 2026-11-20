@@ -6,6 +6,7 @@
 | `octoii-works/octoii-ai` | Public `octoii-ai` crate for the model protocol, providers and transport |
 | `octoii-works/octoii-siphon-lib` | Public Rust SDK and platform-specific Siphon binaries |
 | `devxiyang/octoii-siphon` | Private Siphon implementation and independent Beak workspace |
+| `devxiyang/octoii-mobile` | Private iPhone client prototype and its build |
 
 Cargo resolves the public crates using `Cargo.lock`. The product takes its native Siphon binary from the
 SDK release of the same version. The installer selects the Rust host target and verifies the archive's ABI,

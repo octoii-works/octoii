@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { CALL_PATH, createClient, type Command } from "../../src/index.ts";
+import { CALL_PATH, createClient, type Command, SESSION_PATH } from "../../src/index.ts";
 
 test("a keyed delivery retries the same command after a lost HTTP reply", async () => {
 	const sent: Command[] = [];
@@ -29,6 +29,54 @@ test("a keyed delivery retries the same command after a lost HTTP reply", async 
 		expect(sent).toHaveLength(2);
 		expect(sent[0]).toEqual(sent[1]);
 		expect(sent[1]?.params).toMatchObject({ key: "same-key" });
+	} finally {
+		client.close();
+	}
+});
+
+test.each([401, 204])("a refused watch checks the session before deciding whether to keep reconnecting (%s)", async (status) => {
+	let dropped = (): void => {
+		throw new Error("missing close listener");
+	};
+	let cancelled = false;
+	const response = Promise.withResolvers<void>();
+	const client = createClient({
+		open: () => ({
+			binaryType: "arraybuffer",
+			send: () => undefined,
+			close: () => undefined,
+			addEventListener: (type, listener) => {
+				if (type === "close") dropped = () => listener({ data: undefined });
+			},
+		}),
+		send: async (request) => {
+			expect(request).toEqual({ method: "GET", path: SESSION_PATH });
+			await response.promise;
+			return { status, contentType: undefined, bytes: new Uint8Array() };
+		},
+		randomUUID: () => "unused",
+		clock: {
+			now: () => 0,
+			setTimer: () => () => {
+				cancelled = true;
+			},
+		},
+		report: (error) => {
+			throw error;
+		},
+	});
+	try {
+		dropped();
+		expect(client.status.value.status).toBe("waiting");
+		response.resolve();
+		await new Promise<void>((resolve) => setTimeout(resolve, 0));
+		if (status === 401) {
+			expect(client.status.value).toMatchObject({ status: "stopped", error: { code: "unauthorized" } });
+			expect(cancelled).toBe(true);
+		} else {
+			expect(client.status.value.status).toBe("waiting");
+			expect(cancelled).toBe(false);
+		}
 	} finally {
 		client.close();
 	}

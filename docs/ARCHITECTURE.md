@@ -49,6 +49,8 @@ its own state for node status and access management.
   commit sequence. Reconnecting or falling behind starts from a fresh view. Older entries are available via
   `threads.read`. Live model output follows its request identity and may reset.
 - Device revocation ends active watches. Each new HTTP request, including an attachment read, checks the session.
+  When the socket closes before its welcome, the client checks `GET /api/v1/session`. A valid session returns
+  `204` and a revoked or expired session returns `401`. The response is empty and sets `Cache-Control: no-store`.
   Approval and stop commands carry the exact identity shown to the user. The client retries only commands that
   carry a key the node deduplicates.
 

@@ -9,7 +9,9 @@ use std::fmt::Write as _;
 
 use ts_rs::{Config, TS, TypeVisitor};
 
-use crate::protocol::{CALL_PATH, ConnectionEvent, Error, Machine, SUBPROTOCOL, Scope, Set, Subscribed, Unsubscribe, WATCH_PATH};
+use crate::protocol::{
+    CALL_PATH, ConnectionEvent, Error, Machine, SESSION_PATH, SUBPROTOCOL, Scope, Set, Subscribed, Unsubscribe, WATCH_PATH,
+};
 
 /// What leads the module.
 const HEAD: &str = "// Octoii's protocol, generated from its Rust types — not to be edited by hand.\n";
@@ -99,7 +101,7 @@ pub fn typescript(sets: &[Set]) -> String {
     }
     let declared: Vec<String> = declarations.out.into_values().map(|(_, declared)| declared).collect();
     format!(
-        "{HEAD}\nexport const CALL_PATH = {CALL_PATH:?};\nexport const WATCH_PATH = {WATCH_PATH:?};\nexport const PROTOCOL = {SUBPROTOCOL:?};\n\n{}\n\n/** What a client subscribes to. */\nexport type Topic = {};\n\n/** An event: the connection's, or a subscription's. */\nexport type Event = {};\n\n/** HTTP methods and their parameters and results. */\nexport type Methods = {{\n{methods}}};\n{MESSAGES}",
+        "{HEAD}\nexport const CALL_PATH = {CALL_PATH:?};\nexport const SESSION_PATH = {SESSION_PATH:?};\nexport const WATCH_PATH = {WATCH_PATH:?};\nexport const PROTOCOL = {SUBPROTOCOL:?};\n\n{}\n\n/** What a client subscribes to. */\nexport type Topic = {};\n\n/** An event: the connection's, or a subscription's. */\nexport type Event = {};\n\n/** HTTP methods and their parameters and results. */\nexport type Methods = {{\n{methods}}};\n{MESSAGES}",
         declared.join("\n\n"),
         topics.join(" | "),
         events.join(" | "),

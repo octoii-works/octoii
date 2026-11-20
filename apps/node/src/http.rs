@@ -23,7 +23,7 @@ use axum::routing::{MethodFilter, get, on, post};
 use futures_util::{Sink, SinkExt as _, Stream, StreamExt as _};
 use octoii::Octoii;
 use octoii::connection::{Access as Client, OUTGOING_AHEAD, Outgoing, serve};
-use octoii::protocol::{CALL_PATH, ConnectionEvent, Machine, SUBPROTOCOL, WATCH_PATH};
+use octoii::protocol::{CALL_PATH, ConnectionEvent, Machine, SESSION_PATH, SUBPROTOCOL, WATCH_PATH};
 use octoii_tunnel::{OnConnect, Remote};
 use serde::Deserialize;
 use tokio::sync::mpsc;
@@ -65,6 +65,7 @@ pub fn router(node: Node) -> Router {
     };
     let mut router = Router::new()
         .route(CALL_PATH, post(commands::called))
+        .route(SESSION_PATH, get(check_session))
         .route(WATCH_PATH, get(socket).merge(on(MethodFilter::CONNECT, tunnel_socket)))
         .route("/pair", pairing)
         .route(
@@ -133,6 +134,15 @@ pub(crate) fn session(node: &Node, headers: &HeaderMap, remote: Option<&Remote>)
         Ok(None) => Err(Denied(StatusCode::UNAUTHORIZED, "no such session".into())),
         Err(error) => Err(Denied(StatusCode::INTERNAL_SERVER_ERROR, error.to_string())),
     }
+}
+
+/// Lets a client distinguish an ended session from a failed WebSocket handshake.
+async fn check_session(State(node): State<Node>, headers: HeaderMap, remote: Option<Extension<Remote>>) -> impl IntoResponse {
+    let status = match session(&node, &headers, remote.as_deref()) {
+        Ok(_) => StatusCode::NO_CONTENT,
+        Err(denied) => denied.0,
+    };
+    (status, [(header::CACHE_CONTROL, "no-store")])
 }
 
 /// Whether a request of `headers` asks for the protocol's version among the subprotocols it offers.

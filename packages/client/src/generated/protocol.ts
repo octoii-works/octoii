@@ -1,6 +1,7 @@
 // Octoii's protocol, generated from its Rust types — not to be edited by hand.
 
 export const CALL_PATH = "/api/v1/call";
+export const SESSION_PATH = "/api/v1/session";
 export const WATCH_PATH = "/api/v1/watch";
 export const PROTOCOL = "octoii.watch.1";
 

@@ -14,6 +14,7 @@ pub use typescript::{Declarations, typescript};
 pub use {serde, serde_json, ts_rs};
 
 pub const CALL_PATH: &str = "/api/v1/call";
+pub const SESSION_PATH: &str = "/api/v1/session";
 pub const WATCH_PATH: &str = "/api/v1/watch";
 pub const SUBPROTOCOL: &str = "octoii.watch.1";
 

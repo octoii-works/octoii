@@ -47,6 +47,7 @@ Node 拥有执行和持久状态。项目是节点内可选的任务分组，Thr
 - A3 遇到宿主请求重开后的 `Interrupted`，由仍处于准备状态的 Thread 发起新的核查请求。核查使用原操作身份和绝对路径。节点遭强制终止后，目录暂时为空无法证明旧 Git 进程已经结束。效果或归属无法确认时，向用户显示现场及恢复选项。正常关闭重开与强制终止分别验收，见 [Siphon 请求](SIPHON_REQUESTS.md#stop-close-and-reopen)。
 - A4 在同一批替换 Node 路由、生成协议、TypeScript 调用方和桌面验收脚本。新协议的订阅测试覆盖快照与订阅交界、队列落后、临时流重置和会话撤销。用新 Home 和新的产品协议执行切换验收。
 - A5 用当前项目同时定位新建页、草稿和待恢复请求。Node 绑定实际工作目录并持有准备进度，客户端按订阅显示。Thread details 在空间足够时避让对话，空间不足时从工具栏按需打开。终端只能在 Node 返回的可用目录启动。
+- A6 先用私有 iPhone 原型复用当前 Web 客户端和端到端隧道。WebSocket 在 welcome 前关闭时，客户端通过会话状态区分撤销与网络失败。真机验收使用蜂窝网络，同一 Node 保留原任务、请求和结果。
 
 ## 实施记录
 
@@ -60,3 +61,4 @@ Node 拥有执行和持久状态。项目是节点内可选的任务分组，Thr
 - A3b 已让隔离启动只接收源路径和可选的固定基准。Node 仅首次受理才解析 Git，按 Thread ID 分配 checkout 和分支。工作目录不可用时，历史和文件可继续读取，下一轮输入留在队列。真实 Node 已验证并发去重、源仓库不可用时重放和临时目录清理。Rust 280 项通过、2 项跳过，9 项真实 Node 客户端测试、严格 Clippy 和 `bun run check` 通过。
 - A4 已将命令与查询迁到 `POST /api/v1/call`，订阅和实时流走 `/api/v1/watch`。Thread 的历史窗口、状态和审批来自同一个提交点。隔离 Node 验证了队列落后、断线恢复、双端审批竞争、HTTP 回执丢失、设备撤销和附件权限。Rust 280 项通过、2 项跳过，9 项真实 Node 客户端测试、桌面审批脚本、Web 生产构建、严格 Clippy 和 `bun run check` 通过。
 - A5 已把项目切换收进新建页的一个入口，权限模式归到 Composer，独立目录保留在 Git 项目菜单里。目录准备完成后，对话恢复，实际工作路径可从 Thread details 查看。macOS Electron 使用隔离 Node、本地模拟模型和真实 Git 仓库，验证了附件发送、提问和工具审批、详情浮窗让位、独立目录内写文件，以及丢失回执后重载并打开原 Thread。Rust 280 项通过、2 项跳过，严格 Clippy 和 `bun run check` 通过。
+- A6 连接原型采用 SwiftUI 和 WKWebView，保存在独立本地仓库，对应 GitHub 私库 `devxiyang/octoii-mobile`。电脑端通过 HTTP 提交任务，iPhone 18 Pro（iOS 27.2 模拟器）使用当前 WebKit/WASM 客户端通过本机 iroh 中继配对，在同一 Thread 作答。电脑端读回了结果，关闭移动应用再撤销会话后，重新打开回到了配对页。已通过 iPhone 设备目标编译、Rust 全量测试和 `bun run check`。签名安装、iPhone 真机 Wi-Fi 至蜂窝网络切换及 Electron 到真机的接续是 A6 的剩余验收。

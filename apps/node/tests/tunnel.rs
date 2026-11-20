@@ -7,7 +7,7 @@ use bytes::Bytes;
 use futures_util::StreamExt as _;
 use net::test_utils::run_relay_server;
 use octoii::access;
-use octoii::protocol::{CALL_PATH, Machine, SUBPROTOCOL, WATCH_PATH};
+use octoii::protocol::{CALL_PATH, Machine, SESSION_PATH, SUBPROTOCOL, WATCH_PATH};
 use octoii_node::home::Home;
 use octoii_node::http::{self, Node};
 use octoii_tunnel::{CaTlsConfig, EndpointAddr, Message, PeerError, SecretKey, Tunnel};
@@ -36,6 +36,14 @@ async fn welcomed(peer: &octoii_tunnel::Peer, bearer: Option<&str>) -> Result<Va
         panic!("a welcome")
     };
     Ok(serde_json::from_str(&text).expect("JSON"))
+}
+
+async fn session_status(peer: &octoii_tunnel::Peer, credential: &str) -> u16 {
+    let request = Request::get(SESSION_PATH)
+        .header("authorization", format!("Bearer {credential}"))
+        .body(Bytes::new())
+        .unwrap();
+    peer.request(request).await.unwrap().status().as_u16()
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -99,6 +107,7 @@ async fn a_device_pairs_through_the_tunnel_and_speaks_the_protocol_by_its_bearer
     let session = access.held(credential).expect("read").expect("its session");
     assert_eq!(session.holder, Some(access::Holder::Bearer));
     assert_eq!(welcome["session"].as_str(), Some(session.id.as_str()));
+    assert_eq!(session_status(&peer, credential).await, 204);
 
     let call = Request::post(CALL_PATH)
         .header("authorization", format!("Bearer {credential}"))
@@ -126,6 +135,7 @@ async fn a_device_pairs_through_the_tunnel_and_speaks_the_protocol_by_its_bearer
     };
     assert_eq!(serde_json::from_str::<Value>(&revoked).unwrap(), json!({ "event": "revoked" }));
     assert_eq!(peer.request(call).await.unwrap().status(), 401);
+    assert_eq!(session_status(&peer, credential).await, 401);
     device.close().await;
     machine.close().await;
     siphon.close().await;
