@@ -363,7 +363,10 @@ export function serveBrowser(window: BrowserWindow, host: () => BrowserHost | un
 		pages.bindProfile(target.node);
 		const link = new WebSocket(`ws+unix://${target.socket}:/browser`, "octoii.desktop-browser.1");
 		socket = link;
-		link.on("open", announce);
+		link.on("open", () => {
+			announce();
+			pages.publish();
+		});
 		link.on("message", (data: Buffer, binary) => {
 			if (binary || socket !== link) return;
 			try {

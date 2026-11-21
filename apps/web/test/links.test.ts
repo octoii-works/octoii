@@ -1,6 +1,6 @@
 /** Links in a message: what one points at, the link a mention writes, and a line with links by their words. */
 import { describe, expect, it } from "bun:test";
-import { developmentAddress, namesAsWords, linkTo, targetOf } from "../src/core/links.ts";
+import { developmentAddress, namesAsWords, linkTo, systemBrowserAddress, targetOf } from "../src/core/links.ts";
 
 describe("a link", () => {
 	it("recognizes development links without treating lookalike hosts or credentials as local", () => {
@@ -10,6 +10,21 @@ describe("a link", () => {
 		expect(developmentAddress("http://localhost.example.test:5173")).toBeUndefined();
 		expect(developmentAddress("http://name:password@localhost:5173")).toBeUndefined();
 		expect(developmentAddress("ftp://localhost:5173")).toBeUndefined();
+	});
+	it("opens loopback in the system browser only for a verified local node", () => {
+		for (const address of [
+			"http://localhost:5173",
+			"http://local.app.localhost.:8080",
+			"http://127.1:3000",
+			"http://[::1]:3000",
+			"http://[::ffff:127.0.0.1]:3000",
+		]) {
+			expect(systemBrowserAddress(address, false)).toBeUndefined();
+			expect(systemBrowserAddress(address, true)?.href).toBe(new URL(address).href);
+		}
+		expect(systemBrowserAddress("https://example.test/preview", false)?.href).toBe("https://example.test/preview");
+		expect(systemBrowserAddress("file:///private/tmp/page.html", true)).toBeUndefined();
+		expect(systemBrowserAddress("https://person:secret@example.test", true)).toBeUndefined();
 	});
 	it("points at a path of the machine — from the thread's folder, whole, or a file address — its line let go", () => {
 		expect(targetOf("src/main.zig")).toEqual({ path: "src/main.zig" });

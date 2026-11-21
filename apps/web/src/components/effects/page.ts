@@ -25,7 +25,7 @@ const LINE_PIXELS = 16;
 export type ElementSelection = Pick<PickElement, "x" | "y" | "expected_url" | "view">;
 export type PageInteraction = { readonly mode: PageMode; readonly select: (selection: ElementSelection) => void; readonly cancel: () => void };
 type Options = { readonly page: PageListed; readonly interaction: PageInteraction; readonly room: ViewportSize | undefined };
-type Input = { readonly update: () => void; readonly stop: () => void };
+type Input = { readonly update: () => void; readonly stop: () => void; readonly focus: () => void };
 
 /** The stable ref mounts a page once; changing browse/pick only updates its local input routing. */
 export function usePageView(
@@ -36,6 +36,7 @@ export function usePageView(
 ): {
 	readonly mount: (element: HTMLDivElement | null) => (() => void) | undefined;
 	readonly ready: boolean;
+	readonly focus: () => void;
 } {
 	const client = useClient();
 	const id = page.id;
@@ -100,7 +101,7 @@ export function usePageView(
 		},
 		[client, id, presentation],
 	);
-	return { mount, ready: pickViewOf(shown, page.view) !== undefined };
+	return { mount, ready: pickViewOf(shown, page.view) !== undefined, focus: () => input.current?.focus() };
 }
 
 /** The size of `element`'s room as a page's view, none while it has no room. */
@@ -225,6 +226,7 @@ function takeInput(element: HTMLElement, surface: Surface, send: InputScope["sen
 	takeKeys(scope, cancelMove);
 	const updateText = takeText(scope);
 	return {
+		focus: () => surface.field.focus({ preventScroll: true }),
 		update: () => {
 			const mode = options().interaction.mode;
 			if (gate.mode === mode) return;

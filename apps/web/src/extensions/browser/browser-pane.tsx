@@ -12,32 +12,37 @@ import {
 	ArrowRight,
 	Braces,
 	Ellipsis,
+	ExternalLink,
 	Globe,
 	LoaderCircle,
 	MessageSquareWarning,
 	MonitorSmartphone,
 	MousePointer2,
 	RotateCw,
+	Search,
 	ZoomIn,
 	ZoomOut,
 } from "lucide-react";
 import { addressOf, shownAddress } from "../../core/browser.ts";
+import { systemBrowserAddress } from "../../core/links.ts";
+import { shortcutLabel } from "../../core/shortcuts.ts";
+import { FIND_SHORTCUT, useBrowserFind } from "../../components/effects/browser-find.ts";
 import { usePageView } from "../../components/effects/page.ts";
 import { useElementPicker } from "../../components/effects/element-pick.ts";
 import { useBrowserLayout } from "../../components/effects/browser-layout.ts";
 import { Button, IconButton } from "../../components/ui/button.tsx";
-import { Menu, MenuItem, MenuItemLabel, MenuPopup, MenuSeparator, MenuTrigger } from "../../components/ui/menu.tsx";
+import { Menu, MenuItem, MenuItemLabel, MenuPopup, MenuSeparator, MenuShortcut, MenuTrigger } from "../../components/ui/menu.tsx";
 import { failed } from "../../components/state/notices.ts";
 import { AnnotationEditor } from "./annotation.tsx";
-import { useDesktopPage } from "./desktop.ts";
+import { useDesktopPage, useLocalBrowserNode } from "./desktop.ts";
 import { BrowserDownloads, FileChooserBar } from "./files.tsx";
+import { FindBar } from "./find-bar.tsx";
 import { ViewportControls } from "./viewport-controls.tsx";
 import { ViewportSurface } from "./viewport-surface.tsx";
 
 /** The page `page`. */
 export function BrowserPane(props: { readonly thread: string; readonly page: PageListed; readonly onSent: (delivery: string) => void }): ReactNode {
 	const { page } = props;
-	const client = useClient();
 	const connected = useConnection().status === "open";
 	const picker = useElementPicker(props.thread, page);
 	const driving = page.control === "you";
@@ -49,11 +54,12 @@ export function BrowserPane(props: { readonly thread: string; readonly page: Pag
 	const canNavigate = connected && !disconnected && driving && !selecting;
 	const layout = useBrowserLayout(page, presentation, canNavigate);
 	const interaction = problem === undefined && (selecting || (canNavigate && !layout.saving)) ? picker : { ...picker, mode: "observe" as const };
-	const { mount, ready } = usePageView(page, interaction, presentation, layout.room.size);
+	const { mount, ready, focus } = usePageView(page, interaction, presentation, layout.room.size);
 	const canConfigure = layout.editable && !layout.saving;
 	const canPick = ready && !layout.saving && page.load.state === "ready" && page.dialog === undefined;
+	const find = useBrowserFind(canNavigate && page.load.state === "ready" && page.dialog === undefined ? desktop?.guest : undefined, page.url);
 	return (
-		<div className="flex min-h-0 flex-1 flex-col">
+		<div className="flex min-h-0 flex-1 flex-col" onKeyDownCapture={find.shortcut}>
 			<div className="flex h-control-lg shrink-0 items-center gap-0.5 border-b border-border px-2 text-xs">
 				<PageNavigation page={page} enabled={canNavigate} />
 				{layout.resizable ? (
@@ -89,9 +95,17 @@ export function BrowserPane(props: { readonly thread: string; readonly page: Pag
 					native={desktop !== undefined}
 					connected={connected}
 					editable={canConfigure}
+					onFind={find.open}
 					onZoom={layout.zoomPage}
 				/>
 			</div>
+			<FindBar
+				find={find}
+				onClose={() => {
+					find.close();
+					focus();
+				}}
+			/>
 			{layout.fixed ? (
 				<ViewportControls
 					size={page.viewport_size}
@@ -103,11 +117,26 @@ export function BrowserPane(props: { readonly thread: string; readonly page: Pag
 					onZoom={layout.setZoom}
 				/>
 			) : null}
-			{problem !== undefined || page.dialog === undefined ? null : (
+			<PagePrompts page={page} thread={props.thread} problem={problem} />
+			<ViewportSurface mountRoom={layout.room.mount} desktop={desktop} preview={layout.preview} hidden={problem !== undefined}>
+				<div ref={mount} className="pointer-events-auto absolute inset-0" />
+				<SelectionOverlay picker={picker} ready={ready} onSent={props.onSent} />
+			</ViewportSurface>
+		</div>
+	);
+}
+
+function PagePrompts({ page, thread, problem }: { readonly page: PageListed; readonly thread: string; readonly problem: Problem | undefined }): ReactNode {
+	const client = useClient();
+	if (problem !== undefined) return <PageProblem problem={problem} page={page} />;
+	const disabled = page.control !== "you";
+	return (
+		<>
+			{page.dialog === undefined ? null : (
 				<DialogBar
 					key={`${page.dialog.kind}:${page.dialog.message}`}
 					dialog={page.dialog}
-					disabled={!driving}
+					disabled={disabled}
 					onAnswer={(accept, text) =>
 						void client
 							.call("browser.dialog", { page: page.id, accept, ...(text === undefined ? {} : { text }) })
@@ -115,15 +144,8 @@ export function BrowserPane(props: { readonly thread: string; readonly page: Pag
 					}
 				/>
 			)}
-			{problem === undefined && page.chooser ? (
-				<FileChooserBar key={page.chooser.id} page={page.id} thread={props.thread} chooser={page.chooser} disabled={!driving} />
-			) : null}
-			{problem === undefined ? null : <PageProblem problem={problem} page={page} />}
-			<ViewportSurface mountRoom={layout.room.mount} desktop={desktop} preview={layout.preview} hidden={problem !== undefined}>
-				<div ref={mount} className="pointer-events-auto absolute inset-0" />
-				<SelectionOverlay picker={picker} ready={ready} onSent={props.onSent} />
-			</ViewportSurface>
-		</div>
+			{page.chooser ? <FileChooserBar key={page.chooser.id} page={page.id} thread={thread} chooser={page.chooser} disabled={disabled} /> : null}
+		</>
 	);
 }
 
@@ -246,9 +268,11 @@ function BrowserOptions(props: {
 	readonly native: boolean;
 	readonly connected: boolean;
 	readonly editable: boolean;
+	readonly onFind: (() => void) | undefined;
 	readonly onZoom: (percent: number) => void;
 }): ReactNode {
 	const { page, native, editable, onZoom } = props;
+	const external = systemBrowserAddress(page.url, useLocalBrowserNode());
 	const inspected = page.dev_tools === "open";
 	const larger = PAGE_ZOOM.find((value) => value > page.zoom);
 	const smaller = PAGE_ZOOM.findLast((value) => value < page.zoom);
@@ -268,6 +292,19 @@ function BrowserOptions(props: {
 				<Ellipsis className="size-3.5" />
 			</MenuTrigger>
 			<MenuPopup align="end" className="w-48">
+				{native ? (
+					<MenuItem disabled={props.onFind === undefined} onClick={props.onFind} aria-keyshortcuts="Meta+F Control+F">
+						<Search />
+						<MenuItemLabel>Find in page</MenuItemLabel>
+						<MenuShortcut>{shortcutLabel(FIND_SHORTCUT)}</MenuShortcut>
+					</MenuItem>
+				) : null}
+				{external ? (
+					<MenuItem onClick={() => window.open(external.href, "_blank", "noopener,noreferrer")}>
+						<ExternalLink />
+						<MenuItemLabel>Open in system browser</MenuItemLabel>
+					</MenuItem>
+				) : null}
 				{props.connected && page.downloads.length > 0 ? <BrowserDownloads page={page.id} thread={props.thread} downloads={page.downloads} /> : null}
 				<MenuItem
 					disabled={!editable || larger === undefined}

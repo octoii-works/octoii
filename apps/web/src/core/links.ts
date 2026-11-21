@@ -28,14 +28,37 @@ export function targetOf(href: string): LinkTarget {
 
 /** A development URL whose loopback address belongs to the node running the thread. */
 export function developmentAddress(href: string): URL | undefined {
+	const url = webAddress(href);
+	return url && loopback(url.hostname) ? url : undefined;
+}
+
+/** A page the viewer can open on this device. Loopback belongs to the page's node. */
+export function systemBrowserAddress(href: string, localNode: boolean): URL | undefined {
+	const url = webAddress(href);
+	if (!url || (!localNode && loopback(url.hostname))) return undefined;
+	return url;
+}
+
+function webAddress(href: string): URL | undefined {
 	try {
 		const url = new URL(href);
 		if (url.protocol !== "http:" && url.protocol !== "https:") return undefined;
 		if (url.username !== "" || url.password !== "") return undefined;
-		return url.hostname === "localhost" || url.hostname === "[::1]" || /^127(?:\.\d+){3}$/.test(url.hostname) ? url : undefined;
+		return url;
 	} catch {
 		return undefined;
 	}
+}
+
+function loopback(host: string): boolean {
+	const name = host.replace(/\.$/, "");
+	return (
+		name === "localhost" ||
+		name.endsWith(".localhost") ||
+		name === "[::1]" ||
+		/^127(?:\.\d+){3}$/.test(name) ||
+		/^\[::ffff:7f[0-9a-f]{2}:[0-9a-f]{1,4}\]$/.test(name)
+	);
 }
 
 /** The path `named` names, and the lines after it, where it names any: `#L12`, `#L12-L20`, `:12` or `:12:4`. */

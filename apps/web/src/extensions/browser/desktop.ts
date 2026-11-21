@@ -2,6 +2,7 @@
 import { type ReactNode, useSyncExternalStore } from "react";
 import { routeOf } from "../../core/route.ts";
 import { pageKey, showSurface } from "../../components/state/panel.ts";
+import type { FindablePage } from "../../components/effects/browser-find.ts";
 
 type Hosted = {
 	readonly page: string;
@@ -12,7 +13,12 @@ type Hosted = {
 	readonly height: number;
 };
 type Portal = (children: ReactNode, host: HTMLDivElement) => ReactNode;
-export type DesktopPage = { readonly host: HTMLDivElement; readonly park: () => void; readonly render: (children: ReactNode) => ReactNode };
+export type DesktopPage = {
+	readonly host: HTMLDivElement;
+	readonly guest: FindablePage;
+	readonly park: () => void;
+	readonly render: (children: ReactNode) => ReactNode;
+};
 
 declare global {
 	interface Window {
@@ -26,6 +32,7 @@ declare global {
 
 const guests = new Map<string, DesktopPage>();
 const listeners = new Set<() => void>();
+let localNode = false;
 
 function subscribe(listener: () => void): () => void {
 	listeners.add(listener);
@@ -36,11 +43,17 @@ export function useDesktopPage(page: string): DesktopPage | undefined {
 	return useSyncExternalStore(subscribe, () => guests.get(page));
 }
 
+/** A snapshot is sent only after the desktop verifies the node for this window. */
+export function useLocalBrowserNode(): boolean {
+	return useSyncExternalStore(subscribe, () => localNode);
+}
+
 function mount(page: Hosted, portal: Portal): DesktopPage {
 	const host = document.createElement("div");
 	host.className = "pointer-events-none fixed z-30 isolate overflow-hidden bg-white";
 	host.dataset["desktopPage"] = page.page;
-	const webview = document.createElement("webview");
+	// SAFETY: This mount runs only for pages announced by the Electron desktop bridge, which provides the webview API.
+	const webview = document.createElement("webview") as FindablePage;
 	webview.className = "pointer-events-none absolute inset-0 size-full";
 	webview.setAttribute("partition", page.partition);
 	webview.setAttribute("allowpopups", "");
@@ -58,12 +71,13 @@ function mount(page: Hosted, portal: Portal): DesktopPage {
 	};
 	park();
 	document.body.append(host);
-	return { host, park, render: (children) => portal(children, host) };
+	return { host, guest: webview, park, render: (children) => portal(children, host) };
 }
 
 /** Starts the desktop's native pages before the workspace asks for their display slots. */
 export function startDesktopPages(portal: Portal): void {
 	window.octoiiBrowser?.pages((pages) => {
+		localNode = true;
 		const kept = new Set(pages.map((page) => page.page));
 		for (const [id, guest] of guests) {
 			if (kept.has(id)) continue;
