@@ -16,10 +16,12 @@ import {
 	Globe,
 	LoaderCircle,
 	MessageSquareWarning,
+	Monitor,
 	MonitorSmartphone,
 	MousePointer2,
 	RotateCw,
 	Search,
+	Server,
 	ZoomIn,
 	ZoomOut,
 } from "lucide-react";
@@ -32,6 +34,7 @@ import { useElementPicker } from "../../components/effects/element-pick.ts";
 import { useBrowserLayout } from "../../components/effects/browser-layout.ts";
 import { Button, IconButton } from "../../components/ui/button.tsx";
 import { Menu, MenuItem, MenuItemLabel, MenuPopup, MenuSeparator, MenuShortcut, MenuTrigger } from "../../components/ui/menu.tsx";
+import { Tip } from "../../components/ui/tooltip.tsx";
 import { failed } from "../../components/state/notices.ts";
 import { AnnotationEditor } from "./annotation.tsx";
 import { useDesktopPage, useLocalBrowserNode } from "./desktop.ts";
@@ -83,12 +86,7 @@ export function BrowserPane(props: { readonly thread: string; readonly page: Pag
 					{picker.mode === "capturing" ? <LoaderCircle className="size-3.5 animate-spin" /> : <MousePointer2 className="size-3.5" />}
 				</IconButton>
 				<PageControlButton page={page} enabled={connected && !disconnected && !selecting && ready} />
-				<span
-					className="shrink-0 px-1 text-xs text-muted-foreground"
-					title={page.host === "desktop" ? "Uses the desktop’s browser session" : "Uses the node’s browser session"}
-				>
-					{page.host === "desktop" ? "Desktop" : "Node"}
-				</span>
+				<PageHostIndicator host={page.host} />
 				<BrowserOptions
 					thread={props.thread}
 					page={page}
@@ -123,6 +121,24 @@ export function BrowserPane(props: { readonly thread: string; readonly page: Pag
 				<SelectionOverlay picker={picker} ready={ready} onSent={props.onSent} />
 			</ViewportSurface>
 		</div>
+	);
+}
+
+function PageHostIndicator({ host }: { readonly host: PageListed["host"] }): ReactNode {
+	const desktop = host === "desktop";
+	const Icon = desktop ? Monitor : Server;
+	const label = desktop ? "Desktop browser session" : "Node browser session";
+	return (
+		<Tip label={label}>
+			<span
+				role="img"
+				aria-label={label}
+				tabIndex={0}
+				className="flex size-control-sm shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+			>
+				<Icon aria-hidden="true" className="size-3.5" />
+			</span>
+		</Tip>
 	);
 }
 
