@@ -1,9 +1,11 @@
 import { type ReactNode, useRef, useState } from "react";
-import type { PageDownload, PageFileChooser } from "@octoii-works/octoii-client";
+import type { KeptDownload, PageDownload, PageFileChooser } from "@octoii-works/octoii-client";
 import { useClient } from "@octoii-works/octoii-client/react";
-import { Download, FileUp } from "lucide-react";
+import { Download, FileUp, Paperclip } from "lucide-react";
+import { givenTypeOf } from "../../core/attachments.ts";
 import { readDownload, saveDownload } from "../../components/files/file-download.ts";
 import { failed } from "../../components/state/notices.ts";
+import { useDraft } from "../../components/state/draft.ts";
 import { useReach } from "../../components/state/reach.ts";
 import { Button } from "../../components/ui/button.tsx";
 import { MenuItem, MenuItemLabel, MenuPopup, MenuSub, MenuSubTrigger } from "../../components/ui/menu.tsx";
@@ -57,21 +59,29 @@ export function FileChooserBar(props: {
 	);
 }
 
-/** Downloads initiated by the page or its popup. The saved file uses the thread's original-file route. */
+/** Saves an original from the page or adds its reference to the thread's draft. */
 export function BrowserDownloads(props: { readonly page: string; readonly thread: string; readonly downloads: readonly PageDownload[] }): ReactNode {
 	const client = useClient();
 	const { send } = useReach();
-	const [saving, setSaving] = useState<string>();
-	const save = async (download: string): Promise<void> => {
-		setSaving(download);
+	const draft = useDraft({ thread: props.thread });
+	const [working, setWorking] = useState(false);
+	const withFile = async (download: string, handleFile: (file: KeptDownload) => void | Promise<void>, failure: string): Promise<void> => {
+		if (working) return;
+		setWorking(true);
 		try {
-			const file = await client.call("browser.keep_download", { page: props.page, download });
-			saveDownload(await readDownload(send, props.thread, file));
+			await handleFile(await client.call("browser.keep_download", { page: props.page, download }));
 		} catch (error) {
-			failed("The download could not be saved", error);
+			failed(failure, error);
 		} finally {
-			setSaving(undefined);
+			setWorking(false);
 		}
+	};
+	const save = async ({ file }: KeptDownload): Promise<void> => saveDownload(await readDownload(send, props.thread, file));
+	const attach = ({ file, size }: KeptDownload): void => {
+		const name = file.filename ?? "file";
+		const mediaType = givenTypeOf({ name, type: file.media_type });
+		if (mediaType === undefined) throw new Error("Thread attachments support images, PDFs, and text files.");
+		draft.attach({ ref: file.ref, name, media_type: mediaType, size });
 	};
 	return (
 		<MenuSub>
@@ -80,13 +90,29 @@ export function BrowserDownloads(props: { readonly page: string; readonly thread
 				<MenuItemLabel>Downloads</MenuItemLabel>
 			</MenuSubTrigger>
 			<MenuPopup side="right" className="w-56">
-				{props.downloads.toReversed().map((item) => (
-					<MenuItem key={item.id} disabled={item.state !== "completed" || saving !== undefined} onClick={() => void save(item.id)}>
-						<MenuItemLabel>
-							{item.state === "completed" ? item.name : `${item.name} · ${item.state === "inProgress" ? "Downloading…" : "Canceled"}`}
-						</MenuItemLabel>
-					</MenuItem>
-				))}
+				{props.downloads.toReversed().map((item) =>
+					item.state === "completed" ? (
+						<MenuSub key={item.id}>
+							<MenuSubTrigger title={item.name} disabled={working}>
+								<MenuItemLabel>{item.name}</MenuItemLabel>
+							</MenuSubTrigger>
+							<MenuPopup side="right" className="w-40">
+								<MenuItem onClick={() => void withFile(item.id, attach, "The download could not be added to the draft")}>
+									<Paperclip />
+									<MenuItemLabel>Add to Thread</MenuItemLabel>
+								</MenuItem>
+								<MenuItem onClick={() => void withFile(item.id, save, "The download could not be saved")}>
+									<Download />
+									<MenuItemLabel>Save file</MenuItemLabel>
+								</MenuItem>
+							</MenuPopup>
+						</MenuSub>
+					) : (
+						<MenuItem key={item.id} disabled>
+							<MenuItemLabel>{`${item.name} · ${item.state === "inProgress" ? "Downloading…" : "Canceled"}`}</MenuItemLabel>
+						</MenuItem>
+					),
+				)}
 			</MenuPopup>
 		</MenuSub>
 	);

@@ -54,7 +54,10 @@ export function useDraft(place: DraftPlace): DraftHandle {
 		attachments: draft.attachments,
 		feedback: draft.feedback,
 		setText: (text) => changed(key, { text }),
-		attach: (attachment) => changed(key, { attachments: [...(drafts.get(key) ?? EMPTY_DRAFT).attachments, attachment] }),
+		attach: (attachment) => {
+			const files = (drafts.get(key) ?? EMPTY_DRAFT).attachments;
+			if (!files.some((file) => file.ref === attachment.ref)) changed(key, { attachments: [...files, attachment] });
+		},
 		detach: (ref) => changed(key, { attachments: (drafts.get(key) ?? EMPTY_DRAFT).attachments.filter((each) => each.ref !== ref) }),
 		removeFeedback: (feedback) => changed(key, { feedback: (drafts.get(key) ?? EMPTY_DRAFT).feedback.filter((each) => each !== feedback) }),
 		clearSubmitted: () => changed(key, afterSubmission(drafts.get(key) ?? EMPTY_DRAFT, draft)),

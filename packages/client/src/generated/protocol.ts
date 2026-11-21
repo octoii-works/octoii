@@ -471,6 +471,8 @@ export type JsonValue = number | string | boolean | Array<JsonValue> | { [key in
 
 export type KeepDownload = { page: string, download: string, };
 
+export type KeptDownload = { file: FileRef, size: number, };
+
 /**
  * One of a plan's limits as its usage tells: the minutes its window lasts — five hours, or a week — the models it is
  * of, where it is of some alone, how much of it is used, in percent, and when it is given again, each where it is
@@ -1234,7 +1236,7 @@ export type Methods = {
   'browser.key': { params: OnPage<PageKey>; result: Nothing };
   'browser.text': { params: TypeText; result: Nothing };
   'browser.pick': { params: PickElement; result: ElementFeedback };
-  'browser.keep_download': { params: KeepDownload; result: FileRef };
+  'browser.keep_download': { params: KeepDownload; result: KeptDownload };
   'browser.choose_files': { params: ChooseFiles; result: Nothing };
   'terminals.open': { params: OpenTerminal; result: TerminalOpened };
   'terminals.write': { params: WriteTerminal; result: Nothing };

@@ -43,7 +43,7 @@ octoii::methods! {
     /// threads.operate to keep the screenshot in its owning thread.
     "browser.pick" Pick(PickElement) -> ElementFeedback, Some(Scope::BrowserOperate);
     /// Keeps the original bytes of a finished download in the owning thread.
-    "browser.keep_download" KeepDownload(KeepDownload) -> FileRef, Some(Scope::BrowserOperate);
+    "browser.keep_download" KeepDownload(KeepDownload) -> KeptDownload, Some(Scope::BrowserOperate);
     /// Supplies the thread's files to the open file chooser. An empty list cancels it.
     "browser.choose_files" ChooseFiles(ChooseFiles) -> Nothing, Some(Scope::BrowserOperate);
 }
@@ -52,6 +52,13 @@ octoii::methods! {
 pub struct KeepDownload {
     pub page: String,
     pub download: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct KeptDownload {
+    pub file: FileRef,
+    #[ts(type = "number")]
+    pub size: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

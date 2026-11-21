@@ -7,10 +7,9 @@ use bytes::Bytes;
 use octoii::Caller;
 use octoii::protocol::{Error, Scope};
 use octoii::threads::files::BYTES_MAX;
-use octoii_ai::vocabulary::FileRef;
 
 use crate::extension::failed;
-use crate::protocol::{ChooseFiles, KeepDownload};
+use crate::protocol::{ChooseFiles, KeepDownload, KeptDownload};
 use crate::{Browser, BrowserError};
 
 #[derive(Debug)]
@@ -91,7 +90,7 @@ pub(crate) async fn choose(browser: &Browser, caller: &Caller, request: ChooseFi
 }
 
 /// A completed download is saved by its original bytes, under the thread that owned it.
-pub(crate) async fn keep_download(browser: &Browser, caller: &Caller, request: KeepDownload) -> Result<FileRef, Error> {
+pub(crate) async fn keep_download(browser: &Browser, caller: &Caller, request: KeepDownload) -> Result<KeptDownload, Error> {
     caller.require_scope(Scope::ThreadsOperate)?;
     let download = browser
         .saved_download(&request.page, &request.download)
@@ -105,7 +104,7 @@ pub(crate) async fn keep_download(browser: &Browser, caller: &Caller, request: K
         .volume()
         .keep_file(&download.thread, bytes, basename(&download.name))
         .await
-        .map(|(file, _)| file)
+        .map(|(file, size)| KeptDownload { file, size })
         .map_err(|error| failed(&file_error(error)))
 }
 
