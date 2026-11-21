@@ -18,9 +18,13 @@ const START_TITLES: Readonly<Record<Exclude<StartState["state"], "ready">, strin
 	unavailable: THREAD_STATUS_LABELS.unavailable,
 };
 
+export function isUnreadyWorktreeStart(start: Start | null | undefined): start is Start & { state: Exclude<StartState, { state: "ready" }> } {
+	return start?.request.owner === "git" && start.state.state !== "ready";
+}
+
 export function WorktreeStart({ thread, status }: { readonly thread: string; readonly status: Status }): ReactNode {
 	const start = status.start;
-	if (start?.request.owner !== "git.worktree" || start.state.state === "ready") return null;
+	if (!isUnreadyWorktreeStart(start)) return null;
 	const { state } = start;
 	const title = START_TITLES[state.state];
 	const { payload } = start.request;

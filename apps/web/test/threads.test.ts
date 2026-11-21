@@ -80,7 +80,7 @@ describe("stopping a thread from its visible status", () => {
 	});
 
 	it("leaves the saved message to the workspace preparation's cancel action", () => {
-		const request = { owner: "git.worktree", payload: {} };
+		const request = { owner: "git", payload: {} };
 		const start = { request, token: "attempt", previous: null };
 		expect(stopTargetOf({ ...idle, inbox, start: { ...start, state: { state: "pending" } } })).toBeUndefined();
 		expect(stopTargetOf({ ...idle, inbox, start: { ...start, state: { state: "cancelled" } } })).toBeUndefined();

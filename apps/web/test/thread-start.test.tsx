@@ -21,7 +21,7 @@ import { DEVICE_DEFAULTS } from "../src/core/device.ts";
 import { ThreadScreen } from "../src/screens/thread.tsx";
 
 const start: Start = {
-	request: { owner: "git.worktree", payload: { destination: "/task", branch: "task" } },
+	request: { owner: "git", payload: { destination: "/task", branch: "task" } },
 	token: "attempt",
 	previous: null,
 	state: { state: "pending" },

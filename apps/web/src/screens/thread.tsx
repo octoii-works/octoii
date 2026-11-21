@@ -5,7 +5,7 @@
  * composer, or over what waits on the person, in the composer's place while it waits; and its details beside the conversation where the column has room — and after it its panel, where it is shown: its files and changes, its terminals and pages,
  * which a path a message names opens in. What the thread brought is seen as it is shown.
  */
-import { WorktreeStart } from "../extensions/git/thread-start.tsx";
+import { isUnreadyWorktreeStart, WorktreeStart } from "../extensions/git/thread-start.tsx";
 import { type ReactNode, useMemo, useRef, useState } from "react";
 import type { Conversation, Listed, Status } from "@octoii-works/octoii-client";
 import { useClient, useConversation, useTerminals, useThreads } from "@octoii-works/octoii-client/react";
@@ -214,7 +214,7 @@ function Dock(props: {
 	const stop = stopTargetOf(conversation.status);
 	// A call's permission, the oldest of what waits, is answered in the composer; anything else waits docked in its place.
 	const approval = useApproval(thread, conversation.asks.toSorted((a, b) => (a.key < b.key ? -1 : 1))[0]);
-	if (!conversation.read || conversation.gone || awaitingWorkspace(props.status)) return null;
+	if (!conversation.read || conversation.gone || isUnreadyWorktreeStart(props.status?.start)) return null;
 
 	return (
 		<div className="relative shrink-0 bg-background pb-[max(--spacing(4),env(safe-area-inset-bottom))]">
@@ -270,15 +270,12 @@ function ThreadConversation({
 	readonly status: Status | undefined;
 	readonly children: ReactNode;
 }): ReactNode {
-	const hideTimeline = awaitingWorkspace(status) && status?.start?.state.state !== "unavailable";
+	const start = status?.start;
+	const hideTimeline = isUnreadyWorktreeStart(start) && start.state.state !== "unavailable";
 	return (
 		<>
 			{status === undefined ? null : <WorktreeStart thread={thread} status={status} />}
 			<div className={hideTimeline ? "hidden" : "contents"}>{children}</div>
 		</>
 	);
-}
-
-function awaitingWorkspace(status: Status | undefined): boolean {
-	return status?.start?.request.owner === "git.worktree" && status.start.state.state !== "ready";
 }
