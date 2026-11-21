@@ -28,7 +28,7 @@ import { useDesktopThread } from "../components/effects/desktop-thread.ts";
 export function App(): ReactNode {
 	const route = useRoute();
 	const connection = useConnection();
-	useDesktopThread(route.place === "thread" && !unpaired(connection) ? route.thread : null);
+	useDesktopThread(route.place === "thread" && !unpaired(connection) ? route.thread : null, connection.status === "open" ? connection.session : null);
 	const { device } = useDevice();
 	useAppearance(device);
 	const [paletteOpen, setPaletteOpen] = useState(false);

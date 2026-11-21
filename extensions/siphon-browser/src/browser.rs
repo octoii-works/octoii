@@ -13,13 +13,21 @@ use chromiumoxide_cdp::cdp::{CdpEvent, CdpEventMessage};
 use octoii::machine::Base;
 use octoii::machine::{Commands, Host, Machine, Writes};
 use octoii::machine::{Exec, Spec, Stdio};
+use octoii::threads::ThreadData;
 use serde_json::{Value, json};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::task::JoinSet;
 
 use crate::cdp::{Cdp, CdpError, connect, connect_desktop};
-use crate::protocol::{DevToolsState, PageHost as Runtime, PagePlacement, PagePresentation, ViewportMode};
+use crate::files::Upload;
+use crate::protocol::{
+    DevToolsState, PageFileChooser, PageHost as Runtime, PageLoad, PagePlacement, PagePresentation, PageReference, ViewportMode,
+};
 use url::Url;
+
+mod navigation;
+
+use navigation::DocumentChange;
 
 /// The JPEG quality pages are painted at.
 const FRAME_QUALITY: u32 = 92;
@@ -53,6 +61,8 @@ pub struct BrowserHost {
     pub profile: Option<PathBuf>,
     /// The folder what a page downloads is kept in; none, nothing is downloaded.
     pub downloads: Option<PathBuf>,
+    /// Where a thread remembers the addresses of its pages.
+    pub references: Option<ThreadData>,
 }
 
 /// A view's size: CSS pixels across and down, and how many device pixels each CSS pixel is drawn with.
@@ -113,8 +123,10 @@ pub struct PageView {
     pub zoom: u16,
     pub host: Runtime,
     pub dev_tools: DevToolsState,
+    pub downloads: Vec<crate::protocol::PageDownload>,
+    pub chooser: Option<PageFileChooser>,
     pub dialog: Option<Dialog>,
-    pub loading: bool,
+    pub load: PageLoad,
     pub back: bool,
     pub forward: bool,
     pub(crate) controller: Option<String>,
@@ -131,7 +143,7 @@ pub struct Frame {
 
 /// A download a page began: the browser's id of it, its address, the name it suggested, how far it got and where it
 /// was kept once it was.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct Download {
     pub id: String,
     pub url: String,
@@ -140,6 +152,20 @@ pub struct Download {
     pub total_bytes: u64,
     pub state: String,
     pub path: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct DesktopDownload {
+    page: String,
+    #[serde(flatten)]
+    download: Download,
+}
+
+#[derive(Debug)]
+pub(crate) struct SavedDownload {
+    pub(crate) thread: String,
+    pub(crate) name: String,
+    pub(crate) path: PathBuf,
 }
 
 /// How busy a page's network is: requests still in flight that began in the last 1.5 s — older ones taken as long
@@ -182,6 +208,14 @@ pub enum BrowserError {
     InvalidViewport,
     #[error("page zoom must be between 50 and 200 percent")]
     InvalidZoom,
+    #[error("the file chooser changed or closed")]
+    ChooserChanged,
+    #[error("the page disconnected. Retry it to open a new browser target")]
+    Disconnected,
+    #[error("reopen this page on the desktop that hosts it")]
+    NeedsDesktop,
+    #[error("browser file transfer: {0}")]
+    FileTransfer(String),
     #[error(transparent)]
     Cdp(#[from] CdpError),
     #[error(transparent)]
@@ -217,6 +251,12 @@ enum LayoutChange {
 }
 
 #[derive(Debug)]
+enum FileChange {
+    Choose { id: String, upload: Option<Upload> },
+    Upload { node: i64, upload: Upload },
+}
+
+#[derive(Debug)]
 enum Ask {
     Read(Read),
     Desktop {
@@ -237,6 +277,11 @@ enum Ask {
     CloseThread {
         thread: String,
     },
+    Retry {
+        page: String,
+        viewer: String,
+        reply: Reply<()>,
+    },
     Attached {
         page: String,
         reply: Reply<Attached>,
@@ -245,6 +290,11 @@ enum Ask {
         page: String,
         change: LayoutChange,
         presentation: PagePresentation,
+        reply: Reply<()>,
+    },
+    Files {
+        page: String,
+        change: FileChange,
         reply: Reply<()>,
     },
     Switch {
@@ -327,6 +377,11 @@ enum Read {
     Downloads {
         page: String,
         reply: oneshot::Sender<Vec<Download>>,
+    },
+    SavedDownload {
+        page: String,
+        download: String,
+        reply: oneshot::Sender<Option<SavedDownload>>,
     },
 }
 
@@ -469,16 +524,25 @@ impl Browser {
         let _ = self.asks.send(Ask::CloseThread { thread: thread.to_owned() });
     }
 
+    pub(crate) async fn retry(&self, page: &str, viewer: &str) -> Result<(), BrowserError> {
+        self.ask(|reply| Ask::Retry {
+            page: page.to_owned(),
+            viewer: viewer.to_owned(),
+            reply,
+        })
+        .await
+    }
+
     /// The pages of `thread`, in the order they were opened.
     pub async fn pages(&self, thread: &str) -> Vec<PageView> {
         let thread = thread.to_owned();
         self.get(|reply| Read::Pages { thread, reply }).await
     }
 
-    /// The page's target, to read and act on it — made again, at its address, where the browser that held it ended.
+    /// The page's connected target, to read and act on it.
     ///
     /// # Errors
-    /// `NoSuchPage`; the browser's refusal.
+    /// `NoSuchPage`, `Disconnected`, or the browser's refusal.
     pub async fn attached(&self, page: &str) -> Result<Attached, BrowserError> {
         let page = page.to_owned();
         self.ask(|reply| Ask::Attached { page, reply }).await
@@ -546,6 +610,32 @@ impl Browser {
     pub async fn downloads(&self, page: &str) -> Vec<Download> {
         let page = page.to_owned();
         self.get(|reply| Read::Downloads { page, reply }).await
+    }
+
+    pub(crate) async fn saved_download(&self, page: &str, download: &str) -> Option<SavedDownload> {
+        self.get(|reply| Read::SavedDownload {
+            page: page.to_owned(),
+            download: download.to_owned(),
+            reply,
+        })
+        .await
+    }
+
+    pub(crate) async fn choose_files(&self, page: &str, id: String, upload: Option<Upload>) -> Result<(), BrowserError> {
+        self.change_files(page, FileChange::Choose { id, upload }).await
+    }
+
+    pub(crate) async fn upload(&self, page: &str, node: i64, upload: Upload) -> Result<(), BrowserError> {
+        self.change_files(page, FileChange::Upload { node, upload }).await
+    }
+
+    async fn change_files(&self, page: &str, change: FileChange) -> Result<(), BrowserError> {
+        self.ask(|reply| Ask::Files {
+            page: page.to_owned(),
+            change,
+            reply,
+        })
+        .await
     }
 
     /// Lays the page out at `size`.
@@ -650,8 +740,8 @@ struct Page {
     /// Where it is to go once its target is set up.
     going: Option<String>,
     dialog: Option<Dialog>,
-    /// Whether its main frame loads, as the browser tells of it.
-    loading: bool,
+    load: PageLoad,
+    document_request: Option<navigation::DocumentRequest>,
     /// Whether its history goes back and forward from where it is, as the browser told of it last.
     back: bool,
     forward: bool,
@@ -664,12 +754,22 @@ struct Page {
     in_flight: HashMap<String, Instant>,
     network_at: Instant,
     downloads: Vec<Download>,
+    chooser: Option<FileChooser>,
+    uploads: Vec<Upload>,
     /// The newest events of its target, as they came, for a script to take.
     events: VecDeque<Value>,
     /// The refs its last reading named, so the next marks those new.
     refs: HashSet<i64>,
     /// Its frames of other sites' processes, as the browser attached to them: each target, its session and address.
     frames: Vec<FrameTarget>,
+}
+
+#[derive(Debug)]
+struct FileChooser {
+    shown: PageFileChooser,
+    frame: String,
+    session: String,
+    node: i64,
 }
 
 #[derive(Debug, Default)]
@@ -755,12 +855,14 @@ struct Paint {
 struct Captured {
     page: String,
     session: String,
+    target: String,
     size: Size,
     jpeg: Option<Bytes>,
 }
 
 impl Page {
     fn new(id: String, thread: String, size: Size, url: Option<String>, runtime: Runtime) -> Self {
+        let load = if url.is_some() { PageLoad::Loading } else { PageLoad::Ready };
         Self {
             id,
             thread,
@@ -776,7 +878,8 @@ impl Page {
             session: None,
             going: url,
             dialog: None,
-            loading: false,
+            load,
+            document_request: None,
             back: false,
             forward: false,
             frame: None,
@@ -787,6 +890,8 @@ impl Page {
             in_flight: HashMap::new(),
             network_at: Instant::now(),
             downloads: Vec::new(),
+            chooser: None,
+            uploads: Vec::new(),
             events: VecDeque::new(),
             refs: HashSet::new(),
             frames: Vec::new(),
@@ -795,6 +900,44 @@ impl Page {
 
     fn owns_session(&self, session: &str) -> bool {
         self.session.as_deref() == Some(session) || self.frames.iter().any(|frame| frame.session == session)
+    }
+
+    fn disconnect(&mut self) {
+        self.target = None;
+        self.session = None;
+        self.load = PageLoad::Disconnected;
+        self.document_request = None;
+        self.dev_tools = DevToolsState::Closed;
+        self.control.controller = None;
+        self.control.waiting_for_view = None;
+        self.dialog = None;
+        self.back = false;
+        self.forward = false;
+        self.frame = None;
+        self.in_flight.clear();
+        self.paint = Paint::default();
+        self.frames.clear();
+        self.chooser = None;
+        self.uploads.clear();
+        self.refs.clear();
+        for download in &mut self.downloads {
+            if download.state == "inProgress" {
+                download.state = "canceled".into();
+            }
+        }
+    }
+
+    fn reference(&self) -> Option<PageReference> {
+        let url = Url::parse(&self.url).ok()?;
+        if !matches!(url.scheme(), "http" | "https") || !url.username().is_empty() || url.password().is_some() || url.as_str().len() > 8192
+        {
+            return None;
+        }
+        Some(PageReference {
+            url: url.into(),
+            title: self.title.chars().take(240).collect(),
+            host: self.runtime,
+        })
     }
 
     fn casts(&self) -> bool {
@@ -827,6 +970,7 @@ struct Owner {
     headless: Option<Running>,
     desktop: Option<Running>,
     desktop_thread: Option<String>,
+    desktop_session: Option<String>,
     pages: Vec<Page>,
     /// The page each thread's agent works, by the thread.
     current: HashMap<String, String>,
@@ -841,6 +985,7 @@ impl Owner {
             headless: None,
             desktop: None,
             desktop_thread: None,
+            desktop_session: None,
             pages: Vec::new(),
             current: HashMap::new(),
             events,
@@ -898,6 +1043,9 @@ impl Owner {
             }
             Ask::Close { page } => self.close(&page).await,
             Ask::CloseThread { thread } => self.close_thread(&thread).await,
+            Ask::Retry { page, viewer, reply } => {
+                let _ = reply.send(self.retry(&page, &viewer).await);
+            }
             Ask::Attached { page, reply } => {
                 let _ = reply.send(self.attached(&page).await);
             }
@@ -909,12 +1057,11 @@ impl Owner {
             } => {
                 let _ = reply.send(self.adjust_layout(&page, change, presentation).await);
             }
+            Ask::Files { page, change, reply } => {
+                let _ = reply.send(self.change_files(&page, change).await);
+            }
             Ask::Switch { thread, page, reply } => {
-                let theirs = self.page(&page).is_some_and(|found| found.thread == thread);
-                if theirs {
-                    self.current.insert(thread, page);
-                }
-                let _ = reply.send(if theirs { Ok(()) } else { Err(BrowserError::NoSuchPage) });
+                let _ = reply.send(self.switch(thread, page));
             }
             Ask::Watch {
                 page,
@@ -970,6 +1117,14 @@ impl Owner {
                 .await;
             }
         }
+    }
+
+    fn switch(&mut self, thread: String, page: String) -> Result<(), BrowserError> {
+        if self.page(&page).is_none_or(|found| found.thread != thread) {
+            return Err(BrowserError::NoSuchPage);
+        }
+        self.current.insert(thread, page);
+        Ok(())
     }
 
     fn read(&mut self, read: Read) {
@@ -1033,6 +1188,9 @@ impl Owner {
             Read::Downloads { page, reply } => {
                 let _ = reply.send(self.page(&page).map_or_default(|page| page.downloads.clone()));
             }
+            Read::SavedDownload { page, download, reply } => {
+                let _ = reply.send(self.saved_download(&page, &download));
+            }
         }
     }
 
@@ -1042,7 +1200,9 @@ impl Owner {
         let result = change(&mut page.control);
         if controller != page.control.controller {
             let thread = page.thread.clone();
-            if page.dev_tools == DevToolsState::Open && page.control.controller.is_none() {
+            let close_tools = page.dev_tools == DevToolsState::Open && page.control.controller.is_none();
+            self.sync_desktop_control(id).await;
+            if close_tools {
                 self.close_dev_tools(id).await;
             }
             self.told(&thread);
@@ -1129,6 +1289,15 @@ impl Owner {
         let _ = self.events.send(Change::Pages { thread: thread.to_owned() });
     }
 
+    async fn remember(&self, page: &Page) {
+        if let (Some(data), Some(reference)) = (&self.host.references, page.reference())
+            && let Ok(bytes) = serde_json::to_vec(&reference)
+            && let Err(error) = data.write(&page.thread, &page.id, bytes.into()).await
+        {
+            tracing::debug!(page = %page.id, %error, "could not remember browser page");
+        }
+    }
+
     /// The browser's pipe, the browser started where it is not running.
     async fn headless_cdp(&mut self) -> Result<Cdp, BrowserError> {
         if let Some(running) = &self.headless {
@@ -1156,37 +1325,96 @@ impl Owner {
         viewer: Option<String>,
         placement: PagePlacement,
     ) -> Result<String, BrowserError> {
+        let desktop = self.desktop.is_some() && self.desktop_thread.as_deref() == Some(&thread);
+        let runtime = match placement {
+            PagePlacement::Workspace if desktop => Runtime::Desktop,
+            PagePlacement::Workspace | PagePlacement::Background => Runtime::Headless,
+            PagePlacement::Desktop if desktop && viewer.as_ref().is_none_or(|viewer| self.desktop_session.as_ref() == Some(viewer)) => {
+                Runtime::Desktop
+            }
+            PagePlacement::Desktop => return Err(BrowserError::NeedsDesktop),
+        };
         if viewer.is_some()
             && let Some(url) = url.as_deref().and_then(|value| Url::parse(value).ok())
             && let Some(page) = self.pages.iter().rev().find(|page| {
                 page.thread == thread
-                    && (placement == PagePlacement::Workspace || page.runtime == Runtime::Headless)
+                    && (placement == PagePlacement::Workspace || page.runtime == runtime)
                     && Url::parse(&page.url).is_ok_and(|current| current == url)
             })
         {
             return Ok(page.id.clone());
         }
         let id = self.host.commands.new_id()?;
-        let (runtime, cdp) = match &self.desktop {
-            Some(running) if placement == PagePlacement::Workspace && self.desktop_thread.as_deref() == Some(&thread) => {
-                (Runtime::Desktop, running.cdp.clone())
-            }
-            _ => (Runtime::Headless, self.headless_cdp().await?),
-        };
         let mut page = Page::new(id.clone(), thread.clone(), size, url, runtime);
         page.control.waiting_for_view = viewer;
         self.pages.push(page);
-        let opened = match runtime {
-            Runtime::Headless => self.create(&cdp, &id).await,
-            Runtime::Desktop => self.create_desktop(&cdp, &id, &thread, size).await,
-        };
-        if let Err(error) = opened {
+        if let Err(error) = self.connect_target(&id).await {
             self.close(&id).await;
             return Err(error);
+        }
+        if let Some(page) = self.page(&id) {
+            self.remember(page).await;
         }
         self.current.insert(thread.clone(), id.clone());
         self.told(&thread);
         Ok(id)
+    }
+
+    async fn connect_target(&mut self, id: &str) -> Result<(), BrowserError> {
+        let page = self.page(id).ok_or(BrowserError::NoSuchPage)?;
+        match page.runtime {
+            Runtime::Headless => {
+                let cdp = self.headless_cdp().await?;
+                self.create(&cdp, id).await
+            }
+            Runtime::Desktop => {
+                let cdp = self.desktop.as_ref().ok_or(BrowserError::NeedsDesktop)?.cdp.clone();
+                let thread = page.thread.clone();
+                self.create_desktop(&cdp, id, &thread, page.view_size()).await
+            }
+        }
+    }
+
+    async fn retry(&mut self, id: &str, viewer: &str) -> Result<(), BrowserError> {
+        let page = self.page(id).ok_or(BrowserError::NoSuchPage)?;
+        if page.control.controller.as_deref().is_some_and(|controller| controller != viewer) {
+            return Err(BrowserError::PageControlled);
+        }
+        if page.control.actions > 0 {
+            return Err(BrowserError::PageBusy);
+        }
+        let thread = page.thread.clone();
+        match page.load {
+            PageLoad::Disconnected => {
+                if page.runtime == Runtime::Desktop
+                    && (self.desktop_thread.as_deref() != Some(&thread) || self.desktop_session.as_deref() != Some(viewer))
+                {
+                    return Err(BrowserError::NeedsDesktop);
+                }
+                let page = self.page_mut(id).ok_or(BrowserError::NoSuchPage)?;
+                page.going = page.reference().map(|address| address.url);
+                page.load = if page.going.is_some() { PageLoad::Loading } else { PageLoad::Ready };
+                page.control.waiting_for_view = Some(viewer.to_owned());
+                if let Err(error) = self.connect_target(id).await {
+                    if let Some(page) = self.page(id) {
+                        self.close_target(page).await;
+                    }
+                    self.disconnect_page(id);
+                    return Err(error);
+                }
+            }
+            PageLoad::Failed { .. } => {
+                let url = page.reference().ok_or(BrowserError::Disconnected)?.url;
+                let attached = self.attached(id).await?;
+                attached
+                    .cdp
+                    .call(Some(&attached.session), "Page.navigate", json!({ "url": url }))
+                    .await?;
+            }
+            PageLoad::Ready | PageLoad::Loading => return Ok(()),
+        }
+        self.told(&thread);
+        Ok(())
     }
 
     /// Asks the browser for a target for the page `id`, held at its start till it is set up as it attaches.
@@ -1200,7 +1428,12 @@ impl Owner {
     }
 
     async fn create_desktop(&mut self, cdp: &Cdp, id: &str, thread: &str, size: Size) -> Result<(), BrowserError> {
-        let params = json!({ "page": id, "thread": thread, "width": size.width, "height": size.height });
+        if let Some(downloads) = &self.host.downloads {
+            std::fs::create_dir_all(downloads).map_err(|error| BrowserError::Folders(error.to_string()))?;
+        }
+        let params = json!({
+            "page": id, "thread": thread, "width": size.width, "height": size.height, "downloads": self.host.downloads,
+        });
         cdp.call_within(None, "Octoii.open", params, std::time::Duration::from_secs(8))
             .await?;
         let info = cdp.call(Some(id), "Target.getTargetInfo", json!({})).await?;
@@ -1221,25 +1454,23 @@ impl Owner {
         if let Some(url) = url {
             cdp.call(Some(id), "Page.navigate", json!({ "url": url })).await?;
         }
+        if self.page(id).is_some_and(Page::casts) {
+            start_screencast(cdp, id).await?;
+        }
         Ok(())
     }
 
     async fn attached(&mut self, id: &str) -> Result<Attached, BrowserError> {
         let page = self.page(id).ok_or(BrowserError::NoSuchPage)?;
+        if page.load == PageLoad::Disconnected {
+            return Err(BrowserError::Disconnected);
+        }
         if page.runtime == Runtime::Desktop {
             let cdp = self.desktop.as_ref().ok_or(BrowserError::Gone)?.cdp.clone();
             let session = page.session.clone().ok_or(BrowserError::Gone)?;
             return Ok(Attached { cdp, session });
         }
-        let needs_target = page.target.is_none();
-        let cdp = self.headless_cdp().await?;
-        if needs_target {
-            // Made again where it was, as the browser that held it ended.
-            if let Some(page) = self.page_mut(id) {
-                page.going = (page.url != "about:blank").then(|| page.url.clone());
-            }
-            self.create(&cdp, id).await?;
-        }
+        let cdp = self.headless.as_ref().ok_or(BrowserError::Gone)?.cdp.clone();
         // The target is set up as the browser tells it attached; what came meanwhile is heard first.
         for _ in 0..200 {
             if let Some(session) = self.page(id).and_then(|page| page.session.clone()) {
@@ -1341,15 +1572,64 @@ impl Owner {
         }
     }
 
+    async fn change_files(&mut self, id: &str, change: FileChange) -> Result<(), BrowserError> {
+        let attached = self.attached(id).await?;
+        let page = self.page(id).ok_or(BrowserError::NoSuchPage)?;
+        let (session, node, upload) = match change {
+            FileChange::Choose { id, upload } => {
+                let chooser = page
+                    .chooser
+                    .as_ref()
+                    .filter(|chooser| chooser.shown.id == id)
+                    .ok_or(BrowserError::ChooserChanged)?;
+                if !chooser.shown.multiple && upload.as_ref().is_some_and(|files| files.paths.len() > 1) {
+                    return Err(BrowserError::FileTransfer("this input accepts one file".into()));
+                }
+                (chooser.session.clone(), chooser.node, upload)
+            }
+            FileChange::Upload { node, upload } => (attached.session, node, Some(upload)),
+        };
+        if let Some(files) = &upload {
+            let fields = json!({ "backendNodeId": node, "files": files.paths });
+            if page.runtime == Runtime::Desktop {
+                attached
+                    .cdp
+                    .call(None, "Octoii.upload", json!({ "page": id, "target": session, "fields": fields }))
+                    .await?;
+            } else {
+                attached.cdp.call(Some(&session), "DOM.setFileInputFiles", fields).await?;
+            }
+        }
+        if let Some(page) = self.page_mut(id) {
+            page.uploads.extend(upload);
+            if page
+                .chooser
+                .as_ref()
+                .is_some_and(|chooser| chooser.session == session && chooser.node == node)
+            {
+                page.chooser = None;
+                let thread = page.thread.clone();
+                self.told(&thread);
+            }
+        }
+        Ok(())
+    }
+
     async fn close(&mut self, id: &str) {
         let Some(at) = self.pages.iter().position(|page| page.id == id) else {
             return;
         };
         let page = self.pages.remove(at);
+        self.remember(&page).await;
+        self.close_target(&page).await;
+        self.told(&page.thread);
+    }
+
+    async fn close_target(&self, page: &Page) {
         if let Some(running) = self.running(page.runtime) {
             match (page.runtime, &page.target) {
                 (Runtime::Desktop, _) => {
-                    let _ = running.cdp.call(None, "Octoii.close", json!({ "page": id })).await;
+                    let _ = running.cdp.call(None, "Octoii.close", json!({ "page": page.id })).await;
                 }
                 (Runtime::Headless, Some(target)) => {
                     let _ = running.cdp.call(None, "Target.closeTarget", json!({ "targetId": target })).await;
@@ -1357,47 +1637,48 @@ impl Owner {
                 (Runtime::Headless, None) => {}
             }
         }
-        self.told(&page.thread);
     }
 
-    /// The browser ended: every page is left without its target, made again as it is next reached.
+    /// The browser ended. The tabs stay visible and a retry opens a fresh target.
     fn ended(&mut self, runtime: Runtime) {
         if runtime == Runtime::Desktop {
             self.desktop = None;
             self.desktop_thread = None;
-            let mut changed = HashSet::new();
-            self.pages.retain(|page| {
-                if page.runtime != Runtime::Desktop {
-                    return true;
-                }
-                changed.insert(page.thread.clone());
-                false
-            });
-            for thread in changed {
-                self.told(&thread);
-            }
-            return;
+            self.desktop_session = None;
+        } else {
+            self.headless = None;
         }
-        self.headless = None;
+        let mut changed = HashSet::new();
         for page in self.pages.iter_mut().filter(|page| page.runtime == runtime) {
-            page.target = None;
-            page.session = None;
-            page.dialog = None;
-            page.in_flight.clear();
-            page.paint = Paint::default();
-            page.frames.clear();
+            page.disconnect();
+            changed.insert(page.thread.clone());
+        }
+        for thread in changed {
+            self.told(&thread);
+        }
+    }
+
+    fn disconnect_page(&mut self, id: &str) {
+        if let Some(page) = self.page_mut(id) {
+            page.disconnect();
+            let thread = page.thread.clone();
+            self.told(&thread);
         }
     }
 
     async fn desktop_event(&mut self, raw: &Value) -> bool {
         match raw["method"].as_str() {
-            Some("Octoii.workspace") => self.desktop_thread = raw["params"]["thread"].as_str().map(str::to_owned),
+            Some("Octoii.workspace") => self.desktop_workspace(&raw["params"]).await,
+            Some("Octoii.download") => {
+                if let Ok(download) = serde_json::from_value(raw["params"].clone()) {
+                    self.desktop_download(download);
+                }
+            }
             Some("Octoii.closed") => {
                 if let Some(id) = raw["params"]["page"].as_str()
-                    && let Some(at) = self.pages.iter().position(|page| page.runtime == Runtime::Desktop && page.id == id)
+                    && self.page(id).is_some_and(|page| page.runtime == Runtime::Desktop)
                 {
-                    let page = self.pages.remove(at);
-                    self.told(&page.thread);
+                    self.disconnect_page(id);
                 }
             }
             Some("Octoii.devtools") => {
@@ -1411,6 +1692,83 @@ impl Owner {
             _ => return false,
         }
         true
+    }
+
+    async fn desktop_workspace(&mut self, params: &Value) {
+        self.desktop_thread = params["thread"].as_str().map(str::to_owned);
+        let session = params["session"].as_str().map(str::to_owned);
+        if self.desktop_session == session {
+            return;
+        }
+        self.desktop_session = session;
+        let pages: Vec<_> = self
+            .pages
+            .iter()
+            .filter(|page| page.runtime == Runtime::Desktop)
+            .map(|page| page.id.clone())
+            .collect();
+        for page in pages {
+            self.sync_desktop_control(&page).await;
+        }
+    }
+
+    async fn sync_desktop_control(&self, id: &str) {
+        if let (Some(page), Some(desktop)) = (self.page(id), &self.desktop)
+            && page.runtime == Runtime::Desktop
+        {
+            let local = self
+                .desktop_session
+                .as_ref()
+                .is_some_and(|session| page.control.controller.as_ref() == Some(session));
+            let _ = desktop
+                .cdp
+                .call_within(
+                    None,
+                    "Octoii.control",
+                    json!({ "page": id, "local": local }),
+                    std::time::Duration::from_secs(3),
+                )
+                .await;
+        }
+    }
+
+    fn saved_download(&self, id: &str, download: &str) -> Option<SavedDownload> {
+        let page = self.page(id)?;
+        let item = page
+            .downloads
+            .iter()
+            .find(|item| item.id == download && item.state == "completed")?;
+        Some(SavedDownload {
+            thread: page.thread.clone(),
+            name: item.name.clone(),
+            path: self.download_path(download)?,
+        })
+    }
+
+    fn download_path(&self, id: &str) -> Option<PathBuf> {
+        let directory = self.host.downloads.as_ref()?;
+        if id.len() != 36 || !id.chars().all(|ch| ch.is_ascii_hexdigit() || ch == '-') {
+            return None;
+        }
+        Some(directory.join(id))
+    }
+
+    fn desktop_download(&mut self, event: DesktopDownload) {
+        let Some(path) = self.download_path(&event.download.id) else {
+            return;
+        };
+        let Some(page) = self.page_mut(&event.page).filter(|page| page.runtime == Runtime::Desktop) else {
+            return;
+        };
+        let mut download = event.download;
+        download.path = (download.state == "completed").then(|| path.to_string_lossy().into_owned());
+        if let Some(item) = page.downloads.iter_mut().find(|item| item.id == download.id) {
+            *item = download;
+        } else {
+            page.downloads.push(download);
+        }
+        let thread = page.thread.clone();
+        self.told(&thread);
     }
 
     fn set_dev_tools(&mut self, id: &str, state: DevToolsState) {
@@ -1473,18 +1831,6 @@ impl Owner {
                         frame.url.clone_from(&info.url);
                     }
                 }
-                let Some(page) = self
-                    .pages
-                    .iter_mut()
-                    .find(|page| page.target.as_deref() == Some(info.target_id.as_ref()))
-                else {
-                    return;
-                };
-                // Its address as the browser tells it; its title as its own watch does; where its history goes, asked anew.
-                page.url.clone_from(&info.url);
-                let (id, thread) = (page.id.clone(), page.thread.clone());
-                self.told(&thread);
-                self.history(&id).await;
             }
             CdpEvent::TargetDetachedFromTarget(event) => {
                 for page in &mut self.pages {
@@ -1498,15 +1844,19 @@ impl Owner {
                 let gone = self
                     .pages
                     .iter()
-                    .find(|page| page.target.as_deref() == Some(event.target_id.as_ref()))
-                    .map(|page| page.id.clone());
-                if let Some(id) = gone {
-                    let thread = self.page(&id).map_or_default(|page| page.thread.clone());
-                    self.pages.retain(|page| page.id != id);
-                    self.told(&thread);
+                    .position(|page| page.target.as_deref() == Some(event.target_id.as_ref()));
+                if let Some(at) = gone {
+                    let page = self.pages.remove(at);
+                    self.remember(&page).await;
+                    self.told(&page.thread);
                 }
             }
             event @ (CdpEvent::BrowserDownloadWillBegin(_) | CdpEvent::BrowserDownloadProgress(_)) => self.heard_download(event),
+            CdpEvent::PageFileChooserOpened(event) => {
+                if let Some(session) = session {
+                    self.open_file_chooser(runtime, &session, &event);
+                }
+            }
             other => {
                 if let Some(session) = session {
                     self.heard_of_page(runtime, &session, other).await;
@@ -1579,6 +1929,8 @@ impl Owner {
         else {
             return;
         };
+        let navigation = page.document_event(session, &event);
+        let mut changed = navigation.is_some();
         match event {
             CdpEvent::PageJavascriptDialogOpening(dialog) => {
                 page.dialog = Some(Dialog {
@@ -1589,61 +1941,69 @@ impl Owner {
                     message: dialog.message.clone(),
                     offered: dialog.default_prompt.clone().unwrap_or_default(),
                 });
-                let thread = page.thread.clone();
-                self.told(&thread);
+                changed = true;
             }
-            CdpEvent::NetworkRequestWillBeSent(sent) => {
-                let streams = sent
-                    .r#type
-                    .as_ref()
-                    .is_some_and(|kind| matches!(kind.as_ref(), "WebSocket" | "EventSource"));
-                if !streams {
-                    page.in_flight.insert(sent.request_id.as_ref().to_owned(), Instant::now());
-                }
-                page.network_at = Instant::now();
+            CdpEvent::RuntimeBindingCalled(called) if called.name == TITLE_BINDING && !matches!(page.load, PageLoad::Failed { .. }) => {
+                changed |= page.title != called.payload;
+                page.title = called.payload;
             }
-            CdpEvent::NetworkLoadingFinished(done) => {
-                page.in_flight.remove(done.request_id.as_ref());
-                page.network_at = Instant::now();
+            CdpEvent::PageFrameNavigated(navigated) => {
+                changed |= page
+                    .chooser
+                    .take_if(|chooser| navigation.is_some() || chooser.frame == navigated.frame.id.as_ref())
+                    .is_some();
             }
-            CdpEvent::NetworkLoadingFailed(failed) => {
-                page.in_flight.remove(failed.request_id.as_ref());
-                page.network_at = Instant::now();
-            }
-            CdpEvent::RuntimeBindingCalled(called) if called.name == TITLE_BINDING => {
-                page.title.clone_from(&called.payload);
-                let thread = page.thread.clone();
-                self.told(&thread);
-            }
-            CdpEvent::PageFrameNavigated(navigated) if page.session.as_deref() == Some(session) && navigated.frame.parent_id.is_none() => {
-                page.url.clone_from(&navigated.frame.url);
-                let (id, thread) = (page.id.clone(), page.thread.clone());
-                self.told(&thread);
-                self.history(&id).await;
-            }
-            CdpEvent::PageNavigatedWithinDocument(navigated) if page.target.as_deref() == Some(navigated.frame_id.as_ref()) => {
-                page.url = navigated.url;
-                let (id, thread) = (page.id.clone(), page.thread.clone());
-                self.told(&thread);
-                self.history(&id).await;
-            }
-            CdpEvent::PageFrameStartedLoading(started) if page.target.as_deref() == Some(started.frame_id.as_ref()) => {
-                page.loading = true;
-                let thread = page.thread.clone();
-                self.told(&thread);
-            }
-            CdpEvent::PageFrameStoppedLoading(stopped) if page.target.as_deref() == Some(stopped.frame_id.as_ref()) => {
-                page.loading = false;
-                let thread = page.thread.clone();
-                self.told(&thread);
+            CdpEvent::PageFrameDetached(detached) => {
+                changed |= page
+                    .chooser
+                    .take_if(|chooser| chooser.frame == detached.frame_id.as_ref())
+                    .is_some();
             }
             CdpEvent::PageJavascriptDialogClosed(_) => {
                 page.dialog = None;
-                let thread = page.thread.clone();
-                self.told(&thread);
+                changed = true;
             }
             event => heard_console(page, event),
         }
+        if changed {
+            let (id, thread) = (page.id.clone(), page.thread.clone());
+            if let Some(page) = self.page(&id) {
+                self.remember(page).await;
+            }
+            self.told(&thread);
+            if matches!(navigation, Some(DocumentChange::Navigated | DocumentChange::Settled)) {
+                self.history(&id).await;
+            }
+        }
+    }
+
+    fn open_file_chooser(
+        &mut self,
+        runtime: Runtime,
+        session: &str,
+        event: &chromiumoxide_cdp::cdp::browser_protocol::page::EventFileChooserOpened,
+    ) {
+        let (Some(node), Ok(id)) = (&event.backend_node_id, self.host.commands.new_id()) else {
+            return;
+        };
+        let Some(page) = self
+            .pages
+            .iter_mut()
+            .find(|page| page.runtime == runtime && page.owns_session(session))
+        else {
+            return;
+        };
+        page.chooser = Some(FileChooser {
+            shown: PageFileChooser {
+                id,
+                multiple: event.mode.as_ref() == "selectMultiple",
+            },
+            frame: event.frame_id.as_ref().to_owned(),
+            session: session.to_owned(),
+            node: *node.inner(),
+        });
+        let thread = page.thread.clone();
+        self.told(&thread);
     }
 
     async fn heard_frame(&mut self, runtime: Runtime, session: &str, frame: &EventScreencastFrame) {
@@ -1698,6 +2058,7 @@ impl Owner {
             });
         }
         let _ = cdp.call(Some(&session), "Runtime.enable", json!({})).await;
+        let _ = intercept_file_chooser(&cdp, &session).await;
         let _ = cdp
             .call(
                 Some(&session),
@@ -1752,11 +2113,9 @@ impl Owner {
             .page(&capture.page)
             .and_then(|page| self.running(page.runtime))
             .map(|running| running.cdp.clone());
-        let Some(page) = self
-            .pages
-            .iter_mut()
-            .find(|page| page.id == capture.page && page.session.as_deref() == Some(&capture.session))
-        else {
+        let Some(page) = self.pages.iter_mut().find(|page| {
+            page.id == capture.page && page.session.as_deref() == Some(&capture.session) && page.target.as_deref() == Some(&capture.target)
+        }) else {
             return;
         };
         let dirty = page.paint.dirty;
@@ -1835,12 +2194,20 @@ fn queue_capture(page: &mut Page, cdp: &Cdp, captures: &mut JoinSet<Captured>) {
         page.paint.dirty = true;
         return;
     }
-    let Some(session) = page.session.clone() else { return };
+    let (Some(session), Some(target)) = (page.session.clone(), page.target.clone()) else {
+        return;
+    };
     page.paint.capturing = true;
     let (page, size, cdp) = (page.id.clone(), page.view_size(), cdp.clone());
     captures.spawn(async move {
         let jpeg = cdp.screenshot(&session, FRAME_QUALITY).await.ok();
-        Captured { page, session, size, jpeg }
+        Captured {
+            page,
+            session,
+            target,
+            size,
+            jpeg,
+        }
     });
 }
 
@@ -1872,8 +2239,18 @@ fn view(page: &Page) -> PageView {
         zoom: page.zoom,
         host: page.runtime,
         dev_tools: page.dev_tools,
+        downloads: page
+            .downloads
+            .iter()
+            .map(|item| crate::protocol::PageDownload {
+                id: item.id.clone(),
+                name: item.name.clone(),
+                state: item.state.clone(),
+            })
+            .collect(),
+        chooser: page.chooser.as_ref().map(|chooser| chooser.shown.clone()),
         dialog: page.dialog.clone(),
-        loading: page.loading,
+        load: page.load.clone(),
         back: page.back,
         forward: page.forward,
         controller: page.control.controller.clone(),
@@ -1883,15 +2260,10 @@ fn view(page: &Page) -> PageView {
 /// Sets up a page's target before it runs: its page, its scripts, its accessibility and its network heard, its title watched, laid
 /// out at `size`, and painted as it changes.
 async fn set_up(cdp: &Cdp, session: &str, size: Size) -> Result<(), CdpError> {
-    for domain in [
-        "Page.enable",
-        "Runtime.enable",
-        "DOM.enable",
-        "Accessibility.enable",
-        "Network.enable",
-    ] {
+    for domain in ["Runtime.enable", "DOM.enable", "Accessibility.enable", "Network.enable"] {
         cdp.call(Some(session), domain, json!({})).await?;
     }
+    intercept_file_chooser(cdp, session).await?;
     cdp.call(
         Some(session),
         "Runtime.addBinding",
@@ -1904,6 +2276,13 @@ async fn set_up(cdp: &Cdp, session: &str, size: Size) -> Result<(), CdpError> {
     // Its frames of other sites' processes attached to as they are made, held at their start, as the page itself was.
     let frames = json!({ "autoAttach": true, "waitForDebuggerOnStart": true, "flatten": true });
     cdp.call(Some(session), "Target.setAutoAttach", frames).await?;
+    Ok(())
+}
+
+async fn intercept_file_chooser(cdp: &Cdp, session: &str) -> Result<(), CdpError> {
+    cdp.call(Some(session), "Page.enable", json!({})).await?;
+    cdp.call(Some(session), "Page.setInterceptFileChooserDialog", json!({ "enabled": true }))
+        .await?;
     Ok(())
 }
 

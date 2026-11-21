@@ -333,6 +333,12 @@ impl std::fmt::Debug for Registrar<'_> {
 }
 
 impl Registrar<'_> {
+    /// This extension's durable records inside each thread.
+    #[must_use]
+    pub fn thread_data(&self) -> crate::threads::ThreadData {
+        crate::threads::ThreadData::new(self.builder.handle.clone(), self.extension)
+    }
+
     /// The machine's commands, for what the extension runs on it.
     #[must_use]
     pub fn commands(&self) -> crate::machine::Commands {

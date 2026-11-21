@@ -6,7 +6,7 @@
  */
 import { type FormEvent, type ReactNode, useState } from "react";
 import type { PageDialog, PageListed } from "@octoii-works/octoii-client";
-import { useClient } from "@octoii-works/octoii-client/react";
+import { useClient, useConnection } from "@octoii-works/octoii-client/react";
 import {
 	ArrowLeft,
 	ArrowRight,
@@ -30,6 +30,7 @@ import { Menu, MenuItem, MenuItemLabel, MenuPopup, MenuSeparator, MenuTrigger } 
 import { failed } from "../../components/state/notices.ts";
 import { AnnotationEditor } from "./annotation.tsx";
 import { useDesktopPage } from "./desktop.ts";
+import { BrowserDownloads, FileChooserBar } from "./files.tsx";
 import { ViewportControls } from "./viewport-controls.tsx";
 import { ViewportSurface } from "./viewport-surface.tsx";
 
@@ -37,49 +38,20 @@ import { ViewportSurface } from "./viewport-surface.tsx";
 export function BrowserPane(props: { readonly thread: string; readonly page: PageListed; readonly onSent: (delivery: string) => void }): ReactNode {
 	const { page } = props;
 	const client = useClient();
+	const connected = useConnection().status === "open";
 	const picker = useElementPicker(props.thread, page);
-	const { mode } = picker;
 	const driving = page.control === "you";
-	const [changingControl, setChangingControl] = useState(false);
-	const changeControl = (): void => {
-		setChangingControl(true);
-		void client
-			.call("browser.control", { page: page.id, action: driving ? "release" : "take" })
-			.catch((error: unknown) => failed(driving ? "Control could not be returned" : "The page could not be taken over", error))
-			.finally(() => setChangingControl(false));
-	};
 	const desktop = useDesktopPage(page.id);
 	const presentation = desktop === undefined ? "stream" : "native";
-	const selecting = mode !== "browse";
-	const canNavigate = driving && !selecting && !changingControl;
+	const selecting = picker.mode !== "browse";
+	const disconnected = page.load.state === "disconnected";
+	const problem = problemOf(page, connected);
+	const canNavigate = connected && !disconnected && driving && !selecting;
 	const layout = useBrowserLayout(page, presentation, canNavigate);
-	const interaction = selecting || (driving && !layout.saving) ? picker : { ...picker, mode: "observe" as const };
+	const interaction = problem === undefined && (selecting || (canNavigate && !layout.saving)) ? picker : { ...picker, mode: "observe" as const };
 	const { mount, ready } = usePageView(page, interaction, presentation, layout.room.size);
 	const canConfigure = layout.editable && !layout.saving;
-	const surface = (
-		<>
-			<div ref={mount} className="pointer-events-auto absolute inset-0" />
-			{picker.feedback ? (
-				<AnnotationEditor
-					key={`${picker.feedback.screenshot.ref}:${String(picker.feedback.captured_at)}`}
-					feedback={picker.feedback}
-					onClose={picker.cancel}
-					onSent={props.onSent}
-				/>
-			) : selecting ? (
-				<div
-					role="status"
-					className="pointer-events-none absolute inset-x-3 top-3 z-10 rounded-md border border-border bg-background px-3 py-2 text-xs shadow-raised"
-				>
-					{mode === "capturing"
-						? "Capturing the selected element…"
-						: !ready
-							? "Waiting for the page’s viewport…"
-							: "Click an element to annotate it. Escape cancels."}
-				</div>
-			) : null}
-		</>
-	);
+	const canPick = ready && !layout.saving && page.load.state === "ready" && page.dialog === undefined;
 	return (
 		<div className="flex min-h-0 flex-1 flex-col">
 			<div className="flex h-control-lg shrink-0 items-center gap-0.5 border-b border-border px-2 text-xs">
@@ -99,15 +71,26 @@ export function BrowserPane(props: { readonly thread: string; readonly page: Pag
 				<IconButton
 					label={selecting ? "Cancel element selection" : "Select an element for your message"}
 					aria-pressed={selecting}
-					disabled={!selecting && (page.loading || page.dialog !== undefined || !ready || layout.saving)}
+					disabled={problem !== undefined || (!selecting && !canPick)}
 					onClick={() => (selecting ? picker.cancel() : picker.start())}
 				>
-					{mode === "capturing" ? <LoaderCircle className="size-3.5 animate-spin" /> : <MousePointer2 className="size-3.5" />}
+					{picker.mode === "capturing" ? <LoaderCircle className="size-3.5 animate-spin" /> : <MousePointer2 className="size-3.5" />}
 				</IconButton>
-				<Button variant="ghost" size="xs" disabled={changingControl || selecting || !ready || page.control === "viewer"} onClick={changeControl}>
-					{driving ? "Return control" : page.control === "viewer" ? "Viewer has control" : "Take control"}
-				</Button>
-				<BrowserOptions page={page} native={desktop !== undefined} editable={canConfigure} onZoom={layout.zoomPage} />
+				<PageControlButton page={page} enabled={connected && !disconnected && !selecting && ready} />
+				<span
+					className="shrink-0 px-1 text-xs text-muted-foreground"
+					title={page.host === "desktop" ? "Uses the desktop’s browser session" : "Uses the node’s browser session"}
+				>
+					{page.host === "desktop" ? "Desktop" : "Node"}
+				</span>
+				<BrowserOptions
+					thread={props.thread}
+					page={page}
+					native={desktop !== undefined}
+					connected={connected}
+					editable={canConfigure}
+					onZoom={layout.zoomPage}
+				/>
 			</div>
 			{layout.fixed ? (
 				<ViewportControls
@@ -120,7 +103,7 @@ export function BrowserPane(props: { readonly thread: string; readonly page: Pag
 					onZoom={layout.setZoom}
 				/>
 			) : null}
-			{page.dialog === undefined ? null : (
+			{problem !== undefined || page.dialog === undefined ? null : (
 				<DialogBar
 					key={`${page.dialog.kind}:${page.dialog.message}`}
 					dialog={page.dialog}
@@ -132,9 +115,91 @@ export function BrowserPane(props: { readonly thread: string; readonly page: Pag
 					}
 				/>
 			)}
-			<ViewportSurface mountRoom={layout.room.mount} desktop={desktop} preview={layout.preview}>
-				{surface}
+			{problem === undefined && page.chooser ? (
+				<FileChooserBar key={page.chooser.id} page={page.id} thread={props.thread} chooser={page.chooser} disabled={!driving} />
+			) : null}
+			{problem === undefined ? null : <PageProblem problem={problem} page={page} />}
+			<ViewportSurface mountRoom={layout.room.mount} desktop={desktop} preview={layout.preview} hidden={problem !== undefined}>
+				<div ref={mount} className="pointer-events-auto absolute inset-0" />
+				<SelectionOverlay picker={picker} ready={ready} onSent={props.onSent} />
 			</ViewportSurface>
+		</div>
+	);
+}
+
+function PageControlButton({ page, enabled }: { readonly page: PageListed; readonly enabled: boolean }): ReactNode {
+	const client = useClient();
+	const [changing, setChanging] = useState(false);
+	const driving = page.control === "you";
+	const change = (): void => {
+		setChanging(true);
+		void client
+			.call("browser.control", { page: page.id, action: driving ? "release" : "take" })
+			.catch((error: unknown) => failed(driving ? "Control could not be returned" : "The page could not be taken over", error))
+			.finally(() => setChanging(false));
+	};
+	return (
+		<Button variant="ghost" size="xs" disabled={!enabled || changing || page.control === "viewer"} onClick={change}>
+			{driving ? "Return control" : page.control === "viewer" ? "Viewer has control" : "Take control"}
+		</Button>
+	);
+}
+
+function SelectionOverlay(props: {
+	readonly picker: ReturnType<typeof useElementPicker>;
+	readonly ready: boolean;
+	readonly onSent: (delivery: string) => void;
+}): ReactNode {
+	const { mode, feedback, cancel } = props.picker;
+	if (feedback) {
+		return <AnnotationEditor key={`${feedback.screenshot.ref}:${String(feedback.captured_at)}`} feedback={feedback} onClose={cancel} onSent={props.onSent} />;
+	}
+	if (mode === "browse") return null;
+	return (
+		<div
+			role="status"
+			className="pointer-events-none absolute inset-x-3 top-3 z-10 rounded-md border border-border bg-background px-3 py-2 text-xs shadow-raised"
+		>
+			{mode === "capturing"
+				? "Capturing the selected element…"
+				: !props.ready
+					? "Waiting for the page’s viewport…"
+					: "Click an element to annotate it. Escape cancels."}
+		</div>
+	);
+}
+
+type Problem = { readonly title: string; readonly detail: string; readonly action?: string };
+
+function problemOf(page: PageListed, connected: boolean): Problem | undefined {
+	if (!connected) return { title: "Node disconnected", detail: "Waiting to reconnect to Octoii." };
+	if (page.load.state === "failed") return { title: "This page could not be loaded", detail: page.load.message, action: "Retry" };
+	if (page.load.state !== "disconnected") return undefined;
+	if (page.host === "desktop" && window.octoiiBrowser === undefined) {
+		return { title: "Browser disconnected", detail: "Reopen this page in Octoii on the desktop." };
+	}
+	return { title: "Browser disconnected", detail: "Reopen this page at its last address.", action: "Reopen page" };
+}
+
+function PageProblem({ problem, page }: { readonly problem: Problem; readonly page: PageListed }): ReactNode {
+	const client = useClient();
+	const [retrying, setRetrying] = useState(false);
+	const retry = (): void => {
+		setRetrying(true);
+		void client
+			.call("browser.retry", { page: page.id })
+			.catch((error: unknown) => failed("The page could not be reopened", error))
+			.finally(() => setRetrying(false));
+	};
+	return (
+		<div role="status" className="grid min-h-0 flex-1 place-content-center gap-2 bg-muted px-5 text-center">
+			<p className="text-ui font-medium">{problem.title}</p>
+			<p className="text-xs text-muted-foreground">{problem.detail}</p>
+			{problem.action === undefined ? null : (
+				<Button className="mx-auto" size="xs" variant="outline" disabled={retrying || page.control === "viewer"} onClick={retry}>
+					{retrying ? "Reopening…" : problem.action}
+				</Button>
+			)}
 		</div>
 	);
 }
@@ -162,7 +227,7 @@ function PageNavigation({ page, enabled }: { readonly page: PageListed; readonly
 				disabled={!enabled}
 				onClick={() => void client.call("browser.reload", { page: page.id }).catch((error: unknown) => failed("The page could not be loaded again", error))}
 			>
-				{page.loading ? <LoaderCircle className="size-3.5 animate-spin" /> : <RotateCw className="size-3.5" />}
+				{page.load.state === "loading" ? <LoaderCircle className="size-3.5 animate-spin" /> : <RotateCw className="size-3.5" />}
 			</IconButton>
 			<AddressBar
 				page={page}
@@ -176,8 +241,10 @@ function PageNavigation({ page, enabled }: { readonly page: PageListed; readonly
 const PAGE_ZOOM = [50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200] as const;
 
 function BrowserOptions(props: {
+	readonly thread: string;
 	readonly page: PageListed;
 	readonly native: boolean;
+	readonly connected: boolean;
 	readonly editable: boolean;
 	readonly onZoom: (percent: number) => void;
 }): ReactNode {
@@ -201,6 +268,7 @@ function BrowserOptions(props: {
 				<Ellipsis className="size-3.5" />
 			</MenuTrigger>
 			<MenuPopup align="end" className="w-48">
+				{props.connected && page.downloads.length > 0 ? <BrowserDownloads page={page.id} thread={props.thread} downloads={page.downloads} /> : null}
 				<MenuItem
 					disabled={!editable || larger === undefined}
 					onClick={() => {

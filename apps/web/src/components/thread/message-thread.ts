@@ -4,7 +4,7 @@
  * places its paths are said by.
  */
 import { createContext, useContext, useMemo } from "react";
-import type { PageListed, TerminalListed } from "@octoii-works/octoii-client";
+import type { PageListed, PagePlacement, PageReference, TerminalListed } from "@octoii-works/octoii-client";
 import { useMachine } from "@octoii-works/octoii-client/react";
 import type { Places } from "../../core/files.ts";
 
@@ -14,7 +14,8 @@ export type MessageThread = {
 	readonly workspace: string | undefined;
 	readonly pages: readonly PageListed[];
 	readonly terminals: readonly TerminalListed[];
-	readonly openBrowser?: (url: string) => void;
+	readonly openBrowser?: (url: string, placement?: PagePlacement) => void;
+	readonly pageReference?: (id: string) => Promise<PageReference | null>;
 };
 
 /** The thread of the messages shown; none where they are no thread's. */

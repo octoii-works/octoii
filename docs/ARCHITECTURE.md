@@ -40,7 +40,16 @@ its own state for node status and access management.
 
 The browser extension owns page IDs, Thread membership, control and DevTools routing. New pages of the Thread shown on
 the local desktop can use an Electron guest. The guest connects through the node's owner-only control socket. Other
-pages use the node's headless Chromium. Each page keeps its original target for its lifetime.
+pages use the node's headless Chromium. The toolbar identifies which browser session the page uses.
+
+A connected page keeps its target. A stopped browser leaves the tab disconnected and clears its old frame. Reopening
+creates a fresh target at the last address in the same browser. A failed navigation can retry the address on its
+existing target. The client connection reports node outages independently of either page state.
+
+Each Thread preserves browser references with their title, last web address and browser host. A historical message can
+open that address on its original host after a tab closes or the node restarts. A desktop reference requires the
+Thread's connected desktop browser session. Reopening loads the address in the browser and leaves page interaction to
+the person or Agent.
 
 The desktop renders its own guest directly. Network viewers receive frames from that target. An active page
 subscription keeps the viewer's control, and its last disconnect returns control to the agent. Element annotations use
@@ -49,6 +58,8 @@ the Thread's normal input delivery with a captured screenshot.
 A page can follow the pane's size or keep a fixed viewport. Presets and page zoom change the shared CSS viewport.
 Native captures use the desktop display's pixel density. Preview fit and preview zoom scale the local surface.
 The local desktop opens DevTools for its guest while the viewer holds control and closes it on handoff.
+The Agent's CDP action accepts specific DOM, accessibility and frame inspection methods. Navigation, scripts, input
+and screenshots use the typed browser actions.
 
 The browser tool can open a page in the background on the node. Its page ID and runtime survive the desktop
 disconnecting. Opening an address from the Thread reveals the existing tab for that address when available. Loopback
@@ -57,6 +68,11 @@ and the Thread's running terminals.
 
 The controlling session supplies room measurements for a page that follows the pane's size. Other viewers adapt the
 shared page to their own panes through preview scaling.
+
+Desktop browser pages use a persistent Electron session for the node's identity. An approved popup belongs to its
+opener and shares that browser session. Returning control closes the desktop popup. File inputs use the controlling
+device's picker and the Thread's file storage. Agent uploads read through the workspace namespace. Both routes stage
+original bytes for the life of the page. Browser downloads can be saved through the Thread's original-file route.
 
 ## Node protocol
 

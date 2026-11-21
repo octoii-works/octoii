@@ -8,19 +8,24 @@ use octoii::protocol::{Command, Scope};
 use octoii::testing::{self, Client};
 use serde_json::json;
 use siphon_browser::BrowserExtension;
+use std::sync::atomic::{AtomicBool, Ordering};
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
 const PAGE: &str = "data:text/html,<title>Hello</title><input id=box autofocus>";
 
-#[tokio::test(flavor = "multi_thread")]
-async fn a_page_is_opened_listed_painted_and_worked_by_the_person() {
-    let found = [
+fn chrome_available() -> bool {
+    [
         "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
         "/usr/bin/google-chrome",
         "/usr/bin/chromium",
     ]
     .iter()
-    .any(|path| std::path::Path::new(path).exists());
-    if !found {
+    .any(|path| std::path::Path::new(path).exists())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_page_is_opened_listed_painted_and_worked_by_the_person() {
+    if !chrome_available() {
         eprintln!("no browser on this machine");
         return;
     }
@@ -81,20 +86,19 @@ async fn a_page_is_opened_listed_painted_and_worked_by_the_person() {
             .await["result"],
         json!({})
     );
-    client.event(&pages, |event| event["pages"][0]["title"] == "Moved").await;
     // Its history goes back from where it went, and nowhere forward; and it is told loading no more once it loaded.
     client
         .event(&pages, |event| {
             let listed = &event["pages"][0];
-            listed["back"] == true && listed["forward"] == false && listed["loading"] == false
+            listed["title"] == "Moved" && listed["back"] == true && listed["forward"] == false && listed["load"]["state"] == "ready"
         })
         .await;
-    client.command("browser.back", json!({ "page": page })).await;
-    client.event(&pages, |event| event["pages"][0]["title"] == "Hello").await;
+    assert_eq!(client.command("browser.back", json!({ "page": page })).await["result"], json!({}));
     // Back where it began, its history goes forward again — and back still, to the blank page it was opened on.
     client
         .event(&pages, |event| {
-            event["pages"][0]["back"] == true && event["pages"][0]["forward"] == true
+            let listed = &event["pages"][0];
+            listed["title"] == "Hello" && listed["back"] == true && listed["forward"] == true
         })
         .await;
     client.command("browser.close", json!({ "page": page })).await;
@@ -161,4 +165,87 @@ async fn fixed_viewport_survives_zoom_and_room_resize(client: &mut Client, page:
     let (listed, _) = client.event(&reread, |event| event["event"] == "pages").await;
     assert_eq!(listed["pages"][0]["viewport_size"]["width"], 800);
     assert_eq!(listed["pages"][0]["view"]["width"], 640);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failed_page_can_be_retried_and_its_address_survives_reopening_the_volume() {
+    if !chrome_available() {
+        return;
+    }
+    let folder = tempfile::tempdir().expect("a folder");
+    let running = || {
+        let mut setup = testing::setup(octoii::machine::Host {
+            home: std::env::var_os("HOME").map(Into::into),
+            ..octoii::machine::Host::default()
+        });
+        setup.directory = Some(folder.path().join("volume"));
+        Octoii::builder(setup)
+            .expect("built")
+            .extension(siphon_base::BaseExtension::default())
+            .extension(BrowserExtension {
+                profile: Some(folder.path().join("browser/profile")),
+                ..BrowserExtension::default()
+            })
+            .start()
+            .expect("started")
+    };
+    let siphon = running();
+    let mut client = Client::connect(&siphon, vec![Scope::ThreadsOperate, Scope::BrowserOperate], 64);
+    client.message().await;
+    let key = siphon.volume().new_id().expect("a key");
+    let created = client.command("threads.create", json!({ "key": key, "config": {} })).await;
+    let thread = created["result"]["thread"].as_str().expect("a thread");
+    let pages = client.subscribe(json!({ "type": "pages", "thread": thread })).await;
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("a local site");
+    let address = format!("http://{}/preview", listener.local_addr().expect("its address"));
+    let serving = std::sync::Arc::new(AtomicBool::new(false));
+    let work = serving.clone();
+    let site = tokio::spawn(async move {
+        while let Ok((mut stream, _)) = listener.accept().await {
+            let mut request = [0; 4096];
+            let _ = stream.read(&mut request).await;
+            if work.load(Ordering::Relaxed) {
+                let body = "<title>Recovered preview</title>";
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = stream.write_all(response.as_bytes()).await;
+            }
+        }
+    });
+
+    let opened = client
+        .command(
+            "browser.open",
+            json!({ "thread": thread, "url": address, "placement": "background", "view": { "width": 400, "height": 300 } }),
+        )
+        .await;
+    let page = opened["result"]["page"].as_str().expect("a page");
+    let (failed, _) = client.event(&pages, |event| event["pages"][0]["load"]["state"] == "failed").await;
+    assert_eq!(failed["pages"][0]["url"], address);
+    serving.store(true, Ordering::Relaxed);
+    assert_eq!(client.command("browser.retry", json!({ "page": page })).await["result"], json!({}));
+    client
+        .event(&pages, |event| {
+            let listed = &event["pages"][0];
+            listed["id"] == page && listed["title"] == "Recovered preview" && listed["load"]["state"] == "ready"
+        })
+        .await;
+    client.command("browser.close", json!({ "page": page })).await;
+    client.event(&pages, |event| event["pages"] == json!([])).await;
+    drop(client);
+    siphon.close().await;
+
+    let reopened = running();
+    let mut client = Client::connect(&reopened, vec![Scope::BrowserOperate], 16);
+    client.message().await;
+    let reference = client.command("browser.reference", json!({ "thread": thread, "page": page })).await;
+    assert_eq!(
+        reference["result"]["reference"],
+        json!({ "title": "Recovered preview", "url": address, "host": "headless" })
+    );
+    reopened.close().await;
+    site.abort();
 }

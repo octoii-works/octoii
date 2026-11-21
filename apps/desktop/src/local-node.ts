@@ -8,6 +8,8 @@ import { promisify } from "node:util";
 
 const execute = promisify(execFile);
 
+export type BrowserHost = { readonly origin: string; readonly socket: string; readonly node: string };
+
 /** Only a local node may supply the desktop page or receive a local pairing credential. */
 export function localAddress(address: string): URL {
 	const url = new URL(address);
@@ -38,7 +40,7 @@ export class LocalNode {
 		}
 	}
 
-	private async describe(): Promise<{ readonly address: URL; readonly socket: string | undefined } | undefined> {
+	private async describe(): Promise<{ readonly address: URL; readonly browser: BrowserHost | undefined } | undefined> {
 		let output: string;
 		try {
 			output = await this.command(["status", "--json"]);
@@ -57,8 +59,12 @@ export class LocalNode {
 				"The running node version differs from this desktop app. Finish its tasks and update the node before retrying. It has not been restarted.",
 			);
 		}
-		const socket = "control_socket" in status && typeof status.control_socket === "string" ? status.control_socket : undefined;
-		return { address: localAddress(status.loopback), socket };
+		const address = localAddress(status.loopback);
+		const browser =
+			"control_socket" in status && typeof status.control_socket === "string" && "key" in status && typeof status.key === "string"
+				? { origin: address.origin, socket: status.control_socket, node: status.key }
+				: undefined;
+		return { address, browser };
 	}
 
 	async status(): Promise<URL | undefined> {
@@ -66,9 +72,9 @@ export class LocalNode {
 	}
 
 	/** The private socket must belong to the node this window actually reached. */
-	async browserSocket(address: URL): Promise<string | undefined> {
+	async browserHost(address: URL): Promise<BrowserHost | undefined> {
 		const status = await this.describe();
-		return status?.address.origin === address.origin ? status.socket : undefined;
+		return status?.address.origin === address.origin ? status.browser : undefined;
 	}
 
 	async connect(): Promise<URL> {

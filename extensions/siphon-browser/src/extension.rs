@@ -5,6 +5,7 @@
 use std::sync::{Arc, OnceLock};
 
 use octoii::protocol::{Error, Nothing, Scope};
+use octoii::threads::ThreadData;
 use octoii::{Caller, Extension, Lagged, Registrar, Subscription};
 use serde_json::{Value, json};
 use tokio::sync::broadcast::error::RecvError;
@@ -40,12 +41,14 @@ impl Extension for BrowserExtension {
 
     fn build(self: Box<Self>, registrar: &mut Registrar<'_>) {
         registrar.teller(octoii::agent::Shared::Machine, std::sync::Arc::new(crate::context::Context));
+        let references = registrar.thread_data();
         let browser = Browser::start(BrowserHost {
             commands: registrar.commands(),
             machine: registrar.machine().clone(),
             program: self.program,
             profile: self.profile,
             downloads: self.downloads,
+            references: Some(references.clone()),
         });
         if let Some(handle) = self.browser {
             let _ = handle.set(browser.clone());
@@ -57,7 +60,8 @@ impl Extension for BrowserExtension {
         let doing = browser.clone();
         registrar.methods(protocol::set(), Method::read, move |caller: Caller, method| {
             let browser = doing.clone();
-            async move { answered(&browser, &caller, method).await }
+            let references = references.clone();
+            async move { answered(&browser, &references, &caller, method).await }
         });
         registrar.topics(Scope::BrowserOperate, move |subscription: Subscription, topic: BrowserTopic| {
             let browser = browser.clone();
@@ -76,7 +80,7 @@ fn size(view: View) -> Size {
 }
 
 /// Does `method` on `browser`.
-async fn answered(browser: &Browser, caller: &Caller, method: Method) -> Result<Value, Error> {
+async fn answered(browser: &Browser, references: &ThreadData, caller: &Caller, method: Method) -> Result<Value, Error> {
     let driving = match &method {
         Method::Navigate(navigate) => Some(&navigate.page),
         Method::Back(of) | Method::Forward(of) | Method::Reload(of) => Some(&of.page),
@@ -86,6 +90,7 @@ async fn answered(browser: &Browser, caller: &Caller, method: Method) -> Result<
         Method::Mouse(on) => Some(&on.page),
         Method::Key(on) => Some(&on.page),
         Method::Text(typed) => Some(&typed.page),
+        Method::ChooseFiles(request) => Some(&request.page),
         _ => None,
     };
     let _driving = match driving {
@@ -110,6 +115,21 @@ async fn answered(browser: &Browser, caller: &Caller, method: Method) -> Result<
         Method::Back(of) => browser.page(&of.page).go(-1).await.map(drop),
         Method::Forward(of) => browser.page(&of.page).go(1).await.map(drop),
         Method::Reload(of) => browser.page(&of.page).reload().await.map(drop),
+        Method::Retry(of) => browser.retry(&of.page, &caller.session).await,
+        Method::Reference(request) => {
+            caller.thread(&request.thread)?;
+            let failed = |error: &dyn std::fmt::Display| Error {
+                code: "page_reference_failed".to_owned(),
+                message: error.to_string(),
+            };
+            let reference = references
+                .read(&request.thread, &request.page)
+                .map_err(|error| failed(&error))?
+                .map(|bytes| serde_json::from_slice::<protocol::PageReference>(&bytes))
+                .transpose()
+                .map_err(|error| failed(&error))?;
+            return Ok(json!(protocol::ReferencedPage { reference }));
+        }
         Method::Dialog(answer) => {
             let params = json!({ "accept": answer.accept, "promptText": answer.text.unwrap_or_default() });
             browser
@@ -146,6 +166,11 @@ async fn answered(browser: &Browser, caller: &Caller, method: Method) -> Result<
             browser.page(&typed.page).cdp("Input.insertText", params).await.map(drop)
         }
         Method::Pick(request) => return Ok(json!(crate::pick::pick(browser, caller, request).await?)),
+        Method::ChooseFiles(request) => {
+            crate::files::choose(browser, caller, request).await?;
+            return Ok(json!(Nothing {}));
+        }
+        Method::KeepDownload(request) => return Ok(json!(crate::files::keep_download(browser, caller, request).await?)),
     };
     done.map_err(|error| failed(&error))?;
     Ok(json!(Nothing {}))
@@ -205,6 +230,9 @@ pub(crate) fn failed(error: &BrowserError) -> Error {
         BrowserError::DesktopViewport => "desktop_viewport",
         BrowserError::InvalidViewport => "invalid_viewport",
         BrowserError::InvalidZoom => "invalid_zoom",
+        BrowserError::ChooserChanged => "chooser_changed",
+        BrowserError::Disconnected => "page_disconnected",
+        BrowserError::NeedsDesktop => "needs_desktop",
         _ => "failed",
     };
     Error {
@@ -233,12 +261,14 @@ fn listed(view: PageView, session: &str) -> PageListed {
         zoom: view.zoom,
         host: view.host,
         dev_tools: view.dev_tools,
+        downloads: view.downloads,
+        chooser: view.chooser,
         dialog: view.dialog.map(|dialog| PageDialog {
             kind: dialog.kind,
             message: dialog.message,
             offered: dialog.offered,
         }),
-        loading: view.loading,
+        load: view.load,
         back: view.back,
         forward: view.forward,
         control: match view.controller.as_deref() {

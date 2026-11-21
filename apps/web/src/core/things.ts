@@ -4,7 +4,7 @@
  * `:thread{id=…}`, which the page draws as its chip and the model reads by its id; a thing as a mention offers it, by
  * its name; and a directive written as words, as a line that names a message shows it.
  */
-import type { PageListed } from "@octoii-works/octoii-client";
+import type { PageReference } from "@octoii-works/octoii-client";
 
 /** The kinds of thing a directive names. */
 export const KINDS = ["thread", "page", "terminal"] as const;
@@ -26,7 +26,7 @@ export function directiveOf(thing: Pick<Thing, "kind" | "id">): string {
 }
 
 /** What a page is called: its title, or its address where it has none. */
-export function pageName(page: PageListed): string {
+export function pageName(page: PageReference): string {
 	return page.title === "" ? page.url : page.title;
 }
 

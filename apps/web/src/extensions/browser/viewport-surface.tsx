@@ -7,11 +7,13 @@ export function ViewportSurface({
 	mountRoom,
 	preview,
 	desktop,
+	hidden,
 	children,
 }: {
 	readonly mountRoom: (element: HTMLDivElement | null) => (() => void) | undefined;
 	readonly preview: ViewportPreview | undefined;
 	readonly desktop: DesktopPage | undefined;
+	readonly hidden: boolean;
 	readonly children: ReactNode;
 }): ReactNode {
 	const width = preview === undefined ? "100%" : preview.size.width * preview.scale;
@@ -24,7 +26,7 @@ export function ViewportSurface({
 		[desktop, across, down, transform],
 	);
 	return (
-		<div ref={mountRoom} data-browser-viewport="" className="relative min-h-0 flex-1 overflow-auto bg-muted">
+		<div ref={mountRoom} data-browser-viewport="" hidden={hidden} className="relative min-h-0 flex-1 overflow-auto bg-muted">
 			<div
 				className="grid min-h-full min-w-full place-items-center"
 				style={

@@ -19,6 +19,7 @@ async fn the_browser_tool_reads_a_page_at_once_and_works_one_after_what_came_bef
         program: None,
         profile: None,
         downloads: None,
+        references: None,
     });
     let tools = Tools::new().with(siphon_browser::BrowserTool { browser });
     let base = Base {

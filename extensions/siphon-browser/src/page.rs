@@ -176,12 +176,14 @@ impl Page {
 
     async fn landed(&self, since: Instant, failed: Option<String>) -> Result<Landed, BrowserError> {
         let probe = self.settle(since, LOAD_CAP).await;
-        let view = self.browser.pages_of_page(&self.id).await;
-        Ok(Landed {
-            url: probe.as_ref().map_or_else(|| view.0.clone(), |probe| probe.url.clone()),
-            title: probe.map_or(view.1, |probe| probe.title),
-            failed,
-        })
+        let view = self.browser.view(&self.id).await.ok_or(BrowserError::NoSuchPage)?;
+        let failed = match view.load {
+            crate::protocol::PageLoad::Failed { message } => Some(message),
+            _ => failed,
+        };
+        let probe = probe.filter(|_| failed.is_none());
+        let (url, title) = probe.map_or((view.url, view.title), |probe| (probe.url, probe.title));
+        Ok(Landed { url, title, failed })
     }
 
     /// Takes the page `steps` entries through its history — back where negative — where it has them: where it landed,
@@ -288,12 +290,5 @@ impl Page {
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
         Ok(false)
-    }
-}
-
-impl Browser {
-    /// The address and title the page `id` has, as its owner keeps them.
-    pub(crate) async fn pages_of_page(&self, id: &str) -> (String, String) {
-        self.view(id).await.map_or_default(|view| (view.url, view.title))
     }
 }

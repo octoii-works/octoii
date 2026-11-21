@@ -2,7 +2,7 @@
 import { app, BrowserWindow, dialog, Menu, shell, protocol, session } from "electron";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { LocalNode, localAddress } from "./local-node.ts";
+import { type BrowserHost, LocalNode, localAddress } from "./local-node.ts";
 import { pairLocalNode } from "./pairing.ts";
 import { desktopResponse } from "./assets.ts";
 import { LastLocation } from "./location.ts";
@@ -79,9 +79,9 @@ async function start(): Promise<void> {
 
 	function createWindow(): void {
 		let connecting = false;
-		let browserSocket: string | undefined;
+		let browserHost: BrowserHost | undefined;
 		const window = desktopWindow();
-		serveBrowser(window.webContents, () => (origin && browserSocket ? { origin, socket: browserSocket } : undefined));
+		serveBrowser(window, () => browserHost);
 		window.webContents.session.setPermissionRequestHandler((_contents, _permission, reply) => reply(false));
 		window.webContents.session.setPermissionCheckHandler(() => false);
 		window.webContents.setWindowOpenHandler(({ url }) => {
@@ -119,7 +119,7 @@ async function start(): Promise<void> {
 				if (window.isDestroyed()) return;
 				origin = address.origin;
 				if (initial === undefined) await pairLocalNode(node, address, desktopSession);
-				browserSocket = await node.browserSocket(address).catch(() => undefined);
+				browserHost = await node.browserHost(address).catch(() => undefined);
 				if (window.isDestroyed()) return;
 				await window.loadURL(location.restore(address, nodeIdentity).href);
 			} catch (error) {

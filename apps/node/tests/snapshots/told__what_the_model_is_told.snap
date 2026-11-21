@@ -46,7 +46,7 @@ date: <date> (UTC)
 When `browser` is available, it controls the thread's browser beside the chat. Each call acts on the current page; switch changes it.
 Use placement "background" when a page must stay open after the desktop closes.
 Use refs from read's accessibility tree for elements; * marks refs new since the previous read. Use look for visual checks. Actions that change the page wait for it to settle and report whether it navigated, changed, or stayed the same.
-A local HTML preview is isolated. Check it with look, console and coordinate clicks. Use raw CDP only when other actions cannot do the job.
+A local HTML preview is isolated. Check it with look, console and coordinate clicks. Use CDP for page inspection when read or info does not suffice.
 Use :page{id=<id>} for an inline reference, or ::page{id=<id>} on its own line for a card; use the returned page id as id.
 
 === section delegate
@@ -149,6 +149,11 @@ Control the thread's current browser page. One action per call; action parameter
         {
           "const": "background",
           "description": "Keep the page on the node when the desktop closes.",
+          "type": "string"
+        },
+        {
+          "const": "desktop",
+          "description": "Require the thread's connected desktop and its browser session.",
           "type": "string"
         }
       ]
@@ -629,14 +634,14 @@ Control the thread's current browser page. One action per call; action parameter
     },
     {
       "additionalProperties": false,
-      "description": "Set files on a file input, by absolute paths.",
+      "description": "Give files the thread can read to a page's file input.",
       "properties": {
         "action": {
           "const": "upload",
           "type": "string"
         },
         "files": {
-          "description": "Absolute paths of the files.",
+          "description": "Paths relative to the thread's workspace, or absolute paths.",
           "items": {
             "type": "string"
           },
@@ -810,7 +815,7 @@ Control the thread's current browser page. One action per call; action parameter
     },
     {
       "additionalProperties": false,
-      "description": "Send a raw Chrome DevTools Protocol command to the page, or to the frame whose URL contains `frame`, when no\nother action can.",
+      "description": "Inspect the page or the frame whose URL contains `frame` with a supported Chrome DevTools Protocol command.\nUse the other actions to navigate, interact, run scripts or capture an image.",
       "properties": {
         "action": {
           "const": "cdp",

@@ -23,6 +23,7 @@ import type {
 	MethodName,
 	Model,
 	PageListed,
+	PagePlacement,
 	ParamsOf,
 	ProviderShown,
 	ProviderStatus,
@@ -95,7 +96,7 @@ export type Client = {
 	/** Watches the thread's pages in the browser, in the order they were opened: none until the node told them. */
 	watchPages(thread: string): Followable<readonly PageListed[] | undefined>;
 	/** Opens a blank page or reveals the thread's page at `url`. A new page starts at `view`. */
-	openPage(thread: string, url: string | undefined, view: View): Promise<string>;
+	openPage(thread: string, url: string | undefined, view: View, placement?: PagePlacement): Promise<string>;
 	/** Follows the page `id` through `handlers`, and can drive it after taking control. */
 	page(id: string, handlers?: PageHandlers): PageView;
 	/** Captures the element the person selected, keeping its screenshot in the named thread. */
@@ -192,8 +193,8 @@ export function createClient(options: ClientOptions): Client {
 		closeTerminal: (id) => done(requests.call("terminals.close", { terminal: id })),
 		watchPages: (thread) =>
 			watched<readonly PageListed[]>(watches, `pages ${thread}`, { type: "pages", thread }, (event) => (event.event === "pages" ? event.pages : undefined)),
-		openPage: async (thread, url, view) =>
-			(await requests.call("browser.open", { thread, view, placement: "workspace", ...(url === undefined ? {} : { url }) })).page,
+		openPage: async (thread, url, view, placement = "workspace") =>
+			(await requests.call("browser.open", { thread, view, placement, ...(url === undefined ? {} : { url }) })).page,
 		page: (id, handlers) => followPage(new Controls(connection, told), requests, subscriptions, id, handlers),
 		pickElement: (pick) => requests.call("browser.pick", pick),
 		closePage: (id) => done(requests.call("browser.close", { page: id })),

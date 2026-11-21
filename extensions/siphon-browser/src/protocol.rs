@@ -19,6 +19,10 @@ octoii::methods! {
     "browser.forward" Forward(OfPage) -> Nothing, Some(Scope::BrowserOperate);
     /// A page loaded again.
     "browser.reload" Reload(OfPage) -> Nothing, Some(Scope::BrowserOperate);
+    /// Reopens a disconnected page or retries its last address after a load failure.
+    "browser.retry" Retry(OfPage) -> Nothing, Some(Scope::BrowserOperate);
+    /// A page's title and address kept in the thread, after it has closed.
+    "browser.reference" Reference(ReferencePage) -> ReferencedPage, Some(Scope::BrowserOperate);
     /// The dialog that holds a page answered: accepted, with the text a prompt is given, or dismissed.
     "browser.dialog" Dialog(AnswerDialog) -> Nothing, Some(Scope::BrowserOperate);
     /// A page closed.
@@ -38,6 +42,36 @@ octoii::methods! {
     /// Captures evidence of the main-document element at a viewport point, without dispatching input. Also requires
     /// threads.operate to keep the screenshot in its owning thread.
     "browser.pick" Pick(PickElement) -> ElementFeedback, Some(Scope::BrowserOperate);
+    /// Keeps the original bytes of a finished download in the owning thread.
+    "browser.keep_download" KeepDownload(KeepDownload) -> FileRef, Some(Scope::BrowserOperate);
+    /// Supplies the thread's files to the open file chooser. An empty list cancels it.
+    "browser.choose_files" ChooseFiles(ChooseFiles) -> Nothing, Some(Scope::BrowserOperate);
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct KeepDownload {
+    pub page: String,
+    pub download: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct PageDownload {
+    pub id: String,
+    pub name: String,
+    pub state: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct PageFileChooser {
+    pub id: String,
+    pub multiple: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct ChooseFiles {
+    pub page: String,
+    pub chooser: String,
+    pub files: Vec<FileRef>,
 }
 
 /// A point to inspect in the page's CSS viewport, together with the page and view the person saw.
@@ -147,11 +181,31 @@ pub enum PagePlacement {
     Workspace,
     /// Keep the page on the node when the desktop closes.
     Background,
+    /// Require the thread's connected desktop and its browser session.
+    Desktop,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct PageOpened {
     pub page: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct ReferencePage {
+    pub thread: String,
+    pub page: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct PageReference {
+    pub url: String,
+    pub title: String,
+    pub host: PageHost,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct ReferencedPage {
+    pub reference: Option<PageReference>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -306,13 +360,27 @@ pub struct PageListed {
     pub zoom: u16,
     pub host: PageHost,
     pub dev_tools: DevToolsState,
+    pub downloads: Vec<PageDownload>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub chooser: Option<PageFileChooser>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub dialog: Option<PageDialog>,
-    pub loading: bool,
+    pub load: PageLoad,
     pub back: bool,
     pub forward: bool,
     pub control: PageController,
+}
+
+/// The document or target's state, independent of the connection watching it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum PageLoad {
+    Loading,
+    Ready,
+    Failed { message: String },
+    Disconnected,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]

@@ -80,7 +80,7 @@ impl Fixture {
                 event["pages"].as_array().is_some_and(|pages| {
                     pages
                         .iter()
-                        .any(|listed| listed["id"] == page && listed["title"] == "Pick" && listed["loading"] == false)
+                        .any(|listed| listed["id"] == page && listed["title"] == "Pick" && listed["load"]["state"] == "ready")
                 })
             })
             .await;

@@ -16,6 +16,7 @@ const FORM: &str = "<title>Form</title>\
 <button onclick=\"document.getElementById('out').textContent='Hello '+document.getElementById('name').value\">Greet</button>\
 <p id='out'></p>\
 <select aria-label='Colour'><option value='r'>Red</option><option value='g'>Green</option></select>\
+<input aria-label='Attachment' id='attachment' type='file'>\
 <div style='position:relative'><button id='under'>Hidden</button>\
 <div id='cover' style='position:absolute;inset:0;background:white'>Cover</div></div>\
 <button onclick=\"alert('careful')\">Warn</button>\
@@ -148,6 +149,7 @@ fn browser(fixture: &Runtime, profile: &std::path::Path, downloads: &std::path::
         program: None,
         profile: Some(profile.to_owned()),
         downloads: Some(downloads.canonicalize().expect("its real path")),
+        references: None,
     }))
 }
 
@@ -305,6 +307,22 @@ async fn the_agent_opens_reads_fills_and_submits_a_form_and_the_person_sees_it_p
     .await
     .expect("chose");
     assert!(chose.text.starts_with("chose [\"Green\"]"), "{}", chose.text);
+    std::fs::write(profile.path().join("notes.txt"), "original notes").expect("a workspace file");
+    act(
+        &browser,
+        &machine,
+        json!({ "action": "upload", "target": { "selector": "#attachment" }, "files": ["notes.txt"] }),
+    )
+    .await
+    .expect("uploaded a workspace-relative file");
+    let file = act(
+        &browser,
+        &machine,
+        json!({ "action": "evaluate", "expression": "(async () => { const [file] = document.getElementById('attachment').files; return [file.name, await file.text()]; })()" }),
+    )
+    .await
+    .expect("read the input's file");
+    assert_eq!(file.value, Some(json!(["notes.txt", "original notes"])));
     let looked = act(&browser, &machine, json!({ "action": "look" })).await.expect("looked");
     assert!(looked.image.expect("a picture").starts_with(b"\xff\xd8"), "a JPEG");
     let info = act(&browser, &machine, json!({ "action": "info" })).await.expect("measured");
@@ -419,12 +437,7 @@ async fn a_covered_element_is_refused_a_dialog_is_answered_and_the_page_goes_bac
         "{}",
         warned.text
     );
-    let held = act(
-        &browser,
-        &machine,
-        json!({ "action": "cdp", "method": "Runtime.evaluate", "params": { "expression": "1" } }),
-    )
-    .await;
+    let held = act(&browser, &machine, json!({ "action": "cdp", "method": "DOM.getDocument" })).await;
     assert!(held.expect_err("held").0.contains("dialog"));
     act(&browser, &machine, json!({ "action": "dialog", "accept": true }))
         .await
@@ -519,15 +532,10 @@ async fn tabs_are_the_thread_s_its_console_and_downloads_are_told_and_cdp_reache
         .await
         .expect("downloaded in time");
     assert!(told.starts_with("\"notes.txt\" completed: 9 of 9 bytes"), "{told}");
-    let params = json!({ "expression": "2 + 2", "returnByValue": true });
-    let called = act(
-        &browser,
-        &machine,
-        json!({ "action": "cdp", "method": "Runtime.evaluate", "params": params }),
-    )
-    .await
-    .expect("called");
-    assert_eq!(called.value.expect("a value")["result"]["value"], 4);
+    let called = act(&browser, &machine, json!({ "action": "cdp", "method": "DOM.getDocument" }))
+        .await
+        .expect("called");
+    assert_eq!(called.value.expect("a document")["root"]["nodeName"], "#document");
     act(&browser, &machine, json!({ "action": "close" })).await.expect("closed");
     assert!(
         act(&browser, &machine, json!({ "action": "switch", "page": "nonesuch" }))

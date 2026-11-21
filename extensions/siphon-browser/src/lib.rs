@@ -10,6 +10,7 @@ mod action;
 mod browser;
 mod cdp;
 mod extension;
+mod files;
 mod input;
 mod keys;
 mod page;

@@ -70,11 +70,6 @@ pub enum Input {
         from: Target,
         to: Target,
     },
-    /// Files of the machine, by absolute paths, given to a file input.
-    Upload {
-        node: i64,
-        files: Vec<String>,
-    },
     /// The dialog that holds the page answered, a prompt's text with it.
     Dialog {
         accept: bool,
@@ -365,14 +360,6 @@ impl Page {
             Input::Drag { from, to } => {
                 drag(attached, *from, *to).await?;
                 Ok(String::new())
-            }
-            Input::Upload { node, files } => {
-                attached
-                    .cdp
-                    .call(session, "DOM.setFileInputFiles", json!({ "backendNodeId": node, "files": files }))
-                    .await
-                    .map_err(|error| InputError::Refused(format!("e{node} took no files: {error}")))?;
-                Ok(format!("gave {} files; ", files.len()))
             }
             Input::Dialog { accept, text } => {
                 let mut answer = json!({ "accept": accept });

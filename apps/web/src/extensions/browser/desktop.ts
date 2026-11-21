@@ -3,7 +3,14 @@ import { type ReactNode, useSyncExternalStore } from "react";
 import { routeOf } from "../../core/route.ts";
 import { pageKey, showSurface } from "../../components/state/panel.ts";
 
-type Hosted = { readonly page: string; readonly thread: string; readonly partition: string; readonly width: number; readonly height: number };
+type Hosted = {
+	readonly page: string;
+	readonly thread: string;
+	readonly partition: string;
+	readonly start: string;
+	readonly width: number;
+	readonly height: number;
+};
 type Portal = (children: ReactNode, host: HTMLDivElement) => ReactNode;
 export type DesktopPage = { readonly host: HTMLDivElement; readonly park: () => void; readonly render: (children: ReactNode) => ReactNode };
 
@@ -11,7 +18,7 @@ declare global {
 	interface Window {
 		readonly octoiiBrowser?: {
 			readonly pages: (listener: (pages: readonly Hosted[]) => void) => () => void;
-			readonly thread: (thread: string | null) => void;
+			readonly thread: (thread: string | null, session: string | null) => void;
 			readonly devTools: (page: string, action: "open" | "close") => Promise<void>;
 		};
 	}
@@ -36,7 +43,8 @@ function mount(page: Hosted, portal: Portal): DesktopPage {
 	const webview = document.createElement("webview");
 	webview.className = "pointer-events-none absolute inset-0 size-full";
 	webview.setAttribute("partition", page.partition);
-	webview.setAttribute("src", "about:blank");
+	webview.setAttribute("allowpopups", "");
+	webview.setAttribute("src", page.start);
 	host.append(webview);
 	const park = (): void => {
 		Object.assign(host.style, {

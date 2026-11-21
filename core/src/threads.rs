@@ -4,6 +4,7 @@
 //! it came, a change of how it runs logged where it took effect, from what it was to what it is.
 
 pub(crate) mod config;
+mod data;
 pub mod files;
 mod history;
 pub(crate) mod idempotency;
@@ -27,6 +28,7 @@ pub(crate) use window::Window;
 
 /// What extensions and hosts use of it.
 pub use config::{Config, Mode};
+pub use data::ThreadData;
 pub use history::{Entries, History};
 pub use inbox::{Ended, Joins};
 pub use input::InputPart;

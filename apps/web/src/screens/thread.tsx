@@ -6,9 +6,9 @@
  * which a path a message names opens in. What the thread brought is seen as it is shown.
  */
 import { WorktreeStart } from "../extensions/git/thread-start.tsx";
-import { type ReactNode, useCallback, useMemo, useRef, useState } from "react";
+import { type ReactNode, useMemo, useRef, useState } from "react";
 import type { Conversation, Listed, Status } from "@octoii-works/octoii-client";
-import { useClient, useConversation, usePages, useTerminals, useThreads } from "@octoii-works/octoii-client/react";
+import { useClient, useConversation, useTerminals, useThreads } from "@octoii-works/octoii-client/react";
 import type { Device } from "../core/device.ts";
 import { type Project, projectOf, statusOf, stopTargetOf, titleOf } from "../core/threads.ts";
 import { contentOf } from "../core/attachments.ts";
@@ -30,12 +30,11 @@ import { useExtension, useExtensionAccess } from "../components/state/extensions
 import { thingsOf } from "../core/mentions.ts";
 import type { Thing } from "../core/things.ts";
 import { failed } from "../components/state/notices.ts";
-import { openThreadPage } from "../components/state/browser.ts";
 import { useSeen } from "../components/effects/seen.ts";
 import { useNow } from "../components/effects/now.ts";
 import { useDetailsRoom } from "../components/effects/details-room.ts";
 import { useFolder } from "../components/state/folder.ts";
-import { useBrowserPanel } from "../extensions/browser/panel.tsx";
+import { useBrowserPanel, useThreadBrowser } from "../extensions/browser/panel.tsx";
 import { useGitPanel } from "../extensions/git/panel.tsx";
 import { useTerminalsPanel } from "../extensions/terminals/panel.tsx";
 import { VersionControl } from "../extensions/git/version-control.tsx";
@@ -61,10 +60,8 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 	const row = rows.find((each) => each.id === thread);
 	const status = visibleStatus(conversation, row);
 	const terminalsOn = useExtensionAccess("terminals", "terminals.operate");
-	const browserOn = useExtensionAccess("browser", "browser.operate");
+	const { available: browserOn, pages, openBrowser, pageReference } = useThreadBrowser(thread);
 	const terminals = useTerminals(terminalsOn ? thread : undefined) ?? NO_ENTRIES;
-	const pages = usePages(browserOn ? thread : undefined) ?? NO_ENTRIES;
-	const openBrowser = useCallback((address: string) => openThreadPage(client, thread, address), [client, thread]);
 	const terminalsPanel = useTerminalsPanel(thread, terminals, terminalsOn, browserOn ? openBrowser : undefined);
 	const servers = useMemo(() => (browserOn ? localServersOf(pages, terminals, conversation.turns) : []), [browserOn, pages, terminals, conversation.turns]);
 	const reachesThreads = useExtension("thread");
@@ -115,7 +112,7 @@ export function ThreadScreen(props: ThreadScreenProps): ReactNode {
 		<>
 			<ThreadPane title={row?.config.title ?? (said === undefined ? "New thread" : titleOf(said))} status={status} project={project} details={details}>
 				<div className="relative flex min-h-0 flex-1 flex-col">
-					<MessageThreadContext value={{ thread, workspace, pages, terminals, ...(browserOn ? { openBrowser } : {}) }}>
+					<MessageThreadContext value={{ thread, workspace, pages, terminals, ...(browserOn ? { openBrowser, pageReference } : {}) }}>
 						<ThreadConversation thread={thread} status={status}>
 							<Timeline
 								ref={timeline}

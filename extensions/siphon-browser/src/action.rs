@@ -15,10 +15,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::browser::{Browser, BrowserError, Size};
+use crate::files::{Upload, file_error};
 use crate::input::{Button, Input, InputError, Target};
 use crate::page::{Evaluated, Landed, Page, SETTLE_CAP, Wanted};
 use crate::primitives::PageInfo;
-use crate::protocol::PagePlacement;
+use crate::protocol::{PageLoad, PagePlacement};
 use crate::snapshot::node_of;
 
 /// The size a page the Agent opens is laid out at.
@@ -166,11 +167,11 @@ pub enum Action {
         /// End point.
         to: Place,
     },
-    /// Set files on a file input, by absolute paths.
+    /// Give files the thread can read to a page's file input.
     Upload {
         /// The file input.
         target: Place,
-        /// Absolute paths of the files.
+        /// Paths relative to the thread's workspace, or absolute paths.
         files: Vec<String>,
     },
     /// Answer the dialog blocking the page; `text` answers a prompt.
@@ -215,8 +216,8 @@ pub enum Action {
     },
     /// Return the page's finished and running downloads.
     Downloads,
-    /// Send a raw Chrome DevTools Protocol command to the page, or to the frame whose URL contains `frame`, when no
-    /// other action can.
+    /// Inspect the page or the frame whose URL contains `frame` with a supported Chrome DevTools Protocol command.
+    /// Use the other actions to navigate, interact, run scripts or capture an image.
     Cdp {
         /// Method name, such as `DOM.getDocument`.
         method: String,
@@ -328,7 +329,7 @@ impl Browser {
                 } else {
                     Some(self.drive(&page.id, None).await?)
                 };
-                self.on_page(&page, on_page).await?
+                self.on_page(&page, machine, on_page).await?
             }
         };
         if outcome.page.is_none()
@@ -358,6 +359,11 @@ impl Browser {
         let page = self.page(&id);
         page.attached().await?;
         page.wait_for_load(Duration::from_secs(15)).await;
+        if let Some(view) = self.view(&id).await
+            && let PageLoad::Failed { message } = view.load
+        {
+            return Ok(said(format!("page {id} could not load {}: {message}", view.url)));
+        }
         Ok(said(format!("opened page {id}")))
     }
 
@@ -427,7 +433,7 @@ impl Browser {
     }
 
     /// Does `action`, one of a page's, on `page`.
-    async fn on_page(&self, page: &Page, action: Action) -> Result<Outcome, Refusal> {
+    async fn on_page(&self, page: &Page, machine: &Machine, action: Action) -> Result<Outcome, Refusal> {
         match action {
             Action::Navigate { url } => Ok(landed(page.navigate(&url).await?)),
             Action::Back => went(page.go(-1).await?, "no entry back in its history"),
@@ -474,7 +480,23 @@ impl Browser {
             }
             Action::Console { since } => Ok(self.console(page, since.unwrap_or_default()).await),
             Action::Downloads => Ok(self.downloaded(page).await),
+            Action::Upload { target, files } => {
+                let node = node_at(page, &target).await?;
+                let upload = Upload::stage(files.into_iter().map(|path| {
+                    machine
+                        .read_file(&machine.path(&path), octoii::threads::files::BYTES_MAX as u64)
+                        .map_err(file_error)
+                }))?;
+                let count = upload.paths.len();
+                self.upload(&page.id, node, upload).await?;
+                Ok(said(format!("gave {count} files")))
+            }
             Action::Cdp { method, params, frame } => {
+                if !page_inspection(&method) {
+                    return Err(Refusal(format!(
+                        "{method} is not a supported page inspection. Use a browser action"
+                    )));
+                }
                 let params = if params.is_null() { serde_json::json!({}) } else { params };
                 let value = match frame_of(page, frame.as_deref()).await? {
                     Some(session) => page.cdp_on(&session, &method, params).await?,
@@ -543,6 +565,28 @@ impl Browser {
             ..said(if text.is_empty() { "no downloads".into() } else { text })
         }
     }
+}
+
+/// The model receives page inspection, below the scope of the developer tools or browser profile.
+fn page_inspection(method: &str) -> bool {
+    matches!(
+        method,
+        "Accessibility.getFullAXTree"
+            | "Accessibility.getPartialAXTree"
+            | "CSS.getComputedStyleForNode"
+            | "CSS.getMatchedStylesForNode"
+            | "DOM.describeNode"
+            | "DOM.getAttributes"
+            | "DOM.getBoxModel"
+            | "DOM.getContentQuads"
+            | "DOM.getDocument"
+            | "DOM.getOuterHTML"
+            | "DOM.querySelector"
+            | "DOM.querySelectorAll"
+            | "DOMSnapshot.captureSnapshot"
+            | "Page.getFrameTree"
+            | "Page.getLayoutMetrics"
+    )
 }
 
 fn landed(landed: Landed) -> Outcome {
@@ -637,10 +681,6 @@ async fn input_of(page: &Page, action: Action) -> Result<Input, Refusal> {
             from: target_of(page, &from).await?,
             to: target_of(page, &to).await?,
         },
-        Action::Upload { target, files } => Input::Upload {
-            node: node_at(page, &target).await?,
-            files,
-        },
         Action::Dialog { accept, text } => Input::Dialog { accept, text },
         other => return Err(Refusal(format!("{other:?} is no input"))),
     })
@@ -691,5 +731,25 @@ async fn wait(
             "the page did not show what was waited for in {} ms",
             timeout.as_millis()
         )))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::page_inspection;
+
+    #[test]
+    fn the_model_gets_page_inspection_without_browser_or_session_operations() {
+        assert!(page_inspection("Page.getFrameTree"));
+        assert!(page_inspection("DOM.getDocument"));
+        for method in [
+            "Network.getCookies",
+            "Storage.getCookies",
+            "Runtime.evaluate",
+            "Target.attachToTarget",
+            "DOM.setFileInputFiles",
+        ] {
+            assert!(!page_inspection(method));
+        }
     }
 }

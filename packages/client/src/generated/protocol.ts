@@ -108,6 +108,8 @@ export type Changes = { root: string, comparison: Comparison, base?: string, fil
  */
 export type ChangesScope = { "type": "uncommitted" } | { "type": "branch", base?: string, } | { "type": "commit", commit: string, };
 
+export type ChooseFiles = { page: string, chooser: string, files: Array<FileRef>, };
+
 /**
  * How a command ended: it exited with a code, a signal ended it, its time ran out, it was stopped, or it wrote past
  * what a call takes.
@@ -467,6 +469,8 @@ export type Joins = "step" | "turn";
 
 export type JsonValue = number | string | boolean | Array<JsonValue> | { [key in string]: JsonValue } | null;
 
+export type KeepDownload = { page: string, download: string, };
+
 /**
  * One of a plan's limits as its usage tells: the minutes its window lasts — five hours, or a week — the models it is
  * of, where it is of some alone, how much of it is used, in percent, and when it is given again, each where it is
@@ -699,6 +703,10 @@ export type PageController = "agent" | "you" | "viewer";
  */
 export type PageDialog = { kind: string, message: string, offered: string, };
 
+export type PageDownload = { id: string, name: string, state: string, };
+
+export type PageFileChooser = { id: string, multiple: boolean, };
+
 export type PageHost = "headless" | "desktop";
 
 /**
@@ -711,7 +719,12 @@ export type PageKey = { pressed: boolean, key: string, code: string, text?: stri
  * A page of a thread's: its id, where it is and what it is called, its view, the dialog that holds it, whether it
  * loads, and whether its history goes back and forward from where it is.
  */
-export type PageListed = { id: string, url: string, title: string, view: View, viewport_size: View, viewport: ViewportMode, zoom: number, host: PageHost, dev_tools: DevToolsState, dialog?: PageDialog, loading: boolean, back: boolean, forward: boolean, control: PageController, };
+export type PageListed = { id: string, url: string, title: string, view: View, viewport_size: View, viewport: ViewportMode, zoom: number, host: PageHost, dev_tools: DevToolsState, downloads: Array<PageDownload>, chooser?: PageFileChooser, dialog?: PageDialog, load: PageLoad, back: boolean, forward: boolean, control: PageController, };
+
+/**
+ * The document or target's state, independent of the connection watching it.
+ */
+export type PageLoad = { "state": "loading" } | { "state": "ready" } | { "state": "failed", message: string, } | { "state": "disconnected" };
 
 /**
  * The mouse over a page, at a point of its CSS pixels: what it did, the button pressed or let go, the buttons held
@@ -724,11 +737,13 @@ export type PageOpened = { page: string, };
 /**
  * Where the page should live for the duration of its work.
  */
-export type PagePlacement = "workspace" | "background";
+export type PagePlacement = "workspace" | "background" | "desktop";
 
 export type PagePoint = { x: number, y: number, };
 
 export type PagePresentation = "stream" | "native";
+
+export type PageReference = { url: string, title: string, host: PageHost, };
 
 export type PageZoom = { page: string, percent: number, presentation: PagePresentation, };
 
@@ -819,6 +834,10 @@ signature?: string | null, status?: ItemStatus | null, origin: Origin, };
  * How hard a model reasons, from `none` to `max`.
  */
 export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+
+export type ReferencePage = { thread: string, page: string, };
+
+export type ReferencedPage = { reference: PageReference | null, };
 
 export type RenameAccount = { account: string, name: string, };
 
@@ -1204,6 +1223,8 @@ export type Methods = {
   'browser.back': { params: OfPage; result: Nothing };
   'browser.forward': { params: OfPage; result: Nothing };
   'browser.reload': { params: OfPage; result: Nothing };
+  'browser.retry': { params: OfPage; result: Nothing };
+  'browser.reference': { params: ReferencePage; result: ReferencedPage };
   'browser.dialog': { params: AnswerDialog; result: Nothing };
   'browser.close': { params: OfPage; result: Nothing };
   'browser.control': { params: PageControl; result: Nothing };
@@ -1213,6 +1234,8 @@ export type Methods = {
   'browser.key': { params: OnPage<PageKey>; result: Nothing };
   'browser.text': { params: TypeText; result: Nothing };
   'browser.pick': { params: PickElement; result: ElementFeedback };
+  'browser.keep_download': { params: KeepDownload; result: FileRef };
+  'browser.choose_files': { params: ChooseFiles; result: Nothing };
   'terminals.open': { params: OpenTerminal; result: TerminalOpened };
   'terminals.write': { params: WriteTerminal; result: Nothing };
   'terminals.resize': { params: ResizeTerminal; result: Nothing };
